@@ -28,7 +28,13 @@ export async function beginProviderPayment(pool:Pool,customerId:string,orderId:s
  try{initiated=await adapter.initiate({orderId,amountMinor:attempt.order.price_minor,currency:attempt.order.currency,methodCode,eligibility});}
  catch{initiated={state:'unknown'};}
  try {
-  const row=await pool.query("UPDATE provider_payment_attempts SET state=$2,provider_reference=$3,redirect_url=$4,updated_at=now() WHERE id=$1 AND state IN ('initiating','unknown') RETURNING state,redirect_url",[attempt.row.id,initiated.state==='initiated'?'pending':'unknown',initiated.state==='initiated'?initiated.referenceNumber:null,initiated.state==='initiated'?initiated.redirectUrl:null]);
+  const row=await pool.query(`WITH updated AS (
+    UPDATE provider_payment_attempts SET state=$2,provider_reference=$3,redirect_url=$4,updated_at=now()
+    WHERE id=$1 AND state IN ('initiating','unknown') RETURNING id,state,redirect_url,provider_reference
+   ), scheduled AS (
+    INSERT INTO payment_reconciliation_jobs(attempt_id) SELECT id FROM updated WHERE provider_reference IS NOT NULL
+    ON CONFLICT (attempt_id) DO NOTHING
+   ) SELECT state,redirect_url FROM updated`,[attempt.row.id,initiated.state==='initiated'?'pending':'unknown',initiated.state==='initiated'?initiated.referenceNumber:null,initiated.state==='initiated'?initiated.redirectUrl:null]);
   return {attemptId:attempt.row.id,state:row.rows[0]?.state??'unknown',redirectUrl:row.rows[0]?.redirect_url??null};
  }catch(error){
   // The remote call may already have created a charge. Never initiate again.

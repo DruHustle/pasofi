@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { SignJWT } from 'jose';
 import pg from 'pg';
 import { registerRadiusInternal } from './radius-internal.js';
+import { registerPesepaySandbox } from './pesepay-sandbox.js';
 const { Pool } = pg;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function buildApp() {
@@ -11,7 +12,8 @@ export function buildApp() {
   const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 2000 }) : null;
   const demo = process.env.APP_ENV === 'demo' && process.env.NODE_ENV === 'development';
   app.register(rateLimit, { global: false });
-  app.addHook('onClose', async () => { if (pool) await pool.end(); });
+  const stopPesepaySandbox = registerPesepaySandbox(app,pool,demo);
+  app.addHook('onClose', async () => { await stopPesepaySandbox(); if (pool) await pool.end(); });
   registerRadiusInternal(app,pool,demo);
   app.get('/health/live', async () => ({ status: 'ok', service: 'prepaid-access' }));
   app.get('/health/ready', async (_request, reply) => {

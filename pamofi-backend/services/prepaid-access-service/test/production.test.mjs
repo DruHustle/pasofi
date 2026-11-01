@@ -9,3 +9,13 @@ test('demo payment routes are unavailable unless explicitly in demo mode', async
   assert.equal(response.statusCode,404);
   await app.close();
 });
+test('sandbox callbacks cannot be enabled in production', async () => {
+  process.env.APP_ENV = 'production';
+  process.env.NODE_ENV = 'production';
+  process.env.PAMOFI_PESEPAY_SANDBOX_ENABLED = 'true';
+  const app = buildApp();
+  const response = await app.inject({method:'POST',url:'/callbacks/pesepay',payload:{referenceNumber:'example'}});
+  assert.equal(response.statusCode,404);
+  await app.close();
+  delete process.env.PAMOFI_PESEPAY_SANDBOX_ENABLED;
+});
