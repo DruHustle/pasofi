@@ -28,7 +28,7 @@ test('provider reconciliation fulfills once, isolates duplicate charges and reve
   assert.equal((await pool.query('SELECT revoked_at FROM purchase_entitlements WHERE order_id=$1',[order])).rows[0].revoked_at,null);
   assert.equal((await reconcileProviderPayment(pool,attempt,adapter)).state,'reversed');
   assert.ok((await pool.query('SELECT revoked_at FROM purchase_entitlements WHERE order_id=$1',[order])).rows[0].revoked_at);
-  await assert.rejects(issueGrant(pool,customer,site,randomUUID(),randomUUID()),{code:'no_usable_entitlement'});
+  await assert.rejects(issueGrant(pool,customer,site,randomUUID(),randomUUID(),'lab-session-1'),{code:'no_usable_entitlement'});
  }finally{await pool.query('DELETE FROM payment_reviews WHERE order_id=$1',[order]);await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[order]);await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[order]);await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();}
 });
 test('ambiguous initiation blocks re-initiation and used access reversal is reviewed',{skip:!url},async()=>{
@@ -41,7 +41,7 @@ test('ambiguous initiation blocks re-initiation and used access reversal is revi
   assert.equal(unknown.state,'unknown');await assert.rejects(beginProviderPayment(pool,customer,uncertainOrder,randomUUID(),site,'PZW211',eligibility,unknownAdapter),{code:'payment_pending'});assert.equal(calls,1);
   const started=await beginProviderPayment(pool,customer,order,randomUUID(),site,'PZW211',eligibility,adapter);
   assert.equal((await reconcileProviderPayment(pool,started.attemptId,adapter)).state,'fulfilled');
-  const nas=randomUUID(),grant=await issueGrant(pool,customer,site,nas,randomUUID());
+  const nas=randomUUID(),grant=await issueGrant(pool,customer,site,nas,randomUUID(),'lab-session-1');
   await recordAccounting(pool,{grantId:grant.id,siteId:site,nasId:nas,generation:grant.generation,sessionId:'lab-session-1',upload:1n,download:2n,kind:'start'});
   status='reversed';assert.equal((await reconcileProviderPayment(pool,started.attemptId,adapter)).state,'pending_review');
   const ent=(await pool.query('SELECT revoked_at,consumed_bytes::text FROM purchase_entitlements WHERE order_id=$1',[order])).rows[0];assert.equal(ent.revoked_at,null);assert.equal(ent.consumed_bytes,'3');

@@ -11,16 +11,17 @@ async function transaction<T>(pool:Pool, work:(client:PoolClient)=>Promise<T>):P
   catch (error) { await client.query('ROLLBACK'); throw error; }
   finally { client.release(); }
 }
-export async function issueGrant(pool:Pool, customerId:string, siteId:string, nasId:string, requestKey:string) {
-  return transaction(pool, async client => {
+export async function issueGrant(pool:Pool, customerId:string, siteId:string, nasId:string, requestKey:string, sessionId:string) {
+  if(typeof sessionId!=='string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(sessionId)) throw new GrantError('invalid_session');
+  try { return await transaction(pool, async client => {
     // Serialize even when there is no entitlement row yet; row locks alone cannot
     // protect against two first grants for the same customer.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',[customerId]);
-    const replay=await client.query(`SELECT id,generation,site_id,nas_id,reserved_bytes::text,issued_at,deadline,state,deadline > now() AS safe
+    const replay=await client.query(`SELECT id,generation,site_id,nas_id,accounting_session_id,reserved_bytes::text,issued_at,deadline,state,deadline > now() AS safe
       FROM access_grants WHERE customer_id=$1 AND request_key=$2`,[customerId,requestKey]);
     if(replay.rowCount) {
       const grant=replay.rows[0];
-      if(grant.site_id!==siteId || grant.nas_id!==nasId) throw new GrantError('idempotency_conflict');
+      if(grant.site_id!==siteId || grant.nas_id!==nasId || grant.accounting_session_id!==sessionId) throw new GrantError('idempotency_conflict');
       if(grant.state==='closed' || grant.state==='uncertain' || !grant.safe) throw new GrantError('grant_not_replayable');
       return {id:grant.id,generation:grant.generation,site_id:grant.site_id,nas_id:grant.nas_id,reserved_bytes:grant.reserved_bytes,issued_at:grant.issued_at,deadline:grant.deadline};
     }
@@ -38,24 +39,29 @@ export async function issueGrant(pool:Pool, customerId:string, siteId:string, na
     const reserved=BigInt(entitlement.byte_limit)-BigInt(entitlement.consumed_bytes);
     if(reserved<=0n) throw new GrantError('no_usable_entitlement');
     const id=randomUUID(), generation=randomUUID();
-    const result=await client.query(`INSERT INTO access_grants (id,customer_id,entitlement_id,site_id,nas_id,request_key,generation,state,reserved_bytes,deadline)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$9) RETURNING id,generation,site_id,nas_id,reserved_bytes::text,issued_at,deadline`,
-      [id,customerId,entitlement.id,siteId,nasId,requestKey,generation,reserved.toString(),entitlement.deadline]);
+    const result=await client.query(`INSERT INTO access_grants (id,customer_id,entitlement_id,site_id,nas_id,request_key,generation,state,reserved_bytes,deadline,accounting_session_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$9,$10) RETURNING id,generation,site_id,nas_id,reserved_bytes::text,issued_at,deadline`,
+      [id,customerId,entitlement.id,siteId,nasId,requestKey,generation,reserved.toString(),entitlement.deadline,sessionId]);
     return result.rows[0];
-  });
+  }); } catch(error) {
+    if(typeof error==='object' && error!==null && 'constraint' in error && error.constraint==='one_live_grant_per_nas_session') throw new GrantError('nas_session_in_use');
+    throw error;
+  }
 }
 export type TrustedAccounting = { grantId:string; siteId:string; nasId:string; generation:string; sessionId:string; upload:bigint; download:bigint; kind:'start'|'interim'|'stop' };
 export async function recordAccounting(pool:Pool, event:TrustedAccounting) {
   const maximum=(1n<<64n)-1n;
-  if(!/^[A-Za-z0-9._:-]{1,128}$/.test(event.sessionId)) throw new GrantError('invalid_session');
+  if(typeof event.sessionId!=='string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(event.sessionId)) throw new GrantError('invalid_session');
+  if(!['start','interim','stop'].includes(event.kind)) throw new GrantError('invalid_kind');
+  if(typeof event.upload!=='bigint' || typeof event.download!=='bigint') throw new GrantError('invalid_counters');
   if(event.upload<0n || event.download<0n || event.upload>maximum || event.download>maximum) throw new GrantError('invalid_counters');
   return transaction(pool, async client => {
     const rows=await client.query('SELECT *,reserved_bytes::text AS reserved,charged_bytes::text AS charged,upload_high::text AS upload,download_high::text AS download FROM access_grants WHERE id=$1 FOR UPDATE',[event.grantId]);
     if(!rows.rowCount) throw new GrantError('unknown_grant');
     const grant=rows.rows[0];
     if(grant.site_id!==event.siteId || grant.nas_id!==event.nasId || grant.generation!==event.generation) throw new GrantError('grant_context_mismatch');
-    if(grant.accounting_session_id && grant.accounting_session_id!==event.sessionId) throw new GrantError('session_mismatch');
-    if(!grant.accounting_session_id && event.kind!=='start') throw new GrantError('start_required');
+    if(!grant.accounting_session_id || grant.accounting_session_id!==event.sessionId) throw new GrantError('session_mismatch');
+    if(!grant.accounting_started_at && event.kind!=='start') throw new GrantError('start_required');
     if(grant.state==='closed') return {state:'closed',chargedBytes:grant.charged};
     const oldUp=BigInt(grant.upload), oldDown=BigInt(grant.download);
     const up=event.upload>oldUp?event.upload:oldUp, down=event.download>oldDown?event.download:oldDown;
@@ -63,7 +69,7 @@ export async function recordAccounting(pool:Pool, event:TrustedAccounting) {
     const toCharge=delta>available?available:delta;
     const uncertain=grant.state==='uncertain' || event.upload<oldUp || event.download<oldDown || delta>available;
     if(event.kind==='start') {
-      if(!grant.accounting_session_id) await client.query('UPDATE access_grants SET accounting_session_id=$2 WHERE id=$1',[grant.id,event.sessionId]);
+      if(!grant.accounting_started_at) await client.query('UPDATE access_grants SET accounting_started_at=now() WHERE id=$1',[grant.id]);
       // Conservative if Accounting-Start arrives late: a successful connection
       // starts validity no later than the original grant issue time.
       await client.query('UPDATE purchase_entitlements SET activated_at=COALESCE(activated_at,$2) WHERE id=$1',[grant.entitlement_id,grant.issued_at]);

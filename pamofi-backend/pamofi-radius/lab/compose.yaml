@@ -1,0 +1,90 @@
+services:
+  postgres:
+    image: postgres:17.11-alpine3.23
+    environment:
+      POSTGRES_USER: pamofi_bootstrap
+      POSTGRES_PASSWORD: lab_only_bootstrap
+      POSTGRES_DB: postgres
+    volumes:
+      - ../../infra/postgres/init.sql:/docker-entrypoint-initdb.d/10-pamofi.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pamofi_bootstrap -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [lab]
+  prepaid-migrate:
+    build: ../../services/prepaid-access-service
+    command: ["node", "migrate.mjs"]
+    environment:
+      DATABASE_URL: postgresql://pamofi_prepaid_access:demo_only_change_me@postgres:5432/pamofi_prepaid_access
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [lab]
+  network-migrate:
+    build: ../../services/network-service
+    command: ["node", "migrate.mjs"]
+    environment:
+      DATABASE_URL: postgresql://pamofi_network:demo_only_change_me@postgres:5432/pamofi_network
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [lab]
+  prepaid:
+    build: ../../services/prepaid-access-service
+    environment:
+      DATABASE_URL: postgresql://pamofi_prepaid_access:demo_only_change_me@postgres:5432/pamofi_prepaid_access
+      APP_ENV: demo
+      NODE_ENV: development
+      INTERNAL_RADIUS_ENABLED: 'true'
+      INTERNAL_NETWORK_SECRET: DEMO_ONLY_network_lab_key_0123456789abcdef
+    depends_on:
+      prepaid-migrate: {condition: service_completed_successfully}
+    networks: [lab]
+  radius-api:
+    build: ../../services/network-service
+    command: ["node", "dist/radius-server.js"]
+    environment:
+      DATABASE_URL: postgresql://pamofi_network:demo_only_change_me@postgres:5432/pamofi_network
+      APP_ENV: demo
+      NODE_ENV: development
+      INTERNAL_RADIUS_ENABLED: 'true'
+      INTERNAL_NETWORK_SECRET: DEMO_ONLY_network_lab_key_0123456789abcdef
+      PREPAID_URL: http://prepaid:3000
+      RADIUS_CA_FILE: /lab/ca.crt
+      RADIUS_SERVER_CERT_FILE: /lab/server.crt
+      RADIUS_SERVER_KEY_FILE: /lab/server.key
+      RADIUS_CLIENT_FINGERPRINT: ${LAB_CLIENT_FINGERPRINT:?Set lab certificate fingerprint}
+      RADIUS_LISTEN_HOST: 0.0.0.0
+    volumes:
+      - ${LAB_CERT_DIR:?Set lab certificate directory}:/lab:ro
+    depends_on:
+      network-migrate: {condition: service_completed_successfully}
+      prepaid: {condition: service_started}
+    networks: [lab]
+  radius:
+    image: freeradius/freeradius-server:3.2.9-alpine@sha256:9e860a6d14ecbccc97448da1d0c5dd15b5e7e6b64777cea21b57e832187a2057
+    command: ["radiusd", "-l", "stdout"]
+    volumes:
+      - ${LAB_CERT_DIR:?Set lab certificate directory}/clients.conf:/opt/etc/raddb/clients.conf:ro
+      - ./default.conf:/opt/etc/raddb/sites-enabled/default:ro
+      - ./rest.conf:/opt/etc/raddb/mods-enabled/rest:ro
+      - ${LAB_CERT_DIR:?Set lab certificate directory}:/lab:ro
+    depends_on:
+      radius-api: {condition: service_started}
+    networks: [lab]
+  nas-a:
+    image: freeradius/freeradius-server:3.2.9-alpine@sha256:9e860a6d14ecbccc97448da1d0c5dd15b5e7e6b64777cea21b57e832187a2057
+    entrypoint: ["/bin/sh", "-c", "sleep 36000"]
+    networks:
+      lab: {ipv4_address: "${LAB_NAS_A_IP:?Set NAS A address}"}
+  nas-b:
+    image: freeradius/freeradius-server:3.2.9-alpine@sha256:9e860a6d14ecbccc97448da1d0c5dd15b5e7e6b64777cea21b57e832187a2057
+    entrypoint: ["/bin/sh", "-c", "sleep 36000"]
+    networks:
+      lab: {ipv4_address: "${LAB_NAS_B_IP:?Set NAS B address}"}
+networks:
+  lab:
+    internal: true
+    ipam:
+      config:
+        - subnet: "${LAB_SUBNET:?Set lab subnet}"

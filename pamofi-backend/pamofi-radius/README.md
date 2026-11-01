@@ -1,3 +1,15 @@
-# FreeRADIUS
+# FreeRADIUS lab
 
-Not implemented. No RADIUS server, credentials, authentication path or NAS simulator is configured. All hotspot grants must remain disabled until the authoritative grant, accounting and trusted NAS paths are implemented and tested.
+`lab/run-lab.sh` starts a disposable, isolated Docker Compose project containing a real FreeRADIUS 3.2.9 server, two simulated NAS clients, the network service, prepaid-access service and PostgreSQL. It requires Docker, OpenSSL, Python 3 and Node 22+. Run it from any directory:
+
+```sh
+./pamofi-radius/lab/run-lab.sh
+```
+
+The script builds the two service images, chooses a non-overlapping private Docker subnet, creates one-use TLS keys and disposable database fixtures, runs RADIUS packets, and removes its own containers, networks, images and test data on exit. All RADIUS secrets in the lab are public test values. Do not use the lab configuration or keys on real equipment.
+
+The lab checks an Access-Accept with an authoritative reservation, mutual TLS between FreeRADIUS and the network service, two separately registered NASes with different RADIUS shared secrets, grant retry, refusal at the second site, rejection of another NAS's accounting, 64-bit limits including a zero low word, duplicate accounting, conservative Stop handling and failure when the prepaid authority is unavailable. An additional network-service integration test verifies refusal of missing and wrong client certificates.
+
+The implementation is deliberately restricted to `APP_ENV=demo`, `NODE_ENV=development` and `INTERNAL_RADIUS_ENABLED=true`. It cannot be enabled in production. The lab manually inserts synthetic credentials and NAS registrations; customer credential issuance, staff-authorized registration, private router tunnels, verified disconnect and reservation release, reboot/reordering recovery, production key management, monitoring, and real MikroTik qualification are not implemented. In particular, the lab checks that FreeRADIUS emits a 64-bit limit, not that any RouterOS version enforces it. No physical router has been configured or tested.
+
+The network and prepaid services own separate databases. FreeRADIUS does not access the prepaid database. The network API checks a client certificate and pinned fingerprint, resolves the NAS from the source-matched FreeRADIUS client shortname, verifies a short-lived test credential, and calls the prepaid lab authority with a short-lived scoped service JWT. The prepaid service reserves capacity before access is accepted, binds the NAS session to the reservation, and commits accounting before returning an acknowledgement. Stops leave the reservation uncertain pending trustworthy termination and final reconciliation.

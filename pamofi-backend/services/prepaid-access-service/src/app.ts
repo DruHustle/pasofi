@@ -3,6 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import { randomUUID } from 'node:crypto';
 import { SignJWT } from 'jose';
 import pg from 'pg';
+import { registerRadiusInternal } from './radius-internal.js';
 const { Pool } = pg;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function buildApp() {
@@ -11,6 +12,7 @@ export function buildApp() {
   const demo = process.env.APP_ENV === 'demo' && process.env.NODE_ENV === 'development';
   app.register(rateLimit, { global: false });
   app.addHook('onClose', async () => { if (pool) await pool.end(); });
+  registerRadiusInternal(app,pool,demo);
   app.get('/health/live', async () => ({ status: 'ok', service: 'prepaid-access' }));
   app.get('/health/ready', async (_request, reply) => {
     if (!pool) return reply.code(503).send({ status: 'not_ready' });
