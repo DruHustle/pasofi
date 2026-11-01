@@ -1,0 +1,88 @@
+# Private staging only: no mock payments, published bundles, public ports, or live RADIUS.
+name: pamofi-staging
+x-app: &app
+  restart: unless-stopped
+  mem_limit: 96m
+  pids_limit: 100
+  security_opt: [no-new-privileges:true]
+  networks: [private]
+services:
+  postgres:
+    image: postgres:17.11-alpine3.23
+    restart: unless-stopped
+    mem_limit: 192m
+    pids_limit: 100
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=30"]
+    environment:
+      POSTGRES_USER: pamofi_bootstrap
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?required}
+      PREPAID_DB_PASSWORD: ${PREPAID_DB_PASSWORD:?required}
+      NETWORK_DB_PASSWORD: ${NETWORK_DB_PASSWORD:?required}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?required}
+      ASSISTANT_DB_PASSWORD: ${ASSISTANT_DB_PASSWORD:?required}
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./init.sh:/docker-entrypoint-initdb.d/10-pamofi.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U pamofi_bootstrap -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [private]
+  identity:
+    <<: *app
+    image: pamofi-staging-identity:${PAMOFI_RELEASE:?required}
+    environment:
+      DATABASE_URL: postgresql://pamofi_identity:${IDENTITY_DB_PASSWORD}@postgres:5432/pamofi_identity
+      APP_ENV: staging
+      NODE_ENV: production
+      PUBLIC_ORIGIN: https://pamofi.vercel.app
+      INTERNAL_IDENTITY_SECRET: ${INTERNAL_IDENTITY_SECRET:?required}
+    depends_on:
+      postgres: {condition: service_healthy}
+  prepaid-access:
+    <<: *app
+    image: pamofi-staging-prepaid-access:${PAMOFI_RELEASE:?required}
+    environment:
+      DATABASE_URL: postgresql://pamofi_prepaid_access:${PREPAID_DB_PASSWORD}@postgres:5432/pamofi_prepaid_access
+      APP_ENV: staging
+      NODE_ENV: production
+      PUBLIC_ORIGIN: https://pamofi.vercel.app
+      INTERNAL_IDENTITY_SECRET: ${INTERNAL_IDENTITY_SECRET:?required}
+    depends_on:
+      postgres: {condition: service_healthy}
+  network:
+    <<: *app
+    image: pamofi-staging-network:${PAMOFI_RELEASE:?required}
+    environment:
+      DATABASE_URL: postgresql://pamofi_network:${NETWORK_DB_PASSWORD}@postgres:5432/pamofi_network
+      APP_ENV: staging
+      NODE_ENV: production
+    depends_on:
+      postgres: {condition: service_healthy}
+  notification:
+    <<: *app
+    image: pamofi-staging-notification:${PAMOFI_RELEASE:?required}
+    environment:
+      DATABASE_URL: postgresql://pamofi_notification:${NOTIFICATION_DB_PASSWORD}@postgres:5432/pamofi_notification
+      APP_ENV: staging
+      NODE_ENV: production
+      INTERNAL_EVENTS_SECRET: ${INTERNAL_EVENTS_SECRET:?required}
+    depends_on:
+      postgres: {condition: service_healthy}
+  assistant:
+    <<: *app
+    image: pamofi-staging-assistant:${PAMOFI_RELEASE:?required}
+    environment:
+      DATABASE_URL: postgresql://pamofi_assistant:${ASSISTANT_DB_PASSWORD}@postgres:5432/pamofi_assistant
+      APP_ENV: staging
+      NODE_ENV: production
+    depends_on:
+      postgres: {condition: service_healthy}
+networks:
+  private:
+    internal: true
+volumes:
+  database:
