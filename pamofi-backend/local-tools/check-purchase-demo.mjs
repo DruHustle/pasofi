@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
+const identity = 'http://127.0.0.1:18081';
+const prepaid = 'http://127.0.0.1:18082';
+const origin = 'http://localhost:5173';
+async function makeCustomer() {
+  const res = await fetch(`${identity}/v1/session`, { method:'POST', headers:{origin} });
+  assert.equal(res.status,201);
+  return res.headers.get('set-cookie').split(';')[0];
+}
+const cookie = await makeCustomer();
+const otherCookie = await makeCustomer();
+const key = randomBytes(24).toString('base64url');
+const create = (bundleId, useCookie = cookie) => fetch(`${prepaid}/v1/orders`, { method:'POST', headers:{'content-type':'application/json',origin,cookie:useCookie,'idempotency-key':key}, body:JSON.stringify({bundleId}) });
+const [first, second] = await Promise.all([create('flex'),create('flex')]);
+assert.ok([200,201].includes(first.status));
+assert.ok([200,201].includes(second.status));
+const a = (await first.json()).order, b = (await second.json()).order;
+assert.equal(a.id,b.id);
+assert.equal(a.price_minor,100);
+assert.equal(a.byte_limit,'5000000000');
+assert.equal((await create('week')).status,409);
+const wrongOrigin = await fetch(`${prepaid}/v1/orders/${a.id}/demo-confirm`,{method:'POST',headers:{cookie,origin:'http://evil.example'}});
+assert.equal(wrongOrigin.status,403);
+const unauthorized = await fetch(`${prepaid}/v1/orders/${a.id}/demo-confirm`,{method:'POST',headers:{cookie:otherCookie,origin}});
+assert.equal(unauthorized.status,404);
+const noCookie = await fetch(`${prepaid}/v1/orders`,{headers:{'x-customer-id':a.id}});
+assert.equal(noCookie.status,401);
+const internal = await fetch(`${identity}/internal/v1/session`,{headers:{authorization:'Bearer forged',cookie}});
+assert.equal(internal.status,401);
+const confirmations = await Promise.all(Array.from({length:8},()=>fetch(`${prepaid}/v1/orders/${a.id}/demo-confirm`,{method:'POST',headers:{cookie,origin}})));
+for (const response of confirmations) { assert.equal(response.status,200); assert.deepEqual(await response.json(),{status:'payment_confirmed',simulation:true}); }
+const access = await (await fetch(`${prepaid}/v1/access`,{headers:{cookie}})).json();
+assert.equal(access.entitlements.length,1);
+assert.equal(access.entitlements[0].byte_limit,'5000000000');
+assert.equal(access.entitlements[0].consumed_bytes,'0');
+assert.equal(access.entitlements[0].activated_at,null);
+const other = await (await fetch(`${prepaid}/v1/access`,{headers:{cookie:otherCookie}})).json();
+assert.equal(other.entitlements.length,0);
+console.log('Mock purchase: authenticated ownership, idempotency, concurrent confirmation and queued entitlement passed.');

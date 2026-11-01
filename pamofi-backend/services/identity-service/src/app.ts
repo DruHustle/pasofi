@@ -3,12 +3,13 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import pg from 'pg';
+import { jwtVerify } from 'jose';
 const { Pool } = pg;
 const tokenHash = (token: string) => createHash('sha256').update(token).digest();
 export function buildApp() {
   const app = Fastify({ logger: false, bodyLimit: 16384 });
   const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 2000 }) : null;
-  const demo = process.env.APP_ENV === 'demo';
+  const demo = process.env.APP_ENV === 'demo' && process.env.NODE_ENV === 'development';
   const cookieName = demo ? 'pamofi_demo_session' : '__Host-pamofi_session';
   const origin = process.env.PUBLIC_ORIGIN;
   const validOrigin = (() => { try { const u = new URL(origin!); return u.origin === origin && (u.protocol === 'https:' || (demo && u.protocol === 'http:' && ['localhost','127.0.0.1'].includes(u.hostname))); } catch { return false; } })();
@@ -27,6 +28,25 @@ export function buildApp() {
     const result = await pool.query('SELECT customer_id FROM customer_sessions WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()', [tokenHash(token)]);
     return result.rows[0]?.customer_id as string | undefined;
   }
+  // Only the prepaid service may resolve its forwarded customer cookie. The
+  // browser never supplies a customer ID to select the account.
+  app.get('/internal/v1/session', async (request, reply) => {
+    const secret = process.env.INTERNAL_IDENTITY_SECRET;
+    if (!pool || !secret || Buffer.byteLength(secret) < 32 || (!demo && secret.startsWith('DEMO_ONLY_'))) return reply.code(503).send({ error: 'identity_unavailable' });
+    const auth = request.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) return reply.code(401).send({ error: 'unauthorized' });
+    try {
+      const { payload } = await jwtVerify(auth.slice(7), new TextEncoder().encode(secret), {
+        algorithms: ['HS256'], issuer: 'prepaid-access', audience: 'identity', subject: 'prepaid-access',
+        requiredClaims: ['exp', 'iat', 'sub'], maxTokenAge: '30s'
+      });
+      if (payload.scope !== 'identity:resolve') return reply.code(403).send({ error: 'forbidden' });
+    } catch { return reply.code(401).send({ error: 'unauthorized' }); }
+    try {
+      const customerId = await current(request);
+      return customerId ? { customerId } : reply.code(401).send({ error: 'not_authenticated' });
+    } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
+  });
   app.get('/v1/session', async (request, reply) => {
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
     try { const customerId = await current(request); return customerId ? { customerId } : reply.code(401).send({ error: 'not_authenticated' }); }

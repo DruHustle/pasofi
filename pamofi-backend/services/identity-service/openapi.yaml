@@ -45,3 +45,24 @@ paths:
           description: Rate limit exceeded
         '503':
           description: Identity unavailable
+  /internal/v1/session:
+    get:
+      summary: Resolve a forwarded session for the authenticated prepaid service
+      description: Private endpoint requiring a short-lived signed service token with identity:resolve scope. The customer is selected only by the forwarded session cookie.
+      security:
+        - serviceToken: []
+      responses:
+        '200':
+          description: Customer identity for the valid session
+        '401':
+          description: Invalid caller token or session
+        '403':
+          description: Caller lacks the required scope
+        '503':
+          description: Identity unavailable
+components:
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

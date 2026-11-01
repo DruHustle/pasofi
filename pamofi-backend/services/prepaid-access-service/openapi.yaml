@@ -15,3 +15,76 @@ paths:
           description: Service database is reachable
         '503':
           description: Service database unavailable
+  /v1/bundles:
+    get:
+      summary: Read currently published catalogue versions
+      responses:
+        '200':
+          description: Catalogue; byte limits are decimal strings
+        '503':
+          description: Catalogue unavailable
+  /v1/orders:
+    get:
+      summary: List orders belonging to the authenticated customer
+      responses:
+        '200':
+          description: Customer order history, up to 100 entries
+        '401':
+          description: No valid customer session
+        '503':
+          description: Authoritative service unavailable
+    post:
+      summary: Create or retry a demo-only quote
+      description: Requires the configured origin, an authenticated session, and a customer-scoped idempotency key. Disabled when NODE_ENV is production.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            minLength: 16
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bundleId]
+              additionalProperties: false
+              properties:
+                bundleId:
+                  type: string
+      responses:
+        '201':
+          description: Demo quote created
+        '200':
+          description: Existing quote for the same payload
+        '409':
+          description: Idempotency key used for different bundle
+  /v1/orders/{id}/demo-confirm:
+    post:
+      summary: Confirm an explicitly simulated payment
+      description: Demo only. Creates one queued entitlement atomically; never contacts a provider or connects a device.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Simulated confirmation
+        '404':
+          description: Order unavailable or simulation disabled
+        '409':
+          description: Quote expired
+  /v1/access:
+    get:
+      summary: List the current customer's queued entitlements
+      responses:
+        '200':
+          description: Up to 100 entitlements
+        '401':
+          description: No valid customer session

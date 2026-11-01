@@ -1,11 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildApp } from '../dist/app.js';
+import { SignJWT } from 'jose';
 const integration = process.env.PAMOFI_TEST_DATABASE_URL;
 test('customer session is opaque, reuses an existing cookie and checks request origin', {skip: !integration}, async () => {
   process.env.DATABASE_URL = integration;
   process.env.APP_ENV = 'demo';
+  process.env.NODE_ENV = 'development';
   process.env.PUBLIC_ORIGIN = 'http://localhost:5173';
+  process.env.INTERNAL_IDENTITY_SECRET = 'DEMO_ONLY_insecure_local_service_secret_123456789';
   const app = buildApp();
   const denied = await app.inject({method:'POST',url:'/v1/session',headers:{origin:'http://evil.example'}});
   assert.equal(denied.statusCode,403);
@@ -20,7 +23,31 @@ test('customer session is opaque, reuses an existing cookie and checks request o
   assert.equal(again.json().customerId, created.json().customerId);
   const authenticated = await app.inject({method:'GET',url:'/v1/session',headers:{cookie}});
   assert.equal(authenticated.json().customerId,created.json().customerId);
+  const makeToken = (issuer,scope,expires='15s') => new SignJWT({scope}).setProtectedHeader({alg:'HS256'}).setIssuer(issuer).setSubject('prepaid-access').setAudience('identity').setIssuedAt().setExpirationTime(expires).sign(new TextEncoder().encode(process.env.INTERNAL_IDENTITY_SECRET));
+  const wrongIssuer = await makeToken('network','identity:resolve');
+  assert.equal((await app.inject({method:'GET',url:'/internal/v1/session',headers:{cookie,authorization:`Bearer ${wrongIssuer}`}})).statusCode,401);
+  const wrongScope = await makeToken('prepaid-access','identity:mutate');
+  assert.equal((await app.inject({method:'GET',url:'/internal/v1/session',headers:{cookie,authorization:`Bearer ${wrongScope}`}})).statusCode,403);
+  const expired = await makeToken('prepaid-access','identity:resolve','-1s');
+  assert.equal((await app.inject({method:'GET',url:'/internal/v1/session',headers:{cookie,authorization:`Bearer ${expired}`}})).statusCode,401);
+  const token = await makeToken('prepaid-access','identity:resolve');
+  const internal = await app.inject({method:'GET',url:'/internal/v1/session',headers:{cookie,authorization:`Bearer ${token}`}});
+  assert.equal(internal.statusCode,200);
+  assert.equal(internal.json().customerId,created.json().customerId);
   const forged = await app.inject({method:'GET',url:'/v1/session',headers:{cookie:'pamofi_demo_session=invalid'}});
   assert.equal(forged.statusCode,401);
+  await app.close();
+});
+test('a database outage is not mistaken for an invalid customer session', async () => {
+  const { randomBytes } = await import('node:crypto');
+  process.env.DATABASE_URL = 'postgresql://unused:unused@127.0.0.1:1/unused';
+  process.env.APP_ENV = 'demo';
+  process.env.NODE_ENV = 'development';
+  process.env.PUBLIC_ORIGIN = 'http://localhost:5173';
+  process.env.INTERNAL_IDENTITY_SECRET = 'DEMO_ONLY_insecure_local_service_secret_123456789';
+  const token = await new SignJWT({scope:'identity:resolve'}).setProtectedHeader({alg:'HS256'}).setIssuer('prepaid-access').setSubject('prepaid-access').setAudience('identity').setIssuedAt().setExpirationTime('15s').sign(new TextEncoder().encode(process.env.INTERNAL_IDENTITY_SECRET));
+  const app = buildApp();
+  const response = await app.inject({method:'GET',url:'/internal/v1/session',headers:{cookie:`pamofi_demo_session=${randomBytes(32).toString('base64url')}`,authorization:`Bearer ${token}`}});
+  assert.equal(response.statusCode,503);
   await app.close();
 });
