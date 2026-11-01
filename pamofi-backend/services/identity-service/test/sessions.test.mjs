@@ -1,0 +1,26 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { buildApp } from '../dist/app.js';
+const integration = process.env.PAMOFI_TEST_DATABASE_URL;
+test('customer session is opaque, reuses an existing cookie and checks request origin', {skip: !integration}, async () => {
+  process.env.DATABASE_URL = integration;
+  process.env.APP_ENV = 'demo';
+  process.env.PUBLIC_ORIGIN = 'http://localhost:5173';
+  const app = buildApp();
+  const denied = await app.inject({method:'POST',url:'/v1/session',headers:{origin:'http://evil.example'}});
+  assert.equal(denied.statusCode,403);
+  const created = await app.inject({method:'POST',url:'/v1/session',headers:{origin:'http://localhost:5173'}});
+  assert.equal(created.statusCode,201);
+  assert.match(created.headers['set-cookie'], /HttpOnly/);
+  assert.match(created.headers['set-cookie'], /SameSite=Lax/);
+  const cookie = created.headers['set-cookie'].split(';')[0];
+  assert.ok(!created.body.includes(cookie.split('=')[1]));
+  const again = await app.inject({method:'POST',url:'/v1/session',headers:{origin:'http://localhost:5173',cookie}});
+  assert.equal(again.statusCode,200);
+  assert.equal(again.json().customerId, created.json().customerId);
+  const authenticated = await app.inject({method:'GET',url:'/v1/session',headers:{cookie}});
+  assert.equal(authenticated.json().customerId,created.json().customerId);
+  const forged = await app.inject({method:'GET',url:'/v1/session',headers:{cookie:'pamofi_demo_session=invalid'}});
+  assert.equal(forged.statusCode,401);
+  await app.close();
+});

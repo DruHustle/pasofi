@@ -15,3 +15,33 @@ paths:
           description: Service database is reachable
         '503':
           description: Service database unavailable
+  /v1/session:
+    get:
+      summary: Read the customer session from its HttpOnly cookie
+      responses:
+        '200':
+          description: Authenticated customer identity
+        '401':
+          description: No valid session
+        '503':
+          description: Identity unavailable
+    post:
+      summary: Establish or reuse a customer session
+      description: Requires the configured same-origin Origin header. A cookie-bearing retry returns the existing identity.
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Existing session
+        '201':
+          description: Session created and HttpOnly cookie set
+        '403':
+          description: Origin rejected
+        '429':
+          description: Rate limit exceeded
+        '503':
+          description: Identity unavailable
