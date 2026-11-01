@@ -8,7 +8,7 @@ The requested end state is a full prepaid Wi-Fi platform with financial, access 
 
 - Five separately packaged Node/TypeScript/Fastify services with liveness and database readiness checks, separate database roles and databases in local Compose. Identity has an initial origin-checked, rate-limited customer session flow backed by PostgreSQL and HttpOnly opaque cookies. It is not yet wired to purchases or recovery; retry after a lost first response without the cookie can create another identity.
 - PostgreSQL-backed candidate catalogue, with exact requested prices, decimal byte limits serialized as strings, and durations. Demo seed publishes candidate products locally only.
-- Tested, isolated counter/limit arithmetic for future accounting, including gigawords, regression uncertainty and absolute grant deadlines. It is not connected to RADIUS, a ledger or enforcement.
+- Tested, isolated lifecycle and counter/limit rules for future accounting: FIFO activation, deadlines, gigawords, regression uncertainty and absolute grant deadlines. These functions are not connected to RADIUS, a ledger or enforcement.
 - Read-only FAQ service and responsive React customer interface with explicit demo labeling. No customer purchase or connection is claimed.
 - Local-only Docker Compose, development named volume, startup script, service-specific manifests and Dockerfiles. Each service now has a serialized, checksum-verified migration command; role separation still needs production implementation.
 
