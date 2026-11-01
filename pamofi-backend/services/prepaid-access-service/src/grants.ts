@@ -44,15 +44,18 @@ export async function issueGrant(pool:Pool, customerId:string, siteId:string, na
     return result.rows[0];
   });
 }
-export type TrustedAccounting = { grantId:string; siteId:string; nasId:string; generation:string; upload:bigint; download:bigint; kind:'start'|'interim'|'stop' };
+export type TrustedAccounting = { grantId:string; siteId:string; nasId:string; generation:string; sessionId:string; upload:bigint; download:bigint; kind:'start'|'interim'|'stop' };
 export async function recordAccounting(pool:Pool, event:TrustedAccounting) {
   const maximum=(1n<<64n)-1n;
+  if(!/^[A-Za-z0-9._:-]{1,128}$/.test(event.sessionId)) throw new GrantError('invalid_session');
   if(event.upload<0n || event.download<0n || event.upload>maximum || event.download>maximum) throw new GrantError('invalid_counters');
   return transaction(pool, async client => {
     const rows=await client.query('SELECT *,reserved_bytes::text AS reserved,charged_bytes::text AS charged,upload_high::text AS upload,download_high::text AS download FROM access_grants WHERE id=$1 FOR UPDATE',[event.grantId]);
     if(!rows.rowCount) throw new GrantError('unknown_grant');
     const grant=rows.rows[0];
     if(grant.site_id!==event.siteId || grant.nas_id!==event.nasId || grant.generation!==event.generation) throw new GrantError('grant_context_mismatch');
+    if(grant.accounting_session_id && grant.accounting_session_id!==event.sessionId) throw new GrantError('session_mismatch');
+    if(!grant.accounting_session_id && event.kind!=='start') throw new GrantError('start_required');
     if(grant.state==='closed') return {state:'closed',chargedBytes:grant.charged};
     const oldUp=BigInt(grant.upload), oldDown=BigInt(grant.download);
     const up=event.upload>oldUp?event.upload:oldUp, down=event.download>oldDown?event.download:oldDown;
@@ -60,6 +63,7 @@ export async function recordAccounting(pool:Pool, event:TrustedAccounting) {
     const toCharge=delta>available?available:delta;
     const uncertain=grant.state==='uncertain' || event.upload<oldUp || event.download<oldDown || delta>available;
     if(event.kind==='start') {
+      if(!grant.accounting_session_id) await client.query('UPDATE access_grants SET accounting_session_id=$2 WHERE id=$1',[grant.id,event.sessionId]);
       // Conservative if Accounting-Start arrives late: a successful connection
       // starts validity no later than the original grant issue time.
       await client.query('UPDATE purchase_entitlements SET activated_at=COALESCE(activated_at,$2) WHERE id=$1',[grant.entitlement_id,grant.issued_at]);

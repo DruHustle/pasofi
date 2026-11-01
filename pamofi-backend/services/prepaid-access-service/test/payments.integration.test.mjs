@@ -42,7 +42,7 @@ test('ambiguous initiation blocks re-initiation and used access reversal is revi
   const started=await beginProviderPayment(pool,customer,order,randomUUID(),site,'PZW211',eligibility,adapter);
   assert.equal((await reconcileProviderPayment(pool,started.attemptId,adapter)).state,'fulfilled');
   const nas=randomUUID(),grant=await issueGrant(pool,customer,site,nas,randomUUID());
-  await recordAccounting(pool,{grantId:grant.id,siteId:site,nasId:nas,generation:grant.generation,upload:1n,download:2n,kind:'start'});
+  await recordAccounting(pool,{grantId:grant.id,siteId:site,nasId:nas,generation:grant.generation,sessionId:'lab-session-1',upload:1n,download:2n,kind:'start'});
   status='reversed';assert.equal((await reconcileProviderPayment(pool,started.attemptId,adapter)).state,'pending_review');
   const ent=(await pool.query('SELECT revoked_at,consumed_bytes::text FROM purchase_entitlements WHERE order_id=$1',[order])).rows[0];assert.equal(ent.revoked_at,null);assert.equal(ent.consumed_bytes,'3');
   assert.equal((await pool.query("SELECT id FROM payment_reviews WHERE order_id=$1 AND reason='consumed_reversal'",[order])).rowCount,1);
