@@ -60,6 +60,9 @@ services:
     build: ./services/notification-service
     environment:
       DATABASE_URL: postgresql://pamofi_notification:demo_only_change_me@postgres:5432/pamofi_notification
+      APP_ENV: demo
+      NODE_ENV: development
+      INTERNAL_EVENTS_SECRET: DEMO_ONLY_insecure_local_events_secret_123456789
     depends_on:
       postgres:
         condition: service_healthy

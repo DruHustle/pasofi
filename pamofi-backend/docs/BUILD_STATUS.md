@@ -64,3 +64,17 @@ The revised demo bootstrap built all five service images, ran their owned migrat
 - Remaining critical work includes real provider adapters and reconciliation, durable recovery, staff/MFA, agent/voucher workflows, global grant and accounting authority, FreeRADIUS and router integration, outbox/inbox, operational backups and restore, production hardening and real-world qualification. This is not a working prepaid hotspot.
 
 To run the mock journey locally, start the backend with `./local-tools/'manual deployment'/start-demo.sh`, then run `npm ci && npm run dev -- --host 127.0.0.1` from `pamofi-frontend` and visit `http://localhost:5173`. Run `node local-tools/check-purchase-demo.mjs` from the backend. For browser tests, set `PAMOFI_CHROME_PATH` to an installed Chrome executable and run `npm run test:browser` in the frontend while the demo is running.
+
+## Access ledger work in progress
+
+The prepaid service now has PostgreSQL grant and cumulative-accounting domain functions. A per-customer advisory lock and partial unique index prevent concurrent active or uncertain reservations, and retries with the same customer/site/NAS/request return the original grant and absolute deadline. Cumulative upload and download are stored as numeric high-water values; duplicate records do not double debit, regressions/overages mark uncertainty, and a Stop conservatively retains the reservation. Actual trusted NAS authentication, network-service wiring, FreeRADIUS, verified termination/reconciliation and production access enforcement are not implemented. These functions are not exposed over HTTP and cannot connect a customer.
+
+Run the integration check after demo migrations with `PAMOFI_TEST_DATABASE_URL=... npm test` from the prepaid service. Tests use random, self-cleaning fixture records in the specified test database. Do not point the test at production.
+
+## Agent and delivery primitives
+
+The prepaid database has agent inventory, immutable sale snapshots, encrypted 16-character vouchers, single-source entitlements and a transactional outbox. Internal domain functions serialize stock debits, bind idempotency to the agent and payload, redeem once, and race replacement against redemption. These functions are not exposed to agents until staff authentication and pairing are implemented. No real payment is recorded and no SMS is sent.
+
+A service-owned outbox dispatcher can claim work with bounded leases and retries; the notification service validates scoped JWTs and atomically commits an inbox row and delivery-reference job. Duplicate content is acknowledged once, conflicting duplicates are rejected, and dead-letter replay records an actor and reason. The dispatcher is disabled by default; jobs stop at `awaiting_delivery_details`, since secure delivery lookup and SMS adapters are not implemented.
+
+Real PostgreSQL tests passed concurrent stock exhaustion, 20 issuance/replacement race runs, grant reservation and duplicate accounting, plus cross-service outbox retry, lost acknowledgement simulation, conflicting duplicate detection, bounded acknowledgement validation and audited replay. The test suite runs database integration files serially while exercising concurrency inside each scenario; use isolated disposable databases with no other pending events. These tests are not provider, router, restore or production acceptance.
