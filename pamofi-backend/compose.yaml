@@ -21,6 +21,8 @@ services:
     build: ./services/identity-service
     environment:
       DATABASE_URL: postgresql://pamofi_identity:demo_only_change_me@postgres:5432/pamofi_identity
+      APP_ENV: demo
+      PUBLIC_ORIGIN: http://localhost:5173
     depends_on:
       postgres:
         condition: service_healthy

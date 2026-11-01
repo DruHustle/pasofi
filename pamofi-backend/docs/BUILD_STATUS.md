@@ -16,7 +16,7 @@ The requested end state is a full prepaid Wi-Fi platform with financial, access 
 
 Purchase integration with identity, recovery, staff/MFA, orders and payments, agent stock, vouchers, receipts, entitlement lifecycle, queues, grants and accounting, trusted NAS and FreeRADIUS, router scripts, cross-service authentication, events/outbox, SMS delivery, personal help, management, production operations, backups/restore, provider integration and production security are all outstanding. The required transactional, concurrency, fault, browser, RADIUS and restore acceptance checks are not yet complete. No live provider, router, backup destination or deployment has been touched. This is not ready to sell Wi-Fi or enforce access.
 
-The demo bootstrap creates roles and data only during first PostgreSQL volume initialization. A separate per-service migration runner records checksums and serializes releases; production runtime/migration role separation is still required. Port binding is localhost only, demo credentials are public, and service APIs are not authenticated. The initial OpenAPI files cover health endpoints only.
+The demo bootstrap creates roles and catalogue data only during first PostgreSQL volume initialization, then runs per-service migrations as a separate release step. The runner records checksums and serializes releases; production runtime/migration role separation is still required. Port binding is localhost only, demo credentials are public, and service APIs are not authenticated. The initial OpenAPI files cover health endpoints only.
 
 ## Repository layout
 
@@ -52,3 +52,5 @@ Next engineering step: implement secure customer identity and a testable Postgre
 Identity integration: migrations applied locally and `PAMOFI_TEST_DATABASE_URL=... npm test` passed with real PostgreSQL. Cookie-bearing repeat requests reuse the same identity; lost first-response idempotency and cross-service authorization remain unimplemented.
 
 Fresh-checkout verification: cloned commit f2521e2 into a temporary directory, then independently ran `npm ci`, `npm test` and `npm run build` in the frontend and all five service directories under Node 24. All passed. The identity PostgreSQL integration test was skipped in that clean-checkout run and was separately run against the local demo database.
+
+The revised demo bootstrap built all five service images, ran their owned migrations, and started the services against the existing demo volume. The subsequent catalogue/help/readiness smoke check passed; an origin-checked identity request returned 201 and a foreign-origin request returned 403. This is not a production deployment.
