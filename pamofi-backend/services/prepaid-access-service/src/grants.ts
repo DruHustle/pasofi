@@ -30,7 +30,7 @@ export async function issueGrant(pool:Pool, customerId:string, siteId:string, na
       CASE WHEN activated_at IS NULL THEN now()+make_interval(secs=>LEAST(validity_seconds,$2))
            ELSE LEAST(activated_at+make_interval(secs=>validity_seconds),now()+make_interval(secs=>$2)) END AS deadline
       FROM purchase_entitlements
-      WHERE customer_id=$1 AND consumed_bytes<byte_limit AND
+      WHERE customer_id=$1 AND revoked_at IS NULL AND consumed_bytes<byte_limit AND
       ((activated_at IS NOT NULL AND activated_at+make_interval(secs=>validity_seconds)>now()) OR (activated_at IS NULL AND start_by>=now()))
       ORDER BY (activated_at IS NULL), purchased_at, id FOR UPDATE LIMIT 1`,[customerId,maxSessionSeconds]);
     if(!chosen.rowCount) throw new GrantError('no_usable_entitlement');

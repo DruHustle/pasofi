@@ -82,3 +82,15 @@ Real PostgreSQL tests passed concurrent stock exhaustion, 20 issuance/replacemen
 ## Sendai adapter work in progress
 
 The notification service has a Sendai send/retrieve adapter and a PostgreSQL attempt ledger. API acceptance remains `submitted` until a `delivered_at` signal is observed; charge amounts retain their original currency and ten-thousandth scale. Submissions with no provider ID become `unknown` and are not retried automatically. Tests cover concurrent sends, timeout ambiguity, late provider responses and canceled jobs. The adapter is not connected to automatic delivery, no provider credentials have been configured, and no real SMS has been sent. Secure delivery-reference lookup, authorized resend, mock sink, provider sandbox and handset delivery tests are still outstanding. Official API reference: https://docs.sendai.co.zw/api/sms/.
+
+## Pesepay adapter and payment ledger work in progress
+
+The prepaid service now contains a hosted-checkout adapter using the documented Pesepay encryption and environment-specific endpoints. It requires an explicit checkout-origin allowlist, method minimum/maximum and merchant/site qualification; an ambiguous initiation is recorded as unknown and is not retried automatically. Status reconciliation requires a server response matching reference, amount, currency and application ID. Verified payment records, fulfillment, duplicate-charge review and source-specific full reversal handling are transactional. Reversals of used or reserved access require review.
+
+Fake-provider and PostgreSQL tests covered the provider encryption compatibility vector, method minimums, forged/mismatched status fields, concurrent reconciliation, distinct duplicate charges, lost/late initiation responses and consumed-access reversal. No Pesepay sandbox or live account has been configured; no real charge has occurred. Callback routing, persistent reconciliation scheduling, recovery/handoff, live provider qualification and refund/partial-adjustment workflows remain unimplemented. No real checkout path is exposed.
+
+Primary references reviewed: https://developers.pesepay.com/security/encryption/, https://developers.pesepay.com/api/initiate-transaction/, https://developers.pesepay.com/api/check-payment-status/, https://developers.pesepay.com/webhooks/verifying-callbacks/.
+
+## Recovery work in progress
+
+Identity supports a random account reference and 256-bit recovery key, stores only a verifier, and restores a customer session after both values are verified. Authenticated rotation uses a version check so concurrent requests cannot return two apparently valid keys. The demo offers setup and recovery in the browser, with a Playwright test restoring a simulated purchase in another browser context. One-time captive-browser handoff, QR, phone verification, staff recovery and safe first-session creation after a lost response are not yet implemented.

@@ -60,6 +60,65 @@ paths:
           description: Caller lacks the required scope
         '503':
           description: Identity unavailable
+  /v1/recovery/status:
+    get:
+      summary: Check whether the authenticated customer has a recovery verifier
+      responses:
+        '200':
+          description: Recovery configuration and current version
+        '401':
+          description: No valid session
+  /v1/recovery/setup:
+    post:
+      summary: Create a recovery reference and secret once
+      description: Requires the authenticated session and configured Origin. The secret is displayed once; the response must not be cached.
+      responses:
+        '201':
+          description: Recovery reference and key
+        '409':
+          description: Recovery is already configured
+  /v1/recovery/rotate:
+    post:
+      summary: Rotate a recovery key using the current version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion]
+              additionalProperties: false
+              properties:
+                expectedVersion:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          description: New key; the previous key is invalidated
+        '409':
+          description: Recovery configuration changed concurrently
+  /v1/recovery:
+    post:
+      summary: Restore a session using both the reference and recovery key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountReference, recoveryKey]
+              additionalProperties: false
+              properties:
+                accountReference:
+                  type: string
+                recoveryKey:
+                  type: string
+      responses:
+        '200':
+          description: Session restored
+        '401':
+          description: Recovery credentials could not be verified
+
 components:
   securitySchemes:
     serviceToken:

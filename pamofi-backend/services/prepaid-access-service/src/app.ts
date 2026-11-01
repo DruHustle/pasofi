@@ -49,7 +49,7 @@ export function buildApp() {
     if (!pool) return reply.code(503).send({ error:'unavailable' });
     try {
       const id = await customer(request); if (!id) return reply.code(401).send({error:'not_authenticated'});
-      const rows = await pool.query('SELECT id,bundle_id,byte_limit::text,consumed_bytes::text,validity_seconds,purchased_at,start_by,activated_at FROM purchase_entitlements WHERE customer_id=$1 ORDER BY purchased_at,id LIMIT 100',[id]);
+      const rows = await pool.query('SELECT id,bundle_id,byte_limit::text,consumed_bytes::text,validity_seconds,purchased_at,start_by,activated_at,revoked_at FROM purchase_entitlements WHERE customer_id=$1 ORDER BY purchased_at,id LIMIT 100',[id]);
       return { entitlements:rows.rows };
     } catch { return reply.code(503).send({error:'unavailable'}); }
   });

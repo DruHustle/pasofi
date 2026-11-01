@@ -1,7 +1,7 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import pg from 'pg';
 import { jwtVerify } from 'jose';
 const { Pool } = pg;
@@ -51,6 +51,62 @@ export function buildApp() {
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
     try { const customerId = await current(request); return customerId ? { customerId } : reply.code(401).send({ error: 'not_authenticated' }); }
     catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
+  });
+  // Recovery values are displayed once, never logged or sent in URLs.
+  app.post('/v1/recovery/setup', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
+    reply.header('Cache-Control','no-store');
+    if (!pool || !validOrigin) return reply.code(503).send({error:'identity_unavailable'});
+    if (request.headers.origin!==origin) return reply.code(403).send({error:'origin_rejected'});
+    try {
+      const id=await current(request);if(!id)return reply.code(401).send({error:'not_authenticated'});
+      const accountReference=randomBytes(10).toString('base64url'), recoveryKey=randomBytes(32).toString('base64url');
+      const row=await pool.query('INSERT INTO customer_recovery(customer_id,account_reference,key_hash) VALUES ($1,$2,$3) ON CONFLICT(customer_id) DO NOTHING RETURNING customer_id',[id,accountReference,tokenHash(recoveryKey)]);
+      if(!row.rowCount)return reply.code(409).send({error:'recovery_already_set'});
+      return reply.code(201).send({accountReference,recoveryKey});
+    } catch {return reply.code(503).send({error:'identity_unavailable'});}
+  });
+  app.get('/v1/recovery/status', async (request,reply) => {
+    reply.header('Cache-Control','no-store');
+    if (!pool || !validOrigin) return reply.code(503).send({error:'identity_unavailable'});
+    try {
+      const id=await current(request);if(!id)return reply.code(401).send({error:'not_authenticated'});
+      const result=await pool.query('SELECT account_reference,version FROM customer_recovery WHERE customer_id=$1',[id]);
+      return result.rowCount?{configured:true,accountReference:result.rows[0].account_reference,version:result.rows[0].version}:{configured:false};
+    } catch{return reply.code(503).send({error:'identity_unavailable'});}
+  });
+  app.post<{Body:{expectedVersion:number}}>('/v1/recovery/rotate', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } }, schema:{body:{type:'object',required:['expectedVersion'],additionalProperties:false,properties:{expectedVersion:{type:'integer',minimum:1,maximum:2147483646}}}} }, async (request, reply) => {
+    reply.header('Cache-Control','no-store');
+    if (!pool || !validOrigin) return reply.code(503).send({error:'identity_unavailable'});
+    if (request.headers.origin!==origin) return reply.code(403).send({error:'origin_rejected'});
+    try {
+      const id=await current(request);if(!id)return reply.code(401).send({error:'not_authenticated'});
+      const recoveryKey=randomBytes(32).toString('base64url');
+      const result=await pool.query('UPDATE customer_recovery SET key_hash=$2,version=version+1,updated_at=now() WHERE customer_id=$1 AND version=$3 RETURNING account_reference',[id,tokenHash(recoveryKey),request.body.expectedVersion]);
+      if(!result.rowCount)return reply.code(409).send({error:'recovery_changed'});
+      return {accountReference:result.rows[0].account_reference,recoveryKey};
+    } catch {return reply.code(503).send({error:'identity_unavailable'});}
+  });
+  app.post<{Body:{accountReference:string;recoveryKey:string}}>('/v1/recovery', {
+    config:{rateLimit:{max:8,timeWindow:'1 minute'}},
+    schema:{body:{type:'object',required:['accountReference','recoveryKey'],additionalProperties:false,properties:{accountReference:{type:'string',pattern:'^[A-Za-z0-9_-]{14}$'},recoveryKey:{type:'string',pattern:'^[A-Za-z0-9_-]{43}$'}}}}
+  }, async (request,reply) => {
+    reply.header('Cache-Control','no-store');
+    if (!pool || !validOrigin) return reply.code(503).send({error:'identity_unavailable'});
+    if (request.headers.origin!==origin) return reply.code(403).send({error:'origin_rejected'});
+    try {
+      const client=await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const found=await client.query('SELECT customer_id,key_hash FROM customer_recovery WHERE account_reference=$1 FOR UPDATE',[request.body.accountReference]);
+        const supplied=tokenHash(request.body.recoveryKey), stored=found.rowCount?found.rows[0].key_hash:Buffer.alloc(32);
+        if(!timingSafeEqual(supplied,stored) || !found.rowCount){await client.query('ROLLBACK');return reply.code(401).send({error:'invalid_recovery'});}
+        const token=randomBytes(32).toString('base64url'), customerId=found.rows[0].customer_id as string;
+        await client.query("INSERT INTO customer_sessions(token_hash,customer_id,expires_at) VALUES($1,$2,now()+interval '30 days')",[tokenHash(token),customerId]);
+        await client.query('COMMIT');
+        reply.setCookie(cookieName,token,{path:'/',httpOnly:true,secure:!demo,sameSite:'lax',maxAge:30*86400});
+        return {customerId};
+      } catch(error){await client.query('ROLLBACK');throw error;} finally{client.release();}
+    } catch {return reply.code(503).send({error:'identity_unavailable'});}
   });
   app.post('/v1/session', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply: FastifyReply) => {
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
