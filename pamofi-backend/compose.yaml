@@ -1,0 +1,72 @@
+name: pamofi-demo
+services:
+  postgres:
+    image: postgres:17.11-alpine3.23
+    environment:
+      POSTGRES_USER: pamofi_bootstrap
+      POSTGRES_PASSWORD: demo_bootstrap_only
+      POSTGRES_DB: postgres
+    volumes:
+      - pamofi-demo-db:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/10-pamofi.sql:ro
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pamofi_bootstrap -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  identity:
+    build: ./services/identity-service
+    environment:
+      DATABASE_URL: postgresql://pamofi_identity:demo_only_change_me@postgres:5432/pamofi_identity
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18081:3000"
+    restart: unless-stopped
+  prepaid-access:
+    build: ./services/prepaid-access-service
+    environment:
+      DATABASE_URL: postgresql://pamofi_prepaid_access:demo_only_change_me@postgres:5432/pamofi_prepaid_access
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18082:3000"
+    restart: unless-stopped
+  network:
+    build: ./services/network-service
+    environment:
+      DATABASE_URL: postgresql://pamofi_network:demo_only_change_me@postgres:5432/pamofi_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18083:3000"
+    restart: unless-stopped
+  notification:
+    build: ./services/notification-service
+    environment:
+      DATABASE_URL: postgresql://pamofi_notification:demo_only_change_me@postgres:5432/pamofi_notification
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18084:3000"
+    restart: unless-stopped
+  assistant:
+    build: ./services/assistant-service
+    environment:
+      DATABASE_URL: postgresql://pamofi_assistant:demo_only_change_me@postgres:5432/pamofi_assistant
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18085:3000"
+    restart: unless-stopped
+volumes:
+  pamofi-demo-db:
+    name: pamofi-demo-db
