@@ -11,6 +11,6 @@ export function buildApp() {
     try { await pool.query('SELECT 1'); return { status: 'ready' }; }
     catch { return reply.code(503).send({ status: 'not_ready' }); }
   });
-  
+
   return app;
 }
