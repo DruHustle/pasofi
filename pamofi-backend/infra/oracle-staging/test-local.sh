@@ -22,6 +22,9 @@ compose() { docker compose --env-file "$stage_temp/.env" -p "$stage_project" "$@
 for service in identity prepaid-access network notification assistant; do
  docker build -t "pamofi-staging-$service:$stage_release" "$backend/services/$service-service" > "$stage_temp/build-$service.log" 2>&1 || { echo "Image build failed: $service" >&2; exit 1; }
 done
+# PostgreSQL drops to UID 70 before executing initialization scripts. Check the
+# actual bind mount as that user before it can initialize a persistent volume.
+compose run --rm --no-deps --user 70:70 --entrypoint /bin/sh postgres -c 'test -r /docker-entrypoint-initdb.d/10-pamofi.sh && test -x /docker-entrypoint-initdb.d/10-pamofi.sh' > "$stage_temp/permissions.log" 2>&1 || { echo 'Database initializer is not readable and executable by PostgreSQL' >&2; exit 1; }
 compose up -d --wait postgres > "$stage_temp/postgres.log" 2>&1 || { echo 'Staging database failed to initialize' >&2; exit 1; }
 for service in identity prepaid-access network notification assistant; do
  compose run --rm --no-deps "$service" node migrate.mjs > "$stage_temp/migrate-$service.log" 2>&1 || { echo "Migration failed: $service" >&2; exit 1; }

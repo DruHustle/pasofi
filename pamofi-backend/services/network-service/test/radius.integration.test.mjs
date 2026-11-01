@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes, randomUUID, createHash, X509Certificate } from 'node:crypto';
+import { randomBytes, randomUUID, X509Certificate } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import https from 'node:https';
 import pg from 'pg';
 import { buildRadiusApp } from '../dist/radius-app.js';
+import { issueRadiusCredential } from '../dist/credentials.js';
 const networkUrl=process.env.PAMOFI_TEST_NETWORK_DATABASE_URL,prepaidDb=process.env.PAMOFI_TEST_DATABASE_URL,prepaidUrl=process.env.PAMOFI_TEST_PREPAID_URL;
 const secret='DEMO_ONLY_network_lab_key_0123456789abcdef';
 const attr=value=>({value:[value]});
@@ -30,15 +31,16 @@ test('mutual TLS and two registered NASes share one authoritative reservation', 
  const old={...process.env};Object.assign(process.env,{APP_ENV:'demo',NODE_ENV:'development',INTERNAL_RADIUS_ENABLED:'true'});
  const dir=mkdtempSync(join(tmpdir(),'pamofi-radius-test-')),c=certs(dir),network=new pg.Pool({connectionString:networkUrl}),prepaid=new pg.Pool({connectionString:prepaidDb});
  const radius={cert:c['radius.crt'],key:c['radius.key']},other={cert:c['other.crt'],key:c['other.key']};
- const customer=randomUUID(),order=randomUUID(),entitlement=randomUUID(),sites=[randomUUID(),randomUUID()],nases=[randomUUID(),randomUUID()],credentials=[randomUUID(),randomUUID()];
- const users=[randomBytes(24).toString('base64url'),randomBytes(24).toString('base64url')],passwords=[randomBytes(32).toString('base64url'),randomBytes(32).toString('base64url')];
+ const customer=randomUUID(),order=randomUUID(),entitlement=randomUUID(),sites=[randomUUID(),randomUUID()],nases=[randomUUID(),randomUUID()];
+ const users=[],passwords=[],deliveryKey={version:1,key:randomBytes(32)};
  const app=buildRadiusApp({pool:network,tls:{ca:c['ca.crt'],cert:c['server.crt'],key:c['server.key']},clientFingerprint:new X509Certificate(c['radius.crt']).fingerprint256,prepaidUrl,networkSecret:secret});
  try {
   await prepaid.query(`INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at) VALUES($1,$2,$3,'flex',100,'USD',5000000000,604800,'payment_confirmed',now()+interval '15 minutes')`,[order,customer,randomUUID()]);
   await prepaid.query(`INSERT INTO purchase_entitlements(id,order_id,customer_id,bundle_id,byte_limit,validity_seconds,start_by) VALUES($1,$2,$3,'flex',5000000000,604800,now()+interval '30 days')`,[entitlement,order,customer]);
   for(let i=0;i<2;i++){
    await network.query('INSERT INTO radius_nas(id,site_id,client_name,enabled) VALUES($1,$2,$3,true)',[nases[i],sites[i],`nas_${i}`]);
-   await network.query("INSERT INTO radius_credentials(id,username,secret_hash,customer_id,nas_id,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '15 minutes')",[credentials[i],users[i],createHash('sha256').update(passwords[i]).digest(),customer,nases[i]]);
+   const issued=await issueRadiusCredential(network,{customerId:customer,nasId:nases[i],requestKey:randomUUID()},deliveryKey);
+   users.push(issued.username);passwords.push(issued.password);
   }
   await app.listen({host:'127.0.0.1',port:0});
   const address=app.server.address();assert.equal(typeof address,'object');const base=`https://127.0.0.1:${address.port}`;
@@ -62,7 +64,7 @@ test('mutual TLS and two registered NASes share one authoritative reservation', 
   assert.equal((await post(`${base}/radius/accounting`,c['ca.crt'],radius,{...interim,'Acct-Status-Type':attr('Stop')},'nas_0')).status,204);
   assert.equal((await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(1),'nas_1')).status,401);
  } finally {
-  await app.close();await network.query('DELETE FROM radius_credentials WHERE id=ANY($1::uuid[])',[credentials]);await network.query('DELETE FROM radius_nas WHERE id=ANY($1::uuid[])',[nases]);
+  await app.close();await network.query('DELETE FROM radius_credentials WHERE customer_id=$1',[customer]);await network.query('DELETE FROM radius_nas WHERE id=ANY($1::uuid[])',[nases]);
   await prepaid.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);await prepaid.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);await prepaid.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await network.end();await prepaid.end();rmSync(dir,{recursive:true,force:true});
   for(const k of ['APP_ENV','NODE_ENV','INTERNAL_RADIUS_ENABLED']){if(old[k]===undefined)delete process.env[k];else process.env[k]=old[k];}
  }
