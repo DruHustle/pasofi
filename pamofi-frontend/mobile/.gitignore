@@ -9,3 +9,10 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 .vercel/
+
+# Signing credentials are kept outside the repository.
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision

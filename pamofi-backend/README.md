@@ -10,7 +10,7 @@ Requirements: Node.js 22+ (Node 24 LTS recommended), npm, Docker and Docker Comp
 ./local-tools/'manual deployment'/start-demo.sh
 ```
 
-From `pamofi-frontend`, run `npm ci && npm run dev` to view the UI at <http://127.0.0.1:5173>; it proxies the two read-only backend APIs on this machine. Docker starts a local PostgreSQL instance with a named development-only volume and five independently packaged services. No live payments or SMS are configured. The first database initialization inserts candidate products as published **for this demo only**. Do not use the demo credentials, compose file or seed for production.
+From `pamofi-frontend/web`, run `npm ci && npm run dev` to view the UI at <http://127.0.0.1:5173>; it proxies the two read-only backend APIs on this machine. Docker starts a local PostgreSQL instance with a named development-only volume and five independently packaged services. No live payments or SMS are configured. The first database initialization inserts candidate products as published **for this demo only**. Do not use the demo credentials, compose file or seed for production.
 
 Run the smoke check with `node local-tools/check-demo.mjs`. Stop without deleting the data: `docker compose stop`. Restart: `docker compose up -d`. The demo database is exposed only on loopback at port 55432; the individual service development ports are 18081–18085. The `pamofi-demo-db` volume persists independently of the containers. There is deliberately no automated destructive reset.
 

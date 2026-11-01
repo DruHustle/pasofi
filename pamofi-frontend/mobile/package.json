@@ -1,25 +1,32 @@
 {
-  "name": "pamofi-frontend",
+  "name": "pamofi-frontend-mobile",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "test": "tsc -b --pretty false",
     "preview": "vite preview --host 0.0.0.0",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "mobile:sync": "npm run build && cap sync",
+    "mobile:ios": "cap open ios",
+    "mobile:android": "cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/ios": "8.6.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.6.0",
     "@playwright/test": "1.64.0",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.1",
     "typescript": "5.9.3",
-    "vite": "7.2.2"
+    "vite": "7.3.7"
   }
 }
