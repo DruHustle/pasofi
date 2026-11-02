@@ -27,7 +27,7 @@ jobs:
         ports:
           - 127.0.0.1:5432:5432
         options: >-
-          --health-cmd "pg_isready -U pamofi_test_bootstrap -d postgres"
+          --health-cmd "pg_isready -h 127.0.0.1 -U pamofi_test_bootstrap -d postgres"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
@@ -96,7 +96,9 @@ jobs:
           fi
           node pamofi-backend/infra/production/test-roles.mjs
       - name: Verify real FreeRADIUS packets in the isolated lab
-        run: bash pamofi-backend/pamofi-radius/lab/run-lab.sh
+        run: |
+          bash pamofi-backend/pamofi-radius/lab/test-startup-readiness.sh
+          bash pamofi-backend/pamofi-radius/lab/run-lab.sh
       - name: Verify the production RADIUS transport and mutual TLS boundaries
         run: node pamofi-backend/infra/radius-production/run-lab.mjs
       - name: Verify encrypted physical backup and restore

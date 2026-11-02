@@ -60,7 +60,13 @@ LAB_CLIENT_FINGERPRINT=$(openssl x509 -in "$lab_temp/radius.crt" -noout -fingerp
 for service in prepaid-access-service network-service; do
   (cd "$repo_root/services/$service" && npm ci --no-audit --no-fund >/dev/null && npm run build >/dev/null)
 done
-docker compose -p "$lab_project" up -d --build >"$lab_temp/start.log" 2>&1 || { tail -35 "$lab_temp/start.log"; exit 1; }
+if ! docker compose -p "$lab_project" up -d --build >"$lab_temp/start.log" 2>&1; then
+  tail -35 "$lab_temp/start.log" >&2
+  # These containers use disposable lab-only credentials and databases. Their
+  # migration logs distinguish startup races from schema or permission errors.
+  docker compose -p "$lab_project" logs --no-color --tail=40 postgres prepaid-migrate network-migrate >&2 || true
+  exit 1
+fi
 compose() { docker compose -p "$lab_project" "$@"; }
 # Wait for the RADIUS process; startup logs contain no live credentials.
 for attempt in $(seq 1 30); do

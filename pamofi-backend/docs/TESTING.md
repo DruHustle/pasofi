@@ -32,7 +32,7 @@ docker run --rm --detach --name "$PAMOFI_VERIFY_CONTAINER" \
   postgres:17.11-alpine3.23
 
 for attempt in $(seq 1 30); do
-  if docker exec "$PAMOFI_VERIFY_CONTAINER" pg_isready -U postgres -d postgres; then break; fi
+  if docker exec "$PAMOFI_VERIFY_CONTAINER" pg_isready -h 127.0.0.1 -U postgres -d postgres; then break; fi
   sleep 1
 done
 docker exec -i "$PAMOFI_VERIFY_CONTAINER" \
@@ -85,6 +85,7 @@ Because that example container was created with `--rm` and no named or host-moun
 These scripts require Docker and Compose. Each owns its uniquely named containers, networks, or volumes and cleans up only those resources. Run them from the repository root after the project builds:
 
 ```sh
+bash pamofi-backend/pamofi-radius/lab/test-startup-readiness.sh
 bash pamofi-backend/pamofi-radius/lab/run-lab.sh
 bash pamofi-backend/infra/backup-lab/run-lab.sh
 bash pamofi-backend/infra/oracle-staging/test-local.sh
@@ -93,7 +94,7 @@ node pamofi-backend/infra/production/run-vercel-lab.mjs
 node pamofi-backend/infra/radius-production/run-lab.mjs
 ```
 
-The RADIUS lab sends actual RADIUS packets through FreeRADIUS with two simulated NASes. The backup lab performs an encrypted physical backup and WAL-based restore inside a disposable local setup. The staging lab builds the service images, applies migrations, checks private service readiness, and verifies that the catalogue is unpublished, demo checkout is disabled, and a runtime role cannot connect to another service's database.
+The readiness test holds PostgreSQL's temporary initialization server open and checks that the actual lab health command rejects it, then accepts the final TCP server. The RADIUS lab sends actual RADIUS packets through FreeRADIUS with two simulated NASes. The backup lab performs an encrypted physical backup and WAL-based restore inside a disposable local setup. The staging lab builds the service images, applies migrations, checks private service readiness, and verifies that the catalogue is unpublished, demo checkout is disabled, and a runtime role cannot connect to another service's database.
 
 The split-host production lab adds the actual Vercel proxy module in an owned local HTTPS fixture, the authenticated Oracle gateway and the production services. The fixture supplies the platform client-IP header, while separate TLS hostnames and a trusted disposable CA preserve hostname/certificate verification. It exercises customer and staff cookies, exact browser Origin, agent cash issuance, receipt redemption, queued allowance and the private usage response. It also checks direct-gateway bypass, forged forwarding headers, internal routes, client-specific rate limits and both monitoring origins. Automatic display after an accounting update is covered by the separate strict browser journey. These checks validate the implementation and production configuration together; Vercel's actual routing, packaging and platform header behavior must still be checked on the identified deployment.
 
