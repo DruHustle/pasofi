@@ -69,6 +69,8 @@ for service in identity prepaid-access network notification assistant; do
 done
 docker exec -i "$source_name" psql -X -v ON_ERROR_STOP=1 -U pamofi_identity -d pamofi_identity >/dev/null <<'SQL'
 INSERT INTO customers(id) VALUES('11111111-1111-4111-8111-111111111111');
+INSERT INTO customer_sessions(token_hash,customer_id,expires_at) VALUES(decode(repeat('a0',32),'hex'),'11111111-1111-4111-8111-111111111111',now()+interval '30 days');
+INSERT INTO customer_session_creations(request_hash,session_token_hash) VALUES(decode(repeat('b0',32),'hex'),decode(repeat('a0',32),'hex'));
 SQL
 docker exec -i "$source_name" psql -X -v ON_ERROR_STOP=1 -U pamofi_prepaid_access -d pamofi_prepaid_access >/dev/null <<'SQL'
 INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at)
@@ -126,6 +128,8 @@ if [[ "$duplicate_output" != *'one_live_or_uncertain_grant_per_customer'* ]]; th
 fi
 identity=$(docker exec "$restore_name" psql -X -A -t -v ON_ERROR_STOP=1 -U pamofi_identity -d pamofi_identity -c "SELECT count(*) FROM customers WHERE id='11111111-1111-4111-8111-111111111111'" | tr -d '\r\n')
 [[ "$identity" == 1 ]]
+session=$(docker exec "$restore_name" psql -X -A -t -v ON_ERROR_STOP=1 -U pamofi_identity -d pamofi_identity -c "SELECT count(*) FROM customer_session_creations c JOIN customer_sessions s ON s.token_hash=c.session_token_hash WHERE c.request_hash=decode(repeat('b0',32),'hex') AND s.customer_id='11111111-1111-4111-8111-111111111111'" | tr -d '\r\n')
+[[ "$session" == 1 ]] || { printf 'Restored session retry record missing\n' >&2; exit 1; }
 for db in pamofi_identity pamofi_prepaid_access pamofi_network pamofi_notification pamofi_assistant; do
  count=$(docker exec "$restore_name" psql -X -A -t -v ON_ERROR_STOP=1 -U "$db" -d "$db" -c 'SELECT count(*) FROM schema_migrations' | tr -d '\r\n')
  [[ "$count" =~ ^[1-9][0-9]*$ ]] || { printf 'Missing restored migration ledger for %s\n' "$db" >&2; exit 1; }

@@ -2,7 +2,7 @@
 
 This is a **local test**, not a production backup service. It creates a uniquely named PostgreSQL 17 cluster and an AES-256-CBC pgBackRest repository in disposable Docker volumes. It applies the service migrations from this checkout with their checksum ledger, inserts synthetic fixtures, creates a full backup, writes another transaction after the backup, archives WAL, stops the source container, and restores to a separate volume. The restored server has no network and is never joined to application services.
 
-The drill checks that an incorrect repository key cannot read its metadata, the post-backup transaction was recovered from WAL, the customer and all five service databases exist, the ledger, uncertain grant and pending outbox event remain consistent, a second live grant is rejected, and a service role cannot connect to another service's database. Stopping the disposable source simulates fencing; it does not verify that an Oracle VM or router is externally fenced. It does not test real customers, providers, live delivery, off-server storage, continuous operations, or an application login.
+The drill checks that an incorrect repository key cannot read its metadata, the post-backup transaction was recovered from WAL, the customer, session retry record and all five service databases exist, the ledger, uncertain grant and pending outbox event remain consistent, a second live grant is rejected, and a service role cannot connect to another service's database. Stopping the disposable source simulates fencing; it does not verify that an Oracle VM or router is externally fenced. It does not test real customers, providers, live delivery, off-server storage, continuous operations, or an application login.
 
 From `pamofi-backend`, run:
 
