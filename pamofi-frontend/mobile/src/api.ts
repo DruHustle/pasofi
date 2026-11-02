@@ -1,5 +1,5 @@
 export class ApiError extends Error {
-  constructor(public status: number, public code: string) { super(code); }
+  constructor(public status: number, public code: string, public retryAfterMs?: number) { super(code); }
 }
 export const mobileApiOrigin = (() => {
   const configured = import.meta.env.VITE_PAMOFI_API_BASE_URL?.trim();
@@ -24,7 +24,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(new URL(path, mobileApiOrigin), { ...init, mode: 'cors', credentials: 'include', cache: 'no-store', redirect: 'error', signal: controller.signal });
     if (!response.ok) {
       const body = await response.json().catch(() => null);
-      throw new ApiError(response.status, typeof body?.error === 'string' ? body.error : 'request_failed');
+      const retryAfter = response.headers.get('Retry-After');
+      const delay = retryAfter ? /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now() : NaN;
+      throw new ApiError(response.status, typeof body?.error === 'string' ? body.error : 'request_failed', Number.isFinite(delay) && delay > 0 ? Math.min(delay, 300_000) : undefined);
     }
     return response.status === 204 ? undefined as T : await response.json();
   } finally { clearTimeout(timer); source?.removeEventListener('abort', abort); }

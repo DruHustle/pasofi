@@ -18,7 +18,7 @@ async function fixture(){
 }
 test('unused quote expiry is owned, server-timed, durable and idempotent under concurrent retries',{skip:!url},async()=>{
  const f=await fixture();let calls=0;
- const adapter={initiate:async()=>{calls++;return {state:'unknown'};},check:async()=>({state:'unknown'})};
+ const adapter={provider:'pesepay',initiate:async()=>{calls++;return {state:'unknown'};},check:async()=>({state:'unknown'})};
  try{
   await assert.rejects(expireUnusedOrder(f.pool,randomUUID(),f.order),{code:'order_not_found'});
   await assert.rejects(expireUnusedOrder(f.pool,f.customer,f.order),{code:'quote_still_valid'});
@@ -40,7 +40,7 @@ test('unused quote expiry is owned, server-timed, durable and idempotent under c
 test('initiation which commits first prevents quote disposal while its provider outcome is unknown',{skip:!url},async()=>{
  const f=await fixture();let enter,release,pending,calls=0;
  const entered=new Promise(resolve=>{enter=resolve;}),gate=new Promise(resolve=>{release=resolve;});
- const adapter={initiate:async()=>{calls++;enter();await gate;return {state:'unknown'};},check:async()=>({state:'unknown'})};
+ const adapter={provider:'pesepay',initiate:async()=>{calls++;enter();await gate;return {state:'unknown'};},check:async()=>({state:'unknown'})};
  try{
   pending=beginProviderPayment(f.pool,f.customer,f.order,randomUUID(),f.site,'PZW211',eligibility,adapter);
   await entered;
@@ -57,7 +57,7 @@ test('initiation which commits first prevents quote disposal while its provider 
 
 test('an initiation begun before expiry cannot charge after concurrent unused-quote closure',{skip:!url},async()=>{
  const f=await fixture(),blocker=await f.pool.connect(),key=randomUUID();let pending,calls=0;
- const adapter={initiate:async()=>{calls++;return {state:'unknown'};},check:async()=>({state:'unknown'})};
+ const adapter={provider:'pesepay',initiate:async()=>{calls++;return {state:'unknown'};},check:async()=>({state:'unknown'})};
  try{
   await blocker.query('BEGIN');
   await blocker.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`${f.customer}:${key}`]);

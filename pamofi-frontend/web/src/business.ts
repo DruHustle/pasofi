@@ -7,6 +7,12 @@ export type Capabilities = {
 };
 export type Product = { id: string; price_minor: number; currency: string; byte_limit: string; validity_seconds: number };
 export type Site = { id: string; name: string };
+export type CashEvidence = { method: 'cash' | 'unrecorded'; evidence: 'agent_attestation' | 'unrecorded'; receivedMinor: number | null; currency: string | null; confirmedAt: string | null; confirmedBy: string | null };
+export function cashDescription(payment: CashEvidence | undefined, simulation: boolean) {
+  return payment?.method === 'cash' && payment.evidence === 'agent_attestation' && payment.receivedMinor !== null && payment.currency
+    ? `${simulation ? 'Simulated cash' : 'Cash'} received: ${money(payment.receivedMinor, payment.currency)} · confirmed by agent`
+    : 'Cash confirmation was not recorded for this earlier sale.';
+}
 export type Staff = {
   staffId: string; email: string; displayName: string; status: 'pending' | 'approved' | 'rejected' | 'disabled';
   role: 'admin' | 'agent' | 'support' | null; siteIds: string[]; version: number;
@@ -25,6 +31,8 @@ export function messageFor(error: unknown, fallback = 'This request could not be
     staff_changed: 'This staff record changed. Refresh and review the latest details.',
     insufficient_inventory: 'There is not enough stock for this sale. Refresh inventory or ask an administrator to allocate stock.',
     out_of_stock: 'This bundle is out of stock at the selected site.',
+    cash_confirmation_required: 'This unused request needs an explicit confirmation that the exact cash amount was received. Review the customer and amount before issuing a new sale.',
+    cash_amount_mismatch: 'The cash confirmation does not match this bundle’s published price and currency. Refresh the catalogue and review the correct amount.',
     pairing_expired: 'The customer pairing code has expired. Ask the customer to create a new code.',
     invalid_pairing: 'That pairing code could not be verified. Check the code and selected site.',
     invalid_voucher: 'The voucher could not be verified. Check all characters and try again.',

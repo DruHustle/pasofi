@@ -4,7 +4,7 @@ This is the independent React/Capacitor project for iPhone and Android. It has i
 
 With no API configuration, the app remains a useful **offline preview** of example bundles and reviewed introductory help. It makes no account, purchase or connection requests. Prices shown in that preview are illustrative, not live offers.
 
-The optional customer client supports the same customer capabilities as the web app: published bundles, vouchers, private agent receipts, hosted checkout/status, saved recovery, browser handoff and verified network status. Every operation remains disabled until a configured HTTPS gateway explicitly advertises a qualified mobile cookie boundary. The current backend deliberately returns `mobileCookies: false`; no mobile build setting can bypass that decision.
+The optional customer client supports the same customer capabilities as the web app: published bundles, agent-first cash purchase guidance, vouchers, private agent receipts, live remaining/used data and queued allowance, capability-gated checkout/status, recovery, browser handoff and verified network status. Every operation remains disabled until a configured HTTPS gateway explicitly advertises a qualified mobile cookie boundary. The current backend deliberately returns `mobileCookies: false`; no mobile build setting can bypass that decision.
 
 ## Build and native projects
 
@@ -48,11 +48,15 @@ Recovery keys, one-time handoff codes and short-lived network credentials remain
 
 Preparing payment checkout is not payment confirmation. Queued access is not an active connection. The UI uses authoritative fulfillment/reversal/review state for purchases and recent verified hotspot accounting for connectivity. A disconnect request stays pending until confirmed by the service.
 
+The balance panel reads one owner-bound `/api/usage` snapshot every five seconds while visible and online. It shows exact total remaining/used GB with an accessible meter, activated remaining allowance and queued allowance separately. The total is independent of paged bundle history and retains valid exhausted bundles in the denominator. It distinguishes balance-check time from **Last router report received**, explaining that router accounting usually arrives about every 60 seconds. Reservations never cause a second deduction.
+
+Hidden/offline views pause requests. Reconnect/focus and redemption/payment trigger immediate checks; failures back off, retain the last good balance and label it stale. A 401 or owner changes clear private state and stop polling. A single snapshot also drives the connection panel. The app remains an offline preview when the cookie capability is false; installing a configured build does not enable the poll or bypass that gate.
+
 Optional hotspot form submission uses the same exact `VITE_PAMOFI_ROUTER_FORM_ORIGINS` JSON origin array as the web app. The default is a clean registered HTTPS login link plus manual copying. The production mobile build emits a CSP limited to bundled scripts/styles, the configured API origin and any explicitly allowed router form origins. Neither the list nor a network credential enables a real hotspot by itself.
 
 ## Independent customer source maintenance
 
-The customer modules `CustomerAccess`, `NetworkAccess`, `Recovery`, `Handoff`, `session` and the relevant `business` helpers are maintained copies in this project. The mobile API transport is intentionally separate because it validates the external HTTPS origin and credentialed CORS boundary. Keep customer behavior fixes synchronized with the web copy, then build and test each independent project. Do not introduce imports from the web build or backend implementation.
+The customer modules `CustomerAccess`, `LiveUsage`, `NetworkAccess`, `Recovery`, `Handoff`, `session` and the relevant `business` helpers are maintained copies in this project. The mobile API transport is intentionally separate because it validates the external HTTPS origin and credentialed CORS boundary. Keep customer behavior fixes synchronized with the web copy, then build and test each independent project. Do not introduce imports from the web build or backend implementation.
 
 ## Browser and native verification
 
@@ -62,9 +66,9 @@ Start the normal unconfigured mobile Vite server and run:
 PAMOFI_CHROME_PATH=/path/to/chrome npm run test:browser
 ```
 
-Set `PAMOFI_BASE_URL` if that preview is not at `http://localhost:5173`. The suite preserves two offline phone-layout journeys. Five additional tests start and stop their own local Vite fixture with a public `https://api.pamofi.test` configuration and intercepted synthetic API responses. They check capability refusal, credentialed transport and redemption, blocked-cookie refusal, gateway failure with offline fallback, and preservation of a saved quote when an existing provider attempt prevents safe closure. They do not contact a commercial gateway.
+Set `PAMOFI_BASE_URL` if that preview is not at `http://localhost:5173`. The suite preserves two offline phone-layout journeys. Six additional tests start and stop their own local Vite fixture with a public `https://api.pamofi.test` configuration and intercepted synthetic API responses. They check capability refusal, credentialed transport and redemption, blocked-cookie refusal, gateway failure with offline fallback, preservation of a saved quote when an existing provider attempt prevents safe closure, and automatic remaining/used updates with offline retention, immediate reconnect and owner-change cleanup. They do not contact a commercial gateway.
 
-The repository's strict `local-tools/verify.mjs --integration --browser` runs both frontend suites with no skipped/flaky tests and owns its local service processes. It remains separate from native build/device acceptance. Capacitor Android/iOS sync can also be checked in disposable copies of the native projects without changing tracked native assets. The [native CI run 41373579356](https://github.com/DruHustle/pamofi/actions/runs/41373579356) succeeded for both an API-unconfigured Android debug APK and an unsigned iOS simulator app (Xcode 26.6, arm64 and x86_64). Its merge source is `443cab073457bfdf238788daf08e38202c6af279`. Android artifact `13110367862` is 3,949,802 bytes; iOS artifact `13110560776` is 1,501,207 bytes; both expire on 16 November 2026. See `NATIVE_BUILDS.md` for use and reproduction. Production signing, store release, physical-device behavior and native gateway qualification remain separate external acceptance steps.
+The repository's strict `local-tools/verify.mjs --integration --browser` runs both frontend suites with no skipped/flaky tests and owns its local service processes. It remains separate from native build/device acceptance. Capacitor Android/iOS sync can also be checked in disposable copies of the native projects without changing tracked native assets. The recorded [native CI checkpoint 41375913293](https://github.com/DruHustle/pamofi/actions/runs/41375913293) for source checkpoint `cd7399af` succeeded for both an API-unconfigured Android debug APK and an unsigned iOS simulator app. See `NATIVE_BUILDS.md` for the earlier detailed artifact record and reproduction commands, and the pull request/Actions for subsequent exact-source results. Production signing, store release, physical-device behavior and native gateway qualification remain separate external acceptance steps.
 
 ## Development dependency override
 

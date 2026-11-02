@@ -4,7 +4,11 @@ The mobile source is `pamofi-frontend/mobile`. The checked-in native projects ar
 
 The `Build PamoFi native previews` workflow compiles fresh web assets, runs the pinned Capacitor 8.6.0 synchronization, then independently builds Android and iOS. A successful job uploads its binary, exact source commit, toolchain version and SHA-256 checksum for 14 days. A workflow definition or successful web build alone does not mean a native binary has been built: inspect the native job result and its artifact.
 
-## Verified native run
+## Recorded native checkpoints
+
+Both jobs succeeded in the later [workflow run 41375913293](https://github.com/DruHustle/pamofi/actions/runs/41375913293) for source checkpoint `cd7399af`, producing the API-unconfigured Android debug APK and unsigned iOS simulator preview. Consult the pull request and Actions for subsequent exact-source results; artifact names and bundled source metadata identify the actual compiled revision. Native builds remain separate from cookie/device qualification and production signing.
+
+### Earlier verified artifact record
 
 Both native compilation jobs succeeded on **2026-11-02** in [workflow run 41373579356](https://github.com/DruHustle/pamofi/actions/runs/41373579356). The branch head was `649a5625dec4ec69715aa0225ae4a022ad407ddd`; the pull-request workflow compiled GitHub's merge commit `443cab073457bfdf238788daf08e38202c6af279`, which appears in the artifact names and source metadata.
 

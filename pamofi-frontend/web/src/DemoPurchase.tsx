@@ -44,8 +44,9 @@ export default function DemoPurchase({ bundle, close, signedOut }: { bundle: Bun
       if (intent?.orderId === completed.id) clearOrderIntent(owner.current, completed.bundle_id);
     } catch { /* A confirmed server result remains valid if local storage becomes unavailable. */ }
   }
-  async function summary() {
-    const [history, current] = await Promise.all([api<{ orders: Order[] }>('/api/orders'), api<{ entitlements: Entitlement[]; hasMore?: boolean; nextOffset?: number | null }>('/api/access')]);
+  async function summary(customerId = owner.current) {
+    const [history, current] = await Promise.all([api<{ customerId: string; orders: Order[] }>('/api/orders'), api<{ customerId: string; entitlements: Entitlement[]; hasMore?: boolean; nextOffset?: number | null }>('/api/access')]);
+    if (!customerId || history.customerId !== customerId || current.customerId !== customerId) throw new ApiError(401, 'session_changed');
     if (!Array.isArray(history.orders) || !Array.isArray(current.entitlements)) throw Error('invalid_summary');
     return { orders: history.orders, entitlements: current.entitlements, nextOffset: current.hasMore && Number.isInteger(current.nextOffset) ? current.nextOffset! : null };
   }
@@ -63,7 +64,7 @@ export default function DemoPurchase({ bundle, close, signedOut }: { bundle: Bun
     setPhase('loading'); setMessage(''); setSessionChanged(false);
     (async () => {
       const customerId = bundle ? await ensureSession() : await currentSession();
-      const current = await summary();
+      const current = await summary(customerId);
       if (!live) return;
       owner.current = customerId; setOrders(current.orders); setAccess(current.entitlements); setNextOffset(current.nextOffset);
       const retry = bundle ? orderIntent(customerId, bundle.id) : null;
@@ -142,7 +143,8 @@ export default function DemoPurchase({ bundle, close, signedOut }: { bundle: Bun
     setBusy(true); setMessage('');
     try {
       await verifyOwner();
-      const current = await api<{ entitlements: Entitlement[]; hasMore: boolean; nextOffset: number | null }>(`/api/access?offset=${nextOffset}`);
+      const current = await api<{ customerId: string; entitlements: Entitlement[]; hasMore: boolean; nextOffset: number | null }>(`/api/access?offset=${nextOffset}`);
+      if (current.customerId !== owner.current) throw new ApiError(401, 'session_changed');
       if (!Array.isArray(current.entitlements)) throw Error('invalid_summary');
       if (mounted.current) {
         setAccess(previous => [...new Map([...previous, ...current.entitlements].map(item => [item.id, item])).values()]);

@@ -4,11 +4,11 @@ import { randomUUID } from 'node:crypto';
 import { SignJWT } from 'jose';
 import pg from 'pg';
 import { registerRadiusInternal } from './radius-internal.js';
-import { registerPesepaySandbox } from './pesepay-sandbox.js';
 import {registerCommerce} from './commerce.js';
 import {registerCheckout,paymentConfiguration} from './checkout.js';
 import {registerCustomerNetwork} from './network-lifecycle.js';
 import {trustedProxyCidrs} from './proxy.js';
+import {registerUsage} from './usage.js';
 const { Pool } = pg;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function buildApp() {
@@ -29,11 +29,11 @@ export function buildApp() {
     return payload;
   });
   const checkout=paymentConfiguration(demo);
-  const stopPesepaySandbox = checkout.enabled?async()=>{}:registerPesepaySandbox(app,pool,demo);
   const stopCheckout=registerCheckout(app,pool,demo,customer,originAllowed);
   registerCommerce(app,pool,demo,customer,originAllowed);
   registerCustomerNetwork(app,pool,demo,customer,originAllowed);
-  app.addHook('onClose', async () => { await stopCheckout(); await stopPesepaySandbox(); if (pool) await pool.end(); });
+  registerUsage(app,pool,customer);
+  app.addHook('onClose', async () => { await stopCheckout(); if (pool) await pool.end(); });
   registerRadiusInternal(app,pool,demo);
   app.get('/health/live', async () => ({ status: 'ok', service: 'prepaid-access' }));
   app.get('/health/ready', async (_request, reply) => {
@@ -66,7 +66,7 @@ export function buildApp() {
     try {
       const id = await customer(request); if (!id) return reply.code(401).send({ error:'not_authenticated' });
       const rows = await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode FROM purchase_orders WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 100',[id]);
-      return { orders:rows.rows };
+      return { customerId:id,orders:rows.rows };
     } catch { return reply.code(503).send({error:'unavailable'}); }
   });
   app.get<{Querystring:{limit:number;offset:number}}>('/v1/access', {
@@ -90,7 +90,7 @@ export function buildApp() {
           ELSE 2 END, purchased_at,id
         LIMIT $2 OFFSET $3`,[id,limit+1,offset]);
       const hasMore=rows.rows.length>limit;
-      return { entitlements:rows.rows.slice(0,limit),hasMore,nextOffset:hasMore?offset+limit:null };
+      return { customerId:id,entitlements:rows.rows.slice(0,limit),hasMore,nextOffset:hasMore?offset+limit:null };
     } catch { return reply.code(503).send({error:'unavailable'}); }
   });
   app.post<{Body:{bundleId:string;mode?:'demo'|'checkout'}}>('/v1/orders', { config:{rateLimit:{max:30,timeWindow:'1 minute'}}, schema:{body:{type:'object',required:['bundleId'],additionalProperties:false,properties:{bundleId:{type:'string',minLength:1,maxLength:40,pattern:'^[a-z][a-z0-9-]{0,39}$'},mode:{type:'string',enum:['demo','checkout'],default:'demo'}}}} }, async (request, reply) => {

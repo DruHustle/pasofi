@@ -10,7 +10,7 @@ const method={active:true,code:'PZW211',currencies:['USD'],minimumAmount:1,maxim
 const eligibility={method,merchantEnabledCodes:new Set(['PZW211']),siteQualifiedCodes:new Set(['PZW211'])};
 test('provider reconciliation fulfills once, isolates duplicate charges and reverses only its source',{skip:!url},async()=>{
  const pool=new pg.Pool({connectionString:url,max:10}), customer=randomUUID(), site=randomUUID(), order=randomUUID(), key=randomUUID();let calls=0,status='verified_success';
- const adapter={initiate:async()=>{calls++;await new Promise(r=>setTimeout(r,20));return {state:'initiated',referenceNumber:`PP-${order}`,redirectUrl:'https://checkout.pesepay.com/demo'};},check:async()=>({state:status,providerStatus:status})};
+ const adapter={provider:'pesepay',initiate:async()=>{calls++;await new Promise(r=>setTimeout(r,20));return {state:'initiated',referenceNumber:`PP-${order}`,redirectUrl:'https://checkout.pesepay.com/demo'};},check:async()=>({state:status,providerStatus:status})};
  try{
   await pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at) VALUES($1,$2,$3,'flex',100,'USD',5000000000,604800,'awaiting_payment',now()+interval '15 minutes')",[order,customer,randomUUID()]);
   const starts=await Promise.all(Array.from({length:5},()=>beginProviderPayment(pool,customer,order,key,site,'PZW211',eligibility,adapter)));
@@ -36,7 +36,7 @@ test('provider reconciliation fulfills once, isolates duplicate charges and reve
 });
 test('ambiguous initiation blocks re-initiation and used access reversal is reviewed',{skip:!url},async()=>{
  const pool=new pg.Pool({connectionString:url,max:6}), customer=randomUUID(), site=randomUUID(), order=randomUUID(), uncertainOrder=randomUUID();let calls=0,status='verified_success';
- const adapter={initiate:async()=>{calls++;return {state:'initiated',referenceNumber:`PP-${randomUUID()}`,redirectUrl:'https://checkout.pesepay.com/demo'};},check:async()=>({state:status,providerStatus:status})};
+ const adapter={provider:'pesepay',initiate:async()=>{calls++;return {state:'initiated',referenceNumber:`PP-${randomUUID()}`,redirectUrl:'https://checkout.pesepay.com/demo'};},check:async()=>({state:status,providerStatus:status})};
  try{
   for(const id of [order,uncertainOrder])await pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at) VALUES($1,$2,$3,'flex',100,'USD',5000000000,604800,'awaiting_payment',now()+interval '15 minutes')",[id,customer,randomUUID()]);
   const unknownAdapter={...adapter,initiate:async()=>{calls++;return {state:'unknown'};}};
@@ -57,7 +57,7 @@ test('ambiguous initiation blocks re-initiation and used access reversal is revi
 test('late initiation response recovers a reference after timeout monitoring',{skip:!url},async()=>{
  const pool=new pg.Pool({connectionString:url,max:4}), customer=randomUUID(), site=randomUUID(), order=randomUUID();let release,started;
  const gate=new Promise(r=>{release=r;}), ready=new Promise(r=>{started=r;});
- const adapter={initiate:async()=>{started();await gate;return {state:'initiated',referenceNumber:`PP-${order}`,redirectUrl:'https://checkout.pesepay.com/demo'};},check:async()=>({state:'unknown',providerStatus:null})};
+ const adapter={provider:'pesepay',initiate:async()=>{started();await gate;return {state:'initiated',referenceNumber:`PP-${order}`,redirectUrl:'https://checkout.pesepay.com/demo'};},check:async()=>({state:'unknown',providerStatus:null})};
  try{
   await pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at) VALUES($1,$2,$3,'flex',100,'USD',5000000000,604800,'awaiting_payment',now()+interval '15 minutes')",[order,customer,randomUUID()]);
   const pending=beginProviderPayment(pool,customer,order,randomUUID(),site,'PZW211',eligibility,adapter);await ready;
@@ -75,7 +75,7 @@ test('a reversal observed first survives an older success reply without fulfilli
  const pool=new pg.Pool({connectionString:url,max:6}),customer=randomUUID(),site=randomUUID(),order=randomUUID();
  let releaseSuccess,checkStarted,oldSuccess;
  const gate=new Promise(resolve=>{releaseSuccess=resolve;}),ready=new Promise(resolve=>{checkStarted=resolve;});
- const adapter={initiate:async()=>({state:'initiated',referenceNumber:`PP-${order}`,redirectUrl:'https://checkout.pesepay.com/demo'}),check:async()=>({state:'reversed',providerStatus:'REVERSED'})};
+ const adapter={provider:'pesepay',initiate:async()=>({state:'initiated',referenceNumber:`PP-${order}`,redirectUrl:'https://checkout.pesepay.com/demo'}),check:async()=>({state:'reversed',providerStatus:'REVERSED'})};
  try {
   await pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at) VALUES($1,$2,$3,'flex',100,'USD',5000000000,604800,'awaiting_payment',now()+interval '15 minutes')",[order,customer,randomUUID()]);
   const payment=await beginProviderPayment(pool,customer,order,randomUUID(),site,'PZW211',eligibility,adapter);
@@ -104,7 +104,7 @@ test('a reversal observed first survives an older success reply without fulfilli
 test('a provider reference conflict blocks another charge until investigation',{skip:!url},async()=>{
  const pool=new pg.Pool({connectionString:url,max:6}),customer=randomUUID(),site=randomUUID(),orders=[randomUUID(),randomUUID()],reference=`PP-${randomUUID()}`;
  let calls=0;
- const adapter={initiate:async()=>{calls++;return {state:'initiated',referenceNumber:reference,redirectUrl:'https://checkout.pesepay.com/demo'};},check:async()=>({state:'unknown',providerStatus:null})};
+ const adapter={provider:'pesepay',initiate:async()=>{calls++;return {state:'initiated',referenceNumber:reference,redirectUrl:'https://checkout.pesepay.com/demo'};},check:async()=>({state:'unknown',providerStatus:null})};
  try {
   for(const order of orders)await pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at) VALUES($1,$2,$3,'flex',100,'USD',5000000000,604800,'awaiting_payment',now()+interval '15 minutes')",[order,customer,randomUUID()]);
   assert.equal((await beginProviderPayment(pool,customer,orders[0],randomUUID(),site,'PZW211',eligibility,adapter)).state,'pending');
@@ -124,7 +124,7 @@ test('a provider reference conflict blocks another charge until investigation',{
 
 test('an unrecognized adapter result never becomes evidence of payment',{skip:!url},async()=>{
  const pool=new pg.Pool({connectionString:url,max:4}),customer=randomUUID(),site=randomUUID(),order=randomUUID();
- const adapter={initiate:async()=>({state:'initiated',referenceNumber:`PP-${order}`,redirectUrl:'https://checkout.pesepay.com/demo'}),check:async()=>({state:'SUCCESS',providerStatus:'SUCCESS'})};
+ const adapter={provider:'pesepay',initiate:async()=>({state:'initiated',referenceNumber:`PP-${order}`,redirectUrl:'https://checkout.pesepay.com/demo'}),check:async()=>({state:'SUCCESS',providerStatus:'SUCCESS'})};
  try {
   await pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at) VALUES($1,$2,$3,'flex',100,'USD',5000000000,604800,'awaiting_payment',now()+interval '15 minutes')",[order,customer,randomUUID()]);
   const payment=await beginProviderPayment(pool,customer,order,randomUUID(),site,'PZW211',eligibility,adapter);

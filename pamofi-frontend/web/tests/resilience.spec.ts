@@ -4,7 +4,7 @@ const customerId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const orderId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const bundle = { id: 'flex', price_minor: 100, currency: 'USD', byte_limit: '5000000000', validity_seconds: 604800 };
 const order = () => ({ id: orderId, bundle_id: 'flex', price_minor: 100, currency: 'USD', status: 'awaiting_payment', quote_expires_at: new Date(Date.now() + 900_000).toISOString() });
-const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body && typeof body === 'object' && ('entitlements' in body || 'orders' in body) ? { customerId, ...body } : body) });
 async function mockApi(page: Page, handle?: (route: Route, path: string) => Promise<boolean>) {
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;

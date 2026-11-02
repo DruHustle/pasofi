@@ -1,8 +1,9 @@
 import { createCipheriv, createDecipheriv, timingSafeEqual } from 'node:crypto';
+import {eligibleMethod,parseMinorUnits as minor,type VerifiedStatus} from './payment-provider.js';
+export {eligibleMethod,type VerifiedStatus} from './payment-provider.js';
 type Fetcher=typeof fetch;
 type Config={environment:'sandbox'|'production';integrationKey:string;encryptionKey:string;applicationId:number;resultUrl:string;returnUrl:string;allowedCheckoutOrigins:string[]};
 type Terms={referenceNumber:string;amountMinor:number;currency:string};
-export type VerifiedStatus={state:'verified_success'|'pending'|'failed'|'reversed'|'unknown';providerStatus:string|null};
 const statuses=new Set(['INITIATED','PROCESSING','PENDING','PARTIALLY_PAID','SUCCESS','FAILED','TERMINATED','TIME_OUT','CLOSED','CLOSED_PERIOD_ELAPSED','INSUFFICIENT_FUNDS','CANCELLED','ERROR','DECLINED','AUTHORIZATION_FAILED','SERVICE_UNAVAILABLE','REVERSED']);
 function obj(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw Error('invalid_response');return value as Record<string,unknown>;}
 function keyBytes(key:string){const b=Buffer.from(key,'utf8');if(b.length!==32)throw Error('invalid_encryption_key');return b;}
@@ -13,23 +14,16 @@ export function decryptPesepay(payload:string,key:string):unknown {
  if(payload.length>100000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(payload))throw Error('invalid_payload');
  const k=keyBytes(key),cipher=createDecipheriv('aes-256-cbc',k,k.subarray(0,16));return JSON.parse(Buffer.concat([cipher.update(Buffer.from(payload,'base64')),cipher.final()]).toString('utf8')) as unknown;
 }
-function minor(value:unknown):number|null {
- if(typeof value!=='number' && typeof value!=='string')return null;
- const str=String(value);if(!/^\d{1,9}(?:\.\d{1,2})?$/.test(str))return null;
- const [whole,frac='']=str.split('.');const result=Number(whole)*100+Number(frac.padEnd(2,'0'));
- return Number.isSafeInteger(result)?result:null;
-}
 async function readJson(response:Response):Promise<unknown>{
  if(!response.body)throw Error('empty_response');const reader=response.body.getReader(),chunks:Buffer[]=[];let size=0;
  while(true){const p=await reader.read();if(p.done)break;size+=p.value.length;if(size>65536){await reader.cancel();throw Error('response_too_large');}chunks.push(Buffer.from(p.value));}
  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
 }
 function httpsUrl(value:string):URL {const url=new URL(value);if(url.protocol!=='https:'||url.username||url.password||url.hash)throw Error('invalid_url');return url;}
-export function eligibleMethod(method:unknown, currency:string, amountMinor:number, enabledCodes:Set<string>,qualifiedCodes:Set<string>):boolean {
- try {const m=obj(method), low=minor(m.minimumAmount),high=minor(m.maximumAmount);return m.active===true && typeof m.code==='string' && enabledCodes.has(m.code) && qualifiedCodes.has(m.code) && Array.isArray(m.currencies) && m.currencies.includes(currency) && low!==null && high!==null && amountMinor>=low && amountMinor<=high;}
- catch{return false;}
-}
+// Retained for historical contract regression/forensics. The application never
+// constructs or registers this adapter, regardless of legacy environment flags.
 export class PesepayAdapter {
+ readonly provider='pesepay' as const;
  private base:string;private allowed:Set<string>;
  constructor(private config:Config,private fetcher:Fetcher=fetch){
   if(!['sandbox','production'].includes(config.environment))throw Error('invalid_environment');

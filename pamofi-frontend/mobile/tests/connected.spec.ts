@@ -2,6 +2,7 @@ import { test as base, expect, type Page, type Route } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import { usageSnapshot } from './usage-fixture';
 
 const apiOrigin = 'https://api.pamofi.test';
 const customerId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -26,13 +27,14 @@ async function mock(page: Page, handle?: (route: Route, path: string, method: st
   await page.route(`${apiOrigin}/api/**`, async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     const headers = { 'Access-Control-Allow-Origin': request.headers().origin || '*', 'Access-Control-Allow-Credentials': 'true', 'Access-Control-Allow-Headers': 'Content-Type,Idempotency-Key', 'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS' };
-    const reply = (body: unknown, status = 200) => route.fulfill({ status, headers, contentType: 'application/json', body: JSON.stringify(body) });
+    const reply = (body: unknown, status = 200) => route.fulfill({ status, headers, contentType: 'application/json', body: JSON.stringify(body && typeof body === 'object' && 'entitlements' in body ? { customerId, ...body } : body) });
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     if (await handle?.(route, path, request.method(), reply)) return;
     if (path === '/api/capabilities') return reply(capabilities);
     if (path === '/api/sites') return reply({ sites: [] });
     if (path === '/api/bundles') return reply({ products: [{ id: 'flex', price_minor: 100, currency: 'USD', byte_limit: '5000000000', validity_seconds: 604800 }] });
     if (path === '/api/session') return reply({ customerId });
+    if (path === '/api/usage') return reply(usageSnapshot('0', { allowanceBytes: '0' }));
     if (path === '/api/access') return reply({ entitlements: [], hasMore: false, nextOffset: null });
     return reply({ error: 'unexpected_request' }, 500);
   });
@@ -51,10 +53,12 @@ test('qualified mobile API session and voucher redemption use credentialed HTTPS
   await mock(page, async (route, path, method, reply) => {
     if (path === '/api/session') { if (method === 'POST') { expect(route.request().headers()['idempotency-key']).toMatch(/^[A-Za-z0-9_-]{43}$/); hasSession = true; } await reply(hasSession ? { customerId } : { error: 'not_authenticated' }, hasSession ? 200 : 401); return true; }
     if (path === '/api/vouchers/redeem') { expect(route.request().postDataJSON()).toEqual({ code: 'DEMOVOUCHER234567' }); redeemed = true; await reply({ entitlementId, replayed: false }); return true; }
+    if (path === '/api/usage') { await reply(usageSnapshot('0', { allowanceBytes: redeemed ? '5000000000' : '0', queuedBytes: redeemed ? '5000000000' : '0', entitlementId })); return true; }
     if (path === '/api/access') { await reply({ entitlements: redeemed ? [{ id: entitlementId, bundle_id: 'flex', byte_limit: '5000000000', consumed_bytes: '0', validity_seconds: 604800, activated_at: null, revoked_at: null, start_by: new Date(Date.now() + 86400000).toISOString() }] : [], hasMore: false, nextOffset: null }); return true; }
     return false;
   });
   await page.setViewportSize({ width: 360, height: 850 }); await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Use a voucher', exact: true }).click(); await page.getByLabel('Voucher code', { exact: true }).fill('DEMO-VOUCHER-234567'); await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click(); await expect(page.getByText('Queued · not connected', { exact: true })).toBeVisible(); await expect(page.getByText('Hotspot sign-in is not enabled', { exact: false })).toBeVisible();
+  await expect(page.getByTestId('usage-remaining')).toHaveText('5.000 GB'); await expect(page.getByTestId('usage-queued')).toHaveText('5.000 GB');
   const transports = await page.evaluate(() => (window as any).apiTransport); expect(transports.length).toBeGreaterThan(4); expect(transports.every((request: { credentials: string; mode: string; redirect: string }) => request.credentials === 'include' && request.mode === 'cors' && request.redirect === 'error')).toBe(true); expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('DEMOVOUCHER'); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); await page.screenshot({ path: testInfo.outputPath('mobile-api-queued-360.png'), fullPage: true });
 });
 
@@ -86,4 +90,15 @@ test('mobile refuses to discard a saved quote when a provider payment attempt ex
   });
   await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Buy a bundle', exact: true }).click(); await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Prepare checkout' }).click(); await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible(); await page.getByRole('button', { name: 'Close an expired unused quote' }).click(); await expect(page.getByText('A payment attempt already exists for this order.', { exact: false })).toBeVisible(); expect(closures).toBe(1); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':purchase-details')).length)).toBe(1); await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toBeDisabled(); await expect(page.getByRole('button', { name: 'Review a fresh quote' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Retry this checkout safely' }).click(); await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible(); expect(orderKeys).toHaveLength(2); expect(new Set(orderKeys).size).toBe(1);
+});
+
+test('qualified mobile balance refreshes automatically, pauses offline, and clears when its owner changes', async ({ page, context, configuredBaseURL }, testInfo) => {
+  let used = '1000000000', reads = 0, changed = false;
+  await page.clock.install(); await mock(page, async (_route, path, _method, reply) => {
+    if (path !== '/api/usage') return false; reads++; await reply(usageSnapshot(used, { entitlementId, customerId: changed ? entitlementId : customerId })); return true;
+  });
+  await page.setViewportSize({ width: 320, height: 900 }); await open(page, configuredBaseURL); await expect(page.getByTestId('usage-remaining')).toHaveText('4.000 GB'); used = '2000000000'; await page.clock.runFor(5_000); await expect(page.getByTestId('usage-remaining')).toHaveText('3.000 GB'); await expect(page.getByTestId('usage-used')).toHaveText('2.000 GB');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); await page.getByTestId('live-usage').screenshot({ path: testInfo.outputPath('mobile-live-usage-320.png') });
+  await context.setOffline(true); await expect(page.getByText('Offline · showing the last confirmed balance')).toBeVisible(); const before = reads; used = '3000000000'; await page.clock.runFor(15_000); expect(reads).toBe(before); await expect(page.getByTestId('usage-remaining')).toHaveText('3.000 GB'); await context.setOffline(false); await expect(page.getByTestId('usage-remaining')).toHaveText('2.000 GB');
+  changed = true; await page.clock.runFor(5_000); await expect(page.getByTestId('live-usage')).toHaveCount(0); await expect(page.getByText('Your customer session changed or expired.', { exact: false })).toBeVisible(); const stopped = reads; await page.clock.runFor(15_000); expect(reads).toBe(stopped);
 });

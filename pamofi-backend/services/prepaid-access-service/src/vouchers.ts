@@ -23,26 +23,35 @@ async function makeVoucher(client:PoolClient,saleId:string,parentId:string|null,
 }
 // These domain functions are called only after the commerce boundary resolves
 // the current MFA-verified staff role and enforces its approved site scope.
-export type SaleOptions={siteInventory?:boolean;commissionBps?:number;siteName?:string;delivery?:'receipt'|'sms'|'both';pairingCode?:string;phone?:string;simulation?:boolean};
+export type SaleOptions={siteInventory?:boolean;commissionBps?:number;siteName?:string;delivery?:'receipt'|'sms'|'both';pairingCode?:string;phone?:string;simulation?:boolean;payment?:unknown};
 export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bundleId:string, requestKey:string, deliveryKey:DeliveryKeys,options:SaleOptions={}) {
  const commissionBps=options.commissionBps??0,delivery=options.delivery??'receipt';
  if(!Number.isInteger(commissionBps)||commissionBps<0||commissionBps>10000)throw new VoucherError('invalid_commission');
- const fingerprint=digest(JSON.stringify({siteId,bundleId,delivery,pairingCode:options.pairingCode??null,phone:options.phone??null}));
+ const payment=options.payment&&typeof options.payment==='object'&&!Array.isArray(options.payment)?options.payment as Record<string,unknown>:null;
+ const intent={siteId,bundleId,delivery,pairingCode:options.pairingCode??null,phone:options.phone??null};
+ const legacyFingerprint=digest(JSON.stringify(intent));
+ const fingerprint=digest(JSON.stringify({...intent,payment:payment?{method:payment.method,confirmed:payment.confirmed,amountMinor:payment.amountMinor,currency:payment.currency}:null}));
  return tx(pool,async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`${agentId}:${requestKey}`]);
   const previous=await client.query('SELECT * FROM agent_sales WHERE agent_id=$1 AND idempotency_key=$2',[agentId,requestKey]);
   if(previous.rowCount){
-    const sale=previous.rows[0];if(sale.site_id!==siteId || sale.bundle_id!==bundleId || (sale.request_hash&&!sale.request_hash.equals(fingerprint))) throw new VoucherError('idempotency_conflict');
+    const sale=previous.rows[0],expectedFingerprint=sale.payment_method==='cash'?fingerprint:legacyFingerprint;
+    if(sale.site_id!==siteId || sale.bundle_id!==bundleId || (sale.request_hash&&!sale.request_hash.equals(expectedFingerprint))) throw new VoucherError('idempotency_conflict');
     const voucher=await client.query("SELECT * FROM issued_vouchers WHERE sale_id=$1 AND state IN ('valid','redeemed')",[sale.id]);
     if(!voucher.rowCount) throw new VoucherError('delivery_unavailable');
     return {saleId:sale.id,voucherId:voucher.rows[0].id,code:format(decrypt(voucher.rows[0],deliveryKey)),replayed:true};
   }
+  // The authenticated agent attests receipt of cash; this is not evidence from
+  // a payment provider. Validate only after replay so older committed requests
+  // remain recoverable without inventing cash evidence for historical sales.
+  if(options.siteInventory&&(!payment||payment.method!=='cash'||payment.confirmed!==true))throw new VoucherError('cash_confirmation_required');
   const stock=options.siteInventory?
    await client.query('SELECT quantity FROM agent_site_inventory WHERE agent_id=$1 AND site_id=$2 AND bundle_id=$3 FOR UPDATE',[agentId,siteId,bundleId]):
    await client.query('SELECT quantity FROM agent_inventory WHERE agent_id=$1 AND bundle_id=$2 FOR UPDATE',[agentId,bundleId]);
   if(!stock.rowCount || stock.rows[0].quantity<1) throw new VoucherError('out_of_stock');
   const product=await client.query('SELECT price_minor,currency,byte_limit::text,validity_seconds FROM bundle_versions WHERE id=$1 AND published=true',[bundleId]);
   if(!product.rowCount) throw new VoucherError('bundle_unavailable');
+  if(options.siteInventory&&(!Number.isSafeInteger(payment!.amountMinor)||payment!.amountMinor!==product.rows[0].price_minor||payment!.currency!==product.rows[0].currency))throw new VoucherError('cash_amount_mismatch');
   let pairedCustomer:string|null=null,pairingId:string|null=null;
   if(options.pairingCode){
    const pairing=await client.query('SELECT id,customer_id FROM receipt_pairings WHERE code_hash=$1 AND expires_at>now() AND sale_id IS NULL FOR UPDATE',[digest(normalized(options.pairingCode))]);
@@ -51,8 +60,8 @@ export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bund
   if(options.siteInventory&&delivery!=='sms'&&!pairingId)throw new VoucherError('pairing_required');
   if(options.siteInventory&&delivery!=='receipt'&&(!options.phone||!/^263[0-9]{9}$/.test(options.phone)))throw new VoucherError('invalid_phone');
   const item=product.rows[0], saleId=randomUUID();
-  await client.query(`INSERT INTO agent_sales (id,agent_id,site_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,start_by,site_name,commission_bps,commission_minor,delivery,simulation,request_hash)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+interval '30 days',$10,$11,$12,$13,$14,$15)`,[saleId,agentId,siteId,requestKey,bundleId,item.price_minor,item.currency,item.byte_limit,item.validity_seconds,options.siteName??'',commissionBps,Math.floor(item.price_minor*commissionBps/10000),delivery,options.simulation??true,fingerprint]);
+  await client.query(`INSERT INTO agent_sales (id,agent_id,site_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,start_by,site_name,commission_bps,commission_minor,delivery,simulation,request_hash,payment_method,cash_received_minor,cash_confirmed_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+interval '30 days',$10,$11,$12,$13,$14,$15,$16,$17,CASE WHEN $16='cash' THEN now() ELSE NULL END)`,[saleId,agentId,siteId,requestKey,bundleId,item.price_minor,item.currency,item.byte_limit,item.validity_seconds,options.siteName??'',commissionBps,Math.floor(item.price_minor*commissionBps/10000),delivery,options.simulation??true,options.siteInventory?fingerprint:legacyFingerprint,options.siteInventory?'cash':null,options.siteInventory?item.price_minor:null]);
   if(options.siteInventory)await client.query('UPDATE agent_site_inventory SET quantity=quantity-1 WHERE agent_id=$1 AND site_id=$2 AND bundle_id=$3',[agentId,siteId,bundleId]);
   else await client.query('UPDATE agent_inventory SET quantity=quantity-1 WHERE agent_id=$1 AND bundle_id=$2',[agentId,bundleId]);
   if(options.siteInventory){

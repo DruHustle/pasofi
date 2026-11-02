@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
-import type { PesepayAdapter } from './pesepay.js';
+import type {PaymentAdapter,PaymentProvider} from './payment-provider.js';
 import { reconcileProviderPayment } from './payments.js';
 
-type CallbackAdapter = Pick<PesepayAdapter, 'callbackAuthorized'>;
-type PaymentAdapter = Pick<PesepayAdapter, 'initiate' | 'check'>;
+type CallbackAdapter = {callbackAuthorized(header:unknown):boolean};
 const referencePattern = /^[A-Za-z0-9_-]{1,128}$/;
 
 // The callback is only a scheduling hint. It can neither create an attempt nor
@@ -39,17 +38,18 @@ export function registerPesepayCallback(app: FastifyInstance, pool: Pool, adapte
 }
 
 type Lease = {attempt_id:string; lease_token:string; lease_version:string; attempt_count:number};
-export async function claimPaymentReconciliation(pool: Pool, leaseSeconds = 30): Promise<Lease | null> {
+export async function claimPaymentReconciliation(pool: Pool, leaseSeconds = 30, provider?:PaymentProvider): Promise<Lease | null> {
  if (!Number.isInteger(leaseSeconds) || leaseSeconds < 10 || leaseSeconds > 300) throw Error('invalid_lease');
  const token=randomUUID();
  const result=await pool.query(`WITH candidate AS (
-   SELECT attempt_id FROM payment_reconciliation_jobs
-   WHERE (state='pending' AND due_at<=now()) OR (state='leased' AND lease_until<=now())
-   ORDER BY due_at,attempt_id FOR UPDATE SKIP LOCKED LIMIT 1
+   SELECT j.attempt_id FROM payment_reconciliation_jobs j JOIN provider_payment_attempts a ON a.id=j.attempt_id
+   WHERE ((j.state='pending' AND j.due_at<=now()) OR (j.state='leased' AND j.lease_until<=now()))
+    AND ($3::text IS NULL OR a.provider=$3)
+   ORDER BY j.due_at,j.attempt_id FOR UPDATE OF j SKIP LOCKED LIMIT 1
   ) UPDATE payment_reconciliation_jobs j SET state='leased',lease_token=$1,lease_version=j.requested_version,
    lease_until=now()+make_interval(secs=>$2),attempt_count=j.attempt_count+1,updated_at=now()
   FROM candidate WHERE j.attempt_id=candidate.attempt_id
-  RETURNING j.attempt_id,j.lease_token,j.lease_version::text,j.attempt_count`,[token,leaseSeconds]);
+  RETURNING j.attempt_id,j.lease_token,j.lease_version::text,j.attempt_count`,[token,leaseSeconds,provider??null]);
  return result.rows[0] ?? null;
 }
 
@@ -73,7 +73,8 @@ export async function finishPaymentReconciliation(pool: Pool, lease: Lease, resu
 }
 
 export async function processPaymentReconciliation(pool: Pool, adapter: PaymentAdapter): Promise<boolean> {
- const lease=await claimPaymentReconciliation(pool);
+ if(!['mock','pesepay'].includes(adapter.provider))throw Error('provider_unavailable');
+ const lease=await claimPaymentReconciliation(pool,30,adapter.provider);
  if (!lease) return false;
  let result: string;
  try { result=(await reconcileProviderPayment(pool,lease.attempt_id,adapter)).state; }

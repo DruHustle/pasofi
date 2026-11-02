@@ -28,14 +28,14 @@ paths:
       summary: List orders belonging to the authenticated customer
       responses:
         '200':
-          description: Customer order history, up to 100 entries
+          description: Resolved customerId and orders array, up to 100 entries; clients must match the owner before displaying history
         '401':
           description: No valid customer session
         '503':
           description: Authoritative service unavailable
     post:
       summary: Create or retry a server-priced quote
-      description: Requires the configured origin, an authenticated session, and a customer-scoped idempotency key. Demo mode is available only in demo/development. Checkout mode requires explicit provider configuration. Idempotency binds both bundle and mode.
+      description: Requires the configured origin, an authenticated session, and a customer-scoped idempotency key. Demo mode is available only in demo/development. Checkout currently requires explicit local mock configuration; no external provider is selectable. Idempotency binds both bundle and mode.
       parameters:
         - in: header
           name: Idempotency-Key
@@ -106,11 +106,31 @@ paths:
             default: 0
       responses:
         '200':
-          description: Up to limit entitlements, hasMore, and the next offset or null. Cache-Control is no-store.
+          description: Resolved customerId, up to limit entitlements, hasMore, and the next offset or null. Clients must match the owner before displaying history. Cache-Control is no-store.
         '400':
           description: Invalid pagination parameters
         '401':
           description: No valid customer session
+  /v1/usage:
+    get:
+      security: [{CustomerSession: []}]
+      summary: Read one authoritative snapshot of all owned current allowance and received usage
+      description: No-store; totals are independent of access-history pagination and selected rows. Exhausted current bundles remain included. Byte values are exact decimal strings. Poll at most every five seconds while visible/online; RADIUS accounting is requested every 60 seconds and is stale after 90 seconds. A held reservation is not an extra debit and recent accounting is not instantaneous router telemetry.
+      parameters:
+        - in: query
+          name: entitlementIds
+          description: Up to 100 comma-separated UUIDs for refreshing visible cards. Foreign and nonexistent IDs are omitted identically; aggregate ownership and totals never depend on this selection.
+          schema: {type: string, maxLength: 3699}
+      responses:
+        '200':
+          description: One customer-owned database snapshot, including the current grant when present
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UsageSnapshot'}
+        '400': {description: Invalid UUID selection or more than 100 IDs}
+        '401': {description: No valid customer session; stop polling and clear private data}
+        '429': {description: Customer-scoped quota exceeded; observe Retry-After}
+        '503': {description: Identity or usage storage unavailable; do not replace the last verified snapshot with zero}
   /v1/capabilities:
     get:
       summary: Read explicit configured feature gates
@@ -124,7 +144,7 @@ paths:
                 required: [demo, paymentMode, paymentCheckout, vouchers, receiptPairing, staffSales, deliverySms, networkAccess, mobileCookies]
                 properties:
                   demo: {type: boolean}
-                  paymentMode: {type: string, enum: [disabled, mock, sandbox, production]}
+                  paymentMode: {type: string, enum: [disabled, mock]}
                   paymentCheckout: {type: boolean}
                   vouchers: {type: boolean}
                   receiptPairing: {type: boolean}
@@ -173,7 +193,8 @@ paths:
       - {$ref: '#/components/parameters/Id'}
     get:
       security: [{CustomerSession: []}]
-      summary: Read current verified fulfillment for a customer-owned order
+      summary: Read recorded fulfillment and provider history for a customer-owned order
+      description: Available while checkout is disabled. Reads the existing ledger without contacting a provider. Attempts include their provider identity; simulation reflects recorded provenance rather than the current environment.
       responses:
         '200':
           description: Historical order status alone does not establish current fulfillment; revoked entitlementId is null
@@ -189,7 +210,7 @@ paths:
                   entitlementRevokedAt: {type: [string, 'null'], format: date-time}
                   safeToRequote: {type: boolean, description: True only after durable server closure of an expired quote with no prior payment attempt}
                   simulation: {type: boolean}
-        '404': {description: Order not owned or checkout disabled}
+        '404': {description: Order not owned}
   /v1/orders/{id}/expire-unused:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -217,7 +238,7 @@ paths:
                   replayed: {type: boolean}
         '401': {description: Customer session required}
         '403': {description: Origin rejected}
-        '404': {description: Order not owned or checkout disabled}
+        '404': {description: Order not owned}
         '409': {description: 'quote_still_valid, payment_attempt_exists, wrong_order_mode or order_not_expirable'}
         '503': {description: Identity or payment storage unavailable; retain the existing intent}
   /v1/orders/{id}/mock-payment:
@@ -355,7 +376,7 @@ paths:
     post:
       security: [{StaffSession: []}]
       summary: Sell one voucher from the authenticated agent's site stock
-      description: Exact origin and current approved agent/MFA/site scope required. Receipt and both require pairingCode; sms and both require phone. Prices and commission come from server configuration and are immutable snapshots.
+      description: Exact origin and current approved agent/MFA/site scope required. Receipt and both require pairingCode; sms and both require phone. New sales require explicit exact cash confirmation matched to the server bundle price. Cash evidence records the agent's attestation, not an independent provider settlement. Matching historical committed retries are resolved before requiring new cash evidence and remain unrecorded. Prices and commission come from server configuration and are immutable snapshots.
       parameters:
         - {$ref: '#/components/parameters/IdempotencyKey'}
       requestBody:
@@ -371,10 +392,11 @@ paths:
                 delivery: {type: string, enum: [receipt, sms, both]}
                 pairingCode: {type: string, minLength: 10, maxLength: 32}
                 phone: {type: string, description: Zimbabwe mobile number normalized to 263 and nine digits}
+                payment: {$ref: '#/components/schemas/CashConfirmation'}
       responses:
-        '201': {description: sale snapshot and replayed false; no plaintext voucher}
-        '200': {description: Original sale snapshot and replayed true}
-        '409': {description: Stock/pairing/delivery unavailable or idempotency conflict}
+        '201': {description: sale snapshot including immutable payment evidence and replayed false; no plaintext voucher}
+        '200': {description: Original sale snapshot and replayed true; historical tender remains unrecorded}
+        '409': {description: 'cash_confirmation_required, cash_amount_mismatch, stock/pairing/delivery unavailable or idempotency conflict'}
   /v1/staff/sales/{id}/receipt:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -569,5 +591,87 @@ components:
     Limit: {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
     Offset: {in: query, name: offset, schema: {type: integer, minimum: 0, maximum: 1000000, default: 0}}
   schemas:
+    UsageBytes: {type: string, pattern: '^(0|[1-9][0-9]*)$', description: Exact nonnegative decimal byte count; aggregate can exceed the signed 64-bit range.}
+    UsageTotals:
+      type: object
+      required: [bundleCount, allowanceBytes, usedBytes, remainingBytes]
+      properties:
+        bundleCount: {type: integer, minimum: 0}
+        allowanceBytes: {$ref: '#/components/schemas/UsageBytes'}
+        usedBytes: {$ref: '#/components/schemas/UsageBytes'}
+        remainingBytes: {$ref: '#/components/schemas/UsageBytes'}
+    UsageSnapshot:
+      type: object
+      required: [customerId, asOf, totals, active, queued, lifetimeAccountedBytes, reservationOutstandingBytes, lastAccountingAt, session, hold, connectivity, accounting, entitlementUpdates]
+      properties:
+        customerId: {type: string, format: uuid}
+        asOf: {type: string, format: date-time}
+        totals: {$ref: '#/components/schemas/UsageTotals'}
+        active: {$ref: '#/components/schemas/UsageTotals'}
+        queued: {$ref: '#/components/schemas/UsageTotals'}
+        lifetimeAccountedBytes: {$ref: '#/components/schemas/UsageBytes'}
+        reservationOutstandingBytes: {$ref: '#/components/schemas/UsageBytes'}
+        lastAccountingAt: {type: [string, 'null'], format: date-time}
+        connectivity: {type: string, enum: [none, pending, recent_accounting, stale, uncertain, held]}
+        hold:
+          type: object
+          properties:
+            active: {type: boolean}
+            reason: {type: [string, 'null']}
+            since: {type: [string, 'null'], format: date-time}
+        accounting:
+          type: object
+          properties:
+            expectedIntervalSeconds: {type: integer, const: 60}
+            staleAfterSeconds: {type: integer, const: 90}
+            pollAfterSeconds: {type: integer, const: 5}
+        session:
+          type: [object, 'null']
+          properties:
+            grantId: {type: string, format: uuid}
+            entitlementId: {type: string, format: uuid}
+            siteId: {type: string, format: uuid}
+            state: {type: string, enum: [pending, active, uncertain]}
+            issuedAt: {type: string, format: date-time}
+            deadline: {type: string, format: date-time}
+            lastAccountingAt: {type: [string, 'null'], format: date-time}
+            reservedBytes: {$ref: '#/components/schemas/UsageBytes'}
+            chargedBytes: {$ref: '#/components/schemas/UsageBytes'}
+            reservationOutstandingBytes: {$ref: '#/components/schemas/UsageBytes'}
+            disconnectRequested: {type: boolean}
+            accountingAnomaly: {type: boolean}
+            accountingStale: {type: boolean}
+            connected: {type: boolean}
+        entitlementUpdates:
+          type: array
+          maxItems: 101
+          items:
+            type: object
+            properties:
+              id: {type: string, format: uuid}
+              consumed_bytes: {$ref: '#/components/schemas/UsageBytes'}
+              activated_at: {type: [string, 'null'], format: date-time}
+              revoked_at: {type: [string, 'null'], format: date-time}
+              start_by: {type: string, format: date-time}
+              expires_at: {type: [string, 'null'], format: date-time}
+    CashConfirmation:
+      type: object
+      description: Required for a new agent sale; omitted only to recover a matching historical committed request. Amount/currency must match immutable server terms. Demo retains simulation=true.
+      required: [method, confirmed, amountMinor, currency]
+      properties:
+        method: {type: string, const: cash}
+        confirmed: {type: boolean, const: true}
+        amountMinor: {type: integer, minimum: 1}
+        currency: {type: string}
+    RecordedSalePayment:
+      type: object
+      description: Present on sale/receipt DTOs. Null fields preserve unrecorded historical tender; cash represents an authenticated agent's explicit attestation only.
+      properties:
+        method: {type: string, enum: [cash, unrecorded]}
+        evidence: {type: string, enum: [agent_attestation, unrecorded]}
+        receivedMinor: {type: [integer, 'null']}
+        currency: {type: [string, 'null']}
+        confirmedAt: {type: [string, 'null'], format: date-time}
+        confirmedBy: {type: [string, 'null'], format: uuid}
     Reason: {type: string, minLength: 10, maxLength: 500}
     Counter: {type: string, pattern: '^(0|[1-9][0-9]{0,19})$', description: Nonnegative decimal counter; domain validates the unsigned 64-bit bound.}

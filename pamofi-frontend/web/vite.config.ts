@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
   const prepaid = env.PAMOFI_PREPAID_URL || 'http://localhost:18082';
   const assistant = env.PAMOFI_ASSISTANT_URL || 'http://localhost:18085';
   const routes: Record<string, { target: string; rewrite: typeof rewrite }> = {
-    '^/api/(?:bundles|capabilities|sites|access)(?:\\?|$)': { target: prepaid, rewrite },
+    '^/api/(?:bundles|capabilities|sites|access|usage)(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/help(?:\\?|$)': { target: assistant, rewrite },
     '^/api/session(?:\\?|$)': { target: identity, rewrite },
     '^/api/orders(?:/[0-9a-fA-F-]+/(?:demo-confirm|checkout|status|mock-payment|expire-unused))?(?:\\?|$)': { target: prepaid, rewrite },

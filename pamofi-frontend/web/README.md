@@ -13,19 +13,28 @@ npm run dev -- --host 127.0.0.1
 
 ## Customer experience
 
-The application reads `/api/capabilities` before offering operational tools. The server must still authorize every action. Demo purchases, provider simulations, actual provider status, queued bundles, and verified hotspot connectivity are separate visible states.
+The application reads `/api/capabilities` before offering operational tools. The server must still authorize every action. The immediate purchase path is cash paid to an authorized agent, with a private paired receipt and explicit voucher redemption. Published cash-sale bundle cards stay usable when online checkout is disabled. Online payment is secondary and remains capability-gated; external digital checkout cannot be enabled in the current runtime. Pesepay registration/activation has been removed; the dormant EcoCash contract adapter cannot settle a payment or fulfill access. Later direct provider/bank integration requires qualified merchant evidence; see [direct payment preparation](../../pamofi-backend/services/prepaid-access-service/DIRECT_PAYMENTS.md). Demo sales, provider simulations, queued allowance and verified hotspot accounting remain distinct visible states.
 
 | Area | Behavior |
 | --- | --- |
 | Bundles and help | Published catalogue with loading, empty, unavailable and retry states. Reviewed FAQ search runs locally; typed questions are not sent to a model or support service. Candidate catalogues retain the explicit demo journey. |
 | Voucher redemption | A customer enters a private voucher in a POST body. The server atomically redeems it into that customer's queue. Retrying the same code cannot create a second bundle. |
-| Private agent receipts | The customer's browser creates a short-lived pairing code. The agent enters that code while recording a sale. Only the paired account can retrieve its receipt and voucher. Neither appears in the URL. |
+| Private agent receipts | The customer's browser creates a short-lived pairing code, then polls that owned pairing while visible and waiting. The agent confirms the exact cash amount before issuing. The receipt appears automatically with agent-attested cash evidence and one explicit redemption action. Only the paired account can retrieve its receipt/voucher; neither appears in the URL. |
 | Online checkout | Enabled methods, exact price and provider limits are loaded from the API. An unfinished checkout restores its original details after a lost response or reload. Hosted checkout links must use HTTPS. Only authoritative fulfillment status is presented as a verified purchase; reversal and accounting review have separate messages. An expired unused quote can be closed only by the server under the same order lock as payment initiation, with no attempts, charges or entitlement; only that verified durable fence releases the saved purchase for a fresh quote. |
 | Recovery and handoff | Recovery keys and two-minute one-use browser handoff codes remain in component memory. A handoff uses a clean `/handoff` page and separately pasted code with explicit consent. Both recovery and handoff verify the resulting customer cookie before accepting the account. |
-| Network status | Sign-in credentials remain in memory and expire. Preparing credentials never means connected. Connectivity requires the service's recent verified hotspot accounting state. A disconnect request remains pending until the service reports the final result. |
+| Live remaining data | Whole-account remaining/used GB, an accessible usage meter, activated allowance and queued allowance. Totals cover all valid bundles, including exhausted ones, regardless of history pagination. Updates run every five seconds while visible and online; router report receipt time and balance-check time are distinct. |
+| Network status | Sign-in credentials remain in memory and expire. Preparing credentials never means connected. Connectivity consumes the same consistent snapshot as the balance and requires the service's recent verified hotspot accounting state; there is no duplicate connection poll. A disconnect request remains pending until the service reports the final result. |
 | Sign out | The server must revoke the current session successfully. Then account views, recovery/purchase retry state and tab-local operation drafts are cleared. Signing out of the account does not imply an active hotspot session has ended. |
 
 A customer session is anonymous until the customer saves recovery details. Keep those details before signing out. The app never asks customers to give recovery keys or authenticator secrets to an agent or support worker.
+
+### Live usage semantics
+
+`/api/usage` returns one owner-bound ledger snapshot. Remaining data already reflects recorded upload/download usage. Reservations are displayed separately, can survive a bundle expiry/reversal under review, and are never subtracted a second time. Queued data is included in the total and also shown separately; validity starts only on successful hotspot activation. The UI does not invent a monetary wallet balance.
+
+Polling pauses in hidden, offline or inactive views. Focus/online and successful redemption/payment trigger a fresh check. Errors use bounded backoff and Retry-After where available; a stale/offline label accompanies retained last-good values. Malformed responses cannot zero the balance. The label **Last router report received** describes service receipt time, not the original router measurement; the usual accounting interval is shown beside it. No per-poll page spinner or repeated screen-reader balance announcement is used.
+
+Customer identity, request generations and aborts fence late responses. A 401 or owner mismatch clears private state and stops polling. Bounded visible entitlement IDs keep cards current without refetching all history, and monotonic counters prevent delayed history reads from replacing newer accounting. The network panel uses this same snapshot and refuses late credential responses after verification becomes stale.
 
 ## Staff workspaces
 
@@ -34,7 +43,7 @@ Staff use password authentication plus a time-based authenticator. New applicati
 | Role | Available workspace |
 | --- | --- |
 | Pending staff | Authenticator setup, current approval status and sign out. No sales or administration controls. |
-| Agent | Assigned sites, available inventory, exact-price sales with private receipt or configured SMS delivery, recent sales, private receipts and scoped delivery status. A pending sale restores its original request and idempotency key for safe retry. Only explicitly serialized, rolled-back domain rejections unlock corrections; gateway errors and unknown outcomes keep the same key. |
+| Agent | Assigned sites, inventory, exact cash amount/currency confirmation, private paired receipt or separately configured SMS delivery, and sales/delivery history. Immutable evidence identifies the confirming agent/time; it is never labeled payment-provider verification. A pending sale restores its exact original request and key, including a legacy body without cash evidence; retries never require a second cash payment. Only explicitly serialized, rolled-back domain rejections unlock corrections; gateway errors and unknown outcomes keep the same key. |
 | Support | Sales and delivery evidence within assigned sites. No voucher reveal, sale, inventory allocation, account approval or resend control. |
 | Administrator | Versioned staff decisions with reasons, site assignment, session revocation, site creation, approved-agent inventory allocation, immutable bundle versions and publication, sales/delivery review, staff audit history and unresolved network accounting reviews. |
 
@@ -84,12 +93,14 @@ node pamofi-backend/local-tools/verify.mjs --integration --browser
 
 Follow [the isolated database setup](../../pamofi-backend/docs/TESTING.md) first. The runner owns temporary API/Vite processes, applies migrations and passes matching origins. Set `PAMOFI_CHROME_PATH` when using an installed compatible Chromium executable.
 
-The complete web suite includes real demo purchase/recovery/sign-out journeys, mocked response-loss and permission failures, and a real three-browser commerce journey: administrator MFA, new staff application and MFA, approval, site allocation, agent sale, private customer receipt and voucher redemption. The commerce test requires `PAMOFI_TEST_CONFIRM_ISOLATED=1`, the isolated identity/prepaid URLs and the same `STAFF_MFA_ENCRYPTION_KEY` as the API. It invokes service-owned guarded fixture CLIs in separate processes, never imports backend source, and removes only its uniquely named fixtures. It fails rather than silently skipping when the isolated configuration is missing.
+The complete web suite includes real demo purchase/recovery/sign-out journeys, mocked response-loss and permission failures, and a real three-browser commerce journey: administrator MFA, new staff application and MFA, approval, site allocation, agent cash attestation, private customer receipt, voucher redemption into a queued allowance, and an automatically observed cumulative usage update from an isolated service-owned accounting fixture. Disposable staff identities use unique `@staff.pamofi.test` addresses; no mailbox or live email is involved. The commerce test requires `PAMOFI_TEST_CONFIRM_ISOLATED=1`, the isolated identity/prepaid URLs and the same `STAFF_MFA_ENCRYPTION_KEY` as the API. It invokes service-owned guarded fixture CLIs in separate processes, never imports backend source, and removes only its uniquely named fixtures. It fails rather than silently skipping when the isolated configuration is missing.
 
 For focused UI fault checks against an existing local Vite server:
 
 ```sh
-PAMOFI_BASE_URL=http://localhost:5178 PAMOFI_CHROME_PATH=/path/to/chrome npm run test:browser -- tests/resilience.spec.ts tests/workspaces.spec.ts
+PAMOFI_BASE_URL=http://localhost:5178 PAMOFI_CHROME_PATH=/path/to/chrome npm run test:browser -- tests/resilience.spec.ts tests/workspaces.spec.ts tests/usage.spec.ts
 ```
+
+The completed local strict run on 2 November 2026 passed all 43 web cases and 8 mobile cases, within 168 integration/browser tests across the seven projects, with zero skipped or pending cases. See [the review record](../../pamofi-backend/docs/REVIEW_2026-11-02.md) for separate historical CI/native evidence and the pull request/Actions for subsequent exact-source results.
 
 Reports and screenshots live in Playwright's ignored `test-results` directory. Do not run real journey tests against production or shared data. Passing synthetic acceptance does not establish live provider delivery, physical RouterOS operation, native phone cookie behavior, production backup recovery, or deployment readiness.

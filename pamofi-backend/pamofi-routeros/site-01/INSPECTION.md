@@ -19,6 +19,12 @@ Read through the user-authorized, already signed-in WebFig session at `http://19
 | Other management services | HTTP, WinBox, SSH, Telnet, FTP and API services listed as enabled; no per-service source restrictions visible |
 | Firewall | Default input protection drops traffic not coming from LAN; default WAN forwarding protection present; established/related FastTrack enabled |
 
+## Reconnected-session check
+
+After the owner logged in again on 2 November 2026, the same authorized WebFig session was reachable. Resources still showed hAP lite, SMIPS, RouterOS 7.18.2, 32 MiB total RAM, approximately 8.2–8.3 MiB free and 7.8 MiB free flash. WireGuard still contained zero interfaces. The route list contained the DHCP default route through `192.168.0.1`, connected `192.168.0.0/24` on `ether1`, and connected `192.168.88.0/24` on `bridge`.
+
+The proposed dedicated `10.77.255.0/30` management transit does not overlap those observed local networks, but the chosen hub and owner's Tailscale routes must still be inspected before allocating it. Restored WebFig login does not supply the missing public hub, tailnet identity, peer public keys or approved endpoint. The [remote-management plan](../../infra/remote-access/README.md) remains prepared and inactive. No new account, tunnel, firewall rule or router configuration was applied during this recheck.
+
 ## Consequences for PamoFi
 
 This device is suitable for a measured pilot subject to actual capacity and firmware qualification; the inspection does not establish a supported paying-customer count. Its small RAM/flash budget makes a load test and free-space check necessary before changing packages or increasing concurrent sessions. The backend, databases, RADIUS authority and payment/SMS workers stay on the server.

@@ -13,7 +13,7 @@ const eligibility={method,merchantEnabledCodes:new Set(['PZW211']),siteQualified
 test('callback hints and durable jobs require a separate provider check', {skip:!url}, async()=>{
  const pool=new pg.Pool({connectionString:url,max:12}), app=Fastify(), customer=randomUUID(),site=randomUUID(),order=randomUUID(),reference=`PP-${randomUUID()}`;
  let status='pending';
- const adapter={callbackAuthorized:value=>value==='integration-key',initiate:async()=>({state:'initiated',referenceNumber:reference,redirectUrl:'https://checkout.example/'}),check:async()=>({state:status,providerStatus:status})};
+ const adapter={provider:'pesepay',callbackAuthorized:value=>value==='integration-key',initiate:async()=>({state:'initiated',referenceNumber:reference,redirectUrl:'https://checkout.example/'}),check:async()=>({state:status,providerStatus:status})};
  app.register(rateLimit,{global:false});registerPesepayCallback(app,pool,adapter);
  try {
   await pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at) VALUES($1,$2,$3,'flex',100,'USD',5000000000,604800,'awaiting_payment',now()+interval '15 minutes')",[order,customer,randomUUID()]);

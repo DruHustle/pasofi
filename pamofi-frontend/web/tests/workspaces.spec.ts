@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { usageSnapshot } from './usage-fixture';
 
 const customerId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const staffId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -13,7 +14,7 @@ const capabilities = { demo: true, paymentMode: 'mock', paymentCheckout: true, v
 const staff = (role = 'agent', status = 'approved', id = staffId) => ({ staffId: id, email: `${role}@staff.invalid`, displayName: `${role} member`, status, role: status === 'pending' ? null : role, siteIds: role === 'admin' ? [] : [siteId], version: 1, mfaVerified: true, mfaEnrolled: true });
 const sale = () => ({ id: saleId, agentId: staffId, siteId, siteName: site.name, bundleId: 'flex', priceMinor: 100, commissionMinor: 10, commissionBps: 1000, currency: 'USD', byteLimit: '5000000000', validitySeconds: 604800, soldAt: new Date().toISOString(), startBy: future(), delivery: 'receipt', simulation: true });
 const order = (status = 'awaiting_payment') => ({ id: orderId, bundle_id: 'flex', price_minor: 100, currency: 'USD', status, quote_expires_at: future() });
-const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body && typeof body === 'object' && ('entitlements' in body || 'orders' in body) ? { customerId, ...body } : body) });
 async function mock(page: Page, handle?: (route: Route, path: string, method: string) => Promise<boolean>) {
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname, method = route.request().method();
@@ -23,6 +24,7 @@ async function mock(page: Page, handle?: (route: Route, path: string, method: st
     if (path === '/api/sites' || path === '/api/staff/sites') return json(route, { sites: [site] });
     if (path === '/api/help') return json(route, { articles: [] });
     if (path === '/api/session') return json(route, { customerId });
+    if (path === '/api/usage') return json(route, usageSnapshot('0', { allowanceBytes: '0' }));
     if (path === '/api/access') return json(route, { entitlements: [], hasMore: false, nextOffset: null });
     if (path === '/api/recovery/status') return json(route, { configured: false });
     if (path === '/api/payments/methods') return json(route, { enabled: true, mode: 'mock', simulation: true, methods: [{ code: 'mock', name: 'Mock provider', currency: 'USD', minMinor: 1, maxMinor: 100000 }] });
@@ -74,7 +76,7 @@ test('a lost agent sale response restores the exact intent and cannot debit stoc
     if (path === '/api/staff/session') { await json(route, staff()); return true; }
     if (path === '/api/staff/inventory') { await json(route, { inventory: [{ agentId: staffId, siteId, siteName: site.name, bundleId: 'flex', quantity: sold ? 0 : 1 }] }); return true; }
     if (path === '/api/staff/sales') {
-      if (method === 'POST') { keys.push(route.request().headers()['idempotency-key']); expect(route.request().postDataJSON()).toEqual({ siteId, bundleId: 'flex', delivery: 'receipt', pairingCode: 'ABCD234567' }); if (!sold) { sold = true; await route.abort('failed'); } else await json(route, { sale: sale(), replayed: true }); }
+      if (method === 'POST') { keys.push(route.request().headers()['idempotency-key']); expect(route.request().postDataJSON()).toEqual({ siteId, bundleId: 'flex', delivery: 'receipt', pairingCode: 'ABCD234567', payment: { method: 'cash', confirmed: true, amountMinor: 100, currency: 'USD' } }); if (!sold) { sold = true; await route.abort('failed'); } else await json(route, { sale: sale(), replayed: true }); }
       else await json(route, { sales: sold ? [sale()] : [], hasMore: false, nextOffset: null }); return true;
     }
     if (path === `/api/staff/sales/${saleId}/receipt`) { await json(route, { receipt: { sale: sale(), voucher: { id: saleId, code: 'PRIVATEVOUCHER234567', state: 'issued' } }, simulation: true }); return true; }
@@ -151,14 +153,14 @@ test('network credentials are private and prepared access stays unconnected unti
   await mock(page, async (route, path) => {
     if (path === '/api/capabilities') { await json(route, { ...capabilities, networkAccess: true }); return true; }
     if (path === '/api/network/sites') { await json(route, { sites: [{ ...site, loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
-    if (path === '/api/network/session') { await json(route, { session: prepared ? { id: saleId, siteId, state: connected ? 'active' : 'pending', connected, accountedAt: connected ? new Date().toISOString() : null, deadline: future(), chargedBytes: '0', disconnectRequested: disconnect } : null }); return true; }
+    if (path === '/api/usage') { const snapshot = usageSnapshot('0', { queuedBytes: connected ? '0' : '5000000000' }); snapshot.session = prepared ? { grantId: saleId, entitlementId: saleId, siteId, state: connected ? 'active' : 'pending', connected: connected && !disconnect, issuedAt: new Date().toISOString(), lastAccountingAt: connected ? new Date().toISOString() : null, deadline: future(), reservedBytes: '5000000000', chargedBytes: '0', reservationOutstandingBytes: '5000000000', disconnectRequested: disconnect, accountingAnomaly: false, accountingStale: false } : null; snapshot.connectivity = prepared ? connected ? 'recent_accounting' : 'pending' : 'none'; await json(route, snapshot); return true; }
     if (path === '/api/network/credentials') { prepared = true; await json(route, { username: 'short-lived-user', password: 'short-lived-password', expiresAt: future(), loginUrl: 'https://hotspot.example.test/login' }); return true; }
     if (path === '/api/network/disconnect') { disconnect = true; await json(route, { state: 'disconnect_pending' }, 202); return true; }
     return false;
   });
   await openCustomer(page); await page.getByRole('button', { name: 'Prepare hotspot sign-in' }).click(); await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible(); await expect(page.getByRole('link', { name: /Open registered hotspot sign-in/ })).toHaveAttribute('href', 'https://hotspot.example.test/login'); await expect(page.getByRole('button', { name: 'Submit to configured hotspot' })).toHaveCount(0);
   expect(await page.evaluate(() => JSON.stringify({ local: localStorage, session: sessionStorage })) ).not.toContain('short-lived-password');
-  connected = true; await page.getByRole('button', { name: 'Check connection', exact: true }).click(); await expect(page.getByText('Connected · confirmed by the hotspot', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Disconnect this hotspot session' }).click(); await expect(page.getByText('Disconnect awaiting confirmation', { exact: true })).toBeVisible(); await expect(page.getByText('No active hotspot session', { exact: true })).toHaveCount(0);
+  connected = true; await page.getByRole('button', { name: 'Check connection', exact: true }).click(); await expect(page.getByText('Connected · recent router report', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Disconnect this hotspot session' }).click(); await expect(page.getByText('Disconnect awaiting confirmation', { exact: true })).toBeVisible(); await expect(page.getByText('No active hotspot session', { exact: true })).toHaveCount(0);
 });
 
 test('handoff requires explicit consent and refuses a mismatched or blocked resulting cookie', async ({ page }) => {
@@ -235,4 +237,31 @@ test('an expired unused quote clears retry state only after verified idempotent 
   await page.getByRole('button', { name: 'Close an expired unused quote' }).click(); await expect(page.getByText('Quote closure could not be verified.', { exact: false })).toBeVisible(); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':purchase-details')).length)).toBe(1); await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Close an expired unused quote' }).click(); await expect(page.getByText('verified that no payment attempt exists', { exact: false })).toBeVisible(); expect(closeCalls).toBe(2); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.includes('purchase-details') || key.includes(':checkout:') || key.includes(':order:')))).toEqual([]); await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toBeEnabled();
   await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Prepare checkout' }).click(); await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible(); expect(keys).toHaveLength(2); expect(keys[1]).not.toBe(keys[0]);
+});
+
+test('published cash-only bundles open private pairing and require the exact agent cash confirmation', async ({ page }) => {
+  let received: unknown;
+  await mock(page, async (route, path, method) => {
+    if (path === '/api/capabilities') { await json(route, { ...capabilities, demo: false, paymentMode: 'disabled', paymentCheckout: false, deliverySms: false }); return true; }
+    if (path === '/api/bundles') { await json(route, { products: [product], candidate: false }); return true; }
+    if (path === '/api/staff/session') { await json(route, staff()); return true; }
+    if (path === '/api/staff/inventory') { await json(route, { inventory: [{ agentId: staffId, siteId, siteName: site.name, bundleId: 'flex', quantity: 1 }] }); return true; }
+    if (path === '/api/staff/sales') { if (method === 'POST') { received = route.request().postDataJSON(); await json(route, { sale: { ...sale(), simulation: false, payment: { method: 'cash', evidence: 'agent_attestation', receivedMinor: 100, currency: 'USD', confirmedAt: new Date().toISOString(), confirmedBy: staffId } }, replayed: false }); } else await json(route, { sales: [], hasMore: false, nextOffset: null }); return true; }
+    return false;
+  });
+  await page.goto('/'); await page.getByRole('button', { name: 'Buy flex from an agent' }).click(); await expect(page.getByRole('heading', { name: 'Receive a private agent receipt' })).toBeVisible(); await expect(page.getByText('FLEX · $1.00', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Prepare checkout' })).toHaveCount(0); await expect(page.getByRole('button', { name: 'Create private pairing code' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Close customer workspace' }).click(); await page.getByRole('button', { name: 'Staff', exact: true }).click(); await page.getByLabel('Customer pairing code').fill('ABCD234567'); await expect(page.getByRole('button', { name: 'Confirm cash and issue voucher' })).toBeDisabled(); await page.getByRole('checkbox', { name: 'I have received $1.00 in cash from this customer.', exact: true }).check(); await page.getByRole('button', { name: 'Confirm cash and issue voucher' }).click();
+  await expect(page.getByText('Cash received: $1.00 · confirmed by agent', { exact: true })).toBeVisible(); expect(received).toEqual({ siteId, bundleId: 'flex', delivery: 'receipt', pairingCode: 'ABCD234567', payment: { method: 'cash', confirmed: true, amountMinor: 100, currency: 'USD' } });
+});
+
+test('a legacy committed sale retries its exact saved body without inventing cash evidence', async ({ page }) => {
+  const key = '12345678-1234-4123-8123-123456789abc', legacy = { siteId, bundleId: 'flex', delivery: 'receipt', pairingCode: 'ABCD234567' };
+  await page.addInitScript(({ staffId, key, legacy }) => sessionStorage.setItem(`pamofi.operation:staff:${staffId}:sale`, JSON.stringify({ key, payload: JSON.stringify(legacy) })), { staffId, key, legacy });
+  await mock(page, async (route, path, method) => {
+    if (path === '/api/staff/session') { await json(route, staff()); return true; }
+    if (path === '/api/staff/inventory') { await json(route, { inventory: [{ agentId: staffId, siteId, siteName: site.name, bundleId: 'flex', quantity: 0 }] }); return true; }
+    if (path === '/api/staff/sales') { if (method === 'POST') { expect(route.request().headers()['idempotency-key']).toBe(key); expect(route.request().postDataJSON()).toEqual(legacy); await json(route, { sale: sale(), replayed: true }); } else await json(route, { sales: [], hasMore: false, nextOffset: null }); return true; }
+    return false;
+  });
+  await openStaff(page); await expect(page.getByText('Do not collect cash again.', { exact: false })).toBeVisible(); await page.getByRole('checkbox', { name: /without collecting payment again/ }).check(); await page.getByRole('button', { name: 'Retry saved sale safely' }).click(); await expect(page.getByText('stock was not debited twice', { exact: false })).toBeVisible(); await expect(page.getByText('Cash confirmation was not recorded for this earlier sale.', { exact: true })).toBeVisible();
 });
