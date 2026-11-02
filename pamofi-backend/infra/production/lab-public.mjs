@@ -79,6 +79,7 @@ result = await request('/api/staff/mfa/confirm', { method: 'POST', body: { code:
 const adminCookie = token(result, '__Host-pamofi_staff_session'); check(JSON.parse(result.text).role, 'admin'); check(JSON.parse(result.text).mfaVerified, true);
 result = await request('/api/staff/users', { cookie: adminCookie }); check(result.status, 200); check(JSON.parse(result.text).users.length, 1);
 result = await request('/api/staff/audit', { cookie: adminCookie }); check(result.status, 200); check(JSON.parse(result.text).events[0].action, 'bootstrap');
+result = await request('/api/staff/users/' + enrollment.staffId + '/recover-mfa', { method: 'POST', cookie: adminCookie, body: { expectedVersion: 1, reason: 'Verify self recovery remains forbidden' } }); check(result.status, 409); check(JSON.parse(result.text).error, 'self_recovery_rejected');
 check((await request('/api/admin/bundles', { cookie: adminCookie })).status, 200); // prepaid -> identity over verified private TLS
 check((await request('/api/staff/session', { method: 'DELETE', cookie: adminCookie })).status, 204);
 check((await request('/api/staff/session', { cookie: adminCookie })).status, 401);

@@ -244,6 +244,31 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     return publicStaff(updated.rows[0]);
   })));
 
+  // Another approved administrator must verify identity out of band before
+  // initiating this action. Re-enrollment does not itself restore approval.
+  app.post<{ Params: { id: string }; Body: { expectedVersion: number; reason: string } }>('/v1/staff/users/:id/recover-mfa', {
+    preHandler: publicGuard, config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } }, body: { type: 'object', additionalProperties: false, required: ['expectedVersion', 'reason'], properties: { expectedVersion, reason } } }
+  }, async (request, reply) => execute(reply, async () => transaction(async client => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [ADMIN_LOCK]);
+    const actor = await administrator(request, client, true);
+    if (actor.id === request.params.id.toLowerCase()) return fail(409, 'self_recovery_rejected');
+    const found = await client.query(`SELECT ${PUBLIC_COLUMNS.join(',')} FROM staff_users WHERE id=$1 FOR UPDATE`, [request.params.id]);
+    const user = found.rows[0];
+    if (!user) return fail(404, 'staff_not_found');
+    if (user.version !== request.body.expectedVersion) return fail(409, 'staff_changed');
+    if (request.body.reason.trim().length < 5) return fail(400, 'invalid_reason');
+    if (!['pending', 'approved'].includes(user.status) || !user.mfa_enrolled_at) return fail(409, 'mfa_recovery_not_available');
+    // Revoke all sessions and permissions. The account must prove its password,
+    // enroll a new authenticator, and obtain an independent approval again.
+    const updated = await client.query(`UPDATE staff_users SET status='pending',role=NULL,site_ids='{}',
+      mfa_secret_ciphertext=NULL,mfa_enrolled_at=NULL,mfa_last_counter=-1,failed_mfa=0,
+      version=version+1,updated_at=now() WHERE id=$1 RETURNING *`, [user.id]);
+    await invalidate(client, user.id);
+    await audit(client, actor.id, user, updated.rows[0], 'mfa_recovery', request.body.reason);
+    return publicStaff(updated.rows[0]);
+  })));
+
   app.get<{ Querystring: { after?: string } }>('/v1/staff/audit', { preHandler: publicGuard, schema: { querystring: paging } }, async (request, reply) => execute(reply, async () => {
     await administrator(request);
     const result = await pool!.query(`SELECT * FROM staff_audit_events WHERE ($1::uuid IS NULL OR

@@ -1,5 +1,7 @@
 # PamoFi experience and workflow review — 2 November 2026
 
+The reviewed source was subsequently deployed; see the [reviewed production release record](../local-tools/release-evidence/2026-11-02-reviewed-production/README.md) for deployed identities, live checks and remaining gates.
+
 ## Scope and baseline
 
 Review requested before implementation: benchmark the deployed PamoFi web app against Vodacom, Cell C and strong self-service experiences, test customer and staff journeys, fix confirmed gaps, and improve the vibrant visual identity.

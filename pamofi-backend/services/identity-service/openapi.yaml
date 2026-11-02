@@ -347,6 +347,31 @@ paths:
           description: Staff record with incremented version and unchanged role
         '409':
           description: Version changed
+  /v1/staff/users/{id}/recover-mfa:
+    post:
+      summary: Initiate independently verified authenticator recovery for another staff member
+      description: Requires an approved MFA-authenticated administrator and configured Origin. Self-recovery is forbidden. After independent identity verification, the operation clears the old authenticator, revokes sessions, removes role and site permissions, returns the account to pending, increments its version and appends an audit event. The existing password is retained; fresh MFA enrollment and administrator reapproval are required.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, reason]
+              properties:
+                expectedVersion: {type: integer, minimum: 1, maximum: 2147483646}
+                reason: {type: string, minLength: 5, maxLength: 500}
+      responses:
+        '200': {description: Pending staff record with old access revoked}
+        '401': {description: Current staff session required}
+        '403': {description: Administrator or valid Origin required}
+        '409': {description: Self-recovery, unavailable recovery or stale version}
   /v1/staff/audit:
     get:
       summary: Read immutable administrator decision history

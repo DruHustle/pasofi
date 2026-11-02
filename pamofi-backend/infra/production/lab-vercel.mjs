@@ -159,6 +159,7 @@ try {
   check(admin.data.role, 'admin'); check(admin.data.mfaVerified, true);
   response = await request('/api/staff/users', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).users.length, 1);
   response = await request('/api/staff/audit', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).events[0].action, 'bootstrap');
+  response = await request('/api/staff/users/' + admin.data.staffId + '/recover-mfa', { method: 'POST', cookie: admin.cookie, body: { expectedVersion: admin.data.version, reason: 'Verify self recovery remains forbidden' } }); check(response.status, 409); check(JSON.parse(response.text).error, 'self_recovery_rejected');
   check((await request('/api/admin/bundles', { cookie: admin.cookie })).status, 200);
   const bundleId = 'split-lab', siteId = randomUUID();
   response = await request('/api/admin/bundles', { method: 'POST', cookie: admin.cookie, body: { id: bundleId, priceMinor: 123, currency: 'USD', byteLimit: '1000000000', validitySeconds: 3600, published: false, reason: 'Disposable split-host qualification bundle' } }); check(response.status, 201);

@@ -235,7 +235,7 @@ test('canonical IPv4/IPv6 identities stay distinct and a mapped address agrees w
 test('cash workflow, recovery, staff and network routes are available through original and rewritten URL forms', async () => {
   const paths = [
     ['GET', '/api/capabilities'], ['GET', '/api/usage?entitlementIds=a%2Cb'], ['POST', '/api/session'], ['DELETE', '/api/session'],
-    ['POST', '/api/staff/register'], ['POST', '/api/staff/mfa/confirm'], ['POST', `/api/staff/users/${id}/decision`],
+    ['POST', '/api/staff/register'], ['POST', '/api/staff/mfa/confirm'], ['POST', `/api/staff/users/${id}/decision`], ['POST', `/api/staff/users/${id}/recover-mfa`],
     ['POST', '/api/admin/inventory/allocations'], ['POST', '/api/staff/sales'], ['GET', `/api/staff/sales/${id}/receipt`],
     ['POST', '/api/receipt-pairings'], ['GET', `/api/receipt-pairings/${id}`], ['POST', '/api/vouchers/redeem'],
     ['POST', '/api/recovery/rotate'], ['POST', '/api/handoff/redeem'], ['POST', '/api/network/credentials'],

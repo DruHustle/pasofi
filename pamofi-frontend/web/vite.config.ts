@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
     '^/api/orders(?:/[0-9a-fA-F-]+/(?:demo-confirm|checkout|status|mock-payment|expire-unused))?(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/recovery(?:/(?:status|setup|rotate))?(?:\\?|$)': { target: identity, rewrite },
     '^/api/handoff(?:/redeem)?(?:\\?|$)': { target: identity, rewrite },
-    '^/api/staff/(?:register|login|session|mfa/(?:setup|confirm|verify)|users(?:/[0-9a-fA-F-]+/(?:decision|revoke-sessions))?|audit)(?:\\?|$)': { target: identity, rewrite },
+    '^/api/staff/(?:register|login|session|mfa/(?:setup|confirm|verify)|users(?:/[0-9a-fA-F-]+/(?:decision|revoke-sessions|recover-mfa))?|audit)(?:\\?|$)': { target: identity, rewrite },
     '^/api/staff/(?:sites|inventory|sales(?:/[0-9a-fA-F-]+/(?:receipt|delivery|resend))?)(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/admin/(?:sites|inventory/allocations|network/reviews(?:/[0-9a-fA-F-]+/resolve)?|bundles(?:/[a-z][a-z0-9-]{0,39})?)(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/receipt-pairings(?:/[0-9a-fA-F-]+)?(?:\\?|$)': { target: prepaid, rewrite },

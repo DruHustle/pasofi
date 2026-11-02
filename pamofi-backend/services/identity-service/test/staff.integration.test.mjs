@@ -204,3 +204,32 @@ test('first-admin bootstrap serializes competing requests and remains closed aft
     await assert.rejects(bootstrap(), /permanently closed/);
   } finally { await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await pool.end(); }
 });
+
+test('lost authenticator recovery requires another administrator, revokes all access, and requires new MFA and approval', { skip: !url }, async () => fixture(async (app, pool, ids) => {
+  const admin = await approved(app, pool, ids), target = await approved(app, pool, ids, 'agent');
+  const route = `/v1/staff/users/${target.id}/recover-mfa`;
+  const body = { expectedVersion: 1, reason: 'Identity verified through independent staff procedure' };
+  assert.equal((await send(app, route, body)).statusCode, 401);
+  assert.equal((await send(app, route, body, target.cookie)).statusCode, 403);
+  assert.equal((await send(app, route, body, admin.cookie, 'POST', 'https://evil.test')).statusCode, 403);
+  assert.equal((await send(app, `/v1/staff/users/${admin.id}/recover-mfa`, body, admin.cookie)).json().error, 'self_recovery_rejected');
+  const attempts = await Promise.all([send(app, route, body, admin.cookie), send(app, route, body, admin.cookie)]);
+  assert.deepEqual(attempts.map(result => result.statusCode).sort(), [200, 409]);
+  const recovered = attempts.find(result => result.statusCode === 200).json();
+  assert.equal(recovered.status, 'pending'); assert.equal(recovered.role, null); assert.deepEqual(recovered.siteIds, []);
+  assert.equal(recovered.mfaEnrolled, false); assert.equal(recovered.version, 2);
+  assert.equal((await send(app, '/v1/staff/session', {}, target.cookie, 'GET')).statusCode, 401);
+  const audit = (await pool.query("SELECT actor_staff_id,action,previous_version,new_version FROM staff_audit_events WHERE target_staff_id=$1", [target.id])).rows;
+  assert.deepEqual(audit, [{ actor_staff_id: admin.id, action: 'mfa_recovery', previous_version: 1, new_version: 2 }]);
+  assert.equal((await send(app, route, { ...body, expectedVersion: 2 }, admin.cookie)).json().error, 'mfa_recovery_not_available');
+  const wrongPassword = await send(app, '/v1/staff/login', { email: target.email, password: 'Wrong synthetic password' });
+  assert.equal(wrongPassword.statusCode, 401);
+  const login = await send(app, '/v1/staff/login', { email: target.email, password });
+  assert.equal(login.json().next, 'mfa_setup');
+  const challenge = cookie(login, 'pamofi_demo_staff_challenge');
+  const setup = await send(app, '/v1/staff/mfa/setup', {}, challenge);
+  assert.equal(setup.statusCode, 200); assert.notEqual(setup.json().secret, target.secret);
+  const confirmed = await send(app, '/v1/staff/mfa/confirm', { code: totp(setup.json().secret).generate() }, challenge);
+  assert.equal(confirmed.statusCode, 200); assert.equal(confirmed.json().status, 'pending');
+  assert.equal((await send(app, '/v1/staff/users', {}, cookie(confirmed), 'GET')).statusCode, 403);
+}));
