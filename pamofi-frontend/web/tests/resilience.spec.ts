@@ -229,3 +229,20 @@ test('catalogue and session requests work without newer AbortSignal static metho
   await expect(page.getByRole('button', { name: 'Create demo order' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Create recovery key' })).toBeEnabled();
 });
+
+
+test('bundle and help links can be revisited with browser history and opened directly', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Help', exact: true }).click();
+  await expect(page).toHaveURL(/#help$/);
+  await expect(page.getByRole('heading', { name: 'Here to help.' })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Find your fit.' })).toBeVisible();
+  await page.goForward();
+  await expect(page.getByRole('heading', { name: 'Here to help.' })).toBeVisible();
+  await page.goto('/#bundles');
+  await expect(page.getByRole('heading', { name: 'Find your fit.' })).toBeVisible();
+  await page.goto('/#help');
+  await expect(page.getByRole('heading', { name: 'Here to help.' })).toBeVisible();
+});
