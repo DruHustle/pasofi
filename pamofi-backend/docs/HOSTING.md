@@ -2,7 +2,7 @@
 
 ## Selected deployment
 
-The owner selected **Vercel for the web frontend, Oracle for the backend, and Starlink upstream of each MikroTik**. These provider choices are settled. The exact Vercel project/production origin, Oracle VM, API hostname, credentials and immutable release images remain deployment inputs; another Onesa workload is not implicitly the selected PamoFi instance.
+The owner selected **Vercel for the web frontend, Oracle for the backend, and Starlink upstream of each MikroTik**. These provider choices are settled. The owner explicitly selected the shared Onesa UG Backend. The website is https://pamofi.onesa.eu and the API is https://api.pamofi.onesa.eu. Actual deployment identities, image IDs and remaining acceptance work are recorded in the [Onesa deployment evidence](../local-tools/release-evidence/2026-11-02-onesa-production/README.md).
 
 The current work completes and tests software before physical hotspot acceptance. Source configuration, isolated service tests and native compilation do not activate a cloud deployment, a payment method or a router.
 
@@ -36,7 +36,7 @@ The Oracle split-host gateway authenticates that proxy and derives rate-limit id
 
 The Nginx frontend explicitly forwards reviewed public customer, staff, administration, receipt, checkout and network-control routes. It preserves request methods, bodies, cookies and origin checks and rejects unknown/internal API paths. Network customer requests go through prepaid authority; no public request can choose an internal router-management URL.
 
-The [production foundation](../infra/production/README.md) adds a public TLS ingress contract, a private TLS service gateway, protected file-based secrets, separate database owner/migration/runtime identities, explicit grant manifests and release-image inputs. The default single-host deployment remains available; the Vercel/Oracle split is explicit. These are source configuration and guarded verification tools, not a deployment. The operator must identify and authenticate the intended Oracle VM, supply real hostnames/certificates, create the intended persistent database volume, select architecture-compatible immutable images and verify actual transport/permissions before activation.
+The [production foundation](../infra/production/README.md) adds a public TLS ingress contract, a private TLS service gateway, protected file-based secrets, separate database owner/migration/runtime identities, explicit grant manifests and release-image inputs. The default single-host deployment remains available; the Vercel/Oracle split is explicit. These source tools support the separately verified Onesa deployment. Its encrypted configuration, persistent database volume, TLS gateway and ARM64 image identities must be preserved during changes; real cash commerce and physical hotspot activation still require their own acceptance.
 
 ## Private router management
 
@@ -62,4 +62,4 @@ References: [RouterOS WireGuard](https://help.mikrotik.com/docs/spaces/ROS/pages
 
 Qualify real TLS/secret custody, role grants, gateway paths and egress; then actual merchant/SMS methods, physical router enforcement, native cookies, capacity, monitoring and operator procedures. Configure [independent encrypted recovery](BACKUPS.md), test restoration with external fencing, and exercise release rollback. [BUILD_STATUS.md](BUILD_STATUS.md) records the completed software checks and the external work still outstanding.
 
-The [operations checker and runbook](../infra/operations/README.md) provide read-only health, exposure, queue and backup diagnostics plus an explicit release/rollback procedure. They do not install a scheduler or send alerts. Record actual scheduled execution and a deliberate alert-delivery test before treating monitoring as active.
+The [operations checker and runbook](../infra/operations/README.md) provide read-only health, exposure, queue and backup diagnostics plus an explicit release/rollback procedure. The Onesa-specific [scheduler and alert installers](../local-tools/manual%20deployment/onesa/README.md) record the deployed timers and notifications. The owner confirmed delivery of a test notification; keep monitoring and restore drills under review.
