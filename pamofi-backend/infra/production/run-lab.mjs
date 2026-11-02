@@ -106,6 +106,7 @@ async function main() {
 test "$(stat -c '%a:%U' "$PGBACKREST_CONFIG")" = '600:postgres'
 gosu postgres test -r "$PGBACKREST_CONFIG"
 grep -qx 'pg1-path=/var/lib/postgresql/data/pgdata' "$PGBACKREST_CONFIG"
+grep -qx 'pg1-user=pamofi_bootstrap' "$PGBACKREST_CONFIG"
 grep -qx 'repo1-cipher-type=aes-256-cbc' "$PGBACKREST_CONFIG"
 grep -qx 'repo1-storage-verify-tls=y' "$PGBACKREST_CONFIG"
 gosu postgres pgbackrest version

@@ -37,7 +37,7 @@ docker build --quiet -t "$image" "$lab_dir" >/dev/null
 docker run --rm --network none --user root -v "$source_volume:/var/lib/postgresql/data" -v "$repo_volume:/var/lib/pgbackrest" "$image" sh -c 'chown postgres:postgres /var/lib/postgresql/data /var/lib/pgbackrest'
 docker run --rm --network none --user root -v "$restore_volume:/var/lib/postgresql/data" "$image" sh -c 'chown postgres:postgres /var/lib/postgresql/data'
 docker run -d --name "$source_name" --network none \
- -e POSTGRES_PASSWORD=disposable-lab-only -e PGDATA=/var/lib/postgresql/data/pgdata \
+ -e POSTGRES_USER=pamofi_bootstrap -e POSTGRES_PASSWORD=disposable-lab-only -e PGDATA=/var/lib/postgresql/data/pgdata \
  -e PGBACKREST_REPO1_CIPHER_PASS="$lab_key" \
  -v "$source_volume:/var/lib/postgresql/data" -v "$repo_volume:/var/lib/pgbackrest" \
  "$image" postgres -c archive_mode=on -c "archive_command=pgbackrest --stanza=pamofi-lab archive-push %p" -c wal_level=replica >/dev/null
@@ -47,7 +47,7 @@ wait_ready() {
  for ((i=0;i<90;i++)); do
   # The image starts a temporary socket-only server during initialization; wait
   # for the final TCP listener, not the short-lived initialization server.
-  if docker exec "$name" pg_isready -h 127.0.0.1 -U postgres -d postgres >/dev/null 2>&1; then return 0; fi
+  if docker exec "$name" pg_isready -h 127.0.0.1 -U pamofi_bootstrap -d postgres >/dev/null 2>&1; then return 0; fi
   sleep 1
  done
  printf '%s did not become ready\n' "$name" >&2; return 1
@@ -55,7 +55,7 @@ wait_ready() {
 wait_ready "$source_name"
 docker exec --user postgres "$source_name" pgbackrest --stanza=pamofi-lab stanza-create
 # Use the real service-owned databases and schema migrations, but only disposable fixtures.
-docker exec -i "$source_name" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres < "$backend_dir/infra/postgres/init.sql" >/dev/null
+docker exec -i "$source_name" psql -X -v ON_ERROR_STOP=1 -U pamofi_bootstrap -d postgres < "$backend_dir/infra/postgres/init.sql" >/dev/null
 for service in identity prepaid-access network notification assistant; do
  case "$service" in prepaid-access) db=pamofi_prepaid_access;; *) db="pamofi_${service}";; esac
  docker exec "$source_name" psql -X -v ON_ERROR_STOP=1 -U "$db" -d "$db" -c 'CREATE TABLE schema_migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())' >/dev/null
@@ -98,9 +98,9 @@ INSERT INTO event_outbox(id,event_type,event_version,aggregate_id,aggregate_vers
  VALUES('99999999-9999-4999-8999-999999999999','lab.restored',1,'33333333-3333-4333-8333-333333333333',1,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','{}');
 COMMIT;
 SQL
-wal=$(docker exec "$source_name" psql -X -A -t -U postgres -d postgres -c 'SELECT pg_walfile_name(pg_switch_wal())' | tr -d '\r\n')
+wal=$(docker exec "$source_name" psql -X -A -t -U pamofi_bootstrap -d postgres -c 'SELECT pg_walfile_name(pg_switch_wal())' | tr -d '\r\n')
 for ((i=0;i<90;i++)); do
- archived=$(docker exec "$source_name" psql -X -A -t -U postgres -d postgres -c "SELECT COALESCE(last_archived_wal,'') FROM pg_stat_archiver" 2>/dev/null | tr -d '\r\n' || true)
+ archived=$(docker exec "$source_name" psql -X -A -t -U pamofi_bootstrap -d postgres -c "SELECT COALESCE(last_archived_wal,'') FROM pg_stat_archiver" 2>/dev/null | tr -d '\r\n' || true)
  [[ "$archived" == "$wal" ]] && break
  sleep 1
 done
