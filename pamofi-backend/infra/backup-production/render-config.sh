@@ -27,7 +27,7 @@ trap 'rm -f -- "$temporary"' EXIT HUP INT TERM
  printf '[global]\nrepo1-type=s3\nrepo1-s3-bucket=%s\nrepo1-s3-endpoint=s3.%s.backblazeb2.com\nrepo1-s3-region=%s\n' "$bucket" "$region" "$region"
  printf 'repo1-s3-uri-style=path\nrepo1-storage-verify-tls=y\nrepo1-path=%s\n' "$prefix"
  printf 'repo1-s3-key=%s\nrepo1-s3-key-secret=%s\nrepo1-cipher-type=aes-256-cbc\nrepo1-cipher-pass=%s\n' "$key_id" "$application_key" "$cipher"
- printf 'repo1-retention-full=4\nrepo1-retention-diff=14\narchive-check=y\narchive-copy=y\nstart-fast=y\nprocess-max=2\nlog-level-console=warn\nlog-level-file=off\n'
+ printf 'repo1-bundle=y\nrepo1-retention-full=4\nrepo1-retention-diff=14\narchive-check=y\narchive-copy=y\nstart-fast=y\nprocess-max=2\nlog-level-console=warn\nlog-level-file=off\n'
  printf '\n[pamofi]\npg1-path=/var/lib/postgresql/data/pgdata\npg1-socket-path=/var/run/postgresql\npg1-user=pamofi_bootstrap\n'
 } > "$temporary"
 chmod 600 "$temporary"
