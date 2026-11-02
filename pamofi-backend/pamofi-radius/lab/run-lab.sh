@@ -5,7 +5,11 @@ repo_root=$(cd ../.. && pwd)
 lab_temp=$(mktemp -d "${TMPDIR:-/tmp}/pamofi-radius-lab.XXXXXXXX")
 chmod 700 "$lab_temp"
 lab_project="pamofi-radius-$(basename "$lab_temp" | tr '[:upper:].' '[:lower:]-')"
-export LAB_CERT_DIR="$lab_temp"
+# Only disposable runtime certificates/config are mounted. The unprivileged
+# node container must traverse the mount; keep the CA private key and packet
+# captures in the private parent directory, which is never mounted.
+export LAB_CERT_DIR="$lab_temp/runtime"
+mkdir -m 755 "$LAB_CERT_DIR"
 # Choose a private /24 which does not overlap existing Docker networks.
 lab_prefix=$(python3 - <<'PYNET'
 import ipaddress,json,random,subprocess
@@ -21,7 +25,7 @@ else: raise SystemExit('No unused lab subnet found')
 PYNET
 )
 export LAB_SUBNET="$lab_prefix.0/24" LAB_NAS_A_IP="$lab_prefix.10" LAB_NAS_B_IP="$lab_prefix.11"
-sed -e "s/172.29.79.10/$LAB_NAS_A_IP/g" -e "s/172.29.79.11/$LAB_NAS_B_IP/g" clients.conf > "$lab_temp/clients.conf"
+sed -e "s/172.29.79.10/$LAB_NAS_A_IP/g" -e "s/172.29.79.11/$LAB_NAS_B_IP/g" clients.conf > "$LAB_CERT_DIR/clients.conf"
 cleanup() {
   docker compose -p "$lab_project" down --volumes --remove-orphans --rmi local >/dev/null 2>&1 || true
   rm -rf -- "$lab_temp"
@@ -47,7 +51,9 @@ for name in server radius; do
   fi
   openssl x509 -req -in "$lab_temp/$name.csr" -CA "$lab_temp/ca.crt" -CAkey "$lab_temp/ca.key" -CAcreateserial -out "$lab_temp/$name.crt" -days 1 -extfile "$lab_temp/$name.ext" >/dev/null 2>&1
 done
-chmod 644 "$lab_temp/server.key" "$lab_temp/radius.key"
+for name in ca.crt server.crt server.key radius.crt radius.key; do
+  install -m 644 "$lab_temp/$name" "$LAB_CERT_DIR/$name"
+done
 export LAB_CLIENT_FINGERPRINT
 LAB_CLIENT_FINGERPRINT=$(openssl x509 -in "$lab_temp/radius.crt" -noout -fingerprint -sha256 | cut -d= -f2)
 
