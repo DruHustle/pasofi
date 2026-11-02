@@ -69,6 +69,15 @@ docker volume inspect "$PAMOFI_DATABASE_VOLUME"
 
 The Compose volume is declared `external: true`. Compose refuses to start if the named volume is missing and does not remove it during `docker compose down --volumes`. This protects against an ordinary application teardown; an explicit Docker volume removal or host loss still requires independent backups. Never change the volume name to work around an initialization or migration failure: that would start a different database.
 
+Before starting PostgreSQL, run the read-only volume preflight from the repository root. It requires an explicit installation mode, never creates or modifies the volume, and rejects a root-level PostgreSQL cluster because this stack expects `pgdata/`:
+
+```bash
+export PAMOFI_INSTALL_MODE=new  # Use only for a verified empty new installation.
+bash 'pamofi-backend/local-tools/manual deployment/preflight-production-volume.sh'
+```
+
+For an upgrade, set `PAMOFI_INSTALL_MODE=upgrade` and `PAMOFI_EXPECTED_SYSTEM_ID` to the independently recorded PostgreSQL system identifier from the existing production release. The check requires PostgreSQL 17 and a matching `pgdata/` cluster. It does not replace a verified backup, restore test, migration review or exclusive deployment control. In particular, the historical private staging volume uses a root-level data directory; do not point this production stack at it without a separately reviewed migration.
+
 Validate configuration, start the private database, apply every owned migration/grant policy, and only then start runtime services:
 
 ```bash

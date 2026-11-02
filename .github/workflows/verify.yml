@@ -81,6 +81,7 @@ jobs:
           bash -n pamofi-backend/infra/backup-production/backup.sh
           sh -n pamofi-backend/infra/production/gateway/vercel-entrypoint.sh
           sh -n pamofi-backend/infra/radius-production/entrypoint.sh
+          bash 'pamofi-backend/local-tools/manual deployment/test-production-volume-preflight.sh'
       - name: Validate the site firewall in an isolated network namespace
         run: |
           if ! command -v nft >/dev/null || ! command -v unshare >/dev/null; then
