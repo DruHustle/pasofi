@@ -11,6 +11,10 @@ const object=(v:unknown):Record<string,any>=>v&&typeof v==='object'&&!Array.isAr
 export function paymentConfiguration(demo:boolean):Configuration {
  const raw=process.env.PAMOFI_PAYMENT_MODE;
  if(process.env.PAMOFI_PAYMENTS_ENABLED!=='true')return {enabled:false,mode:'disabled'};
+ // An explicit unsupported provider must not silently become a simulation.
+ // An unset selector preserves the existing demo-only mock configuration.
+ const provider=process.env.PAMOFI_PAYMENT_PROVIDER;
+ if(provider!==undefined&&provider!=='mock')return {enabled:false,mode:'disabled'};
  if(raw==='mock'&&demo)return {enabled:true,mode:'mock'};
  // Direct provider settlement is not yet independently verifiable from the
  // published contract. Neither legacy flags nor new credentials can enable it.

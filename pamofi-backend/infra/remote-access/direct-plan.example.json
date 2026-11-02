@@ -1,0 +1,14 @@
+{
+  "mode": "direct",
+  "directRoute": "upstream-forwarded-ipv4",
+  "routerEndpoint": "REPLACE_WITH_REACHABLE_PUBLIC_IPV4_OR_DNS",
+  "port": 51820,
+  "wanInterface": "ether1",
+  "routerPublicKey": "REPLACE_WITH_ROUTER_PUBLIC_KEY",
+  "clientPublicKey": "REPLACE_WITH_OWNER_DEVICE_PUBLIC_KEY",
+  "routerTunnelIp": "10.77.255.2",
+  "clientTunnelIp": "10.77.255.1",
+  "managementPorts": [80, 443, 8291],
+  "routerNetworks": ["192.168.88.0/24", "192.168.0.0/24"],
+  "clientNetworks": ["REPLACE_WITH_OBSERVED_REMOTE_CLIENT_IPV4_NETWORK_CIDR"]
+}

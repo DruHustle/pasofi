@@ -2,6 +2,16 @@
 
 Reviewed on 2026-11-02. Cash sales remain the application purchase path. External digital checkout is unavailable; environment flags cannot activate Pesepay, EcoCash or a bank. Local demo simulation remains available independently.
 
+## Bank and Zimswitch selection
+
+The [payment investigation](../../docs/PAYMENT_INTEGRATION_RESEARCH_2026-11-02.md) now compares Stanbic, CBZ/iVeri, CABS and ZB/Smile&Pay, with current-source dates and pricing limitations. Stanbic is the first commercial candidate for online Visa/Mastercard, CBZ provides a strong documented integration alternative, CABS must confirm its online acquiring offer, and ZB is a candidate for combined cards and wallets. No bank has been selected or merchant account approved by this work.
+
+Zimswitch is a payment network and online-gateway route onboarded through an acquiring bank. CABS card issuing and physical POS support do not prove online merchant Visa/Mastercard acceptance. PamoFi requires the actual merchant contract, enabled card brands/currencies, settlement arrangement, sandbox and authenticated verification/refund specification before implementing that bank's adapter. Published customer/account charges are not merchant commission, and no tariff is an application constant.
+
+`paymentConfiguration` enables only explicit demo-mode simulation: `PAMOFI_PAYMENTS_ENABLED=true`, `PAMOFI_PAYMENT_MODE=mock`, and the application's demo/development environment checks. `PAMOFI_PAYMENT_PROVIDER` may be absent for existing demo configurations or exactly `mock`. Any other explicit value, including an empty or misspelled value, disables checkout; naming an unsupported bank/provider must not silently select a mock payment. Production remains disabled even with an explicit mock selector.
+
+The gate regression checks cover Pesepay, EcoCash, InnBucks, Stanbic, CBZ, ZB, CABS and Zimswitch across unsupported sandbox/production modes and attempted mock fallback. They assert disabled public capabilities, unavailable checkout/callback routes, and no outbound HTTP calls. These are local boundary tests; they do not certify a bank integration or enable a digital payment method.
+
 ## Official EcoCash contract reviewed
 
 The [Online Payments documentation](https://developers.ecocash.co.zw/docs/online-payments) describes merchant collections using HTTP Basic authentication and these sandbox endpoints:

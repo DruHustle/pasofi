@@ -23,7 +23,15 @@ Read through the user-authorized, already signed-in WebFig session at `http://19
 
 After the owner logged in again on 2 November 2026, the same authorized WebFig session was reachable. Resources still showed hAP lite, SMIPS, RouterOS 7.18.2, 32 MiB total RAM, approximately 8.2–8.3 MiB free and 7.8 MiB free flash. WireGuard still contained zero interfaces. The route list contained the DHCP default route through `192.168.0.1`, connected `192.168.0.0/24` on `ether1`, and connected `192.168.88.0/24` on `bridge`.
 
-The proposed dedicated `10.77.255.0/30` management transit does not overlap those observed local networks, but the chosen hub and owner's Tailscale routes must still be inspected before allocating it. Restored WebFig login does not supply the missing public hub, tailnet identity, peer public keys or approved endpoint. The [remote-management plan](../../infra/remote-access/README.md) remains prepared and inactive. No new account, tunnel, firewall rule or router configuration was applied during this recheck.
+The proposed dedicated `10.77.255.0/30` management transit does not overlap those observed local networks, but the owner's remote-client routes and, if used, the hub/tailnet routes must also be inspected before allocating its addresses. No new account, tunnel, firewall rule or router configuration was applied during this recheck.
+
+## Direct remote-access follow-up
+
+The owner prefers a direct connection without a separate VPN server. Native WireGuard can provide that when the router is reachable on public IPv4 (with an upstream UDP forward where required), or on global IPv6 from a client with working IPv6. The observed private `192.168.0.0/24` uplink does **not** establish CGNAT. The upstream public address, any ISP CGNAT, global IPv6 allocation/routing, upstream administrative access and external UDP reachability are still unknown. None may be inferred from the local WebFig login.
+
+The [remote-management tools](../../infra/remote-access/README.md) now prepare direct and hub-fallback plans and assess explicitly supplied observations. The SMIPS hAP lite cannot use Back to Home; a local Tailscale subnet router would require the additional always-on site device the owner does not have. The owner-only management tunnel remains separate from PamoFi's backend/RADIUS hosting and service access requirements.
+
+The subsequent browser check could not reach the originating connected-browser context. This is a browser connection limitation, not evidence that the router rejected authentication or that its configuration changed. The last verified device state is the read-only inspection above. No direct/hub handshake, remote-network login, IPv6 reachability, reboot recovery or live firewall denial has yet been verified. Resume the device inspection in the connected browser on the router's LAN before selecting an endpoint and applying an exact recoverable plan.
 
 ## Consequences for PamoFi
 

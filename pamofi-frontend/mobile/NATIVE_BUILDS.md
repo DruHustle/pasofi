@@ -6,7 +6,14 @@ The `Build PamoFi native previews` workflow compiles fresh web assets, runs the 
 
 ## Recorded native checkpoints
 
-Both jobs succeeded in the later [workflow run 41375913293](https://github.com/DruHustle/pamofi/actions/runs/41375913293) for source checkpoint `cd7399af`, producing the API-unconfigured Android debug APK and unsigned iOS simulator preview. Consult the pull request and Actions for subsequent exact-source results; artifact names and bundled source metadata identify the actual compiled revision. Native builds remain separate from cookie/device qualification and production signing.
+Both jobs succeeded in [workflow run 41378312413](https://github.com/DruHustle/pamofi/actions/runs/41378312413) for published head `64277e5e6d5442d3d4e335259a8da816f3ce621f`. GitHub compiled merge source `84a44994c025e625aa3c7ba5b40f8ddfa6a54225`, which is recorded with the artifacts. This checkpoint includes the cash-first customer flow and live usage display.
+
+| Output | Artifact | Uploaded archive size | Uploaded archive SHA-256 |
+| --- | --- | --- | --- |
+| API-unconfigured Android debug APK | [13112510744](https://github.com/DruHustle/pamofi/actions/runs/41378312413/artifacts/13112510744) | 3,958,288 bytes | `2cfd6587d12d2397396b266b861194ad1cee99fcf9e2eb024b3c320601af58e2` |
+| Unsigned iOS simulator app | [13112361645](https://github.com/DruHustle/pamofi/actions/runs/41378312413/artifacts/13112361645) | 1,507,604 bytes | `9e2c7a70a001874efd1a678bbe100a61f73ffcfab9ddff6367f7003fe8ef4be0` |
+
+These artifacts expire on **16 November 2026**. Xcode 26.6 built the iOS preview for arm64 and x86_64 simulator. The earlier [run 41375913293](https://github.com/DruHustle/pamofi/actions/runs/41375913293), for source checkpoint `cd7399af`, also passed both jobs. Consult the pull request and Actions for subsequent exact-source results; artifact names and bundled source metadata identify each actual compiled revision. Native builds remain separate from cookie/device qualification and production signing.
 
 ### Earlier verified artifact record
 

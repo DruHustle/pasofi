@@ -68,7 +68,7 @@ jobs:
       - name: Verify protected backup configuration, remote plan and operations diagnostics
         run: |
           node --test pamofi-backend/infra/backup-production/config.test.mjs \
-            pamofi-backend/infra/remote-access/plan.test.mjs \
+            pamofi-backend/infra/remote-access/*.test.mjs \
             pamofi-backend/infra/operations/check.test.mjs
           sh -n pamofi-backend/infra/backup-production/render-config.sh
           sh -n pamofi-backend/infra/backup-production/entrypoint.sh
