@@ -110,3 +110,13 @@ jobs:
         run: node pamofi-backend/infra/production/run-lab.mjs
       - name: Verify the split Vercel and Oracle production path
         run: node pamofi-backend/infra/production/run-vercel-lab.mjs
+      - name: Retain isolated UI review evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pamofi-ui-evidence-${{ github.sha }}
+          path: |
+            pamofi-frontend/web/test-results/
+            pamofi-frontend/mobile/test-results/
+          if-no-files-found: warn
+          retention-days: 3

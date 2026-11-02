@@ -92,6 +92,44 @@ test('mobile refuses to discard a saved quote when a provider payment attempt ex
   await page.getByRole('button', { name: 'Retry this checkout safely' }).click(); await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible(); expect(orderKeys).toHaveLength(2); expect(new Set(orderKeys).size).toBe(1);
 });
 
+test('native bottom navigation preserves an unresolved checkout and its safe retry', async ({ page, configuredBaseURL }) => {
+  const siteId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', orderId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const orderKeys: string[] = [];
+  await mock(page, async (route, path, method, reply) => {
+    if (path === '/api/capabilities') { await reply({ ...capabilities, paymentMode: 'mock', paymentCheckout: true }); return true; }
+    if (path === '/api/sites') { await reply({ sites: [{ id: siteId, name: 'Configured test site' }] }); return true; }
+    if (path === '/api/payments/methods') { await reply({ enabled: true, methods: [{ code: 'mock', name: 'Mock provider', currency: 'USD', minMinor: 1, maxMinor: 100000 }] }); return true; }
+    if (path === '/api/recovery/status') { await reply({ configured: false }); return true; }
+    if (path === '/api/orders' && method === 'POST') { orderKeys.push(route.request().headers()['idempotency-key']); await reply({ order: { id: orderId, bundle_id: 'flex', price_minor: 100, currency: 'USD', status: 'awaiting_payment', quote_expires_at: new Date(Date.now() + 60_000).toISOString() } }); return true; }
+    if (path === `/api/orders/${orderId}/checkout`) { await reply({ attemptId: entitlementId, state: 'unknown', redirectUrl: null, simulation: true }); return true; }
+    return false;
+  });
+  await page.setViewportSize({ width: 360, height: 780 });
+  await open(page, configuredBaseURL);
+  const nav = page.getByRole('navigation', { name: 'Account navigation' });
+  await nav.getByRole('button', { name: 'Bundles', exact: true }).click();
+  await page.getByRole('checkbox', { name: /reviewed the price/ }).check();
+  await page.getByRole('button', { name: 'Prepare checkout' }).click();
+  await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible();
+  await nav.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your activity', exact: true })).toBeVisible();
+  await nav.getByRole('button', { name: 'Account', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
+  await nav.getByRole('button', { name: 'Home', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible();
+  await nav.getByRole('button', { name: 'Bundles', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Checkout', exact: true })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toHaveValue(siteId);
+  await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toBeDisabled();
+  expect(orderKeys).toHaveLength(1);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':purchase-details')).length)).toBe(1);
+  await page.getByRole('button', { name: 'Retry this checkout safely' }).click();
+  await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible();
+  expect(orderKeys).toHaveLength(2);
+  expect(new Set(orderKeys).size).toBe(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
 test('qualified mobile balance refreshes automatically, pauses offline, and clears when its owner changes', async ({ page, context, configuredBaseURL }, testInfo) => {
   let used = '1000000000', reads = 0, changed = false;
   await page.clock.install(); await mock(page, async (_route, path, _method, reply) => {

@@ -2,15 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { api, mobileApiOrigin } from './api';
 import type { Capabilities } from './business';
 import { messageFor } from './business';
-import CustomerAccess from './CustomerAccess';
+import CustomerAccess, { type CustomerTab } from './CustomerAccess';
 import Recovery from './Recovery';
 import Handoff from './Handoff';
 import { onSessionChange } from './session';
+import Icon from './Icon';
 import './customer.css';
 
-export default function MobileCustomer({ close }: { close: () => void }) {
+export default function MobileCustomer({ close, initialTab = 'access' }: { close: () => void; initialTab?: CustomerTab }) {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null), [message, setMessage] = useState(''), [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<'account' | 'recover' | 'handoff'>('account'), [attempt, setAttempt] = useState(0);
+  const [activeTab, setActiveTab] = useState<CustomerTab>(initialTab);
   const live = useRef(false);
   useEffect(() => {
     const controller = new AbortController();
@@ -27,6 +29,12 @@ export default function MobileCustomer({ close }: { close: () => void }) {
   return <div className="mobile-customer"><div className="mobile-account-links"><button onClick={close}>← Offline preview</button>{capabilities && <><button onClick={() => setScreen('account')}>My account</button><button onClick={() => setScreen('recover')}>Recover</button><button onClick={() => setScreen('handoff')}>Accept handoff</button></>}</div>
     {loading && <p className="mobile-notice" role="status">Checking the configured PamoFi service…</p>}
     {message && <div className="mobile-notice"><div><p role="status">{message}</p><button className="mobile-primary" onClick={() => setAttempt(value => value + 1)}>Retry service connection</button></div></div>}
-    {capabilities && (screen === 'account' ? <CustomerAccess key={`account-${attempt}`} capabilities={capabilities} close={close} recovered={() => setScreen('recover')} /> : screen === 'recover' ? <Recovery close={() => setScreen('account')} recovered={() => setScreen('account')} /> : <Handoff close={() => setScreen('account')} recovered={() => setScreen('account')} />)}
+    {capabilities && (screen === 'account' ? <CustomerAccess key={`account-${attempt}`} capabilities={capabilities} initialTab={activeTab} onNavigate={setActiveTab} close={close} recovered={() => setScreen('recover')} /> : screen === 'recover' ? <Recovery close={() => setScreen('account')} recovered={() => setScreen('account')} /> : <Handoff close={() => setScreen('account')} recovered={() => setScreen('account')} />)}
+    {capabilities && <nav className="mobile-nav" aria-label="Account navigation">
+      <button aria-current={screen === 'account' && (activeTab === 'access' || activeTab === 'wifi' || activeTab === 'voucher') ? 'page' : undefined} onClick={() => { setScreen('account'); setActiveTab('access'); }}><span className="mobile-nav-icon"><Icon name="home" /></span>Home</button>
+      <button aria-current={screen === 'account' && (activeTab === 'purchase' || activeTab === 'receipt') ? 'page' : undefined} onClick={() => { setScreen('account'); setActiveTab('purchase'); }}><span className="mobile-nav-icon"><Icon name="bundles" /></span>Bundles</button>
+      <button aria-current={screen === 'account' && activeTab === 'history' ? 'page' : undefined} onClick={() => { setScreen('account'); setActiveTab('history'); }}><span className="mobile-nav-icon"><Icon name="history" /></span>History</button>
+      <button aria-current={screen !== 'account' || activeTab === 'recovery' ? 'page' : undefined} onClick={() => { setScreen('account'); setActiveTab('recovery'); }}><span className="mobile-nav-icon"><Icon name="account" /></span>Account</button>
+    </nav>}
   </div>;
 }

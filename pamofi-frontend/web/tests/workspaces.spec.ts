@@ -32,7 +32,7 @@ async function mock(page: Page, handle?: (route: Route, path: string, method: st
   });
 }
 async function openStaff(page: Page) { await page.goto('/'); await page.getByRole('button', { name: 'Staff', exact: true }).click(); }
-async function openCustomer(page: Page) { await page.goto('/'); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByRole('heading', { name: 'Your connection, in one place' })).toBeVisible(); }
+async function openCustomer(page: Page) { await page.goto('/'); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible(); }
 
 test('staff application enrolls MFA, remains pending, and exposes no sales or administration', async ({ page }, testInfo) => {
   let authenticated = false;
@@ -249,7 +249,7 @@ test('published cash-only bundles open private pairing and require the exact age
     if (path === '/api/staff/sales') { if (method === 'POST') { received = route.request().postDataJSON(); await json(route, { sale: { ...sale(), simulation: false, payment: { method: 'cash', evidence: 'agent_attestation', receivedMinor: 100, currency: 'USD', confirmedAt: new Date().toISOString(), confirmedBy: staffId } }, replayed: false }); } else await json(route, { sales: [], hasMore: false, nextOffset: null }); return true; }
     return false;
   });
-  await page.goto('/'); await page.getByRole('button', { name: 'Buy flex from an agent' }).click(); await expect(page.getByRole('heading', { name: 'Receive a private agent receipt' })).toBeVisible(); await expect(page.getByText('FLEX · $1.00', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Prepare checkout' })).toHaveCount(0); await expect(page.getByRole('button', { name: 'Create private pairing code' })).toBeEnabled();
+  await page.goto('/#bundles'); await page.getByRole('button', { name: 'Buy flex from an agent' }).click(); await expect(page.getByRole('heading', { name: 'Receive a private agent receipt' })).toBeVisible(); const summary = page.getByRole('complementary').filter({ has: page.getByRole('heading', { name: 'FLEX', exact: true }) }); await expect(summary.getByText('$1.00', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Prepare checkout' })).toHaveCount(0); await expect(page.getByRole('button', { name: 'Create private pairing code' })).toBeEnabled();
   await page.getByRole('button', { name: 'Close customer workspace' }).click(); await page.getByRole('button', { name: 'Staff', exact: true }).click(); await page.getByLabel('Customer pairing code').fill('ABCD234567'); await expect(page.getByRole('button', { name: 'Confirm cash and issue voucher' })).toBeDisabled(); await page.getByRole('checkbox', { name: 'I have received $1.00 in cash from this customer.', exact: true }).check(); await page.getByRole('button', { name: 'Confirm cash and issue voucher' }).click();
   await expect(page.getByText('Cash received: $1.00 · confirmed by agent', { exact: true })).toBeVisible(); expect(received).toEqual({ siteId, bundleId: 'flex', delivery: 'receipt', pairingCode: 'ABCD234567', payment: { method: 'cash', confirmed: true, amountMinor: 100, currency: 'USD' } });
 });

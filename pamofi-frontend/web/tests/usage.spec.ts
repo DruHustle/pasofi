@@ -91,7 +91,7 @@ test('a held old-account usage read cannot replace the account reopened after cr
     return false;
   });
   await open(page); await waiting; owner = otherCustomer; await page.evaluate(() => { const channel = new BroadcastChannel('pamofi.session'); channel.postMessage('signed_out'); channel.close(); });
-  await expect(page.getByRole('heading', { name: 'Your connection, in one place' })).toHaveCount(0); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByTestId('usage-remaining')).toHaveText('2.000 GB'); release(); await done; await expect(page.getByTestId('usage-remaining')).toHaveText('2.000 GB'); await expect(page.getByTestId('usage-used')).toHaveText('3.000 GB');
+  await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toHaveCount(0); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByTestId('usage-remaining')).toHaveText('2.000 GB'); release(); await done; await expect(page.getByTestId('usage-remaining')).toHaveText('2.000 GB'); await expect(page.getByTestId('usage-used')).toHaveText('3.000 GB');
 });
 
 test('a slow history response cannot roll back newer verified usage counters', async ({ page }) => {
