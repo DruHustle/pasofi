@@ -21,6 +21,12 @@ services:
     command: []
     read_only: true
     tmpfs: [/tmp]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - ./gateway/vercel.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./gateway/vercel-entrypoint.sh:/opt/pamofi/vercel-entrypoint.sh:ro

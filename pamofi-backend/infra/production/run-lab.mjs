@@ -3,12 +3,13 @@
 // generated local credentials/certificates are used; no provider is contacted.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, copyFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectRouterControl } from './router-control-config.mjs';
+import { prepare as prepareRadius } from '../radius-production/prepare.mjs';
 
 const vercel = process.argv.length === 3 && process.argv[2] === '--vercel';
 if (process.argv.length !== 2 && !vercel) throw Error('Use run-lab.mjs with no arguments or --vercel.');
@@ -144,6 +145,7 @@ gosu postgres pgbackrest version
       for (const service of serviceNames) assert.equal(config.services[service].environment.PUBLIC_ORIGIN, env.PAMOFI_PUBLIC_ORIGIN);
       assert.equal(config.services.gateway.environment.PAMOFI_PUBLIC_HOST, env.PAMOFI_PUBLIC_HOST);
       assert.equal(config.services.gateway.read_only, true);
+      assert.deepEqual(config.services.gateway.healthcheck.test, ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/health/live']);
       assert.equal(config.secrets.vercel_proxy_token.file, join(secrets, 'vercel_proxy_token'));
       for (const [service, value] of Object.entries(config.services)) {
         assert.equal(value.environment?.PAMOFI_VERCEL_PROXY_TOKEN, undefined);
@@ -156,6 +158,33 @@ gosu postgres pgbackrest version
     assert.ok(backup.services.postgres.command.some(value => value.includes('archive_mode=on')));
     const backupSecrets = backup.services.postgres.secrets.map(item => item.source);
     for (const name of ['postgres_password', 'identity_migrate_password', 'b2_key_id', 'b2_application_key', 'backup_cipher']) assert.ok(backupSecrets.includes(name));
+    // Render the real RADIUS deployment, but merge only its private authority.
+    // Never start the UDP server or copy the overlay's main-service switches.
+    const radiusDirectory = join(directory, 'radius-authority'), unknownNas = 'lab_unregistered_' + id;
+    await prepareRadius({ serverTunnelIp: '10.77.254.1', nases: [{ nasId: randomUUID(), siteId: randomUUID(), clientName: unknownNas, siteName: 'Disposable authority proof', routerTunnelIp: '10.77.254.2', loginUrl: 'https://login.example.com/login' }] }, radiusDirectory);
+    const radiusEnv = { ...env, PAMOFI_ROLE_PREFIX: 'pamofi', PAMOFI_RADIUS_QUALIFIED: 'true', PAMOFI_CUSTOMER_NETWORK_ENABLED: 'false', PAMOFI_RADIUS_TUNNEL_IP: '10.77.254.1', PAMOFI_RADIUS_SECRETS_DIR: radiusDirectory };
+    const radius = JSON.parse((await docker([...configArgs, '-f', join(backend, 'infra/radius-production/compose.yaml'), 'config', '--format', 'json'], { env: radiusEnv })).stdout);
+    config.services['radius-api'] = radius.services['radius-api'];
+    assert.equal(config.services['radius-api'].image, env.PAMOFI_NETWORK_IMAGE);
+    assert.deepEqual(config.services['radius-api'].entrypoint, ['node', '/opt/pamofi-radius/start-authority.mjs']);
+    assert.deepEqual(config.services['radius-api'].profiles, ['radius-qualified']);
+    config.networks.radius_transport = radius.networks.radius_transport;
+    assert.equal(config.networks.radius_transport.internal, true);
+    for (const name of ['radius_ca', 'radius_server_cert', 'radius_server_key', 'radius_client_fingerprint', 'radius_client_cert', 'radius_client_key']) config.secrets[name] = radius.secrets[name];
+    config.services['radius-authority-probe'] = {
+      profiles: ['authority-probe'], image: env.PAMOFI_NETWORK_IMAGE, init: true, entrypoint: ['node', '--input-type=module'], command: [],
+      read_only: true, cap_drop: ['ALL'], security_opt: ['no-new-privileges:true'], mem_limit: '96m', pids_limit: 50,
+      networks: { radius_transport: {} },
+      environment: { PAMOFI_PRODUCTION_AUTHORITY_SMOKE: 'disposable-fixture', PAMOFI_AUTHORITY_SMOKE_NAS: unknownNas, PAMOFI_AUTHORITY_SMOKE_FINGERPRINT: (await readFile(join(radiusDirectory, 'radius_client_fingerprint'), 'utf8')).trim() },
+      secrets: ['radius_ca', 'radius_client_cert', 'radius_client_key', { source: 'internal_ca', target: 'radius_probe_wrong_ca' }],
+    };
+    for (const service of ['network', 'prepaid-access']) {
+      assert.equal(config.services[service].environment.PAMOFI_RADIUS_QUALIFIED, 'false');
+      assert.equal(config.services[service].environment.PAMOFI_CUSTOMER_NETWORK_ENABLED, 'false');
+    }
+    assert.equal(config.services.network.environment.NETWORK_RECONCILER_ENABLED, 'false');
+    assert.equal(Object.hasOwn(config.services, 'radius'), false);
+    noUnexpectedPorts(config);
     // Bind only the lab's public gateway, on Docker-assigned loopback ports.
     // The production template keeps its fixed public80/443 convention.
     config.services.gateway.ports = [{ target: 80, host_ip: '127.0.0.1', protocol: 'tcp' }, { target: 443, host_ip: '127.0.0.1', protocol: 'tcp' }];
@@ -189,7 +218,10 @@ gosu postgres pgbackrest version
     const containers = (await compose(['ps', '-q'])).stdout.trim().split(/\s+/).filter(Boolean), states = JSON.parse((await docker(['inspect', ...containers])).stdout);
     for (const state of states) {
       const service = state.Config.Labels['com.docker.compose.service'], bindings = state.HostConfig.PortBindings || {};
-      if (service === 'gateway') { for (const ports of Object.values(bindings)) for (const port of ports) assert.equal(port.HostIp, '127.0.0.1'); }
+      if (service === 'gateway') {
+        for (const ports of Object.values(bindings)) for (const port of ports) assert.equal(port.HostIp, '127.0.0.1');
+        if (vercel) assert.equal(state.State.Health.Status, 'healthy');
+      }
       else assert.equal(Object.keys(bindings).length, 0, `${service} exposes a host port`);
     }
     const httpsAddress = (await compose(['port', 'gateway', '443'])).stdout.trim(), httpAddress = (await compose(['port', 'gateway', '80'])).stdout.trim();
@@ -208,15 +240,56 @@ gosu postgres pgbackrest version
       const report = JSON.parse(diagnostics.stdout); assert.equal(report.ok, true); assert.equal(report.publicHttps, true); assert.deepEqual(report.problems, []);
       console.log('Read-only operator check passed with verified HTTPS and three service runtime aggregate queries.');
     }
+    console.log('Production lab: starting only the genuine private RADIUS authority with no registered NAS.');
+    await compose(['--profile', 'radius-qualified', 'up', '-d', '--no-deps', '--wait', '--wait-timeout', '45', 'radius-api'], { timeout: 60000 });
+    const authorityId = (await compose(['--profile', 'radius-qualified', 'ps', '-q', 'radius-api'])).stdout.trim();
+    const authorityState = JSON.parse((await docker(['inspect', authorityId])).stdout)[0];
+    assert.equal(authorityState.State.Health.Status, 'healthy');
+    assert.equal(authorityState.Config.Image, env.PAMOFI_NETWORK_IMAGE);
+    assert.equal(Object.keys(authorityState.HostConfig.PortBindings || {}).length, 0);
+    const authorityUid = Number((await compose(['exec', '-T', 'radius-api', 'node', '-p', 'process.getuid()'])).stdout.trim());
+    assert.ok(Number.isInteger(authorityUid) && authorityUid > 0);
+    const authorityScript = await readFile(join(here, 'lab-radius-authority.mjs'), 'utf8');
+    const authorityResult = await compose(['--profile', 'authority-probe', 'run', '--rm', '-T', '--no-deps', 'radius-authority-probe'], { input: authorityScript, timeout: 30000 });
+    console.log(authorityResult.stdout.trim());
+    const unqualified = await compose(['--profile', 'radius-qualified', 'run', '--rm', '-T', '--no-deps', '-e', 'PAMOFI_RADIUS_QUALIFIED=false', 'radius-api'], { timeout: 15000, failureAllowed: true });
+    assert.notEqual(unqualified.status, 0);
+    assert.match(unqualified.stdout + unqualified.stderr, /Production RADIUS authority refused startup/);
+    const unchanged = await compose(['exec', '-T', 'postgres', 'psql', '-X', '-At', '-v', 'ON_ERROR_STOP=1', '-U', 'pamofi_bootstrap', '-d', 'pamofi_network', '-c', 'SELECT count(*) FROM radius_nas; SELECT count(*) FROM radius_credentials']);
+    assert.equal(unchanged.stdout.trim(), '0\n0');
+    const noGrants = await compose(['exec', '-T', 'postgres', 'psql', '-X', '-At', '-v', 'ON_ERROR_STOP=1', '-U', 'pamofi_bootstrap', '-d', 'pamofi_prepaid_access', '-c', 'SELECT count(*) FROM access_grants']);
+    assert.equal(noGrants.stdout.trim(), '0');
+    await compose(['--profile', 'radius-qualified', 'stop', 'radius-api'], { timeout: 30000 });
+    await compose(['--profile', 'radius-qualified', 'rm', '-f', 'radius-api'], { timeout: 15000 });
     // Prove the declared external volume survives even an explicit down -v.
     await compose(['down', '--volumes', '--remove-orphans'], { timeout: 90000 });
     assert.equal((await docker(['volume', 'inspect', '--format', '{{ index .Labels "com.pamofi.production-lab" }}', volume])).stdout.trim(), id);
     await compose(['up', '-d', '--wait', '--wait-timeout', '90', 'postgres'], { timeout: 120000 });
     const count = await compose(['exec', '-T', 'postgres', 'psql', '-X', '-At', '-v', 'ON_ERROR_STOP=1', '-U', 'pamofi_bootstrap', '-d', 'pamofi_identity', '-c', 'SELECT count(*) FROM staff_bootstrap_guard']); assert.equal(count.stdout.trim(), '1');
     console.log((vercel ? 'Vercel/Oracle' : 'Production') + ' Compose/TLS lab passed: overlays render, real HTTPS/MFA/handoff/private authorization, readable non-root secret mounts, no published internal services, external database survives down -v.');
+  } catch (error) {
+    if (rendered) {
+      // Only bounded service state and gateway stderr, never environment,
+      // nginx -T, generated configuration, or application request logs.
+      const states = await compose(['ps', '-a', '--format', 'json'], { timeout: 10000, failureAllowed: true });
+      if (states.status === 0) {
+        try {
+          const raw = states.stdout.trim(), values = raw.startsWith('[') ? JSON.parse(raw) : raw.split('\n').filter(Boolean).map(line => JSON.parse(line));
+          console.error('Production lab service state: ' + JSON.stringify(values.map(value => ({ service: value.Service, state: value.State, health: value.Health || null }))));
+        } catch { console.error('Production lab service state was unavailable.'); }
+      }
+      const logs = await compose(['logs', '--tail', '16', 'gateway', 'radius-api'], { timeout: 10000, failureAllowed: true });
+      let diagnostic = logs.stdout + logs.stderr;
+      if (vercel) {
+        try { const token = (await readFile(join(secrets, 'vercel_proxy_token'), 'utf8')).trim(); if (/^[a-f0-9]{64}$/.test(token)) diagnostic = diagnostic.replaceAll(token, '[redacted]'); else diagnostic = 'Gateway diagnostics withheld: token redaction unavailable.'; }
+        catch { diagnostic = 'Gateway diagnostics withheld: token redaction unavailable.'; }
+      }
+      if (diagnostic.trim()) console.error(diagnostic.slice(-5000));
+    }
+    throw error;
   } finally {
     cleaning = true;
-    if (rendered) await compose(['down', '--volumes', '--remove-orphans'], { timeout: 90000, failureAllowed: true });
+    if (rendered) await compose(['--profile', '*', 'down', '--volumes', '--remove-orphans'], { timeout: 90000, failureAllowed: true });
     const backupLabel = await docker(['container', 'inspect', '--format', '{{ index .Config.Labels "com.pamofi.production-lab" }}', backupContainer], { failureAllowed: true });
     if (backupLabel.status === 0 && backupLabel.stdout.trim() === id) await docker(['container', 'rm', '-f', backupContainer], { failureAllowed: true });
     if (volumeCreated) {
