@@ -4,6 +4,9 @@ const { Pool } = pg;
 export function buildApp() {
   const app = Fastify({ logger: false, bodyLimit: 16384 });
   const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 2000 }) : null;
+  // pg discards the broken idle connection; handling its error keeps the
+  // service alive so readiness and later requests can recover. Never log DSNs.
+  pool?.on('error', () => console.error('network: database idle connection lost'));
   app.addHook('onClose', async () => { if (pool) await pool.end(); });
   app.get('/health/live', async () => ({ status: 'ok', service: 'network' }));
   app.get('/health/ready', async (_request, reply) => {

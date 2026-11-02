@@ -16,6 +16,24 @@ paths:
         '503':
           description: Service database unavailable
   /v1/session:
+    delete:
+      summary: Sign out of the current device
+      description: Requires the configured same-origin Origin header. Revokes only the current cookie session and clears the HttpOnly cookie. A retained creation retry secret cannot restore the revoked session. Repeating logout is safe; a database failure does not report success or clear the cookie.
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Current session revoked, or no session was present; cookie cleared
+        '403':
+          description: Origin rejected
+        '429':
+          description: Rate limit exceeded
+        '503':
+          description: Identity unavailable; logout not confirmed
     get:
       summary: Read the customer session from its HttpOnly cookie
       responses:

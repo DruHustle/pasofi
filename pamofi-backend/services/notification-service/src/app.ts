@@ -8,6 +8,9 @@ const uuidPattern='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-
 export function buildApp() {
  const app=Fastify({logger:false,bodyLimit:16384});
  const pool=process.env.DATABASE_URL ? new Pool({connectionString:process.env.DATABASE_URL,max:3,connectionTimeoutMillis:2000}) : null;
+  // pg discards the broken idle connection; handling its error keeps the
+  // service alive so readiness and later requests can recover. Never log DSNs.
+  pool?.on('error', () => console.error('notification: database idle connection lost'));
  const demo=process.env.APP_ENV==='demo' && process.env.NODE_ENV==='development';
  app.addHook('onClose',async()=>{if(pool) await pool.end();});
  app.get('/health/live',async()=>({status:'ok',service:'notification'}));

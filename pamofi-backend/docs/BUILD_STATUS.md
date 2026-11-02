@@ -1,108 +1,61 @@
-# Build status
+# Build status — 2 November 2026
 
-## Scope and plan
+**Development foundation with simulated customer journeys and isolated infrastructure laboratories. Not ready for live prepaid Wi-Fi sales.**
 
-The requested end state is a full prepaid Wi-Fi platform with financial, access and network safety properties. This is an early implementation, not that completed product. The initial goal is a working isolated service skeleton and honest catalogue/help slice before implementing transaction and RADIUS authority. See ARCHITECTURE.md for the sequence.
+This is the current capability summary. Earlier incremental build notes are preserved in Git history; they should not be used as a description of the current code. The review baseline was `d513eeec36f84c6cba6c8dd3f7168336ae3954d2`.
 
-## Implemented
+## Implemented and tested in source
 
-- Five separately packaged Node/TypeScript/Fastify services with liveness and database readiness checks, separate database roles and databases in local Compose. Identity has an origin-checked, rate-limited customer session flow backed by PostgreSQL and HttpOnly opaque cookies, and is wired to simulated purchases and recovery. A short-lived random retry secret makes a lost first session response retryable without creating another identity.
-- PostgreSQL-backed candidate catalogue, with exact requested prices, decimal byte limits serialized as strings, and durations. Demo seed publishes candidate products locally only.
-- PostgreSQL-backed grant reservations and accounting primitives, with tested lifecycle and counter rules: FIFO activation, deadlines, gigawords, regression uncertainty and absolute grant deadlines. They are not connected to RADIUS or network enforcement.
-- Read-only FAQ service and responsive React customer interface with explicit demo labeling. The local UI can create and confirm simulated purchases and show their queued entitlements; it does not make real payments or connect devices.
-- Local-only Docker Compose, development named volume, startup script, service-specific manifests and Dockerfiles. Each service now has a serialized, checksum-verified migration command; role separation still needs production implementation.
+| Area | Current behavior | Boundary |
+| --- | --- | --- |
+| Independent projects | Five Fastify/TypeScript services, separate databases/roles, web React/Vite application and independent Capacitor mobile preview | Production migration/runtime privilege separation is unfinished |
+| Catalogue | PostgreSQL-backed published bundle versions, exact integer prices and string byte limits | Candidate prices; private staging remains unpublished |
+| Customer identity | Origin-checked HttpOnly sessions, scoped resolution, lost-response creation retries, versioned recovery, current-session logout | No staff/MFA or verified-phone identity |
+| Web customer journey | Simulated purchase, queued access, recovery in another browser, sign-out, retry and failure states | No real checkout or hotspot connection |
+| Financial authority | Transactional orders/payments, source-specific fulfillment, duplicate-charge review, reversal handling, durable provider verification queue | Merchant/provider qualification and operational refund workflows remain unfinished |
+| Agent and vouchers | Stock debit, immutable sale terms, encrypted random voucher, atomic redemption/replacement and outbox domain functions | No authorized agent UI, private paired receipt or customer redemption HTTP flow |
+| Access authority | FIFO selection, per-customer reservation, NAS/session binding, duplicate-safe cumulative upload/download accounting | Verified termination, release/reconciliation and physical router behavior are unfinished |
+| Network laboratory | Scoped service tokens, mutual TLS, registered NAS mapping, temporary encrypted credentials, two-site exclusion | Explicitly demo-only; no production enablement or real-router acceptance |
+| Notification | Transactional inbox/deduplication, attempt ledger, known-ID status polling, ambiguous-send protection | Secure delivery lookup, staff-authorized resend and live handset qualification remain unfinished |
+| Help | Reviewed public FAQ, local UI search, bounded API search, explicit unsupported answers | No model, personal account access, payment or router action |
+| Operations | Serialized checksum-verified migrations, bounded readiness probes, idle-connection recovery, graceful shutdown, strict verification runner | Full production monitoring, key rotation, capacity and rollback acceptance remain unfinished |
 
-## Not implemented / do not use live
+## Refinements in this review
 
-Staff/MFA, real checkout and provider qualification, agent-facing workflows and receipts, trusted NAS and FreeRADIUS, router scripts, live SMS delivery, management, production operations, backups/restore and production security remain outstanding. Several transaction, voucher, recovery, payment reconciliation and event primitives exist but are not complete end-to-end workflows. The required fault, RADIUS and restore acceptance checks are not yet complete. No live provider, router or backup destination has been touched. A clearly labeled frontend demo was deployed to Vercel; its API is not connected. This is not ready to sell Wi-Fi or enforce access.
+- Browser retries keep the same order idempotency key across an interrupted response or reload. Confirmed orders clear their retry state without blocking the next purchase.
+- Missing/expired sessions no longer silently create a replacement account when viewing access. Sensitive actions verify the original customer.
+- Recovery verifies the new cookie; interrupted rotation hides the obsolete key and reloads the current version.
+- Logout revokes the current session and its retry-secret mapping. Successful UI sign-out clears only PamoFi session secrets.
+- Repeated and out-of-order payment observations preserve pending review and reversals. An unexpected provider state cannot grant access.
+- Known Pesepay references survive an unsafe checkout redirect, and known SMS IDs survive malformed optional metadata. Verification can continue without a second charge or send.
+- Current access remains visible ahead of historical entries; history has bounded pagination.
+- The nginx proxy forwards all supported customer APIs and refuses unknown/internal API paths.
+- All service pools handle idle PostgreSQL errors. Service readiness is now checked by Compose; startup helpers wait for it.
+- The mobile build's vulnerable transitive glob/minimatch chain is overridden narrowly while Capacitor stays at 8.6.0.
+- Documentation, reviewed help, responsive states and accessibility have been updated to match implemented behavior.
 
-The demo bootstrap creates roles and catalogue data only during first PostgreSQL volume initialization, then runs per-service migrations as a separate release step. The runner records checksums and serializes releases; production runtime/migration role separation is still required. Port binding is localhost only, demo credentials are public, and service APIs are not authenticated. The identity and prepaid OpenAPI files include their current session and mock-purchase routes; remaining contracts are incomplete.
+See [the review record](REVIEW_2026-11-02.md) for findings and verification details, and [TESTING.md](TESTING.md) for reproduction.
 
-## Repository layout
+## Verification levels
 
-Only `pamofi-frontend` and `pamofi-backend` are tracked at the repository root. Infrastructure, router placeholders, documentation and development tools live within the backend folder. Each folder builds independently; the customer UI needs a separately running API for current data.
+Unit builds, real PostgreSQL integration tests and Chromium journeys are separate checks. The strict runner refuses missing test databases, skipped database tests, skipped/flaky browser cases and unexpected service exits. It uses synthetic data and provider mocks only.
 
-## Environment and evidence
+The CI workflow repeats the source checks with PostgreSQL 17.11, then runs the existing real FreeRADIUS packet, encrypted physical backup/restore, and private-staging container laboratories. Consult the pull request's actual workflow result before treating those container checks as passed for this revision.
 
-- Workspace initially had empty frontend/backend directories. The nearest existing Git repository was the user's home directory; a local `git init` was blocked by the workspace `.git` write restriction. No parent Git data was changed.
-- `npm test` and `npm run build` passed in the frontend and all five service directories. Service tests currently cover liveness only; frontend test is TypeScript checking.
-- `docker compose up --build -d` built the services. The first initialization failed because a bind-mounted shell initializer could not execute; it was replaced by SQL and the partially initialized demo database repaired. A separate temporary PostgreSQL 17.11 cluster initialized from the SQL with five products.
-- `node local-tools/check-demo.mjs` passed against the running stack, including exact catalogue amounts, string byte values, FAQ and five database readiness checks. A sampled identity-role connection to the prepaid database was denied; the full role matrix has not been tested.
-- Recreating the PostgreSQL container retained the demo catalogue. That initially exposed stale reverse-proxy service DNS; the proxy now resolves service names dynamically, and the recreation/smoke check passed after the fix.
-- Initial frontend output was 71.53 KB gzipped JavaScript (Vite build output). Browser host was unavailable; no visual inspection, Playwright journeys, screenshots or accessibility audit were completed.
-- The reorganized backend bootstrap was run against the existing demo volume. A clean temporary database initialization was tested separately; a complete clean-clone bootstrap remains unverified.
+The mobile browser suite exercises the offline preview. Successful Capacitor Android/iOS synchronization is not native compilation or device acceptance.
 
-## Next commands
+## Remaining implementation and launch work
 
-```sh
-./local-tools/'manual deployment'/start-demo.sh
-curl http://127.0.0.1:18082/v1/bundles
-curl http://127.0.0.1:18085/v1/help
-```
+1. **Staff and agent access:** staff identities, role assignment, MFA, authorization, audited administration and complete agent sale journeys.
+2. **Customer voucher/receipt flows:** private pairing, QR/session handoff, authorized voucher delivery, customer redemption and safe recovery across captive/system browsers.
+3. **Payment and SMS operation:** configured merchant methods and limits, provider sandbox evidence, secure delivery payload lookup, delivery/resend policies and operator review/refund workflows.
+4. **Complete network lifecycle:** trusted disconnect and final accounting reconciliation, reservation release, reboot/reordering recovery, production credentials/tunnels and physical MikroTik enforcement tests across sites.
+5. **Production operations:** secure public API/HTTPS, trusted internal transport and secret rotation, runtime/migration role separation, monitoring, capacity testing, controlled releases and rollback.
+6. **Independent recovery:** encrypted off-server PostgreSQL/pgBackRest repository, continuous WAL archiving, scheduled retention/alerts, independent key protection and tested full recovery/fencing. The disposable local backup lab does not configure B2 or protect staging data.
+7. **Native customer application:** connect the independent mobile preview to qualified customer APIs, then build and test signed Android/iOS applications on devices.
 
-Next engineering step: implement secure customer identity and a testable PostgreSQL transaction/migration framework, followed by the global grant and trusted accounting path. Before claiming end-to-end acceptance, complete every omitted feature and the physical/provider qualifications in the supplied brief.
+These are explicit unfinished product/release capabilities, not green tests or enabled features. No staff, merchant, SMS, router or independent-backup credentials are supplied by this source review.
 
-## Deployment investigation — 1 November 2026
+## Deployment records
 
-- Private GitHub repository created with only the frontend and backend folders at its root.
-- Vercel project `pamofi` is deployed at https://pamofi.vercel.app. Vercel assigned its first deployment to production. It is explicitly labelled as a demo; its API is not configured and returns 404. It does not support purchase or hotspot access.
-- Oracle CLI reauthenticated. The requested fallback VM is shared with multiple existing services and has limited disk/memory headroom. It was inspected read-only. No PamoFi backend has been deployed or changes made to the VM. A separate A1 VM may exceed the current Always Free allocation; do not assume it is free.
-- Counter arithmetic tests pass, including values greater than 2^32 and conservative handling of regressions. The prepaid migration was run twice against demo PostgreSQL, applying once. This does not verify ledger or RADIUS functionality.
-
-Earlier identity integration: migrations were applied locally and `PAMOFI_TEST_DATABASE_URL=... npm test` passed with real PostgreSQL. At that point only cookie-bearing repeat requests reused the same identity; lost first-response idempotency and cross-service authorization were still unimplemented.
-
-Update: session creation now requires a client-generated secret when no cookie exists. Its verifier and session verifier are stored transactionally; a stable server HMAC key permits reissuing the same HttpOnly cookie for 24 hours without storing it in plaintext. PostgreSQL and browser tests covered lost responses, concurrent retries, service restart, secret changes, expiration and revocation. The browser keeps the temporary retry secret in tab-scoped storage until the cookie is confirmed. Production still needs managed, versioned key rotation and complete authorization.
-
-Fresh-checkout verification: cloned commit f2521e2 into a temporary directory, then independently ran `npm ci`, `npm test` and `npm run build` in the frontend and all five service directories under Node 24. All passed. The identity PostgreSQL integration test was skipped in that clean-checkout run and was separately run against the local demo database.
-
-The revised demo bootstrap built all five service images, ran their owned migrations, and started the services against the existing demo volume. The subsequent catalogue/help/readiness smoke check passed; an origin-checked identity request returned 201 and a foreign-origin request returned 403. This is not a production deployment.
-
-## Local simulated purchase slice
-
-- Demo-only order creation snapshots published bundle terms, scopes the idempotency key to the authenticated customer and rejects mismatched retries. A short-lived signed service token lets prepaid access resolve the forwarded session through identity; the owner does not trust browser-supplied customer IDs.
-- Demo confirmation serializes each order and atomically creates one mock payment record and one queued entitlement. It does not call Pesepay or grant connectivity. Demo order creation and confirmation require both `APP_ENV=demo` and `NODE_ENV=development`; production and unset environments disable them.
-- `node local-tools/check-purchase-demo.mjs` passed against the running isolated PostgreSQL services, including concurrent order retries, eight concurrent confirmations, foreign-owner rejection, origin rejection and forged identity rejection. Identity integration also checked token issuer, scope and expiry.
-- Playwright with installed Chrome passed a customer mock purchase, access view and reload at widths 320, 360 and 1280; screenshots were inspected locally. Initial JS: 72.23 KB gzipped; the purchase view is separately lazy-loaded at 2.13 KB gzipped.
-- Remaining critical work includes real provider adapters and reconciliation, durable recovery, staff/MFA, agent/voucher workflows, global grant and accounting authority, FreeRADIUS and router integration, outbox/inbox, operational backups and restore, production hardening and real-world qualification. This is not a working prepaid hotspot.
-
-To run the mock journey locally, start the backend with `./local-tools/'manual deployment'/start-demo.sh`, then run `npm ci && npm run dev -- --host 127.0.0.1` from `pamofi-frontend/web` and visit `http://localhost:5173`. Run `node local-tools/check-purchase-demo.mjs` from the backend. For browser tests, set `PAMOFI_CHROME_PATH` to an installed Chrome executable and run `npm run test:browser` in the frontend while the demo is running.
-
-## Access ledger work in progress
-
-The prepaid service now has PostgreSQL grant and cumulative-accounting domain functions. A per-customer advisory lock and partial unique index prevent concurrent active or uncertain reservations, and retries with the same customer/site/NAS/request return the original grant and absolute deadline. Each grant is bound to the NAS session before authorization. Accounting requires a Start before Interim or Stop; packets for another session are rejected. Cumulative upload and download are stored as numeric high-water values; duplicate records do not double debit, regressions/overages mark uncertainty, and a Stop conservatively retains the reservation. A mutually authenticated FreeRADIUS/network-service path now exercises these functions in the isolated lab described below. Verified termination/reconciliation and production access enforcement remain unimplemented; the lab-only authority cannot connect a real customer.
-
-Run the integration check after demo migrations with `PAMOFI_TEST_DATABASE_URL=... npm test` from the prepaid service. Tests use random, self-cleaning fixture records in the specified test database. Do not point the test at production.
-
-## Agent and delivery primitives
-
-The prepaid database has agent inventory, immutable sale snapshots, encrypted 16-character vouchers, single-source entitlements and a transactional outbox. Internal domain functions serialize stock debits, bind idempotency to the agent and payload, redeem once, and race replacement against redemption. These functions are not exposed to agents until staff authentication and pairing are implemented. No real payment is recorded and no SMS is sent.
-
-A service-owned outbox dispatcher can claim work with bounded leases and retries; the notification service validates scoped JWTs and atomically commits an inbox row and delivery-reference job. Duplicate content is acknowledged once, conflicting duplicates are rejected, and dead-letter replay records an actor and reason. The dispatcher is disabled by default; jobs stop at `awaiting_delivery_details`, since secure delivery lookup and SMS adapters are not implemented.
-
-Real PostgreSQL tests passed concurrent stock exhaustion, 20 issuance/replacement race runs, grant reservation and duplicate accounting, plus cross-service outbox retry, lost acknowledgement simulation, conflicting duplicate detection, bounded acknowledgement validation and audited replay. The test suite runs database integration files serially while exercising concurrency inside each scenario; use isolated disposable databases with no other pending events. These tests are not provider, router, restore or production acceptance.
-
-## Sendai adapter work in progress
-
-The notification service has a Sendai send/retrieve adapter and a PostgreSQL attempt ledger. API acceptance remains `submitted` until a `delivered_at` signal is observed; charge amounts retain their original currency and ten-thousandth scale. Submissions with no provider ID become `unknown` and are not retried automatically. Tests cover concurrent sends, timeout ambiguity, late provider responses and canceled jobs. The adapter is not connected to automatic delivery, no provider credentials have been configured, and no real SMS has been sent. Secure delivery-reference lookup, authorized resend, mock sink, provider sandbox and handset delivery tests are still outstanding. Official API reference: https://docs.sendai.co.zw/api/sms/.
-
-## Pesepay adapter and payment ledger work in progress
-
-The prepaid service now contains a hosted-checkout adapter using the documented Pesepay encryption and environment-specific endpoints. It requires an explicit checkout-origin allowlist, method minimum/maximum and merchant/site qualification; an ambiguous initiation is recorded as unknown and is not retried automatically. Status reconciliation requires a server response matching reference, amount, currency and application ID. Verified payment records, fulfillment, duplicate-charge review and source-specific full reversal handling are transactional. Reversals of used or reserved access require review.
-
-Fake-provider and PostgreSQL tests covered the provider encryption compatibility vector, method minimums, forged/mismatched status fields, concurrent reconciliation, distinct duplicate charges, lost/late initiation responses and consumed-access reversal. A persistent verification queue now schedules checks when an attempt is initiated or an authenticated callback arrives. Callback data never proves payment. Leased jobs retry with bounded backoff and expired leases can be recovered; exhausted jobs need operator investigation. The callback and worker are restricted to an explicitly enabled development sandbox. No Pesepay sandbox or live account has been configured; no real charge has occurred. Recovery/handoff, live provider qualification and refund/partial-adjustment workflows remain unimplemented. No real checkout path is exposed.
-
-Primary references reviewed: https://developers.pesepay.com/security/encryption/, https://developers.pesepay.com/api/initiate-transaction/, https://developers.pesepay.com/api/check-payment-status/, https://developers.pesepay.com/webhooks/verifying-callbacks/.
-
-## Recovery work in progress
-
-Identity supports a random account reference and 256-bit recovery key, stores only a verifier, and restores a customer session after both values are verified. Authenticated rotation uses a version check so concurrent requests cannot return two apparently valid keys. The demo offers setup and recovery in the browser, with a Playwright test restoring a simulated purchase in another browser context. One-time captive-browser handoff, QR, phone verification, staff recovery and safe first-session creation after a lost response are not yet implemented.
-
-## Private FreeRADIUS laboratory
-
-A disposable, non-production FreeRADIUS 3.2.9 laboratory now exercises actual RADIUS packets across two simulated NASes and service-owned PostgreSQL databases. FreeRADIUS connects to the network service over mutually authenticated TLS with a pinned client certificate; the network service maps the source-authenticated client shortname to a registered NAS and calls the prepaid authority using a short-lived scoped JWT. Grant reservations bind the NAS session before Access-Accept. Accounting is durable before acknowledgement and rejects mismatched NAS/session/generation. The script at `pamofi-radius/lab/run-lab.sh` passed real packet checks for distinct router secrets, cross-site exclusion, retransmission, combined 64-bit limits including a zero low word, duplicate accounting, conservative Stop handling and an unavailable prepaid authority. Network-service tests separately checked missing and wrong client certificates. These tests are simulations and do not establish physical-router behavior.
-
-This path is deliberately gated to demo/development and cannot be enabled in production. An internal encrypted, short-lived credential issuance primitive exists, but no customer issuance route is exposed. Router registration, production transport and key management, disconnect and final accounting reconciliation, reboot handling, observability and physical RouterOS qualification remain unfinished. Live Pesepay and Sendai qualification also requires accounts that have not yet been supplied. Do not use this lab to grant customer internet access.
-
-## Oracle staging — 2 November 2026
-
-A dedicated `PamoFi Backend` Always Free micro VM was created in the Oracle home region and provisioned with Docker/Compose. The five backend services and PostgreSQL are running in a private staging network with no published host ports. Migrations and per-service database isolation were checked. The catalogue is unpublished, mock payment is disabled, RADIUS lab endpoints are disabled, and no customer-facing API or live provider is connected. This is staging, not an operational prepaid service; the 1 GB instance still needs realistic capacity testing. Production HTTPS/DNS, backups and restore, service authentication/transport, observability, provider qualification and physical router acceptance remain necessary.
+Earlier source notes record a labelled Vercel frontend preview and a dedicated private Oracle staging VM. This review has not inspected those running environments. The repository's Vercel configuration has no public backend connection; the staging Compose stack has no public ports, published bundles, mock payments or live RADIUS authority. Source changes and a passing pull request do not by themselves deploy either environment.

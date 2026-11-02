@@ -8,6 +8,7 @@ function required(name:string):string {
  const value=process.env[name];if(!value)throw new Error(`${name} is required`);return value;
 }
 const pool=new pg.Pool({connectionString:required('DATABASE_URL'),max:3,connectionTimeoutMillis:2000});
+pool.on('error',()=>console.error('network-radius: database idle connection lost'));
 try {
  const app=buildRadiusApp({pool,tls:{ca:readFileSync(required('RADIUS_CA_FILE')),cert:readFileSync(required('RADIUS_SERVER_CERT_FILE')),key:readFileSync(required('RADIUS_SERVER_KEY_FILE'))},clientFingerprint:required('RADIUS_CLIENT_FINGERPRINT'),prepaidUrl:required('PREPAID_URL'),networkSecret:required('INTERNAL_NETWORK_SECRET')});
  app.addHook('onClose',async()=>pool.end());

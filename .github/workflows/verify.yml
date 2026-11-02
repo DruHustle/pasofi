@@ -1,0 +1,72 @@
+name: Verify PamoFi
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pamofi-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17.11-alpine3.23
+        env:
+          POSTGRES_USER: pamofi_test_bootstrap
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: postgres
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pamofi_test_bootstrap -d postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      PAMOFI_TEST_CONFIRM_ISOLATED: '1'
+      PAMOFI_TEST_IDENTITY_DATABASE_URL: postgresql://pamofi_identity:demo_only_change_me@127.0.0.1:5432/pamofi_identity
+      PAMOFI_TEST_PREPAID_DATABASE_URL: postgresql://pamofi_prepaid_access:demo_only_change_me@127.0.0.1:5432/pamofi_prepaid_access
+      PAMOFI_TEST_NETWORK_DATABASE_URL: postgresql://pamofi_network:demo_only_change_me@127.0.0.1:5432/pamofi_network
+      PAMOFI_TEST_NOTIFICATION_DATABASE_URL: postgresql://pamofi_notification:demo_only_change_me@127.0.0.1:5432/pamofi_notification
+      PAMOFI_TEST_ASSISTANT_DATABASE_URL: postgresql://pamofi_assistant:demo_only_change_me@127.0.0.1:5432/pamofi_assistant
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.1
+          cache: npm
+          cache-dependency-path: |
+            pamofi-backend/services/*/package-lock.json
+            pamofi-frontend/web/package-lock.json
+            pamofi-frontend/mobile/package-lock.json
+      - name: Initialize the five disposable databases
+        run: docker exec -i '${{ job.services.postgres.id }}' psql -v ON_ERROR_STOP=1 -U pamofi_test_bootstrap -d postgres < pamofi-backend/infra/postgres/init.sql
+      - name: Install independent locked dependencies
+        run: |
+          for project in pamofi-backend/services/*-service pamofi-frontend/web pamofi-frontend/mobile; do
+            (cd "$project" && npm ci --no-audit --no-fund)
+          done
+      - name: Install Chromium and its runtime dependencies
+        working-directory: pamofi-frontend/web
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Build and verify all services, web, and mobile
+        run: node pamofi-backend/local-tools/verify.mjs --integration --browser
+      - name: Verify real FreeRADIUS packets in the isolated lab
+        run: bash pamofi-backend/pamofi-radius/lab/run-lab.sh
+      - name: Verify encrypted physical backup and restore
+        run: bash pamofi-backend/infra/backup-lab/run-lab.sh
+      - name: Verify private staging images and database isolation
+        run: bash pamofi-backend/infra/oracle-staging/test-local.sh

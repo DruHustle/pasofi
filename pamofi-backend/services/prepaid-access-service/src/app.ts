@@ -10,8 +10,16 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export function buildApp() {
   const app = Fastify({ logger: false, bodyLimit: 16384 });
   const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 2000 }) : null;
+  // pg emits an error when an idle pooled connection is dropped. Keep the
+  // process alive so readiness can report the outage and later reconnect.
+  pool?.on('error', () => { console.error('Prepaid database connection unavailable'); });
   const demo = process.env.APP_ENV === 'demo' && process.env.NODE_ENV === 'development';
   app.register(rateLimit, { global: false });
+  // Account and internal authority responses must never be reused by a cache.
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('Cache-Control', 'no-store');
+    return payload;
+  });
   const stopPesepaySandbox = registerPesepaySandbox(app,pool,demo);
   app.addHook('onClose', async () => { await stopPesepaySandbox(); if (pool) await pool.end(); });
   registerRadiusInternal(app,pool,demo);
@@ -49,12 +57,28 @@ export function buildApp() {
       return { orders:rows.rows };
     } catch { return reply.code(503).send({error:'unavailable'}); }
   });
-  app.get('/v1/access', async (request, reply) => {
+  app.get<{Querystring:{limit:number;offset:number}}>('/v1/access', {
+    schema:{querystring:{type:'object',additionalProperties:false,properties:{
+      limit:{type:'integer',minimum:1,maximum:100,default:100},
+      offset:{type:'integer',minimum:0,maximum:1000000,default:0}
+    }}}
+  }, async (request, reply) => {
     if (!pool) return reply.code(503).send({ error:'unavailable' });
     try {
       const id = await customer(request); if (!id) return reply.code(401).send({error:'not_authenticated'});
-      const rows = await pool.query('SELECT id,bundle_id,byte_limit::text,consumed_bytes::text,validity_seconds,purchased_at,start_by,activated_at,revoked_at FROM purchase_entitlements WHERE customer_id=$1 ORDER BY purchased_at,id LIMIT 100',[id]);
-      return { entitlements:rows.rows };
+      const {limit,offset}=request.query;
+      // Keep usable access visible even after a customer has more than a page
+      // of old purchases. Active access precedes the FIFO queue; history follows.
+      const rows = await pool.query(`SELECT id,bundle_id,byte_limit::text,consumed_bytes::text,validity_seconds,purchased_at,start_by,activated_at,revoked_at
+        FROM purchase_entitlements WHERE customer_id=$1
+        ORDER BY CASE
+          WHEN revoked_at IS NULL AND consumed_bytes<byte_limit AND activated_at IS NOT NULL
+            AND activated_at+make_interval(secs=>validity_seconds)>now() THEN 0
+          WHEN revoked_at IS NULL AND consumed_bytes<byte_limit AND activated_at IS NULL AND start_by>=now() THEN 1
+          ELSE 2 END, purchased_at,id
+        LIMIT $2 OFFSET $3`,[id,limit+1,offset]);
+      const hasMore=rows.rows.length>limit;
+      return { entitlements:rows.rows.slice(0,limit),hasMore,nextOffset:hasMore?offset+limit:null };
     } catch { return reply.code(503).send({error:'unavailable'}); }
   });
   app.post<{Body:{bundleId:string}}>('/v1/orders', { config:{rateLimit:{max:30,timeWindow:'1 minute'}}, schema:{body:{type:'object',required:['bundleId'],additionalProperties:false,properties:{bundleId:{type:'string',minLength:1,maxLength:40,pattern:'^[a-z]+$'}}}} }, async (request, reply) => {

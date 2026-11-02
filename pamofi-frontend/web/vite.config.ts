@@ -1,3 +1,24 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-export default defineConfig({ plugins: [react()], server: { proxy: { '/api/bundles': { target: 'http://localhost:18082', rewrite: () => '/v1/bundles' }, '/api/help': { target: 'http://localhost:18085', rewrite: () => '/v1/help' }, '/api/session': { target: 'http://localhost:18081', rewrite: () => '/v1/session' }, '/api/orders': { target: 'http://localhost:18082', rewrite: path => path.replace(/^\/api\/orders/, '/v1/orders') }, '/api/access': { target: 'http://localhost:18082', rewrite: () => '/v1/access' }, '/api/recovery': { target: 'http://localhost:18081', rewrite: path => path.replace(/^\/api\/recovery/, '/v1/recovery') } } } });
+
+// Server-only configuration; these origins are not shipped to browser code.
+const rewrite = (path: string) => path.replace(/^\/api\//, '/v1/');
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, '.', 'PAMOFI_');
+  const identity = env.PAMOFI_IDENTITY_URL || 'http://localhost:18081';
+  const prepaid = env.PAMOFI_PREPAID_URL || 'http://localhost:18082';
+  const assistant = env.PAMOFI_ASSISTANT_URL || 'http://localhost:18085';
+  return {
+  plugins: [react()],
+  server: {
+    proxy: {
+      '^/api/bundles(?:\\?|$)': { target: prepaid, rewrite },
+      '^/api/help(?:\\?|$)': { target: assistant, rewrite },
+      '^/api/session(?:\\?|$)': { target: identity, rewrite },
+      '^/api/orders(?:/|\\?|$)': { target: prepaid, rewrite },
+      '^/api/access(?:\\?|$)': { target: prepaid, rewrite },
+      '^/api/recovery(?:/|\\?|$)': { target: identity, rewrite },
+    },
+  },
+  };
+});

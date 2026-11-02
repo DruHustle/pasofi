@@ -82,9 +82,27 @@ paths:
           description: Quote expired
   /v1/access:
     get:
-      summary: List the current customer's queued entitlements
+      summary: List the current customer's access and purchase history
+      description: Active access is returned first, followed by usable queued bundles in purchase order and then historical entries. Only the authenticated customer's records are returned. Responses include hasMore and nextOffset; use offset and limit to read subsequent pages.
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000000
+            default: 0
       responses:
         '200':
-          description: Up to 100 entitlements
+          description: Up to limit entitlements, hasMore, and the next offset or null. Cache-Control is no-store.
+        '400':
+          description: Invalid pagination parameters
         '401':
           description: No valid customer session

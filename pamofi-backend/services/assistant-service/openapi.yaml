@@ -15,3 +15,48 @@ paths:
           description: Service database is reachable
         '503':
           description: Service database unavailable
+  /v1/help:
+    get:
+      summary: Read reviewed product guidance without account data or actions
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+            maxLength: 200
+          description: Optional case-insensitive search; all words must occur in an article.
+      responses:
+        '200':
+          description: Matching reviewed articles; an empty list means no reviewed answer is available
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, mode, articles, notice]
+                properties:
+                  version:
+                    const: 1
+                  mode:
+                    const: reviewed-faq
+                  notice:
+                    type: string
+                  articles:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, category, question, answer]
+                      properties:
+                        id:
+                          type: string
+                        category:
+                          enum: [bundles, payments, account, connection]
+                        question:
+                          type: string
+                        answer:
+                          type: string
+        '400':
+          description: Search query exceeds the supported length or has an invalid shape

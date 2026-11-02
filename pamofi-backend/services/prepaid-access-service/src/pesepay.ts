@@ -46,17 +46,22 @@ export class PesepayAdapter {
  }
  // Caller must durably persist the order and an initiation attempt first. An
  // unknown result is never permission to initiate another transaction.
- async initiate(input:{orderId:string;amountMinor:number;currency:string;methodCode:string;eligibility:{method:unknown;merchantEnabledCodes:Set<string>;siteQualifiedCodes:Set<string>}}):Promise<{state:'initiated';referenceNumber:string;redirectUrl:string}|{state:'unknown'}> {
+ async initiate(input:{orderId:string;amountMinor:number;currency:string;methodCode:string;eligibility:{method:unknown;merchantEnabledCodes:Set<string>;siteQualifiedCodes:Set<string>}}):Promise<{state:'initiated';referenceNumber:string;redirectUrl:string}|{state:'unknown';referenceNumber?:string}> {
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.orderId)||!Number.isSafeInteger(input.amountMinor)||input.amountMinor<=0||input.amountMinor>1000000000||input.currency!=='USD'||!/^[A-Z0-9]{3,20}$/.test(input.methodCode))throw Error('invalid_order');
   const method=obj(input.eligibility?.method);
   if(method.code!==input.methodCode || !eligibleMethod(method,input.currency,input.amountMinor,input.eligibility.merchantEnabledCodes,input.eligibility.siteQualifiedCodes))throw Error('method_not_qualified');
   const body={amountDetails:{amount:Number((input.amountMinor/100).toFixed(2)),currencyCode:input.currency},reasonForPayment:`PamoFi order ${input.orderId}`,merchantReference:input.orderId,resultUrl:this.config.resultUrl,returnUrl:this.config.returnUrl,paymentMethodCode:input.methodCode};
+  let referenceNumber:string|undefined;
   try{const response=await this.fetcher(`${this.base}/v1/payments/initiate`,{method:'POST',headers:{authorization:this.config.integrationKey,'content-type':'application/json'},body:JSON.stringify({payload:encryptPesepay(body,this.config.encryptionKey)}),signal:AbortSignal.timeout(8000),redirect:'error'});
    if(!response.ok)return {state:'unknown'};const outer=obj(await readJson(response));if(typeof outer.payload!=='string')return {state:'unknown'};const result=obj(decryptPesepay(outer.payload,this.config.encryptionKey));
-   if(typeof result.referenceNumber!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(result.referenceNumber)||typeof result.redirectUrl!=='string')return {state:'unknown'};
-   const redirect=httpsUrl(result.redirectUrl);if(!this.allowed.has(redirect.origin))return {state:'unknown'};
+   if(typeof result.referenceNumber!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(result.referenceNumber))return {state:'unknown'};
+   // Checkout may be unusable after the provider has already created a payment.
+   // Keep its validated handle for verification, but never expose an unsafe URL.
+   referenceNumber=result.referenceNumber;
+   if(typeof result.redirectUrl!=='string')return {state:'unknown',referenceNumber};
+   const redirect=httpsUrl(result.redirectUrl);if(!this.allowed.has(redirect.origin))return {state:'unknown',referenceNumber};
    return {state:'initiated',referenceNumber:result.referenceNumber,redirectUrl:redirect.toString()};
-  }catch{return {state:'unknown'};}
+  }catch{return referenceNumber?{state:'unknown',referenceNumber}:{state:'unknown'};}
  }
  async check(terms:Terms):Promise<VerifiedStatus>{
   if(!/^[A-Za-z0-9_-]{1,128}$/.test(terms.referenceNumber)||!Number.isSafeInteger(terms.amountMinor)||terms.amountMinor<=0||!/^[A-Z]{3}$/.test(terms.currency))throw Error('invalid_terms');
