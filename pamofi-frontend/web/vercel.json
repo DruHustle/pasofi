@@ -39,6 +39,10 @@
     {
       "source": "/handoff",
       "destination": "/index.html"
+    },
+    {
+      "source": "/connect",
+      "destination": "/index.html"
     }
   ]
 }
