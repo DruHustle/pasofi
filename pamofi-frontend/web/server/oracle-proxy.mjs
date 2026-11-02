@@ -12,6 +12,8 @@ const rules = [
   [/^\/api\/recovery\/status$/, ['GET']],
   [/^\/api\/(recovery(?:\/(setup|rotate))?|handoff(?:\/redeem)?)$/, ['POST']],
   [/^\/api\/staff\/(register|login|mfa\/(setup|confirm|verify))$/, ['POST']],
+  [/^\/api\/staff\/password-reset\/availability$/, ['GET']],
+  [/^\/api\/staff\/password-reset\/(request|confirm)$/, ['POST']],
   [/^\/api\/staff\/session$/, ['GET', 'DELETE']],
   [/^\/api\/staff\/(users|audit|sites|inventory)$/, ['GET']],
   [new RegExp(`^/api/staff/users/${UUID}/(decision|revoke-sessions|recover-mfa)$`), ['POST']],

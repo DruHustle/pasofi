@@ -372,6 +372,48 @@ paths:
         '401': {description: Current staff session required}
         '403': {description: Administrator or valid Origin required}
         '409': {description: Self-recovery, unavailable recovery or stale version}
+  /v1/staff/password-reset/availability:
+    get:
+      summary: Check whether a qualified staff password-recovery delivery channel is configured
+      responses:
+        '200': {description: Boolean enabled; does not identify accounts}
+  /v1/staff/password-reset/request:
+    post:
+      summary: Request a staff password reset without revealing account existence
+      description: Requires the configured Origin. Returns the same accepted response for known and unknown addresses. Delivery is asynchronous, bounded and rate-limited. Codes are high-entropy, expire after 15 minutes, and are sent only through a separately qualified channel. No account or MFA state changes on request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email: {type: string, format: email, maxLength: 254}
+      responses:
+        '202': {description: Uniform acceptance; delivery is not guaranteed}
+        '503': {description: Qualified recovery delivery is not configured}
+  /v1/staff/password-reset/confirm:
+    post:
+      summary: Replace a staff password with a valid, unexpired, single-use recovery code
+      description: Requires the configured Origin. The transaction consumes the code, increments the staff version, revokes sessions and challenges and appends an audit event. Existing MFA is retained and required on the next sign-in.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, code, password]
+              properties:
+                email: {type: string, format: email, maxLength: 254}
+                code: {type: string, minLength: 43, maxLength: 43}
+                password: {type: string, minLength: 15, maxLength: 128}
+      responses:
+        '200': {description: Password reset; existing MFA remains required}
+        '400': {description: Invalid, expired or already consumed recovery material}
+        '503': {description: Qualified recovery delivery is not configured}
   /v1/staff/audit:
     get:
       summary: Read immutable administrator decision history

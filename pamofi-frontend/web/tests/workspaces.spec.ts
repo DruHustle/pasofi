@@ -407,3 +407,33 @@ test('administrator must confirm identity verification before recovering another
   await expect(page.getByText('Authenticator recovery started.', { exact: false })).toBeVisible();
   expect(payload).toEqual({ expectedVersion: 1, reason: 'Verified identity by independent process' });
 });
+
+test('staff password recovery remains honestly unavailable without qualified delivery', async ({ page }) => {
+  await mock(page, async (route, path) => {
+    if (path === '/api/staff/session') { await json(route, { error: 'not_authenticated' }, 401); return true; }
+    if (path === '/api/staff/password-reset/availability') { await json(route, { enabled: false }); return true; }
+    return false;
+  });
+  await openStaff(page); await page.getByText('Need help signing in?').click();
+  await expect(page.getByText('Staff password reset by email is not available yet.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reset staff password' })).toHaveCount(0);
+});
+
+test('qualified staff password reset uses a generic request and retains the authenticator', async ({ page }) => {
+  const resetCode = 'A'.repeat(43), requests: unknown[] = [];
+  await mock(page, async (route, path) => {
+    if (path === '/api/staff/session') { await json(route, { error: 'not_authenticated' }, 401); return true; }
+    if (path === '/api/staff/password-reset/availability') { await json(route, { enabled: true }); return true; }
+    if (path === '/api/staff/password-reset/request') { requests.push(route.request().postDataJSON()); await json(route, { status: 'accepted' }, 202); return true; }
+    if (path === '/api/staff/password-reset/confirm') { requests.push(route.request().postDataJSON()); await json(route, { status: 'password_reset', mfaUnchanged: true }); return true; }
+    return false;
+  });
+  await openStaff(page); await page.getByText('Need help signing in?').click(); await page.getByRole('button', { name: 'Reset staff password' }).click();
+  await page.getByLabel('Staff email').fill('staff@example.test'); await page.getByRole('button', { name: 'Send recovery code' }).click();
+  await expect(page.getByText('If this address is eligible', { exact: false })).toBeVisible();
+  await page.getByLabel('Recovery code').fill(resetCode); await page.getByLabel('New password', { exact: true }).fill('A new synthetic passphrase'); await page.getByLabel('Confirm new password').fill('A different synthetic passphrase');
+  await page.getByRole('button', { name: 'Change password' }).click(); await expect(page.getByText('The new passwords do not match.')).toBeVisible(); expect(requests).toHaveLength(1);
+  await page.getByLabel('Confirm new password').fill('A new synthetic passphrase'); await page.getByRole('button', { name: 'Change password' }).click();
+  await expect(page.getByText('Password changed. Sign in with your new password and existing authenticator.')).toBeVisible();
+  expect(requests).toEqual([{ email: 'staff@example.test' }, { email: 'staff@example.test', code: resetCode, password: 'A new synthetic passphrase' }]);
+});

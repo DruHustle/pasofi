@@ -155,6 +155,8 @@ try {
   customerCookie = cookie(response, '__Host-pamofi_session');
   check((await request('/api/handoff/redeem', { method: 'POST', body: { handoffCode: handoff.handoffCode } })).status, 401);
 
+  response = await request('/api/staff/password-reset/availability'); check(response.status, 200); check(JSON.parse(response.text).enabled, false);
+  response = await request('/api/staff/password-reset/request', { method: 'POST', body: { email: 'operator@pamofi.invalid' } }); check(response.status, 503);
   const admin = await enroll('operator@pamofi.invalid');
   check(admin.data.role, 'admin'); check(admin.data.mfaVerified, true);
   response = await request('/api/staff/users', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).users.length, 1);

@@ -5,17 +5,20 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import pg from 'pg';
 import { jwtVerify } from 'jose';
 import { registerStaffRoutes } from './staff.js';
+import type { StaffResetDelivery } from './staff-reset-mail.js';
 import { registerHandoffRoutes } from './handoff.js';
 import { trustedProxies } from './trusted-proxies.js';
 const { Pool } = pg;
 const tokenHash = (token: string) => createHash('sha256').update(token).digest();
-export function buildApp() {
+export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = {}) {
   const app = Fastify({ logger: false, bodyLimit: 16384, trustProxy: trustedProxies(), ajv: { customOptions: { removeAdditional: false } } });
   const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 2000 }) : null;
   // pg discards the broken idle connection; handling its error keeps the
   // service alive so readiness and later requests can recover. Never log DSNs.
   pool?.on('error', () => console.error('identity: database idle connection lost'));
   const demo = process.env.APP_ENV === 'demo' && process.env.NODE_ENV === 'development';
+  if (options.staffResetDelivery && (!demo || process.env.PAMOFI_TEST_CONFIRM_ISOLATED !== '1')) throw Error('Injected recovery delivery requires isolated demo tests.');
+  const staffResetJobs = new Set<Promise<void>>();
   const cookieName = demo ? 'pamofi_demo_session' : '__Host-pamofi_session';
   const origin = process.env.PUBLIC_ORIGIN;
   const validOrigin = (() => { try { const u = new URL(origin!); return u.origin === origin && (u.protocol === 'https:' || (demo && u.protocol === 'http:' && ['localhost','127.0.0.1'].includes(u.hostname))); } catch { return false; } })();
@@ -25,7 +28,7 @@ export function buildApp() {
   // for that hook to exist before registering any routes in this sync builder.
   app.after(error => {
   if (error) throw error;
-  app.addHook('onClose', async () => { if (pool) await pool.end(); });
+  app.addHook('onClose', async () => { await Promise.allSettled([...staffResetJobs]); if (pool) await pool.end(); });
   app.get('/health/live', async () => ({ status: 'ok', service: 'identity' }));
   app.get('/health/ready', async (_request, reply) => {
     if (!pool) return reply.code(503).send({ status: 'not_ready' });
@@ -174,7 +177,7 @@ export function buildApp() {
       } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
-  registerStaffRoutes(app, { pool, demo, origin, validOrigin });
+  registerStaffRoutes(app, { pool, demo, origin, validOrigin, resetDelivery: options.staffResetDelivery, resetJobs: staffResetJobs });
   registerHandoffRoutes(app, { pool, demo, origin, validOrigin });
   });
   return app;

@@ -5,11 +5,12 @@ import AgentWorkspace from './staff/AgentWorkspace';
 import AdminWorkspace from './staff/AdminWorkspace';
 import SalesHistory from './staff/SalesHistory';
 
-type Step = 'loading' | 'login' | 'register' | 'mfa_setup' | 'mfa_verify' | 'workspace' | 'unavailable';
+type Step = 'loading' | 'login' | 'register' | 'reset_request' | 'reset_confirm' | 'mfa_setup' | 'mfa_verify' | 'workspace' | 'unavailable';
 export default function StaffWorkspace({ close, capabilities }: { close: () => void; capabilities: Capabilities | null }) {
   const [step, setStep] = useState<Step>('loading'), [staff, setStaff] = useState<Staff | null>(null);
   const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [displayName, setDisplayName] = useState('');
   const [code, setCode] = useState(''), [secret, setSecret] = useState(''), [expiresAt, setExpiresAt] = useState(0);
+  const [resetAvailable, setResetAvailable] = useState(false), [resetCode, setResetCode] = useState(''), [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
   const challengeOwner = useRef<string | null>(null), generation = useRef(0);
   const isCurrent = (requestGeneration: number) => live.current && generation.current === requestGeneration;
@@ -31,8 +32,9 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
   }
   useEffect(() => {
     live.current = true; heading.current?.focus(); void load();
+    void api<{ enabled: boolean }>('/api/staff/password-reset/availability').then(result => { if (live.current) setResetAvailable(result.enabled === true); }).catch(() => { if (live.current) setResetAvailable(false); });
     const timer = setInterval(() => setNow(Date.now()), 1_000);
-    const unsubscribe = onStaffSessionChange((kind, staffId) => { generation.current++; setBusy(false); setExpiresAt(0); setStaff(null); setSecret(''); setCode(''); setPassword(''); challengeOwner.current = null; discardStaffDrafts(kind === 'signed_in' ? staffId : undefined); setStep('login'); setMessage('The staff account changed in another tab. Sign in again or refresh this workspace before continuing.'); });
+    const unsubscribe = onStaffSessionChange((kind, staffId) => { generation.current++; setBusy(false); setExpiresAt(0); setStaff(null); setSecret(''); setCode(''); setResetCode(''); setPassword(''); setPasswordConfirmation(''); challengeOwner.current = null; discardStaffDrafts(kind === 'signed_in' ? staffId : undefined); setStep('login'); setMessage('The staff account changed in another tab. Sign in again or refresh this workspace before continuing.'); });
     return () => { generation.current++; live.current = false; clearInterval(timer); unsubscribe(); };
   }, []);
   useEffect(() => {
@@ -54,6 +56,27 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
         if (isCurrent(requestGeneration)) { challengeOwner.current = next.staffId; setPassword(''); setCode(''); setSecret(''); setExpiresAt(Date.now() + next.expiresIn * 1_000); setStep(next.next); }
       }
     } catch (error) { if (isCurrent(requestGeneration)) setMessage(error instanceof ApiError && error.status === 401 ? 'The sign-in details could not be verified. Check your email and password.' : messageFor(error)); }
+    finally { if (isCurrent(requestGeneration)) setBusy(false); }
+  }
+  async function requestPasswordReset(event: React.FormEvent) {
+    event.preventDefault(); if (busy || !resetAvailable) return;
+    const requestGeneration = ++generation.current; setBusy(true); setMessage('');
+    try {
+      const result = await api<{ status: string }>('/api/staff/password-reset/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim() }) });
+      if (result.status !== 'accepted') throw Error('reset_request_unconfirmed');
+      if (isCurrent(requestGeneration)) { setResetCode(''); setPassword(''); setPasswordConfirmation(''); setStep('reset_confirm'); setMessage('If this address is eligible, a recovery code will be sent. Check your approved staff mailbox.'); }
+    } catch (error) { if (isCurrent(requestGeneration)) setMessage(messageFor(error, 'Password recovery is temporarily unavailable.')); }
+    finally { if (isCurrent(requestGeneration)) setBusy(false); }
+  }
+  async function confirmPasswordReset(event: React.FormEvent) {
+    event.preventDefault(); if (busy || !resetAvailable) return;
+    if (password !== passwordConfirmation) { setMessage('The new passwords do not match.'); return; }
+    const requestGeneration = ++generation.current; setBusy(true); setMessage('');
+    try {
+      const result = await api<{ status: string; mfaUnchanged: boolean }>('/api/staff/password-reset/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), code: resetCode.trim(), password }) });
+      if (result.status !== 'password_reset' || result.mfaUnchanged !== true) throw Error('reset_unconfirmed');
+      if (isCurrent(requestGeneration)) { setResetCode(''); setPassword(''); setPasswordConfirmation(''); setStep('login'); setMessage('Password changed. Sign in with your new password and existing authenticator.'); }
+    } catch (error) { if (isCurrent(requestGeneration)) setMessage(error instanceof ApiError && error.status === 400 ? 'The recovery details could not be verified. Check the code or request a new one.' : messageFor(error, 'The reset could not be confirmed.')); }
     finally { if (isCurrent(requestGeneration)) setBusy(false); }
   }
   async function prepareMfa() {
@@ -102,7 +125,9 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
       {step === 'register' && <small>Use at least 15 characters. Keep this password separate from customer recovery details.</small>}
       <button className="primary" disabled={busy}>{step === 'register' ? 'Submit staff application' : 'Continue to verification'}</button>
     </form><button className="text-button" disabled={busy} onClick={() => { setPassword(''); setMessage(''); setStep(step === 'register' ? 'login' : 'register'); }}>{step === 'register' ? 'Already applied? Sign in' : 'New team member? Apply for access'}</button></div>}
-    {step === 'login' && <details className="notice"><summary>Need help signing in?</summary><p>Staff password reset by email is not available yet. Contact a PamoFi administrator through your existing work channel; never share your password or authenticator codes.</p><p>For a lost authenticator, another approved administrator must verify your identity and initiate recovery. You will need your existing password, a new authenticator, and approval again. Customer recovery keys do not reset staff access.</p></details>}
+    {step === 'login' && <details className="notice"><summary>Need help signing in?</summary>{resetAvailable ? <button className="text-button" disabled={busy} onClick={() => { setPassword(''); setMessage(''); setStep('reset_request'); }}>Reset staff password</button> : <p>Staff password reset by email is not available yet. Contact a PamoFi administrator through your existing work channel; never share your password or authenticator codes.</p>}<p>For a lost authenticator, another approved administrator must verify your identity and initiate recovery. You will need your existing password, a new authenticator, and approval again. Customer recovery keys do not reset staff access.</p></details>}
+    {step === 'reset_request' && <div className="workspace-auth"><h3>Reset staff password</h3><p>If an eligible account exists, we will send a single-use code to its staff email address. Your authenticator will not be removed.</p><form className="form-grid" onSubmit={requestPasswordReset}><label>Staff email<input type="email" required maxLength={254} autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><button className="primary" disabled={busy}>Send recovery code</button></form><button className="text-button" disabled={busy} onClick={() => { setMessage(''); setStep('login'); }}>Back to staff sign-in</button></div>}
+    {step === 'reset_confirm' && <div className="workspace-auth"><h3>Enter recovery code</h3><p>Codes expire after 15 minutes. Your existing authenticator remains required.</p><form className="form-grid" onSubmit={confirmPasswordReset}><label>Staff email<input type="email" required maxLength={254} autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><label>Recovery code<input required pattern="[A-Za-z0-9_-]{43}" minLength={43} maxLength={43} autoComplete="one-time-code" value={resetCode} onChange={event => setResetCode(event.target.value)} /></label><label>New password<input type="password" required minLength={15} maxLength={128} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label>Confirm new password<input type="password" required minLength={15} maxLength={128} autoComplete="new-password" value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} /></label><button className="primary" disabled={busy}>Change password</button></form><button className="text-button" disabled={busy} onClick={() => { setResetCode(''); setPassword(''); setPasswordConfirmation(''); setMessage(''); setStep('reset_request'); }}>Request another code</button><button className="text-button" disabled={busy} onClick={() => { setResetCode(''); setPassword(''); setPasswordConfirmation(''); setMessage(''); setStep('login'); }}>Back to staff sign-in</button></div>}
     {(step === 'mfa_setup' || step === 'mfa_verify') && <div className="workspace-auth"><h3>{step === 'mfa_setup' ? 'Set up your authenticator' : 'Verify it is you'}</h3><p>Challenge expires in {Math.max(0, Math.ceil((expiresAt - now) / 60_000))} minutes.</p>
       {step === 'mfa_setup' && <>{!secret ? <button className="secondary" disabled={busy} onClick={prepareMfa}>Create authenticator setup key</button> : <div className="private-value"><p>Add a time-based PamoFi account in your authenticator using this setup key. Keep it private.</p><code data-testid="mfa-setup-key">{secret}</code></div>}</>}
       <form className="form-grid" onSubmit={verifyMfa}><label>Authenticator code<input inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label><button className="primary" disabled={busy || (step === 'mfa_setup' && !secret)}>Verify authenticator</button></form><button className="text-button" disabled={busy} onClick={logout}>Cancel sign-in</button>

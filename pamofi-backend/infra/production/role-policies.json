@@ -8,6 +8,7 @@
     "staff_users": ["SELECT", "INSERT", "UPDATE"],
     "staff_auth_challenges": ["SELECT", "INSERT", "UPDATE"],
     "staff_sessions": ["SELECT", "INSERT", "UPDATE"],
+    "staff_password_reset_tokens": ["SELECT", "INSERT", "UPDATE", "DELETE"],
     "staff_audit_events": ["SELECT", "INSERT"],
     "staff_bootstrap_guard": []
   },
