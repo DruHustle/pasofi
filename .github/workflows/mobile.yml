@@ -1,0 +1,147 @@
+name: Build PamoFi native previews
+
+on:
+  pull_request:
+    paths:
+      - 'pamofi-frontend/mobile/**'
+      - '.github/workflows/mobile.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'pamofi-frontend/mobile/**'
+      - '.github/workflows/mobile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pamofi-native-${{ github.ref }}
+  cancel-in-progress: true
+
+# These artifacts deliberately have no API endpoint or signing secrets.
+# A native compile does not qualify cross-origin customer cookies or devices.
+env:
+  VITE_PAMOFI_API_BASE_URL: ''
+
+defaults:
+  run:
+    shell: bash
+    working-directory: pamofi-frontend/mobile
+
+jobs:
+  android:
+    name: Android debug APK (API unconfigured)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.1
+          cache: npm
+          cache-dependency-path: pamofi-frontend/mobile/package-lock.json
+      - name: Set up Java 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install locked web and Capacitor dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build and sync fresh Android assets
+        run: |
+          npm run build
+          npx --no-install cap sync android
+      - name: Install required Android SDK
+        run: |
+          sdkmanager_path="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager_path"
+          set +o pipefail
+          yes | "$sdkmanager_path" --licenses >/dev/null
+          license_status=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$license_status" -eq 0
+          "$sdkmanager_path" 'platforms;android-36' 'build-tools;36.0.0' 'platform-tools'
+      - name: Compile Android debug APK with the checked-in Gradle wrapper
+        working-directory: pamofi-frontend/mobile/android
+        run: |
+          test "$(sed -n 's/^distributionUrl=//p' gradle/wrapper/gradle-wrapper.properties)" = 'https\://services.gradle.org/distributions/gradle-8.14.3-all.zip'
+          printf '%s\n' '7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172  gradle/wrapper/gradle-wrapper.jar' | sha256sum --check
+          bash ./gradlew --no-daemon --stacktrace :app:assembleDebug
+      - name: Package review artifact and provenance
+        run: |
+          mkdir -p native-artifacts
+          cp android/app/build/outputs/apk/debug/app-debug.apk native-artifacts/pamofi-api-unconfigured-debug.apk
+          cp NATIVE_BUILDS.md native-artifacts/READ-ME.md
+          git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
+          sha256sum native-artifacts/pamofi-api-unconfigured-debug.apk > native-artifacts/SHA256SUMS.txt
+          java -version 2> native-artifacts/JAVA_VERSION.txt
+      - name: Upload Android preview
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pamofi-android-api-unconfigured-debug-${{ github.sha }}
+          path: pamofi-frontend/mobile/native-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    name: iOS unsigned simulator app (API unconfigured)
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.1
+          cache: npm
+          cache-dependency-path: pamofi-frontend/mobile/package-lock.json
+      - name: Verify Xcode 26 or newer
+        run: |
+          xcodebuild -version
+          xcode_major=$(xcodebuild -version | awk '/^Xcode / {split($2, version, "."); print version[1]}')
+          test "$xcode_major" -ge 26
+          xcrun --sdk iphonesimulator --show-sdk-version
+      - name: Install locked web and Capacitor dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build and sync fresh iOS assets
+        run: |
+          npm run build
+          npx --no-install cap sync ios
+      - name: Compile unsigned simulator app
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath native-build/ios \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+            DEVELOPMENT_TEAM= ONLY_ACTIVE_ARCH=NO build
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const resolved = JSON.parse(fs.readFileSync('ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'utf8'));
+          const capacitor = resolved.pins.find(pin => pin.identity === 'capacitor-swift-pm');
+          if (capacitor?.state.version !== '8.6.0' || capacitor.state.revision !== 'e9e932f7748d3b948bc47f5791c761ac5221ec6a') throw Error('Unexpected Capacitor Swift package resolution');
+          JS
+      - name: Package simulator app without losing executable permissions
+        run: |
+          mkdir -p native-artifacts
+          tar -czf native-artifacts/pamofi-api-unconfigured-ios-simulator.tar.gz \
+            -C native-build/ios/Build/Products/Debug-iphonesimulator App.app
+          cp NATIVE_BUILDS.md native-artifacts/READ-ME.md
+          git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
+          shasum -a 256 native-artifacts/pamofi-api-unconfigured-ios-simulator.tar.gz > native-artifacts/SHA256SUMS.txt
+          xcodebuild -version > native-artifacts/XCODE_VERSION.txt
+      - name: Upload iOS simulator preview
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pamofi-ios-api-unconfigured-simulator-${{ github.sha }}
+          path: pamofi-frontend/mobile/native-artifacts/
+          if-no-files-found: error
+          retention-days: 14
