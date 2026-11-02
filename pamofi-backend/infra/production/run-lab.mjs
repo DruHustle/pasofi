@@ -4,11 +4,14 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, readFile, writeFile, copyFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, copyFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inspectRouterControl } from './router-control-config.mjs';
 
+const vercel = process.argv.length === 3 && process.argv[2] === '--vercel';
+if (process.argv.length !== 2 && !vercel) throw Error('Use run-lab.mjs with no arguments or --vercel.');
 const here = fileURLToPath(new URL('.', import.meta.url)), backend = resolve(here, '../..'), repository = resolve(backend, '..');
 const id = randomBytes(8).toString('hex'), project = `pamofi-production-lab-${id}`, volume = `${project}-database`;
 const backupContainer = `${project}-backup-config`;
@@ -67,9 +70,10 @@ async function main() {
   try {
     console.log('Production lab: generating private disposable secrets and certificates.');
     await run(process.execPath, [join(here, 'generate-secrets.mjs'), '--directory', secrets, '--new-install-only']);
+    if (vercel) await run(process.execPath, [join(here, 'generate-vercel-secret.mjs'), '--directory', secrets, '--add-vercel-proxy']);
     await run('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(directory, 'ca.key'), '-out', join(directory, 'ca.crt'), '-days', '1', '-subj', '/CN=PamoFi production configuration lab CA']);
     await copyFile(join(directory, 'ca.crt'), join(secrets, 'internal_ca')); await chmod(join(secrets, 'internal_ca'), 0o444);
-    for (const [name, names] of [['public', 'DNS:pamofi.test,IP:127.0.0.1'], ['internal', 'DNS:identity.internal,DNS:prepaid.internal,DNS:network.internal,DNS:notification.internal,DNS:assistant.internal']]) {
+    for (const [name, names] of [['public', 'DNS:pamofi.test,DNS:api.pamofi.test,IP:127.0.0.1'], ['internal', 'DNS:identity.internal,DNS:prepaid.internal,DNS:network.internal,DNS:notification.internal,DNS:assistant.internal']]) {
       await run('openssl', ['req', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(secrets, `${name}_tls_key`), '-out', join(directory, `${name}.csr`), '-subj', `/CN=${name === 'public' ? 'pamofi.test' : 'identity.internal'}`]);
       const extension = join(directory, `${name}.ext`); await writeFile(extension, `subjectAltName=${names}\nextendedKeyUsage=serverAuth\n`);
       await run('openssl', ['x509', '-req', '-in', join(directory, `${name}.csr`), '-CA', join(directory, 'ca.crt'), '-CAkey', join(directory, 'ca.key'), '-CAcreateserial', '-out', join(secrets, `${name}_tls_cert`), '-days', '1', '-extfile', extension]);
@@ -78,6 +82,12 @@ async function main() {
     await writeFile(join(secrets, 'first_staff_password'), `${randomBytes(24).toString('base64url')}\n`, { mode: 0o600 });
     for (const name of ['b2_key_id', 'b2_application_key', 'backup_cipher']) await writeFile(join(secrets, name), `${randomBytes(32).toString('hex')}\n`, { mode: 0o444 });
     const env = { ...dockerEnvironment, PAMOFI_SECRETS_DIR: secrets, PAMOFI_DATABASE_VOLUME: volume, PAMOFI_PUBLIC_HOST: 'pamofi.test', PAMOFI_SERVICES_SUBNET: await unusedSubnet(), PAMOFI_COMMERCE_ENABLED: 'true', PAMOFI_AGENT_COMMISSION_BPS: '500', VOUCHER_DELIVERY_ACTIVE_KEY_ID: 'initial', RADIUS_CREDENTIAL_KEY_VERSION: '1', PAMOFI_BOOTSTRAP_UID: String(process.getuid()), PAMOFI_BOOTSTRAP_GID: String(process.getgid()), STAFF_BOOTSTRAP_EMAIL: 'operator@pamofi.invalid', STAFF_BOOTSTRAP_DISPLAY_NAME: 'Isolated lab operator', STAFF_BOOTSTRAP_REASON: 'Disposable production configuration qualification', STAFF_BOOTSTRAP_CONFIRM: 'first-admin', B2_BUCKET: `${project}-unused`, B2_REGION: 'us-west-004', BACKUP_REPOSITORY_PREFIX: `/${project}` };
+    if (vercel) {
+      env.PAMOFI_PUBLIC_HOST = 'api.pamofi.test';
+      env.PAMOFI_PUBLIC_ORIGIN = 'https://pamofi.test';
+      const prepared = await run(process.execPath, [join(here, 'preflight-vercel.mjs')], { env });
+      assert.equal(JSON.parse(prepared.stdout).status, 'prepared-only');
+    }
     for (const service of serviceNames) {
       const key = service === 'prepaid-access' ? 'PREPAID' : service.toUpperCase(), image = `${project}-${service}:local`;
       env[`PAMOFI_${key}_IMAGE`] = image; images.push(image);
@@ -105,7 +115,41 @@ gosu postgres pgbackrest version
     // explicitly selected while rendering. The generated services retain their
     // profiles; ordinary up still leaves migration/bootstrap processes stopped.
     const configArgs = ['compose', '-p', project, '--profile', '*', '-f', join(here, 'compose.yaml'), '-f', join(here, 'bootstrap-staff.compose.yaml')];
+    if (vercel) configArgs.push('-f', join(here, 'vercel.compose.yaml'));
     const config = JSON.parse((await docker([...configArgs, 'config', '--format', 'json'], { env })).stdout); noUnexpectedPorts(config);
+    // Qualify optional management wiring without enabling a worker or making
+    // a router request. Only the unchanged base/split config is started below.
+    const controlDirectory = join(directory, 'router-control'), nasId = 'f21a346c-f639-4a84-8511-a7d26ef080f7';
+    await mkdir(controlDirectory, { mode: 0o700 }); await mkdir(join(controlDirectory, 'ca'), { mode: 0o755 });
+    await copyFile(join(secrets, 'internal_ca'), join(controlDirectory, 'ca', nasId + '.pem'));
+    await chmod(join(controlDirectory, 'ca', nasId + '.pem'), 0o444);
+    await writeFile(join(controlDirectory, 'routers.json'), JSON.stringify([{ nasId, url: 'https://10.77.254.2/rest/', username: 'disposable-control', password: randomBytes(24).toString('base64url'), caFile: '/run/pamofi/routeros-ca/' + nasId + '.pem' }]), { mode: 0o444 });
+    for (const flag of ['false', 'true']) {
+      const controlEnv = { ...env, PAMOFI_ROUTER_CONTROL_DIR: controlDirectory, PAMOFI_ROUTER_CONTROL_QUALIFIED: flag };
+      assert.equal((await inspectRouterControl(controlEnv)).activationRequested, flag === 'true');
+      const control = JSON.parse((await docker([...configArgs, '-f', join(here, 'router-control.compose.yaml'), 'config', '--format', 'json'], { env: controlEnv })).stdout);
+      noUnexpectedPorts(control);
+      assert.equal(control.services.network.environment.NETWORK_RECONCILER_ENABLED, flag);
+      assert.equal(control.services.network.environment.ROUTEROS_ROUTERS_FILE, '/run/secrets/routeros_routers');
+      assert.equal(control.secrets.routeros_routers.file, join(controlDirectory, 'routers.json'));
+      assert.ok(Object.hasOwn(control.services.network.networks, 'router_control'));
+      assert.equal(control.networks.router_control.driver_opts['com.docker.network.bridge.gateway_mode_ipv4'], 'nat');
+      assert.equal(control.networks.router_control.driver_opts['com.docker.network.bridge.enable_ip_masquerade'], 'true');
+      const caMount = control.services.network.volumes.find(item => item.target === '/run/pamofi/routeros-ca');
+      assert.equal(caMount.source, join(controlDirectory, 'ca')); assert.equal(caMount.read_only, true); assert.notEqual(caMount.bind?.create_host_path, true);
+      for (const [service, value] of Object.entries(control.services)) if (service !== 'network') assert.equal((value.secrets || []).some(item => item.source === 'routeros_routers'), false);
+    }
+    assert.equal(config.services.network.environment.NETWORK_RECONCILER_ENABLED, 'false');
+    if (vercel) {
+      for (const service of serviceNames) assert.equal(config.services[service].environment.PUBLIC_ORIGIN, env.PAMOFI_PUBLIC_ORIGIN);
+      assert.equal(config.services.gateway.environment.PAMOFI_PUBLIC_HOST, env.PAMOFI_PUBLIC_HOST);
+      assert.equal(config.services.gateway.read_only, true);
+      assert.equal(config.secrets.vercel_proxy_token.file, join(secrets, 'vercel_proxy_token'));
+      for (const [service, value] of Object.entries(config.services)) {
+        assert.equal(value.environment?.PAMOFI_VERCEL_PROXY_TOKEN, undefined);
+        if (service !== 'gateway') assert.equal((value.secrets || []).some(item => item.source === 'vercel_proxy_token'), false);
+      }
+    }
     for (const service of serviceNames) assert.deepEqual(config.services[`${service}-migrate`].profiles, ['migrate']);
     assert.deepEqual(config.services['identity-bootstrap'].profiles, ['bootstrap']);
     const backup = JSON.parse((await docker([...configArgs, '-f', join(backend, 'infra/backup-production/compose.yaml'), 'config', '--format', 'json'], { env })).stdout); noUnexpectedPorts(backup);
@@ -117,6 +161,25 @@ gosu postgres pgbackrest version
     config.services.gateway.ports = [{ target: 80, host_ip: '127.0.0.1', protocol: 'tcp' }, { target: 443, host_ip: '127.0.0.1', protocol: 'tcp' }];
     rendered = join(directory, 'compose.json'); await writeFile(rendered, JSON.stringify(config), { mode: 0o600 });
     await docker(['volume', 'create', '--label', `com.pamofi.production-lab=${id}`, volume]); volumeCreated = true;
+    if (vercel) {
+      // Exercise the actual startup script, not a rendered-text approximation.
+      // Only this lab's newly generated token is temporarily invalidated.
+      const tokenPath = join(secrets, 'vercel_proxy_token'), originalToken = await readFile(tokenPath);
+      try {
+        for (const invalid of ['A'.repeat(64) + '\n', 'a'.repeat(64) + '\nextra\n']) {
+          await chmod(tokenPath, 0o600); await writeFile(tokenPath, invalid); await chmod(tokenPath, 0o400);
+          const refused = await compose(['run', '--rm', '--no-deps', 'gateway'], { timeout: 15000, failureAllowed: true });
+          assert.notEqual(refused.status, 0); assert.match(refused.stderr + refused.stdout, /Vercel gateway startup refused/);
+          assert.equal((refused.stderr + refused.stdout).includes(originalToken.toString().trim()), false);
+          assert.equal((refused.stderr + refused.stdout).includes(invalid.trim()), false);
+        }
+      } finally {
+        await chmod(tokenPath, 0o600); await writeFile(tokenPath, originalToken); await chmod(tokenPath, 0o400);
+      }
+      const invalidHost = await compose(['run', '--rm', '--no-deps', '-e', 'PAMOFI_PUBLIC_HOST=127.0.0.1', 'gateway'], { timeout: 15000, failureAllowed: true });
+      assert.notEqual(invalidHost.status, 0); assert.match(invalidHost.stderr + invalidHost.stdout, /Vercel gateway startup refused/);
+      console.log('Split gateway startup rejects malformed credentials and non-DNS hostnames without logging credentials.');
+    }
     console.log('Production lab: initializing independent owner/migration/runtime roles.');
     await compose(['up', '-d', '--wait', '--wait-timeout', '120', 'postgres'], { timeout: 150000 });
     for (const service of serviceNames) await compose(['--profile', 'migrate', 'run', '--rm', `${service}-migrate`], { timeout: 120000 });
@@ -131,18 +194,26 @@ gosu postgres pgbackrest version
     }
     const httpsAddress = (await compose(['port', 'gateway', '443'])).stdout.trim(), httpAddress = (await compose(['port', 'gateway', '80'])).stdout.trim();
     assert.match(httpsAddress, /^127\.0\.0\.1:\d+$/); assert.match(httpAddress, /^127\.0\.0\.1:\d+$/);
-    const publicResult = await run(process.execPath, [join(here, 'lab-public.mjs'), httpsAddress.split(':')[1], httpAddress.split(':')[1], secrets], { timeout: 90000 }); console.log(publicResult.stdout.trim());
+    if (vercel) {
+      const modes = await compose(['exec', '-T', 'gateway', 'stat', '-c', '%a:%U', '/tmp/pamofi-gateway', '/tmp/pamofi-gateway/public.conf', '/tmp/pamofi-gateway/nginx.conf']);
+      assert.deepEqual(modes.stdout.trim().split('\n'), ['700:root', '600:root', '600:root']);
+      const probe = await compose(['exec', '-T', '--user', 'nginx', 'gateway', 'sh', '-c', 'test ! -r /tmp/pamofi-gateway/public.conf && test ! -r /run/secrets/vercel_proxy_token']);
+      assert.equal(probe.status, 0);
+    }
+    const publicResult = await run(process.execPath, [join(here, vercel ? 'lab-vercel.mjs' : 'lab-public.mjs'), httpsAddress.split(':')[1], httpAddress.split(':')[1], secrets], { timeout: 90000 }); console.log(publicResult.stdout.trim());
     const internalScript = await readFile(join(here, 'lab-internal.mjs'), 'utf8');
     for (const service of serviceNames) { const result = await compose(['exec', '-T', service, 'node', '--input-type=module'], { input: internalScript, timeout: 30000 }); console.log(result.stdout.trim()); }
-    const diagnostics = await run(process.execPath, [join(backend, 'infra/operations/check.mjs'), '--queues'], { env: { ...dockerEnvironment, PAMOFI_OPERATIONS_COMPOSE_FILE: rendered, PAMOFI_OPERATIONS_PROJECT: project, PAMOFI_MONITOR_ORIGIN: `https://${httpsAddress}`, NODE_EXTRA_CA_CERTS: join(secrets, 'internal_ca') }, timeout: 60000 });
-    const report = JSON.parse(diagnostics.stdout); assert.equal(report.ok, true); assert.equal(report.publicHttps, true); assert.deepEqual(report.problems, []);
-    console.log('Read-only operator check passed with verified HTTPS and three service runtime aggregate queries.');
+    if (!vercel) {
+      const diagnostics = await run(process.execPath, [join(backend, 'infra/operations/check.mjs'), '--queues'], { env: { ...dockerEnvironment, PAMOFI_OPERATIONS_COMPOSE_FILE: rendered, PAMOFI_OPERATIONS_PROJECT: project, PAMOFI_MONITOR_ORIGIN: 'https://' + httpsAddress, NODE_EXTRA_CA_CERTS: join(secrets, 'internal_ca') }, timeout: 60000 });
+      const report = JSON.parse(diagnostics.stdout); assert.equal(report.ok, true); assert.equal(report.publicHttps, true); assert.deepEqual(report.problems, []);
+      console.log('Read-only operator check passed with verified HTTPS and three service runtime aggregate queries.');
+    }
     // Prove the declared external volume survives even an explicit down -v.
     await compose(['down', '--volumes', '--remove-orphans'], { timeout: 90000 });
     assert.equal((await docker(['volume', 'inspect', '--format', '{{ index .Labels "com.pamofi.production-lab" }}', volume])).stdout.trim(), id);
     await compose(['up', '-d', '--wait', '--wait-timeout', '90', 'postgres'], { timeout: 120000 });
     const count = await compose(['exec', '-T', 'postgres', 'psql', '-X', '-At', '-v', 'ON_ERROR_STOP=1', '-U', 'pamofi_bootstrap', '-d', 'pamofi_identity', '-c', 'SELECT count(*) FROM staff_bootstrap_guard']); assert.equal(count.stdout.trim(), '1');
-    console.log('Production Compose/TLS lab passed: overlays render, real HTTPS/MFA/handoff/private authorization, readable non-root secret mounts, no published internal services, external database survives down -v.');
+    console.log((vercel ? 'Vercel/Oracle' : 'Production') + ' Compose/TLS lab passed: overlays render, real HTTPS/MFA/handoff/private authorization, readable non-root secret mounts, no published internal services, external database survives down -v.');
   } finally {
     cleaning = true;
     if (rendered) await compose(['down', '--volumes', '--remove-orphans'], { timeout: 90000, failureAllowed: true });

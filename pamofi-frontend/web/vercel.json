@@ -1,6 +1,17 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "env": {
+    "NODEJS_HELPERS": "0"
+  },
+  "functions": {
+    "api/gateway.mjs": {
+      "maxDuration": 10
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
@@ -15,12 +26,16 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+          "value": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
         }
       ]
     }
   ],
   "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/gateway?__pamofi_path=:path*"
+    },
     {
       "source": "/handoff",
       "destination": "/index.html"

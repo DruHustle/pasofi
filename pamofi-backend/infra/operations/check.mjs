@@ -4,6 +4,7 @@
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {resolve,dirname,isAbsolute} from 'node:path';
+import {isIP} from 'node:net';
 
 const expected=['postgres','identity','prepaid-access','network','notification','assistant','web','gateway','internal-gateway'];
 const healthRequired=new Set(['postgres','identity','prepaid-access','network','notification','assistant','web']);
@@ -12,19 +13,58 @@ export function parseRecords(raw){
  const result=text.startsWith('[')?JSON.parse(text):text.split('\n').filter(Boolean).map(line=>JSON.parse(line));
  if(!Array.isArray(result)||result.some(row=>!row||typeof row!=='object'))throw Error('invalid_diagnostic_data');return result;
 }
-export function checkContainers(rows){
+export function checkContainers(rows,{radiusBind}={}){
+ if(radiusBind!==undefined&&(isIP(radiusBind)!==4||!(/^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(radiusBind))))throw Error('RADIUS monitoring requires the exact private IPv4 tunnel bind');
  const problems=[],services=[];
- for(const service of expected){
+ for(const service of [...expected,...(radiusBind?['radius','radius-api']:[])]){
   const matches=rows.filter(row=>row.Service===service);
   if(matches.length!==1){problems.push(`${service}:missing_or_duplicate`);continue;}
   const row=matches[0];services.push({service,state:row.State,health:row.Health||null});
-  if(row.State!=='running'||(healthRequired.has(service)&&row.Health!=='healthy'))problems.push(`${service}:not_ready`);
+  if(row.State!=='running'||((healthRequired.has(service)||service==='radius-api')&&row.Health!=='healthy'))problems.push(`${service}:not_ready`);
  }
  for(const row of rows){
   const published=(row.Publishers||[]).filter(port=>Number(port.PublishedPort)>0);
-  if(published.some(port=>row.Service!=='gateway'||port.Protocol!=='tcp'||![80,443].includes(Number(port.TargetPort))))problems.push(`${row.Service}:unexpected_published_port`);
+  const allowed=port=>row.Service==='gateway'&&port.Protocol==='tcp'&&[80,443].includes(Number(port.TargetPort))||
+   radiusBind&&row.Service==='radius'&&port.Protocol==='udp'&&[1812,1813].includes(Number(port.TargetPort))&&Number(port.PublishedPort)===Number(port.TargetPort)&&port.URL===radiusBind;
+  if(published.some(port=>!allowed(port)))problems.push(`${row.Service}:unexpected_published_port`);
+  if(radiusBind&&row.Service==='radius'&&(published.length!==2||new Set(published.map(port=>Number(port.TargetPort))).size!==2||published.some(port=>!allowed(port))))problems.push('radius:private_binding_missing_or_invalid');
  }
  return {services,problems};
+}
+
+function monitorOrigin(value){
+ try{const url=new URL(value);if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error();return url;}
+ catch{throw Error('A credential-free HTTPS monitoring origin is required');}
+}
+
+// Read-only probes. Split deployments check Oracle's direct-access denial and
+// the frontend's real same-origin API separately; no proxy credential is sent.
+export async function checkHttpsOrigins({gatewayOrigin,frontendOrigin,fetcher=fetch}){
+ const gateway=monitorOrigin(gatewayOrigin),frontend=frontendOrigin?monitorOrigin(frontendOrigin):gateway;
+ const split=frontend.origin!==gateway.origin;
+ const checks=split?[
+  [gateway,'/health/live',[200]],
+  [gateway,'/api/session',[403]],
+  [gateway,'/internal/v1/session',[404]],
+  [gateway,'/api/internal/v1/session',[403,404]],
+  [frontend,'/api/session',[401]],
+  [frontend,'/api/internal/v1/session',[404]],
+ ]:[
+  [gateway,'/health/live',[200]],
+  [gateway,'/api/session',[401]],
+  [gateway,'/internal/v1/session',[404]],
+  [gateway,'/api/internal/v1/session',[404]],
+ ];
+ try{
+  for(const [origin,path,statuses]of checks){
+   const response=await fetcher(new URL(path,origin),{redirect:'error',signal:AbortSignal.timeout(5000)});
+   try{
+    // A static SPA/HTML fallback is not a successful API/privacy check.
+    if(!statuses.includes(response.status)||response.headers.has('set-cookie')||!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type')||''))throw Error();
+   }finally{await response.body?.cancel();}
+  }
+  return {ok:true,split};
+ }catch{return {ok:false,split,problem:'public_https:contract_unavailable'};}
 }
 export function checkBackup(rows,{now=Date.now()/1000,maxAgeHours=30}={}){
  const stanza=rows.find(row=>row.name==='pamofi');
@@ -75,20 +115,9 @@ async function main(){
   const result=spawnSync('docker',[...compose,...command],{cwd,encoding:'utf8',timeout,maxBuffer:1024*1024});
   if(result.error||result.status!==0)throw Error('docker_diagnostic_unavailable');return result.stdout;
  }
- const report={checkedAt:new Date().toISOString(),...checkContainers(parseRecords(docker(['ps','--all','--format','json']))),publicHttps:false,queues:queues?{}:'not_checked',backup:backup?{}:'not_checked'};
- let origin;
- try{origin=new URL(process.env.PAMOFI_MONITOR_ORIGIN||`https://${process.env.PAMOFI_PUBLIC_HOST||''}`);if(origin.protocol!=='https:'||origin.username||origin.password||origin.pathname!=='/'||origin.search||origin.hash)throw Error();}
- catch{throw Error('A credential-free HTTPS PAMOFI_MONITOR_ORIGIN or PAMOFI_PUBLIC_HOST is required');}
- try{
-  const checks=[['/health/live',200],['/api/session',401],['/internal/v1/session',404],['/api/internal/v1/session',404]];
-  for(const [path,status]of checks){
-   const result=await fetch(new URL(path,origin),{redirect:'error',signal:AbortSignal.timeout(5000)});
-   // An anonymous session read must not manufacture an account or issue a cookie.
-   if(result.status!==status||(path==='/api/session'&&result.headers.has('set-cookie')))throw Error();
-   await result.body?.cancel();
-  }
-  report.publicHttps=true;
- }catch{report.problems.push('public_https:contract_unavailable');}
+ const report={checkedAt:new Date().toISOString(),...checkContainers(parseRecords(docker(['ps','--all','--format','json'])),{radiusBind:process.env.PAMOFI_OPERATIONS_RADIUS_BIND||undefined}),publicHttps:false,queues:queues?{}:'not_checked',backup:backup?{}:'not_checked'};
+ const https=await checkHttpsOrigins({gatewayOrigin:process.env.PAMOFI_MONITOR_ORIGIN||`https://${process.env.PAMOFI_PUBLIC_HOST||''}`,frontendOrigin:process.env.PAMOFI_MONITOR_FRONTEND_ORIGIN});
+ report.publicHttps=https.ok;report.splitFrontend=https.split;if(!https.ok)report.problems.push(https.problem);
  if(queues)for(const [service,query]of Object.entries(queueQueries)){
   try{const result=JSON.parse(docker(['exec','-T',service,'node','--input-type=module','-e',aggregateProgram(query)]));
    if(!result||Object.values(result).some(value=>!Number.isSafeInteger(value)||value<0))throw Error();

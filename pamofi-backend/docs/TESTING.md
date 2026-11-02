@@ -11,6 +11,8 @@ The repository has seven independent Node projects: five backend services, the w
 | `node pamofi-backend/local-tools/verify.mjs --integration --browser` | Adds real customer/staff/agent web journeys plus web/mobile fault mocks and offline checks against owned Vite/API processes | No real payment, SMS, hotspot, native phone build, or production acceptance |
 | The container labs below | Actual FreeRADIUS packets, disposable encrypted backup/restore, private staging and production TLS/runtime configuration | No qualification of a physical router, commercial provider account, or off-site backup destination |
 | `node --test pamofi-backend/infra/remote-access/*.test.mjs` | Offline reachability assessment, direct/hub configuration validation, narrow routes/firewalls and output protection | No live WireGuard handshake, public-endpoint reachability or physical RouterOS command acceptance |
+| `npm --prefix pamofi-frontend/web run test:proxy` | Actual HTTP/TLS requests through the server-only Vercel handler, strict origins and routes, client-IP metadata, cookies, timeouts and error handling | No Vercel edge deployment or public Oracle certificate qualification |
+| The Vercel, site-link, RADIUS-production and operations checks below | Split-host configuration, private RADIUS binding, outbound site-link scope, production transport and monitoring contracts | No physical NAS, Starlink tunnel handshake or public production deployment |
 
 Add `--install` to either integration command when dependencies have not yet been installed. Node.js 22 or later is required; CI uses Node 24.22.1. The integration tests require OpenSSL for their temporary TLS certificates. The browser gate needs Playwright Chromium or an explicit `PAMOFI_CHROME_PATH` to an installed compatible Chrome executable.
 
@@ -87,15 +89,37 @@ bash pamofi-backend/pamofi-radius/lab/run-lab.sh
 bash pamofi-backend/infra/backup-lab/run-lab.sh
 bash pamofi-backend/infra/oracle-staging/test-local.sh
 node pamofi-backend/infra/production/run-lab.mjs
+node pamofi-backend/infra/production/run-vercel-lab.mjs
+node pamofi-backend/infra/radius-production/run-lab.mjs
 ```
 
 The RADIUS lab sends actual RADIUS packets through FreeRADIUS with two simulated NASes. The backup lab performs an encrypted physical backup and WAL-based restore inside a disposable local setup. The staging lab builds the service images, applies migrations, checks private service readiness, and verifies that the catalogue is unpublished, demo checkout is disabled, and a runtime role cannot connect to another service's database.
+
+The split-host production lab adds the actual Vercel proxy module in an owned local HTTPS fixture, the authenticated Oracle gateway and the production services. The fixture supplies the platform client-IP header, while separate TLS hostnames and a trusted disposable CA preserve hostname/certificate verification. It exercises customer and staff cookies, exact browser Origin, agent cash issuance, receipt redemption, queued allowance and the private usage response. It also checks direct-gateway bypass, forged forwarding headers, internal routes, client-specific rate limits and both monitoring origins. Automatic display after an accounting update is covered by the separate strict browser journey. These checks validate the implementation and production configuration together; Vercel's actual routing, packaging and platform header behavior must still be checked on the identified deployment.
+
+The production RADIUS transport lab uses the production FreeRADIUS configuration and real RADIUS packets with a controlled mutual-TLS authority. It checks transport authorization, rejection and outage behavior. Its controlled authority is separate from the earlier complete ledger/RADIUS lab; neither is a physical MikroTik counter/enforcement test.
+
+## Hosting and site configuration checks
+
+Run these from the repository root. The JavaScript checks create only owned temporary fixtures; they do not contact or configure a router:
+
+```sh
+npm --prefix pamofi-frontend/web run test:proxy
+node --test pamofi-backend/infra/production/vercel-config.test.mjs \
+  pamofi-backend/infra/production/router-control-config.test.mjs \
+  pamofi-backend/infra/site-link/*.test.mjs \
+  pamofi-backend/infra/radius-production/*.test.mjs \
+  pamofi-backend/infra/operations/check.test.mjs
+sh pamofi-backend/infra/site-link/check-nft.sh
+```
+
+The last command requires Linux, `nft`, `unshare` and permission to create a disposable network namespace. It validates the generated firewall with `nft --check` inside that namespace; it never installs rules into the host firewall. CI installs the required packages on its disposable runner. If a local sandbox disallows sockets, namespaces or child-process test execution, use an approved local execution context or the full CI gate and record the restriction. A skipped, file-only or unavailable check is not a passing execution of its underlying cases.
 
 ## Continuous integration
 
 `.github/workflows/verify.yml` runs on pull requests and pushes to `main`, with a manual trigger for repeatable verification. It uses an ephemeral PostgreSQL 17.11 service, the five isolated databases, locked independent installations, Chromium, the strict integration/browser runner, and the container/production infrastructure gates in sequence. The workflow has read-only repository permissions and no deployment step or live provider credentials.
 
-The separate `.github/workflows/mobile.yml` builds an API-unconfigured Android debug APK and an unsigned iOS simulator app, records source hashes and uploads short-lived artifacts without signing credentials. Its actual workflow result is separate from browser acceptance. The production role proof and production container lab also have their own documented commands under `infra/production`; they do not activate a deployment. [Verify run 41378312467](https://github.com/DruHustle/pamofi/actions/runs/41378312467), at published head `64277e5e6d5442d3d4e335259a8da816f3ce621f`, repeated the complete 168-case acceptance run (117 backend, 43 web and eight mobile), all seven builds, 141 role checks and the actual production HTTPS/runtime/volume/backup-image checks. [Native run 41378312413](https://github.com/DruHustle/pamofi/actions/runs/41378312413) passed Android and iOS for the same head. GitHub compiled/tested merge source `84a44994c025e625aa3c7ba5b40f8ddfa6a54225`. Historical 139-test and earlier runs remain separate records. Consult the pull request/Actions for subsequent exact-source outcomes after the direct-remote/provider-configuration follow-up.
+The separate `.github/workflows/mobile.yml` builds an API-unconfigured Android debug APK and an unsigned iOS simulator app, records source hashes and uploads short-lived artifacts without signing credentials. Its actual workflow result is separate from browser acceptance. The production role proof and container labs do not activate a deployment. The completed direct-remote/provider-selection checkpoint at head `147fd7f25eaeb9e124e6e81e89e87cac8bfe2861` passed [Verify run 41382739605](https://github.com/DruHustle/pamofi/actions/runs/41382739605) and [native run 41382739635](https://github.com/DruHustle/pamofi/actions/runs/41382739635), using merge source `bd4ef83322f1e86cc373207e468a184dc59c2e20`. It recorded 168 application/browser cases, all seven builds, 21 infrastructure cases, 141 role checks, 55 production HTTPS checks and the actual RADIUS/backup/staging/production labs. This precedes the Vercel/Oracle/Starlink additions. Consult the pull request and Actions for the exact-source results of those added gates; historical runs do not qualify subsequent code.
 
 ## Live acceptance and evidence
 
@@ -106,9 +130,11 @@ Running-service acceptance uses real disposable databases, HTTP service processe
 | Agent cash and usage | Approved test agent, allocated inventory, exact cash attestation, private receipt, one redemption and automatically updated remaining usage through the owned accounting fixture. Actual cash handling and physical NAS counters require a separate site acceptance. |
 | Direct router management | Observed public IPv4/upstream UDP forwarding or global IPv6 route; recent WireGuard handshake from a genuinely separate network; only the dedicated router management address/ports reachable; other router services and LAN forwarding denied; local management and reboot recovery preserved. |
 | Hub fallback | The same router restrictions plus selected host forwarding rules, exact tailnet `/32` route approval, verified owner identity and a real non-owner denial test. |
+| Vercel and Oracle deployment | Identified project and VM, exact frontend/API domains, trusted certificate chain, protected proxy token, deployed API routes, secure customer/staff cookie lifecycle, exact Origin enforcement, per-client rate limits, denied direct/internal routes and split-origin monitoring. |
+| Starlink site service link | Inspected address spaces, reviewed private `/32` peers and credentials, outbound MikroTik handshake to Oracle, exact RADIUS/HTTPS firewall scope, production NAS registration, trusted HTTPS HotSpot login using the supported PAP/User-Password contract, session/Message-Authenticator attributes, real accounting/enforcement and recovery after uplink/router restart. Keep customer internet on Starlink; unsupported CHAP/MSCHAP/EAP and alternate login bypasses must not grant access. |
 | Bank/provider payment | Provider-approved merchant identity, actual sandbox credentials, verified amount/currency/order/merchant and final sale/capture; duplicate/missed callback and reconciliation recovery; reversal/refund cases. Run through the actual pre-login hotspot and phone return flow before enabling real checkout. |
 | Native application | Signed/configured device build, approved API origin and real iOS/Android cookie, CSRF, captive-browser and recovery acceptance. A simulator compile does not satisfy these checks. |
 
-The 2 November direct-router follow-up could not reach the originating connected-browser context. No new physical-router observation or live VPN test was obtained from that attempt. Resume in the connected browser on the router's LAN; retain the last verified inspection until new evidence exists. No source or test flag may substitute for this missing evidence. The current payment runtime exposes no real bank/provider methods, so local provider-boundary tests must continue to assert unavailable capabilities and zero external calls.
+The earlier connected-browser block was subsequently cleared. Authenticated read-only WebFig inspection confirmed the private DHCP uplink and no global IPv6/default IPv6 route. The terminal was unresponsive and Resources repeatedly displayed 100% CPU; the cause is unconfirmed. No settings or router restart were performed. The owner then explicitly deferred physical hotspot work until software completion. Keep the current source/configuration and the recorded inspection separate from a live WireGuard, Hotspot or RADIUS acceptance result. The current payment runtime exposes no real bank/provider methods, so local provider-boundary tests must continue to assert unavailable capabilities and zero external calls.
 
 Passing CI is evidence for the recorded source revision and synthetic environments. Staff/MFA, agent/customer commerce, secure receipt delivery and network reconciliation are implemented and covered by those tests. Direct provider/bank payment acceptance and Sendai delivery acceptance, physical RouterOS enforcement, native cookie/device behavior, remote backup recovery and production operations still require external qualification. See [BUILD_STATUS.md](BUILD_STATUS.md) for the current boundary.

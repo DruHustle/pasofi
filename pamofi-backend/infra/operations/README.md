@@ -26,6 +26,14 @@ Run a health/queue check every minute and a backup check hourly using the organi
 
 The read-only backup check verifies completion age, not continuous WAL delivery. Separately schedule `backup.sh check`, inspect `pg_stat_archiver` failures and accumulated WAL/disk space, and periodically perform the isolated off-host restore. That command may force a WAL switch and is deliberately not hidden inside this read-only diagnostic. A reachable repository and a recent backup do not establish the recovery time or retained encryption-key custody.
 
+## Selected Vercel/Oracle and site deployment
+
+For the split-host deployment, keep `PAMOFI_MONITOR_ORIGIN` as the Oracle HTTPS gateway and set `PAMOFI_MONITOR_FRONTEND_ORIGIN` to the exact Vercel production origin. The checker then proves that Oracle denies unauthenticated direct API access while the frontend's anonymous `/api/session` read returns 401 without creating a cookie. Both sides must return the expected JSON boundary responses; a static HTML/SPA fallback is a failure. These read-only probes send no proxy credential and never create an account. The default single-host checks remain available when no separate frontend origin is configured.
+
+After the private production RADIUS profile has been qualified and activated, set `PAMOFI_OPERATIONS_RADIUS_BIND` to the exact private IPv4 WireGuard address on Oracle. The checker then requires the `radius` process and healthy `radius-api` service, and accepts only UDP 1812/1813 bound to that exact address with matching target/published ports. Wildcard, public, wrong-address or extra listeners remain errors; the mTLS `radius-api` must never publish a host port. Without this explicit setting, published RADIUS ports are rejected. This check verifies declared Docker bindings, not the actual host/cloud firewall or a physical NAS.
+
+Use `PAMOFI_OPERATIONS_COMPOSE_FILE` with an absolute rendered configuration path and `PAMOFI_OPERATIONS_PROJECT` when inspecting the stack assembled from deployment overlays. Keep credentials in protected secret files. The checker does not activate profiles, change firewall rules or infer a deployment from the selected hosting providers.
+
 ## Respond to a failed check
 
 | Signal | First response |

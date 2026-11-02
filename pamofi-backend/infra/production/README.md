@@ -2,6 +2,10 @@
 
 This directory provides a production configuration foundation. It does not deploy anything, invent a public hostname, issue a TLS certificate, enable live payments/SMS/RADIUS, or establish an off-site backup. The network, provider and recovery qualification records remain deployment prerequisites. The base starts all live-provider and customer-network switches disabled; commerce is an explicit operator choice. The public and private TLS gateway contracts are documented in [gateway/README.md](gateway/README.md).
 
+For a **Vercel frontend with an Oracle backend**, use the explicit [Vercel/Oracle overlay and qualification guide](VERCEL_ORACLE.md). That overlay separates the browser origin from the Oracle TLS hostname and authenticates the server proxy. The base below retains its existing single-origin behavior; do not apply its same-host origin assumptions to a split deployment.
+
+The [optional private RouterOS overlay](ROUTER_CONTROL.md) supplies the existing reconciler's protected JSON/CA mounts and controlled activation input. The base and RADIUS defaults remain disabled; device credentials, tunnel/certificate qualification and physical activation are separate deployment inputs.
+
 ## Independent database roles
 
 Each of the five databases has three distinct roles. The database names remain `pamofi_identity`, `pamofi_prepaid_access`, `pamofi_network`, `pamofi_notification`, and `pamofi_assistant`.
@@ -18,7 +22,7 @@ All application roles are `NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOB
 
 Migrations connect as the migration login with `PGOPTIONS=-c role=<owned role> -c search_path=public`, so newly created objects inherit the **owner's** default privileges. After the service's unchanged, independent `migrate.mjs` finishes, `apply-grants.mjs` applies the version-controlled [role-policies.json](role-policies.json) manifest. An unexpected or missing table, or an unreviewed new sequence, fails that release step. New objects cannot silently become writable by a service. Runtime has read-only access to migration history and no access to the permanent staff bootstrap guard. Audit and allocation histories receive only `SELECT`/`INSERT`. Demo payment/SMS fixtures and legacy demo inventory receive no production runtime privileges. Only the account-hold table needs runtime `DELETE`.
 
-Two immutable-record paths take `SELECT ... FOR UPDATE` locks. PostgreSQL requires an update privilege for that lock, so customer-creation retry records and agent-sale records receive a narrowly scoped update privilege on their key column. No other historical columns become writable through those grants. Existing column grants are explicitly removed before reapplying policy; table-level revocation alone would leave them in place. Trigger routines do not receive direct public or runtime execute grants. The owner installs the triggers, which continue to run during permitted runtime writes.
+Customer-creation retry records, agent-sale records and the NAS registry take row locks. PostgreSQL requires an update privilege for those locks, so these tables receive a narrowly scoped update privilege on their key column. No other historical or NAS configuration columns become writable through those grants. The network runtime can read and lock registered NASes, but cannot register a new NAS or change its enabled state, site, client name or login URL; those operations belong to the migration/owner procedure. Existing column grants are explicitly removed before reapplying policy; table-level revocation alone would leave them in place. Trigger routines do not receive direct public or runtime execute grants. The owner installs the triggers, which continue to run during permitted runtime writes.
 
 ## Secret files and non-root readers
 
@@ -92,7 +96,7 @@ Bootstrap is serialized, audited and permanently one-time. It does not issue a s
 
 ## Local and CI privilege qualification
 
-The role proof uses a dedicated **loopback** test cluster with bootstrap privileges. It creates randomly prefixed databases/roles, runs all five actual migrations and grant manifests, checks the complete 5×4 cross-service connection-denial matrix, and cleans only its own resources. It verifies denied DDL, schema/temp creation, role escalation, migration-history writes, audit rewriting, truncation, ungranted future tables/functions/sequences, and allowed explicit DML. It also starts the real identity service under its production runtime role and exercises customer creation/retry and staff password/MFA enrollment.
+The role proof uses a dedicated **loopback** test cluster with bootstrap privileges. It creates randomly prefixed databases/roles, runs all five actual migrations and grant manifests, checks the complete 5×4 cross-service connection-denial matrix, and cleans only its own resources. It verifies denied DDL, schema/temp creation, role escalation, migration-history writes, audit rewriting, truncation, ungranted future tables/functions/sequences, and allowed explicit DML. It also starts the real identity service under its production runtime role and exercises customer creation/retry and staff password/MFA enrollment. For the network runtime it denies NAS registration, deletion and configuration changes, proves both required row-lock modes work, and executes actual credential issuance plus its locked idempotent retry.
 
 ```bash
 PAMOFI_TEST_CONFIRM_ISOLATED=1 \

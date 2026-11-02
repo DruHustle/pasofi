@@ -6,6 +6,8 @@ The web application exposes customer vouchers/private receipts, gated checkout a
 
 See [current build status](docs/BUILD_STATUS.md), [architecture](docs/ARCHITECTURE.md) and [testing](docs/TESTING.md) for the precise boundaries.
 
+The selected deployment is Vercel for the web frontend, Oracle for the backend, and Starlink upstream of the MikroTik. The web uses an authenticated same-origin API proxy; the site initiates a private outbound control connection to Oracle. See [hosting](docs/HOSTING.md), [production RADIUS](infra/radius-production/README.md), and [site-link preparation](infra/site-link/README.md). Complete software verification first; physical hotspot configuration and traffic acceptance are deferred at the owner's request.
+
 ## Run the local demo
 
 Requirements: Node.js 24 LTS, npm, Docker and Docker Compose. From this folder:

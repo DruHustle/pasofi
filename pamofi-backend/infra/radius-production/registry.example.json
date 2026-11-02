@@ -1,0 +1,13 @@
+{
+  "serverTunnelIp": "10.77.254.1",
+  "nases": [
+    {
+      "nasId": "REPLACE_WITH_SELECTED_NAS_UUID",
+      "siteId": "REPLACE_WITH_EXISTING_STAFF_COMMERCE_SITE_UUID",
+      "clientName": "site01",
+      "siteName": "PamoFi first pilot",
+      "routerTunnelIp": "10.77.254.2",
+      "loginUrl": "REPLACE_WITH_QUALIFIED_HTTPS_HOTSPOT_LOGIN_URL"
+    }
+  ]
+}

@@ -65,14 +65,29 @@ jobs:
         run: npx --no-install playwright install --with-deps chromium
       - name: Build and verify all services, web, and mobile
         run: node pamofi-backend/local-tools/verify.mjs --integration --browser
-      - name: Verify protected backup configuration, remote plan and operations diagnostics
+      - name: Verify the Vercel server proxy with real HTTP and TLS
+        run: npm --prefix pamofi-frontend/web run test:proxy
+      - name: Verify protected infrastructure configuration and operations diagnostics
         run: |
           node --test pamofi-backend/infra/backup-production/config.test.mjs \
             pamofi-backend/infra/remote-access/*.test.mjs \
-            pamofi-backend/infra/operations/check.test.mjs
+            pamofi-backend/infra/operations/check.test.mjs \
+            pamofi-backend/infra/production/vercel-config.test.mjs \
+            pamofi-backend/infra/production/router-control-config.test.mjs \
+            pamofi-backend/infra/site-link/*.test.mjs \
+            pamofi-backend/infra/radius-production/*.test.mjs
           sh -n pamofi-backend/infra/backup-production/render-config.sh
           sh -n pamofi-backend/infra/backup-production/entrypoint.sh
           bash -n pamofi-backend/infra/backup-production/backup.sh
+          sh -n pamofi-backend/infra/production/gateway/vercel-entrypoint.sh
+          sh -n pamofi-backend/infra/radius-production/entrypoint.sh
+      - name: Validate the site firewall in an isolated network namespace
+        run: |
+          if ! command -v nft >/dev/null || ! command -v unshare >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y nftables util-linux
+          fi
+          sh pamofi-backend/infra/site-link/check-nft.sh
       - name: Verify production migration and runtime privilege separation
         run: |
           if ! command -v psql >/dev/null; then
@@ -82,9 +97,13 @@ jobs:
           node pamofi-backend/infra/production/test-roles.mjs
       - name: Verify real FreeRADIUS packets in the isolated lab
         run: bash pamofi-backend/pamofi-radius/lab/run-lab.sh
+      - name: Verify the production RADIUS transport and mutual TLS boundaries
+        run: node pamofi-backend/infra/radius-production/run-lab.mjs
       - name: Verify encrypted physical backup and restore
         run: bash pamofi-backend/infra/backup-lab/run-lab.sh
       - name: Verify private staging images and database isolation
         run: bash pamofi-backend/infra/oracle-staging/test-local.sh
       - name: Verify production TLS, file secrets, runtime workflows and volume protection
         run: node pamofi-backend/infra/production/run-lab.mjs
+      - name: Verify the split Vercel and Oracle production path
+        run: node pamofi-backend/infra/production/run-vercel-lab.mjs

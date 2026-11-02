@@ -33,6 +33,14 @@ The [remote-management tools](../../infra/remote-access/README.md) now prepare d
 
 The subsequent browser check could not reach the originating connected-browser context. This is a browser connection limitation, not evidence that the router rejected authentication or that its configuration changed. The last verified device state is the read-only inspection above. No direct/hub handshake, remote-network login, IPv6 reachability, reboot recovery or live firewall denial has yet been verified. Resume the device inspection in the connected browser on the router's LAN before selecting an endpoint and applying an exact recoverable plan.
 
+## Later authenticated browser inspection
+
+The owner subsequently restored the originating browser connection. The authenticated WebFig tab was reachable, so the earlier browser-origin blocker is no longer current. Read-only tables showed `192.168.0.219/24` on `ether1`, a DHCP default route through `192.168.0.1`, and the existing `192.168.88.1/24` management bridge. IPv6 showed only loopback/link-local addresses, no global address or default route, and no DHCPv6 client. IP Cloud displayed an external IPv4 address; that is not evidence of inbound reachability and its value is deliberately not recorded here.
+
+WireGuard, Hotspot and RADIUS tables displayed no entries, consistent with the earlier inspection. The terminal reported that the console was not responding. Resources showed 100% CPU at multiple displayed uptimes, with about 10.8–11.1 MiB free RAM. The profiler returned no process rows and was stopped. Some pages were slow to populate. These are diagnostic observations, not a determined cause or a capacity test. No console/router restart, credential, firewall, route, package or customer-network change was applied.
+
+The owner then confirmed the production topology will place a Starlink router before the MikroTik, with the backend on Oracle and frontend on Vercel, and explicitly deferred physical testing until software completion. The production site design therefore uses an outbound MikroTik-to-Oracle control tunnel; it does not require incoming port forwarding on Starlink. Resume hardware work by checking management responsiveness and a recoverable local connection, then qualify the exact prepared site configuration. The observation of a local upstream private router must not be misrepresented as a test of the eventual Starlink installation.
+
 ## Consequences for PamoFi
 
 This device is suitable for a measured pilot subject to actual capacity and firmware qualification; the inspection does not establish a supported paying-customer count. Its small RAM/flash budget makes a load test and free-space check necessary before changing packages or increasing concurrent sessions. The backend, databases, RADIUS authority and payment/SMS workers stay on the server.

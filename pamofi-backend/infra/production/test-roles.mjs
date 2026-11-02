@@ -110,6 +110,41 @@ async function main() {
         query(runtimeEnv, `UPDATE staff_audit_events SET reason='Modified audit' WHERE id='${auditId}'`, true);
         query(runtimeEnv, `DELETE FROM staff_audit_events WHERE id='${auditId}'`, true);
       }
+      if (service === 'network') {
+        const nas = randomUUID(), site = randomUUID();
+        query(ownerEnv, `INSERT INTO radius_nas(id,site_id,client_name,site_name,login_url,enabled) VALUES('${nas}','${site}','role_proof','Role proof','https://router.example.test/login',false)`);
+        query(runtimeEnv, `INSERT INTO radius_nas(id,site_id,client_name) VALUES('${randomUUID()}','${site}','forbidden_nas')`, true);
+        for (const assignment of ["enabled=true", `site_id='${randomUUID()}'`, "client_name='forbidden_name'", "site_name='Forbidden name'", "login_url='https://other.example.test/login'"]) {
+          query(runtimeEnv, 'UPDATE radius_nas SET ' + assignment + " WHERE id='" + nas + "'", true);
+        }
+        query(runtimeEnv, "DELETE FROM radius_nas WHERE id='" + nas + "'", true);
+        // Both actual credential paths lock the NAS row. PostgreSQL permits
+        // these locks with an UPDATE privilege on only its primary key.
+        assert.equal(query(runtimeEnv, "BEGIN; SELECT id FROM radius_nas WHERE id='" + nas + "' FOR SHARE; SELECT id FROM radius_nas WHERE id='" + nas + "' FOR UPDATE; ROLLBACK"), nas + '\n' + nas);
+        query(ownerEnv, "UPDATE radius_nas SET enabled=true WHERE id='" + nas + "'");
+        const credential = spawnSync(process.execPath, ['--input-type=module'], {
+          cwd: join(backend, 'services/network-service'), env: { ...runtimeEnv, DATABASE_URL: runtimeUrl.toString(), PAMOFI_ROLE_PROOF_NAS: nas },
+          encoding: 'utf8', timeout: 20000,
+          input: `
+import assert from 'node:assert/strict';
+import pg from 'pg';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { issueRadiusCredential } from './dist/credentials.js';
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 2000 });
+try {
+  const input = { customerId: randomUUID(), nasId: process.env.PAMOFI_ROLE_PROOF_NAS, requestKey: randomUUID() };
+  const key = { version: 1, key: randomBytes(32) };
+  const first = await issueRadiusCredential(pool, input, key);
+  const retry = await issueRadiusCredential(pool, input, key);
+  assert.equal(retry.username, first.username);
+  assert.equal(retry.password, first.password);
+  console.log('Runtime credential issue and locked retry passed.');
+} finally { await pool.end(); }
+`,
+        });
+        if (credential.error || credential.status !== 0) throw Error('Network runtime credential qualification failed: ' + (credential.error?.code || credential.stderr.slice(-600)));
+        assert.match(credential.stdout, /Runtime credential issue and locked retry passed/); checks++;
+      }
     }
     for (const source of owned) for (const target of owned) if (source !== target) query(connectionEnvironment(admin, target.database, source.runtime, source.runtimePassword), 'SELECT 1', true);
     // Exercise real identity transactions using the production entrypoint and

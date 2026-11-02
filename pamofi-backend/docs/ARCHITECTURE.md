@@ -14,6 +14,14 @@ PamoFi separates its independent web and mobile applications from five independe
 
 One PostgreSQL cluster may host all five databases. The [production foundation](../infra/production/README.md) defines a non-login owner, separate migration login and narrowly granted runtime login for each database. Migration checksums and reviewed grant manifests fail on unreviewed changes. Demo credentials and privilege choices remain separate from that production configuration.
 
+## Selected hosting and site topology
+
+The selected topology places the web frontend on Vercel and backend services/databases on Oracle. The web app keeps same-origin `/api` requests; a server-only proxy forwards the reviewed public routes to an authenticated Oracle HTTPS gateway. The gateway's hostname and the allowed browser origin are separate settings. Only authenticated proxy metadata can establish the original client IP for service rate limits. Neither browser code nor public routing exposes internal service credentials or endpoints.
+
+At each site, Starlink is upstream of the MikroTik. The MikroTik initiates the private WireGuard service connection to Oracle, allowing operation behind Starlink's default CGNAT. That connection carries only RADIUS authentication/accounting, scoped HTTPS management and reviewed diagnostics. Customer browsing follows the normal Starlink internet route. Owner remote management has its own access policy; it does not substitute for the permanent backend/site connection.
+
+Software laboratories validate both the Vercel/Oracle boundary and production RADIUS package. Actual cloud identities, DNS/TLS, protected secrets and physical hotspot acceptance remain deployment inputs; see [HOSTING.md](HOSTING.md).
+
 ## Customer and agent flow
 
 Identity creates a customer session using a short-lived client retry secret. A lost first response can be retried without creating another customer, and the client verifies that the cookie is usable before proceeding. Recovery uses a reference and high-entropy key; rotation is versioned. Browser handoff uses a separately pasted, single-use two-minute code and explicit consent, never a credential in a URL. Logout revokes the current session and creation retry mapping without changing other sessions or ledger records.
