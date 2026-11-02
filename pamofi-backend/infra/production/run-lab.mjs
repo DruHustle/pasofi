@@ -93,11 +93,11 @@ async function main() {
     for (const [name, file] of [['B2_KEY_ID_FILE', 'b2_key_id'], ['B2_APPLICATION_KEY_FILE', 'b2_application_key'], ['BACKUP_CIPHER_FILE', 'backup_cipher']]) backupArguments.push('--env', `${name}=/run/secrets/${file}`, '--mount', `type=bind,source=${join(secrets, file)},target=/run/secrets/${file},readonly`);
     const backupSmoke = await docker([...backupArguments, backupImage, 'sh', '-eu', '-c', `
 test "$(stat -c '%a:%U' "$PGBACKREST_CONFIG")" = '600:postgres'
-su-exec postgres test -r "$PGBACKREST_CONFIG"
+gosu postgres test -r "$PGBACKREST_CONFIG"
 grep -qx 'pg1-path=/var/lib/postgresql/data/pgdata' "$PGBACKREST_CONFIG"
 grep -qx 'repo1-cipher-type=aes-256-cbc' "$PGBACKREST_CONFIG"
 grep -qx 'repo1-storage-verify-tls=y' "$PGBACKREST_CONFIG"
-su-exec postgres pgbackrest version
+gosu postgres pgbackrest version
 `], { timeout: 30000 });
     assert.match(backupSmoke.stdout, /pgBackRest 2\.57\.0/);
     console.log('Production backup image: private postgres-owned configuration and pinned binary passed with networking disabled.');
