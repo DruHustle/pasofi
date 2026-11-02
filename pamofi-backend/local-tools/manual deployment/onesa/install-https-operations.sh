@@ -20,7 +20,8 @@ set -euo pipefail
 umask 077
 root=/home/ubuntu/pamofi/production
 release=/home/ubuntu/pamofi/releases/f202fabde8275ad7887c1f30d1426f8d5b1b4733-arm64/source/pamofi-backend/infra/production
-host=pamofi.onesa.eu
+host=api.pamofi.onesa.eu
+cert_name=pamofi-api-onesaeu
 image=pamofi-certbot:5.9.0-arm64
 dry=false
 case "${1:-}" in '') ;; --dry-run) dry=true;; *) echo 'Invalid renewal option' >&2; exit 2;; esac
@@ -32,12 +33,12 @@ cleanup() { result=$?; trap - EXIT; if [ "$opened" = true ]; then iptables -D ON
 trap cleanup EXIT
 iptables -I ONESA_WORKER_INPUT 1 -i enp0s6 -p tcp --dport 80 -m comment --comment pamofi-acme-temporary -j ACCEPT
 opened=true
-args=(renew --quiet --non-interactive --no-random-sleep-on-renew)
+args=(renew --quiet --non-interactive --no-random-sleep-on-renew --cert-name "$cert_name")
 [ "$dry" = false ] || args+=(--dry-run)
 docker run --rm --network host --memory 256m --pids-limit 100 --mount "type=bind,source=$root/acme/config,target=/etc/letsencrypt" --mount "type=bind,source=$root/acme/log,target=/var/log/letsencrypt" --mount "type=bind,source=$root/acme/work,target=/var/lib/letsencrypt" "$image" "${args[@]}"
 if [ "$dry" = true ]; then echo 'Certificate renewal dry run passed.'; exit 0; fi
-cert="$root/acme/config/live/$host/fullchain.pem"
-key="$root/acme/config/live/$host/privkey.pem"
+cert="$root/acme/config/live/$cert_name/fullchain.pem"
+key="$root/acme/config/live/$cert_name/privkey.pem"
 openssl x509 -in "$cert" -noout -checkhost "$host" -checkend 1814400 >/dev/null
 certpub=$(openssl x509 -in "$cert" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}')
 keypub=$(openssl pkey -in "$key" -pubout -outform DER | sha256sum | awk '{print $1}')

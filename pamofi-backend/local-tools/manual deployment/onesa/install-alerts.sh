@@ -30,8 +30,8 @@ for service in postgres identity prepaid-access network notification assistant w
  state=$(docker inspect "$container" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
  case "$state" in healthy|running) ;; *) echo "PamoFi $service is $state" >&2; exit 1;; esac
 done
-curl -fsS --max-time 15 https://pamofi.onesa.eu/health/live | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("status")=="ok" and d.get("service")=="gateway"'
-curl -fsS --max-time 20 https://pamofi.vercel.app/api/capabilities | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d.get("networkAccess"),bool) and isinstance(d.get("staffSales"),bool)'
+curl -fsS --max-time 15 https://api.pamofi.onesa.eu/health/live | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("status")=="ok" and d.get("service")=="gateway"'
+curl -fsS --max-time 20 https://pamofi.onesa.eu/api/capabilities | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d.get("networkAccess"),bool) and isinstance(d.get("staffSales"),bool)'
 openssl x509 -in /home/ubuntu/pamofi/production/secrets/public_tls_cert -noout -checkend 1209600 >/dev/null
 available=$(df -Pk / | awk 'NR==2 {print $4}')
 [ "$available" -ge 2097152 ] || { echo 'PamoFi host has less than 2 GiB free.' >&2; exit 1; }
