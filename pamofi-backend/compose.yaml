@@ -1,4 +1,10 @@
 name: pamofi-demo
+x-service-health: &service-health
+  test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready',{signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  interval: 15s
+  timeout: 4s
+  retries: 3
+  start_period: 10s
 services:
   postgres:
     image: postgres:17.11-alpine3.23
@@ -12,13 +18,14 @@ services:
     ports:
       - "127.0.0.1:55432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pamofi_bootstrap -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U pamofi_bootstrap -d postgres"]
       interval: 3s
       timeout: 3s
       retries: 30
     restart: unless-stopped
   identity:
     build: ./services/identity-service
+    healthcheck: *service-health
     environment:
       DATABASE_URL: postgresql://pamofi_identity:demo_only_change_me@postgres:5432/pamofi_identity
       APP_ENV: demo
@@ -34,6 +41,7 @@ services:
     restart: unless-stopped
   prepaid-access:
     build: ./services/prepaid-access-service
+    healthcheck: *service-health
     environment:
       DATABASE_URL: postgresql://pamofi_prepaid_access:demo_only_change_me@postgres:5432/pamofi_prepaid_access
       APP_ENV: demo
@@ -49,6 +57,7 @@ services:
     restart: unless-stopped
   network:
     build: ./services/network-service
+    healthcheck: *service-health
     environment:
       DATABASE_URL: postgresql://pamofi_network:demo_only_change_me@postgres:5432/pamofi_network
     depends_on:
@@ -59,6 +68,7 @@ services:
     restart: unless-stopped
   notification:
     build: ./services/notification-service
+    healthcheck: *service-health
     environment:
       DATABASE_URL: postgresql://pamofi_notification:demo_only_change_me@postgres:5432/pamofi_notification
       APP_ENV: demo
@@ -72,6 +82,7 @@ services:
     restart: unless-stopped
   assistant:
     build: ./services/assistant-service
+    healthcheck: *service-health
     environment:
       DATABASE_URL: postgresql://pamofi_assistant:demo_only_change_me@postgres:5432/pamofi_assistant
     depends_on:

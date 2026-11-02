@@ -1,0 +1,13 @@
+{
+  "mode": "hub",
+  "serverHost": "SELECT_THE_PUBLIC_SERVER",
+  "port": 51820,
+  "serverPublicKey": "REPLACE_WITH_SERVER_PUBLIC_KEY",
+  "routerPublicKey": "REPLACE_WITH_ROUTER_PUBLIC_KEY",
+  "serverTunnelIp": "10.77.255.1",
+  "routerTunnelIp": "10.77.255.2",
+  "adminIdentity": "VERIFIED_TAILSCALE_ACCOUNT",
+  "managementPorts": [80, 443, 8291],
+  "routerNetworks": ["192.168.88.0/24", "192.168.0.0/24"],
+  "serverNetworks": ["REPLACE_WITH_OBSERVED_SERVER_IPV4_NETWORK_CIDR"]
+}

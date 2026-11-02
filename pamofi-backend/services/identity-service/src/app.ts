@@ -4,17 +4,27 @@ import rateLimit from '@fastify/rate-limit';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import pg from 'pg';
 import { jwtVerify } from 'jose';
+import { registerStaffRoutes } from './staff.js';
+import { registerHandoffRoutes } from './handoff.js';
+import { trustedProxies } from './trusted-proxies.js';
 const { Pool } = pg;
 const tokenHash = (token: string) => createHash('sha256').update(token).digest();
 export function buildApp() {
-  const app = Fastify({ logger: false, bodyLimit: 16384 });
+  const app = Fastify({ logger: false, bodyLimit: 16384, trustProxy: trustedProxies(), ajv: { customOptions: { removeAdditional: false } } });
   const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 2000 }) : null;
+  // pg discards the broken idle connection; handling its error keeps the
+  // service alive so readiness and later requests can recover. Never log DSNs.
+  pool?.on('error', () => console.error('identity: database idle connection lost'));
   const demo = process.env.APP_ENV === 'demo' && process.env.NODE_ENV === 'development';
   const cookieName = demo ? 'pamofi_demo_session' : '__Host-pamofi_session';
   const origin = process.env.PUBLIC_ORIGIN;
   const validOrigin = (() => { try { const u = new URL(origin!); return u.origin === origin && (u.protocol === 'https:' || (demo && u.protocol === 'http:' && ['localhost','127.0.0.1'].includes(u.hostname))); } catch { return false; } })();
   app.register(cookie);
   app.register(rateLimit, { global: false });
+  // Route-specific rate limits are attached by the plugin's onRoute hook. Wait
+  // for that hook to exist before registering any routes in this sync builder.
+  app.after(error => {
+  if (error) throw error;
   app.addHook('onClose', async () => { if (pool) await pool.end(); });
   app.get('/health/live', async () => ({ status: 'ok', service: 'identity' }));
   app.get('/health/ready', async (_request, reply) => {
@@ -31,6 +41,7 @@ export function buildApp() {
   // Only the prepaid service may resolve its forwarded customer cookie. The
   // browser never supplies a customer ID to select the account.
   app.get('/internal/v1/session', async (request, reply) => {
+    reply.header('Cache-Control','no-store');
     const secret = process.env.INTERNAL_IDENTITY_SECRET;
     if (!pool || !secret || Buffer.byteLength(secret) < 32 || (!demo && secret.startsWith('DEMO_ONLY_'))) return reply.code(503).send({ error: 'identity_unavailable' });
     const auth = request.headers.authorization;
@@ -52,6 +63,22 @@ export function buildApp() {
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
     try { const customerId = await current(request); return customerId ? { customerId } : reply.code(401).send({ error: 'not_authenticated' }); }
     catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
+  });
+  app.delete('/v1/session', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
+    if (request.headers.origin !== origin) return reply.code(403).send({ error: 'origin_rejected' });
+    try {
+      const token = request.cookies[cookieName];
+      if (token && /^[A-Za-z0-9_-]{43}$/.test(token)) {
+        // Retain the creation record and its revoked session. Removing either
+        // would let a retained first-response retry secret create an account
+        // again after the user explicitly signed out.
+        await pool.query('UPDATE customer_sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE token_hash = $1', [tokenHash(token)]);
+      }
+      reply.clearCookie(cookieName, { path: '/', httpOnly: true, secure: !demo, sameSite: 'lax' });
+      return reply.code(204).send();
+    } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
   // Recovery values are displayed once, never logged or sent in URLs.
   app.post('/v1/recovery/setup', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
@@ -146,6 +173,9 @@ export function buildApp() {
         return reply.code(201).send({customerId:id});
       } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
+  });
+  registerStaffRoutes(app, { pool, demo, origin, validOrigin });
+  registerHandoffRoutes(app, { pool, demo, origin, validOrigin });
   });
   return app;
 }

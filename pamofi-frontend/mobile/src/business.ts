@@ -1,0 +1,81 @@
+import { ApiError } from './api';
+
+export type Capabilities = {
+  demo: boolean; paymentMode: 'disabled' | 'mock' | 'sandbox' | 'production';
+  paymentCheckout: boolean; vouchers: boolean; receiptPairing: boolean;
+  staffSales: boolean; deliverySms: boolean; networkAccess: boolean; mobileCookies: boolean;
+};
+export type Product = { id: string; price_minor: number; currency: string; byte_limit: string; validity_seconds: number };
+export type Site = { id: string; name: string };
+export type CashEvidence = { method: 'cash' | 'unrecorded'; evidence: 'agent_attestation' | 'unrecorded'; receivedMinor: number | null; currency: string | null; confirmedAt: string | null; confirmedBy: string | null };
+export function cashDescription(payment: CashEvidence | undefined, simulation: boolean) {
+  return payment?.method === 'cash' && payment.evidence === 'agent_attestation' && payment.receivedMinor !== null && payment.currency
+    ? `${simulation ? 'Simulated cash' : 'Cash'} received: ${money(payment.receivedMinor, payment.currency)} · confirmed by agent`
+    : 'Cash confirmation was not recorded for this earlier sale.';
+}
+export type Staff = {
+  staffId: string; email: string; displayName: string; status: 'pending' | 'approved' | 'rejected' | 'disabled';
+  role: 'admin' | 'agent' | 'support' | null; siteIds: string[]; version: number;
+  mfaEnrolled?: boolean; mfaVerified?: boolean; createdAt?: string;
+};
+export const money = (minor: number, currency = 'USD') => new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(minor / 100);
+export const localDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+export function messageFor(error: unknown, fallback = 'This request could not be completed. Please try again.') {
+  if (!(error instanceof ApiError)) return fallback;
+  if (error.status === 401) return 'Your session or verification has expired. Sign in again to continue.';
+  if (error.status === 403) return 'This action is not available for your account or assigned site. Refresh your account permissions.';
+  if (error.status === 429) return 'Too many attempts. Wait a minute before trying again.';
+  const messages: Record<string, string> = {
+    cookie_not_kept: 'This browser did not keep the account cookie. Allow cookies for the configured PamoFi service, then retry. No voucher or payment was submitted.',
+    version_conflict: 'This record changed while you were reviewing it. Refresh and review the current details.',
+    staff_changed: 'This staff record changed. Refresh and review the latest details.',
+    insufficient_inventory: 'There is not enough stock for this sale. Refresh inventory or ask an administrator to allocate stock.',
+    out_of_stock: 'This bundle is out of stock at the selected site.',
+    cash_confirmation_required: 'This unused request needs an explicit confirmation that the exact cash amount was received. Review the customer and amount before issuing a new sale.',
+    cash_amount_mismatch: 'The cash confirmation does not match this bundle’s published price and currency. Refresh the catalogue and review the correct amount.',
+    pairing_expired: 'The customer pairing code has expired. Ask the customer to create a new code.',
+    invalid_pairing: 'That pairing code could not be verified. Check the code and selected site.',
+    invalid_voucher: 'The voucher could not be verified. Check all characters and try again.',
+    voucher_unavailable: 'This voucher is expired, replaced, or unavailable. Ask the selling agent to review the receipt.',
+    quote_still_valid: 'The quote is still valid. Review its terms or check payment status; no purchase retry details were discarded.',
+    payment_attempt_exists: 'A payment attempt already exists for this order. Check its verified status; the saved purchase is preserved and no new charge was started.',
+    order_not_payable: 'This order cannot begin payment. Check its verified status, or ask the service to close an expired unused quote.',
+    pairing_unavailable: 'The pairing code is invalid, expired or already used. Ask the customer for a new private pairing code.',
+    pairing_required: 'A private customer pairing code is required for this delivery option.',
+    bundle_unavailable: 'This bundle version is unavailable. Refresh the published catalogue before choosing another.',
+    invalid_phone: 'Check the customer phone number and use the supported international format.',
+    invalid_or_used: 'The voucher is invalid, unavailable or belongs to another account. Check its characters and the original receipt.',
+    quote_expired: 'This price quote has expired. Review a new order before paying.',
+    idempotency_conflict: 'This retry no longer matches the original request. Restore the original details before retrying.',
+    session_already_exists: 'This browser already has a customer account. Sign out of that account before accepting a handoff.',
+    invalid_handoff: 'The handoff code has expired, was already used, or could not be verified. Create a new one on the original device.',
+  };
+  return messages[error.code] ?? (error.status >= 500 ? 'The service is temporarily unavailable. A request may still have completed; check its status before retrying.' : fallback);
+}
+
+// Mutation retries survive panel closes/reloads. Requests are scoped by the authenticated owner.
+export function mutationIntent(owner: string, operation: string, payload: unknown): string {
+  const storage = `pamofi.operation:${owner}:${operation}`;
+  const fingerprint = JSON.stringify(payload);
+  const previous = sessionStorage.getItem(storage);
+  if (previous) {
+    const saved = JSON.parse(previous) as { key: string; payload: string };
+    if (saved.payload !== fingerprint) throw new ApiError(409, 'idempotency_conflict');
+    return saved.key;
+  }
+  const key = crypto.randomUUID();
+  sessionStorage.setItem(storage, JSON.stringify({ key, payload: fingerprint }));
+  return key;
+}
+export function finishMutation(owner: string, operation: string) { sessionStorage.removeItem(`pamofi.operation:${owner}:${operation}`); }
+export function discardStaffDrafts(preserveStaffId?: string) {
+  try { for (const key of Object.keys(sessionStorage)) if (key.startsWith('pamofi.operation:staff:') && (!preserveStaffId || !key.startsWith(`pamofi.operation:staff:${preserveStaffId}:`))) sessionStorage.removeItem(key); } catch { /* Private data remains memory-only if browser storage is disabled. */ }
+}
+
+const staffChannel = (() => { try { return typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('pamofi.staff-session'); } catch { return null; } })();
+export function announceStaffSession(kind: 'signed_in' | 'signed_out', staffId?: string) { staffChannel?.postMessage({ kind, staffId }); }
+export function onStaffSessionChange(listener: (kind: 'signed_in' | 'signed_out', staffId?: string) => void) {
+  const receive = (event: MessageEvent) => { if (event.data?.kind === 'signed_in' || event.data?.kind === 'signed_out') listener(event.data.kind, typeof event.data.staffId === 'string' ? event.data.staffId : undefined); };
+  staffChannel?.addEventListener('message', receive);
+  return () => staffChannel?.removeEventListener('message', receive);
+}

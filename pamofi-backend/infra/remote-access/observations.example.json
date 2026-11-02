@@ -1,0 +1,17 @@
+{
+  "routerArchitecture": "smips",
+  "routerOsVersion": "7.18.2",
+  "alwaysOnSiteDevice": false,
+  "ipv4": {
+    "routerAddress": null,
+    "upstreamAddress": null,
+    "portForwarding": "unknown",
+    "udpReachability": "untested"
+  },
+  "ipv6": {
+    "routerAddress": null,
+    "routerAvailability": "unknown",
+    "clientConnectivity": "unknown",
+    "udpReachability": "untested"
+  }
+}

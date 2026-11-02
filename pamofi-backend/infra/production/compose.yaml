@@ -1,0 +1,329 @@
+# Source template: initialize an empty dedicated cluster, run the migration profile,
+# then start runtime services. No production credential has a fallback value.
+name: pamofi-production
+x-runtime: &runtime
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs: [/tmp]
+  mem_limit: 192m
+  pids_limit: 100
+  stop_grace_period: 15s
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  entrypoint: [node, /opt/pamofi/entrypoint.mjs]
+  command: [serve]
+  volumes:
+    - ./entrypoint.mjs:/opt/pamofi/entrypoint.mjs:ro
+  networks: [services, database]
+  healthcheck:
+    test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health/ready',{signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    interval: 15s
+    timeout: 4s
+    retries: 4
+    start_period: 15s
+  depends_on:
+    postgres: {condition: service_healthy}
+x-env: &environment
+  APP_ENV: production
+  NODE_ENV: production
+  HOST: 0.0.0.0
+  PORT: '3000'
+  PUBLIC_ORIGIN: https://${PAMOFI_PUBLIC_HOST:?Set the qualified public hostname}
+  PAMOFI_TRUST_PROXY_CIDRS: ${PAMOFI_SERVICES_SUBNET:?Set the private service-network CIDR}
+  NODE_EXTRA_CA_CERTS: /run/secrets/internal_ca
+x-migration: &migration
+  profiles: [migrate]
+  restart: 'no'
+  init: true
+  read_only: true
+  tmpfs: [/tmp]
+  mem_limit: 192m
+  pids_limit: 100
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  entrypoint: [node, /opt/pamofi/entrypoint.mjs]
+  command: [migrate]
+  volumes:
+    - ./entrypoint.mjs:/opt/pamofi/entrypoint.mjs:ro
+    - ./apply-grants.mjs:/opt/pamofi/apply-grants.mjs:ro
+    - ./role-policies.json:/opt/pamofi/role-policies.json:ro
+  networks: [database]
+  depends_on:
+    postgres: {condition: service_healthy}
+services:
+  postgres:
+    image: postgres:17.11-alpine3.23@sha256:2ad58d61b036d41f2613302e8c0fee03f6fe51e94d68087327ac45d1cebd4b5e
+    restart: unless-stopped
+    mem_limit: 512m
+    pids_limit: 150
+    shm_size: 64m
+    stop_grace_period: 60s
+    command: [postgres, -c, shared_buffers=64MB, -c, max_connections=80, -c, password_encryption=scram-sha-256]
+    environment:
+      POSTGRES_USER: pamofi_bootstrap
+      POSTGRES_DB: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      IDENTITY_MIGRATE_PASSWORD_FILE: /run/secrets/identity_migrate_password
+      IDENTITY_RUNTIME_PASSWORD_FILE: /run/secrets/identity_runtime_password
+      PREPAID_MIGRATE_PASSWORD_FILE: /run/secrets/prepaid_migrate_password
+      PREPAID_RUNTIME_PASSWORD_FILE: /run/secrets/prepaid_runtime_password
+      NETWORK_MIGRATE_PASSWORD_FILE: /run/secrets/network_migrate_password
+      NETWORK_RUNTIME_PASSWORD_FILE: /run/secrets/network_runtime_password
+      NOTIFICATION_MIGRATE_PASSWORD_FILE: /run/secrets/notification_migrate_password
+      NOTIFICATION_RUNTIME_PASSWORD_FILE: /run/secrets/notification_runtime_password
+      ASSISTANT_MIGRATE_PASSWORD_FILE: /run/secrets/assistant_migrate_password
+      ASSISTANT_RUNTIME_PASSWORD_FILE: /run/secrets/assistant_runtime_password
+    secrets:
+      - postgres_password
+      - identity_migrate_password
+      - identity_runtime_password
+      - prepaid_migrate_password
+      - prepaid_runtime_password
+      - network_migrate_password
+      - network_runtime_password
+      - notification_migrate_password
+      - notification_runtime_password
+      - assistant_migrate_password
+      - assistant_runtime_password
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./init.sh:/docker-entrypoint-initdb.d/10-pamofi.sh:ro
+      - ./roles.sql:/opt/pamofi/roles.sql:ro
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U pamofi_bootstrap -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  identity:
+    <<: *runtime
+    image: ${PAMOFI_IDENTITY_IMAGE:?Set the immutable identity image}
+    environment:
+      <<: *environment
+      PAMOFI_SERVICE: identity
+      DATABASE_URL_FILE: /run/secrets/identity_runtime_url
+      INTERNAL_IDENTITY_SECRET_FILE: /run/secrets/internal_identity_secret
+      SESSION_CREATION_SECRET_FILE: /run/secrets/session_creation_secret
+      STAFF_MFA_ENCRYPTION_KEY_FILE: /run/secrets/staff_mfa_encryption_key
+    secrets:
+      - identity_runtime_url
+      - internal_ca
+      - internal_identity_secret
+      - session_creation_secret
+      - staff_mfa_encryption_key
+  identity-migrate:
+    <<: *migration
+    image: ${PAMOFI_IDENTITY_IMAGE:?Set the immutable identity image}
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+      PAMOFI_SERVICE: identity
+      MIGRATION_DATABASE_URL_FILE: /run/secrets/identity_migrate_url
+    secrets: [identity_migrate_url]
+  prepaid-access:
+    <<: *runtime
+    image: ${PAMOFI_PREPAID_IMAGE:?Set the immutable prepaid-access image}
+    environment:
+      <<: *environment
+      PAMOFI_SERVICE: prepaid-access
+      DATABASE_URL_FILE: /run/secrets/prepaid_runtime_url
+      INTERNAL_IDENTITY_SECRET_FILE: /run/secrets/internal_identity_secret
+      INTERNAL_EVENTS_SECRET_FILE: /run/secrets/internal_events_secret
+      INTERNAL_NETWORK_SECRET_FILE: /run/secrets/internal_network_secret
+      INTERNAL_DELIVERY_SECRET_FILE: /run/secrets/internal_delivery_secret
+      VOUCHER_DELIVERY_KEYS_JSON_FILE: /run/secrets/voucher_delivery_keys_json
+      IDENTITY_URL: https://identity.internal
+      NOTIFICATION_URL: https://notification.internal
+      NETWORK_URL: https://network.internal
+      OUTBOX_DISPATCH_ENABLED: 'true'
+      PAMOFI_COMMERCE_ENABLED: ${PAMOFI_COMMERCE_ENABLED:?Choose whether to enable staff commerce}
+      PAMOFI_AGENT_COMMISSION_BPS: ${PAMOFI_AGENT_COMMISSION_BPS:?Set the reviewed commission in basis points}
+      VOUCHER_DELIVERY_ACTIVE_KEY_ID: ${VOUCHER_DELIVERY_ACTIVE_KEY_ID:?Set the current voucher encryption key ID}
+      PAMOFI_PAYMENTS_ENABLED: 'false'
+      PAMOFI_PAYMENT_MODE: disabled
+      PAMOFI_SMS_DELIVERY_ENABLED: 'false'
+      PAMOFI_CUSTOMER_NETWORK_ENABLED: 'false'
+      PAMOFI_RADIUS_QUALIFIED: 'false'
+    secrets:
+      - prepaid_runtime_url
+      - internal_ca
+      - internal_identity_secret
+      - internal_events_secret
+      - internal_network_secret
+      - internal_delivery_secret
+      - voucher_delivery_keys_json
+  prepaid-access-migrate:
+    <<: *migration
+    image: ${PAMOFI_PREPAID_IMAGE:?Set the immutable prepaid-access image}
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+      PAMOFI_SERVICE: prepaid-access
+      MIGRATION_DATABASE_URL_FILE: /run/secrets/prepaid_migrate_url
+    secrets: [prepaid_migrate_url]
+  network:
+    <<: *runtime
+    image: ${PAMOFI_NETWORK_IMAGE:?Set the immutable network image}
+    environment:
+      <<: *environment
+      PAMOFI_SERVICE: network
+      DATABASE_URL_FILE: /run/secrets/network_runtime_url
+      INTERNAL_NETWORK_SECRET_FILE: /run/secrets/internal_network_secret
+      RADIUS_CREDENTIAL_KEYS_FILE: /run/secrets/radius_credential_keys
+      PREPAID_URL: https://prepaid.internal
+      RADIUS_CREDENTIAL_KEY_VERSION: ${RADIUS_CREDENTIAL_KEY_VERSION:?Set the current RADIUS credential encryption key version}
+      PAMOFI_CUSTOMER_NETWORK_ENABLED: 'false'
+      PAMOFI_RADIUS_QUALIFIED: 'false'
+      NETWORK_RECONCILER_ENABLED: 'false'
+    secrets:
+      - network_runtime_url
+      - internal_ca
+      - internal_network_secret
+      - radius_credential_keys
+  network-migrate:
+    <<: *migration
+    image: ${PAMOFI_NETWORK_IMAGE:?Set the immutable network image}
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+      PAMOFI_SERVICE: network
+      MIGRATION_DATABASE_URL_FILE: /run/secrets/network_migrate_url
+    secrets: [network_migrate_url]
+  notification:
+    <<: *runtime
+    image: ${PAMOFI_NOTIFICATION_IMAGE:?Set the immutable notification image}
+    environment:
+      <<: *environment
+      PAMOFI_SERVICE: notification
+      DATABASE_URL_FILE: /run/secrets/notification_runtime_url
+      INTERNAL_EVENTS_SECRET_FILE: /run/secrets/internal_events_secret
+      INTERNAL_DELIVERY_SECRET_FILE: /run/secrets/internal_delivery_secret
+      PREPAID_URL: https://prepaid.internal
+      DELIVERY_WORKER_ENABLED: 'false'
+      NOTIFICATION_DELIVERY_MODE: disabled
+      SENDAI_LIVE_ENABLED: 'false'
+      SENDAI_QUALIFIED: 'false'
+    secrets:
+      - notification_runtime_url
+      - internal_ca
+      - internal_events_secret
+      - internal_delivery_secret
+  notification-migrate:
+    <<: *migration
+    image: ${PAMOFI_NOTIFICATION_IMAGE:?Set the immutable notification image}
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+      PAMOFI_SERVICE: notification
+      MIGRATION_DATABASE_URL_FILE: /run/secrets/notification_migrate_url
+    secrets: [notification_migrate_url]
+  assistant:
+    <<: *runtime
+    image: ${PAMOFI_ASSISTANT_IMAGE:?Set the immutable assistant image}
+    environment:
+      <<: *environment
+      PAMOFI_SERVICE: assistant
+      DATABASE_URL_FILE: /run/secrets/assistant_runtime_url
+    secrets:
+      - assistant_runtime_url
+      - internal_ca
+  assistant-migrate:
+    <<: *migration
+    image: ${PAMOFI_ASSISTANT_IMAGE:?Set the immutable assistant image}
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+      PAMOFI_SERVICE: assistant
+      MIGRATION_DATABASE_URL_FILE: /run/secrets/assistant_migrate_url
+    secrets: [assistant_migrate_url]
+  web:
+    image: ${PAMOFI_WEB_IMAGE:?Set the immutable built web image}
+    restart: unless-stopped
+    mem_limit: 96m
+    pids_limit: 100
+    security_opt: [no-new-privileges:true]
+    networks: [services]
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1/"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+  gateway:
+    image: nginx:1.30.6-alpine3.24
+    restart: unless-stopped
+    mem_limit: 96m
+    pids_limit: 100
+    security_opt: [no-new-privileges:true]
+    environment:
+      PAMOFI_PUBLIC_HOST: ${PAMOFI_PUBLIC_HOST:?Set the qualified public hostname}
+      NGINX_ENVSUBST_FILTER: ^PAMOFI_PUBLIC_HOST$
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./gateway/public.conf.template:/etc/nginx/templates/default.conf.template:ro
+    secrets: [public_tls_cert, public_tls_key]
+    networks: [public, services]
+    depends_on:
+      web: {condition: service_healthy}
+  internal-gateway:
+    image: nginx:1.30.6-alpine3.24
+    restart: unless-stopped
+    mem_limit: 96m
+    pids_limit: 100
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ./gateway/internal.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./gateway/internal-common.conf:/etc/nginx/pamofi/internal-common.conf:ro
+    secrets: [internal_tls_cert, internal_tls_key]
+    networks:
+      services:
+        aliases: [identity.internal, prepaid.internal, network.internal, notification.internal, assistant.internal]
+secrets:
+  postgres_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/postgres_password"}
+  internal_ca: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/internal_ca"}
+  public_tls_cert: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/public_tls_cert"}
+  public_tls_key: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/public_tls_key"}
+  internal_tls_cert: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/internal_tls_cert"}
+  internal_tls_key: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/internal_tls_key"}
+  identity_migrate_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/identity_migrate_password"}
+  identity_runtime_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/identity_runtime_password"}
+  identity_migrate_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/identity_migrate_url"}
+  identity_runtime_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/identity_runtime_url"}
+  internal_identity_secret: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/internal_identity_secret"}
+  session_creation_secret: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/session_creation_secret"}
+  staff_mfa_encryption_key: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/staff_mfa_encryption_key"}
+  prepaid_migrate_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/prepaid_migrate_password"}
+  prepaid_runtime_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/prepaid_runtime_password"}
+  prepaid_migrate_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/prepaid_migrate_url"}
+  prepaid_runtime_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/prepaid_runtime_url"}
+  internal_events_secret: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/internal_events_secret"}
+  internal_network_secret: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/internal_network_secret"}
+  internal_delivery_secret: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/internal_delivery_secret"}
+  voucher_delivery_keys_json: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/voucher_delivery_keys_json"}
+  network_migrate_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/network_migrate_password"}
+  network_runtime_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/network_runtime_password"}
+  network_migrate_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/network_migrate_url"}
+  network_runtime_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/network_runtime_url"}
+  radius_credential_keys: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/radius_credential_keys"}
+  notification_migrate_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/notification_migrate_password"}
+  notification_runtime_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/notification_runtime_password"}
+  notification_migrate_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/notification_migrate_url"}
+  notification_runtime_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/notification_runtime_url"}
+  assistant_migrate_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/assistant_migrate_password"}
+  assistant_runtime_password: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/assistant_runtime_password"}
+  assistant_migrate_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/assistant_migrate_url"}
+  assistant_runtime_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/assistant_runtime_url"}
+networks:
+  database:
+    internal: true
+  services:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${PAMOFI_SERVICES_SUBNET:?Set a non-overlapping private IPv4 service-network CIDR}
+  public: {}
+volumes:
+  database:
+    external: true
+    name: ${PAMOFI_DATABASE_VOLUME:?Create and name the persistent production database volume}

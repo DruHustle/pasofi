@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { sendOnce, pollAttempt, markStaleSubmissionsUnknown } from '../dist/delivery.js';
+import { SendaiAdapter } from '../dist/sendai.js';
 const url=process.env.PAMOFI_TEST_DATABASE_URL;
 const message={to:'263771000000',from:'Test',message:'Example'};
 const sent=id=>({state:'submitted',providerId:id,providerStatus:'enqueued',deliveredAt:null,cost:{amount:'450',scale:4,currency:'USD'}});
@@ -51,4 +52,29 @@ test('canceling in-flight delivery keeps cancellation and records the provider r
   assert.equal((await pool.query('SELECT state FROM delivery_jobs WHERE id=$1',[f.job])).rows[0].state,'canceled');
   const attempt=(await pool.query('SELECT state,provider_id FROM delivery_attempts WHERE id=$1',[result.attemptId])).rows[0];assert.equal(attempt.state,'submitted');assert.equal(attempt.provider_id,id);
  }finally{release();await cleanup(pool,f);await pool.end();}
+});
+
+test('an ambiguous send with a validated provider ID can be reconciled without sending twice',{skip:!url},async()=>{
+ const pool=new pg.Pool({connectionString:url}),f=await fixture(pool),id=randomUUID();let sends=0,polls=0;
+ const adapter=new SendaiAdapter('test-token',async(_url,options)=>{
+  if(options.method==='POST'){
+   sends++;
+   return new Response(JSON.stringify({id,status:'enqueued',delivered_at:null,charge:'bad',charge_currency:'USD'}),{status:202});
+  }
+  polls++;
+  if(polls===1)return new Response('{}',{status:503});
+  return new Response(JSON.stringify({data:{id,status:'success',delivered_at:'2026-11-01T10:00:00Z',charge:'450',charge_currency:'USD'}}),{status:200});
+ });
+ try{
+  const attempt=await sendOnce(pool,f.job,adapter,message);assert.equal(attempt.state,'unknown');
+  const stored=(await pool.query('SELECT state,provider_id FROM delivery_attempts WHERE id=$1',[attempt.attemptId])).rows[0];
+  assert.deepEqual(stored,{state:'unknown',provider_id:id});
+  await assert.rejects(sendOnce(pool,f.job,adapter,message),{code:'not_ready'});
+  assert.equal((await pollAttempt(pool,attempt.attemptId,adapter)).state,'unknown');
+  assert.equal((await pool.query('SELECT state FROM delivery_jobs WHERE id=$1',[f.job])).rows[0].state,'unknown');
+  assert.equal((await pollAttempt(pool,attempt.attemptId,adapter)).state,'delivered');
+  assert.equal((await pool.query('SELECT state FROM delivery_jobs WHERE id=$1',[f.job])).rows[0].state,'delivered');
+  assert.equal(sends,1);assert.equal(polls,2);
+  await assert.rejects(pollAttempt(pool,attempt.attemptId,adapter),{code:'not_pollable'});
+ }finally{await cleanup(pool,f);await pool.end();}
 });

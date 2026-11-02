@@ -4,16 +4,36 @@ import { randomUUID } from 'node:crypto';
 import { SignJWT } from 'jose';
 import pg from 'pg';
 import { registerRadiusInternal } from './radius-internal.js';
-import { registerPesepaySandbox } from './pesepay-sandbox.js';
+import {registerCommerce} from './commerce.js';
+import {registerCheckout,paymentConfiguration} from './checkout.js';
+import {registerCustomerNetwork} from './network-lifecycle.js';
+import {trustedProxyCidrs} from './proxy.js';
+import {registerUsage} from './usage.js';
 const { Pool } = pg;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function buildApp() {
-  const app = Fastify({ logger: false, bodyLimit: 16384 });
+  const app = Fastify({ logger: false, bodyLimit: 16384, trustProxy:trustedProxyCidrs() });
   const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 2000 }) : null;
+  // pg emits an error when an idle pooled connection is dropped. Keep the
+  // process alive so readiness can report the outage and later reconnect.
+  pool?.on('error', () => { console.error('Prepaid database connection unavailable'); });
   const demo = process.env.APP_ENV === 'demo' && process.env.NODE_ENV === 'development';
   app.register(rateLimit, { global: false });
-  const stopPesepaySandbox = registerPesepaySandbox(app,pool,demo);
-  app.addHook('onClose', async () => { await stopPesepaySandbox(); if (pool) await pool.end(); });
+  // Register routes only after the plugin has installed its onRoute hook.
+  // Otherwise route-level rateLimit settings are silently ignored.
+  app.after(error=>{
+  if(error)throw error;
+  // Account and internal authority responses must never be reused by a cache.
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('Cache-Control', 'no-store');
+    return payload;
+  });
+  const checkout=paymentConfiguration(demo);
+  const stopCheckout=registerCheckout(app,pool,demo,customer,originAllowed);
+  registerCommerce(app,pool,demo,customer,originAllowed);
+  registerCustomerNetwork(app,pool,demo,customer,originAllowed);
+  registerUsage(app,pool,customer);
+  app.addHook('onClose', async () => { await stopCheckout(); if (pool) await pool.end(); });
   registerRadiusInternal(app,pool,demo);
   app.get('/health/live', async () => ({ status: 'ok', service: 'prepaid-access' }));
   app.get('/health/ready', async (_request, reply) => {
@@ -45,35 +65,51 @@ export function buildApp() {
     if (!pool) return reply.code(503).send({ error:'unavailable' });
     try {
       const id = await customer(request); if (!id) return reply.code(401).send({ error:'not_authenticated' });
-      const rows = await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at FROM purchase_orders WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 100',[id]);
-      return { orders:rows.rows };
+      const rows = await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode FROM purchase_orders WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 100',[id]);
+      return { customerId:id,orders:rows.rows };
     } catch { return reply.code(503).send({error:'unavailable'}); }
   });
-  app.get('/v1/access', async (request, reply) => {
+  app.get<{Querystring:{limit:number;offset:number}}>('/v1/access', {
+    schema:{querystring:{type:'object',additionalProperties:false,properties:{
+      limit:{type:'integer',minimum:1,maximum:100,default:100},
+      offset:{type:'integer',minimum:0,maximum:1000000,default:0}
+    }}}
+  }, async (request, reply) => {
     if (!pool) return reply.code(503).send({ error:'unavailable' });
     try {
       const id = await customer(request); if (!id) return reply.code(401).send({error:'not_authenticated'});
-      const rows = await pool.query('SELECT id,bundle_id,byte_limit::text,consumed_bytes::text,validity_seconds,purchased_at,start_by,activated_at,revoked_at FROM purchase_entitlements WHERE customer_id=$1 ORDER BY purchased_at,id LIMIT 100',[id]);
-      return { entitlements:rows.rows };
+      const {limit,offset}=request.query;
+      // Keep usable access visible even after a customer has more than a page
+      // of old purchases. Active access precedes the FIFO queue; history follows.
+      const rows = await pool.query(`SELECT id,bundle_id,byte_limit::text,consumed_bytes::text,validity_seconds,purchased_at,start_by,activated_at,revoked_at
+        FROM purchase_entitlements WHERE customer_id=$1
+        ORDER BY CASE
+          WHEN revoked_at IS NULL AND consumed_bytes<byte_limit AND activated_at IS NOT NULL
+            AND activated_at+make_interval(secs=>validity_seconds)>now() THEN 0
+          WHEN revoked_at IS NULL AND consumed_bytes<byte_limit AND activated_at IS NULL AND start_by>=now() THEN 1
+          ELSE 2 END, purchased_at,id
+        LIMIT $2 OFFSET $3`,[id,limit+1,offset]);
+      const hasMore=rows.rows.length>limit;
+      return { customerId:id,entitlements:rows.rows.slice(0,limit),hasMore,nextOffset:hasMore?offset+limit:null };
     } catch { return reply.code(503).send({error:'unavailable'}); }
   });
-  app.post<{Body:{bundleId:string}}>('/v1/orders', { config:{rateLimit:{max:30,timeWindow:'1 minute'}}, schema:{body:{type:'object',required:['bundleId'],additionalProperties:false,properties:{bundleId:{type:'string',minLength:1,maxLength:40,pattern:'^[a-z]+$'}}}} }, async (request, reply) => {
-    if (!demo) return reply.code(404).send({error:'not_found'});
+  app.post<{Body:{bundleId:string;mode?:'demo'|'checkout'}}>('/v1/orders', { config:{rateLimit:{max:30,timeWindow:'1 minute'}}, schema:{body:{type:'object',required:['bundleId'],additionalProperties:false,properties:{bundleId:{type:'string',minLength:1,maxLength:40,pattern:'^[a-z][a-z0-9-]{0,39}$'},mode:{type:'string',enum:['demo','checkout'],default:'demo'}}}} }, async (request, reply) => {
+    if ((!demo&&request.body.mode!=='checkout')||(request.body.mode==='checkout'&&!checkout.enabled)) return reply.code(404).send({error:'not_found'});
     if (!pool) return reply.code(503).send({error:'unavailable'});
     if (!originAllowed(request)) return reply.code(403).send({error:'origin_rejected'});
     const key = request.headers['idempotency-key'];
     if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(key)) return reply.code(400).send({error:'invalid_idempotency_key'});
     try {
       const id = await customer(request); if (!id) return reply.code(401).send({error:'not_authenticated'});
-      const existing = await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at FROM purchase_orders WHERE customer_id=$1 AND idempotency_key=$2',[id,key]);
-      if (existing.rowCount) return existing.rows[0].bundle_id === request.body.bundleId ? { order:existing.rows[0] } : reply.code(409).send({error:'idempotency_conflict'});
-      const created = await pool.query(`INSERT INTO purchase_orders (id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at)
-        SELECT $1,$2,$3,id,price_minor,currency,byte_limit,validity_seconds,'awaiting_payment',now()+interval '15 minutes' FROM bundle_versions WHERE id=$4 AND published=true
-        ON CONFLICT (customer_id,idempotency_key) DO NOTHING RETURNING id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at`,[randomUUID(),id,key,request.body.bundleId]);
+      const existing = await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode FROM purchase_orders WHERE customer_id=$1 AND idempotency_key=$2',[id,key]);
+      if (existing.rowCount) return existing.rows[0].bundle_id === request.body.bundleId && existing.rows[0].purchase_mode===(request.body.mode??'demo') ? { order:existing.rows[0] } : reply.code(409).send({error:'idempotency_conflict'});
+      const created = await pool.query(`INSERT INTO purchase_orders (id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at,purchase_mode)
+        SELECT $1,$2,$3,id,price_minor,currency,byte_limit,validity_seconds,'awaiting_payment',now()+interval '15 minutes',$5 FROM bundle_versions WHERE id=$4 AND published=true
+        ON CONFLICT (customer_id,idempotency_key) DO NOTHING RETURNING id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode`,[randomUUID(),id,key,request.body.bundleId,request.body.mode??'demo']);
       if (created.rowCount) return reply.code(201).send({order:created.rows[0]});
-      const retry = await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at FROM purchase_orders WHERE customer_id=$1 AND idempotency_key=$2',[id,key]);
+      const retry = await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode FROM purchase_orders WHERE customer_id=$1 AND idempotency_key=$2',[id,key]);
       if (!retry.rowCount) return reply.code(404).send({error:'bundle_unavailable'});
-      return retry.rows[0].bundle_id === request.body.bundleId ? {order:retry.rows[0]} : reply.code(409).send({error:'idempotency_conflict'});
+      return retry.rows[0].bundle_id === request.body.bundleId && retry.rows[0].purchase_mode===(request.body.mode??'demo') ? {order:retry.rows[0]} : reply.code(409).send({error:'idempotency_conflict'});
     } catch { return reply.code(503).send({error:'unavailable'}); }
   });
   app.post<{Params:{id:string}}>('/v1/orders/:id/demo-confirm', {config:{rateLimit:{max:30,timeWindow:'1 minute'}}}, async (request, reply) => {
@@ -89,6 +125,7 @@ export function buildApp() {
         const found = await client.query('SELECT *,quote_expires_at > now() AS quote_valid FROM purchase_orders WHERE id=$1 AND customer_id=$2 FOR UPDATE',[request.params.id,customerId]);
         if (!found.rowCount) { await client.query('ROLLBACK'); return reply.code(404).send({error:'not_found'}); }
         const order = found.rows[0];
+        if(order.purchase_mode!=='demo'){await client.query('ROLLBACK');return reply.code(409).send({error:'wrong_order_mode'});}
         if (order.status === 'payment_confirmed') { await client.query('COMMIT'); return {status:'payment_confirmed',simulation:true}; }
         if (!order.quote_valid) { await client.query('ROLLBACK'); return reply.code(409).send({error:'quote_expired'}); }
         await client.query('INSERT INTO mock_payment_records (id,order_id,amount_minor,currency) VALUES ($1,$2,$3,$4)',[randomUUID(),order.id,order.price_minor,order.currency]);
@@ -97,6 +134,7 @@ export function buildApp() {
         await client.query('COMMIT'); return {status:'payment_confirmed',simulation:true};
       } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     } catch { return reply.code(503).send({error:'unavailable'}); }
+  });
   });
   return app;
 }

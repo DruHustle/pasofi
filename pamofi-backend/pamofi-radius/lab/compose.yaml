@@ -8,7 +8,7 @@ services:
     volumes:
       - ../../infra/postgres/init.sql:/docker-entrypoint-initdb.d/10-pamofi.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pamofi_bootstrap -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U pamofi_bootstrap -d postgres"]
       interval: 2s
       timeout: 3s
       retries: 30

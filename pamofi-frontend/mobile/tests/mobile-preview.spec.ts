@@ -1,13 +1,14 @@
 import { test, expect } from '@playwright/test';
 
 for (const platform of ['small-phone', 'large-phone'] as const) {
-  test(`${platform} preview works offline and cannot start a purchase`, async ({ page }) => {
+  test(`${platform} preview works offline and cannot start a purchase`, async ({ page }, testInfo) => {
     await page.setViewportSize({width: platform === 'small-phone' ? 320 : 390, height: 780});
     const calls: string[] = [];
     page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) calls.push(request.url()); });
     await page.goto('/');
     await expect(page.getByText('Offline preview')).toBeVisible();
-    await page.screenshot({path:`/private/tmp/pamofi-${platform}-home.png`,fullPage:true});
+    await page.context().setOffline(true);
+    await page.screenshot({path:testInfo.outputPath(`pamofi-${platform}-home.png`),fullPage:true});
     await page.getByRole('button',{name:'Explore bundles'}).click();
     await expect(page.getByRole('heading',{name:'Find your fit.'})).toBeVisible();
     await page.getByRole('button',{name:'View Flex example bundle'}).click();
@@ -19,6 +20,6 @@ for (const platform of ['small-phone', 'large-phone'] as const) {
     await expect(page.getByText('Not yet. This is an offline preview. Payments and Wi-Fi connections are not available.')).toBeVisible();
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     expect(calls).toEqual([]);
-    await page.screenshot({path:`/private/tmp/pamofi-${platform}-preview.png`,fullPage:true});
+    await page.screenshot({path:testInfo.outputPath(`pamofi-${platform}-preview.png`),fullPage:true});
   });
 }

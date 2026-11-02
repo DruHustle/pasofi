@@ -16,6 +16,24 @@ paths:
         '503':
           description: Service database unavailable
   /v1/session:
+    delete:
+      summary: Sign out of the current device
+      description: Requires the configured same-origin Origin header. Revokes only the current cookie session and clears the HttpOnly cookie. A retained creation retry secret cannot restore the revoked session. Repeating logout is safe; a database failure does not report success or clear the cookie.
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Current session revoked, or no session was present; cookie cleared
+        '403':
+          description: Origin rejected
+        '429':
+          description: Rate limit exceeded
+        '503':
+          description: Identity unavailable; logout not confirmed
     get:
       summary: Read the customer session from its HttpOnly cookie
       responses:
@@ -130,7 +148,274 @@ paths:
         '401':
           description: Recovery credentials could not be verified
 
+  /v1/handoff:
+    post:
+      summary: Create a two-minute customer browser handoff
+      description: Requires the current customer cookie and configured Origin. Returns a copyable code and clean continuation URL. Replaces unused handoffs from this source session; no credential is placed in a URL.
+      responses:
+        '201':
+          description: handoffCode, expiresIn 120 and clean continueUrl; no-store
+        '401':
+          description: No valid source session
+        '403':
+          description: Origin rejected
+  /v1/handoff/redeem:
+    post:
+      summary: Consume a handoff and establish the same customer in this browser
+      description: Requires configured Origin and explicit client confirmation. Check GET /v1/session after success to verify that the browser accepted its cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handoffCode]
+              additionalProperties: false
+              properties:
+                handoffCode:
+                  type: string
+                  pattern: '^[A-Za-z0-9_-]{43}$'
+      responses:
+        '200':
+          description: customerId and new HttpOnly customer cookie
+        '401':
+          description: Invalid, consumed or expired handoff, or revoked source session
+        '409':
+          description: This browser already has a customer session; code is not consumed
+  /v1/staff/register:
+    post:
+      summary: Request a staff account with no approved role
+      description: Requires configured Origin. A valid duplicate request returns the same generic response and never changes the existing password. Email ownership is not verified by registration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, displayName]
+              additionalProperties: false
+              properties:
+                email: {type: string, maxLength: 254}
+                password: {type: string, minLength: 15, maxLength: 128, writeOnly: true}
+                displayName: {type: string, minLength: 2, maxLength: 80}
+      responses:
+        '202':
+          description: Generic pending status and next login step
+        '503':
+          description: Database or staff encryption key unavailable
+  /v1/staff/login:
+    post:
+      summary: Verify a password and begin a limited MFA challenge
+      description: Requires configured Origin. The five-minute challenge cookie grants no staff privileges.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              additionalProperties: false
+              properties:
+                email: {type: string, maxLength: 254}
+                password: {type: string, minLength: 15, maxLength: 128, writeOnly: true}
+      responses:
+        '200':
+          description: staffId, next mfa_setup or mfa_verify, expiresIn 300 and HttpOnly challenge cookie
+        '401':
+          description: Credentials invalid, account locked or account not eligible
+  /v1/staff/mfa/setup:
+    post:
+      summary: Read the enrollment seed for this password-authenticated challenge
+      description: Requires configured Origin and an unenrolled challenge. Empty JSON object body. Response is staffId, secret, uri and expiresIn; pin staffId to the login result and keep enrollment data in memory only, never send to external QR services.
+      responses:
+        '200':
+          description: TOTP enrollment data, no-store
+        '401':
+          description: Challenge expired, consumed, locked or absent
+        '409':
+          description: MFA is already enrolled
+  /v1/staff/mfa/confirm:
+    post:
+      summary: Confirm TOTP enrollment and issue a staff session
+      description: Requires configured Origin and current enrollment challenge. Approval status remains pending until an administrator makes a versioned decision.
+      requestBody:
+        $ref: '#/components/requestBodies/mfaCode'
+      responses:
+        '200':
+          description: Staff session object and new HttpOnly session cookie
+        '401':
+          description: Invalid or replayed code, or unusable challenge
+  /v1/staff/mfa/verify:
+    post:
+      summary: Consume a TOTP challenge and issue a staff session
+      description: Requires configured Origin. A successfully accepted counter cannot be reused, including through another challenge.
+      requestBody:
+        $ref: '#/components/requestBodies/mfaCode'
+      responses:
+        '200':
+          description: Staff session object and eight-hour HttpOnly staff cookie
+        '401':
+          description: Invalid or replayed code, or unusable challenge
+  /v1/staff/session:
+    get:
+      summary: Resolve the current MFA-completed staff session
+      responses:
+        '200':
+          description: Public staff fields with mfaVerified true; pending status confers no privileges
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/staffSession'
+        '401':
+          description: Session absent, expired, revoked or version obsolete
+    delete:
+      summary: Revoke the current staff session and challenge
+      description: Requires configured Origin; clears cookies only after the database update commits. Other staff sessions and customer sessions remain valid.
+      responses:
+        '204':
+          description: Current session and challenge revoked, cookies cleared
+        '403':
+          description: Origin rejected
+        '503':
+          description: Revocation unconfirmed; cookies not cleared
+  /v1/staff/users:
+    get:
+      summary: List staff applicants and roles for an approved MFA-authenticated administrator
+      parameters:
+        - in: query
+          name: after
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: users array of at most 50 public staff records and nullable nextCursor
+        '403':
+          description: Administrator required
+  /v1/staff/users/{id}/decision:
+    post:
+      summary: Record a versioned and audited staff approval, rejection or disable decision
+      description: Requires configured Origin and approved administrator session. Approval requires completed MFA enrollment. All target sessions and challenges are revoked atomically; self-decisions are rejected.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, status, reason]
+              properties:
+                expectedVersion: {type: integer, minimum: 1, maximum: 2147483646}
+                status: {enum: [approved, rejected, disabled]}
+                role: {enum: [admin, agent, support]}
+                siteIds:
+                  type: array
+                  maxItems: 100
+                  uniqueItems: true
+                  items: {type: string, format: uuid}
+                  description: Required for approval; empty for unrestricted admin, nonempty for agent/support. Omit role and siteIds when rejecting or disabling.
+                reason: {type: string, minLength: 5, maxLength: 500}
+      responses:
+        '200':
+          description: Updated public staff record
+        '409':
+          description: Version changed, MFA not enrolled, self-decision or last-admin protection
+  /v1/staff/users/{id}/revoke-sessions:
+    post:
+      summary: Administratively revoke all staff sessions and challenges with an audit reason
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, reason]
+              properties:
+                expectedVersion: {type: integer, minimum: 1, maximum: 2147483646}
+                reason: {type: string, minLength: 5, maxLength: 500}
+      responses:
+        '200':
+          description: Staff record with incremented version and unchanged role
+        '409':
+          description: Version changed
+  /v1/staff/audit:
+    get:
+      summary: Read immutable administrator decision history
+      parameters:
+        - in: query
+          name: after
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: events array of at most 50 records with actorStaffId, targetStaffId, action, reason, previousVersion, newVersion, before, after, createdAt and nullable nextCursor
+        '403':
+          description: Approved MFA-authenticated administrator required
+  /internal/v1/staff/session:
+    get:
+      summary: Resolve an approved staff session for prepaid-access
+      description: Service JWT scope staff:resolve with issuer and subject prepaid-access, audience identity, maximum token age 30 seconds. Resolves only the forwarded staff cookie.
+      security:
+        - serviceToken: []
+      responses:
+        '200':
+          description: staffId, role, siteIds, version and mfaVerified true
+        '401':
+          description: Invalid service token or staff session
+        '403':
+          description: Wrong scope or staff not approved
+  /internal/v1/staff/users/{id}:
+    get:
+      summary: Read authoritative staff assignment for a private allocation check
+      description: Service JWT scope staff:read with the same issuer, audience, subject and age restrictions. No browser-selected caller identity is accepted.
+      security:
+        - serviceToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: staffId, status, role, siteIds and version
+        '404':
+          description: Staff identity not found
+
 components:
+  requestBodies:
+    mfaCode:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [code]
+            properties:
+              code: {type: string, pattern: '^\d{6}$', writeOnly: true}
+  schemas:
+    staffSession:
+      type: object
+      required: [staffId, email, displayName, status, role, siteIds, version, mfaEnrolled, createdAt, mfaVerified]
+      properties:
+        staffId: {type: string, format: uuid}
+        email: {type: string}
+        displayName: {type: string}
+        status: {enum: [pending, approved, rejected, disabled]}
+        role: {enum: [null, admin, agent, support]}
+        siteIds: {type: array, items: {type: string, format: uuid}}
+        version: {type: integer, minimum: 1}
+        mfaEnrolled: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        mfaVerified: {const: true}
   securitySchemes:
     serviceToken:
       type: http

@@ -43,15 +43,15 @@ export async function markStaleSubmissionsUnknown(pool:Pool,minimumAgeSeconds:nu
  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
 }
 export async function pollAttempt(pool:Pool,attemptId:string,adapter:Adapter) {
- const found=await pool.query("SELECT id,job_id,provider_id FROM delivery_attempts WHERE id=$1 AND state='submitted'",[attemptId]);
+ const found=await pool.query("SELECT id,job_id,provider_id,state FROM delivery_attempts WHERE id=$1 AND state IN ('submitted','unknown')",[attemptId]);
  if(!found.rowCount || !found.rows[0].provider_id) throw new DeliveryError('not_pollable');
  const row=found.rows[0], result=await adapter.retrieve(row.provider_id);
- if(result.providerId!==row.provider_id || result.state==='unknown') return {state:'submitted'};
+ if(result.providerId!==row.provider_id || result.state==='unknown') return {state:row.state};
  const client=await pool.connect();
  try{
   await client.query('BEGIN');
-  const updated=await client.query("UPDATE delivery_attempts SET state=$2,provider_status=$3,charge_amount=COALESCE($4,charge_amount),charge_scale=COALESCE($5,charge_scale),charge_currency=COALESCE($6,charge_currency),delivered_at=$7,updated_at=now() WHERE id=$1 AND state='submitted' RETURNING job_id",[attemptId,result.state,result.providerStatus,result.cost?.amount??null,result.cost?.scale??null,result.cost?.currency??null,result.deliveredAt]);
-  if(updated.rowCount) await client.query("UPDATE delivery_jobs SET state=$2 WHERE id=$1 AND state='submitted'",[row.job_id,result.state]);
+  const updated=await client.query("UPDATE delivery_attempts SET state=$2,provider_status=$3,charge_amount=COALESCE($4,charge_amount),charge_scale=COALESCE($5,charge_scale),charge_currency=COALESCE($6,charge_currency),delivered_at=$7,updated_at=now() WHERE id=$1 AND state IN ('submitted','unknown') RETURNING job_id,attempt_number",[attemptId,result.state,result.providerStatus,result.cost?.amount??null,result.cost?.scale??null,result.cost?.currency??null,result.deliveredAt]);
+  if(updated.rowCount) await client.query("UPDATE delivery_jobs SET state=$2 WHERE id=$1 AND state IN ('submitted','unknown') AND NOT EXISTS (SELECT 1 FROM delivery_attempts WHERE job_id=$1 AND attempt_number>$3)",[row.job_id,result.state,updated.rows[0].attempt_number]);
   const current=updated.rowCount ? result.state : (await client.query('SELECT state FROM delivery_attempts WHERE id=$1',[attemptId])).rows[0]?.state ?? 'unknown';
   await client.query('COMMIT');return {state:current};
  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}

@@ -1,0 +1,11 @@
+{
+  "serverEndpoint": "REPLACE_WITH_ORACLE_PUBLIC_HOSTNAME",
+  "port": 51821,
+  "serverPublicKey": "REPLACE_WITH_ORACLE_WIREGUARD_PUBLIC_KEY",
+  "routerPublicKey": "REPLACE_WITH_ROUTER_WIREGUARD_PUBLIC_KEY",
+  "serverTunnelIp": "10.77.254.1",
+  "routerTunnelIp": "10.77.254.2",
+  "serverInterface": "pfi-site01",
+  "routerNetworks": ["192.168.0.0/24", "192.168.88.0/24"],
+  "serverNetworks": ["REPLACE_WITH_INSPECTED_ORACLE_AND_DOCKER_NETWORKS"]
+}

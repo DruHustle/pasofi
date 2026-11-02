@@ -29,7 +29,7 @@ compose up -d --wait postgres > "$stage_temp/postgres.log" 2>&1 || { echo 'Stagi
 for service in identity prepaid-access network notification assistant; do
  compose run --rm --no-deps "$service" node migrate.mjs > "$stage_temp/migrate-$service.log" 2>&1 || { echo "Migration failed: $service" >&2; exit 1; }
 done
-compose up -d --no-build > "$stage_temp/up.log" 2>&1
+compose up -d --no-build --wait --wait-timeout 90 > "$stage_temp/up.log" 2>&1 || { echo 'Staging services did not become healthy' >&2; exit 1; }
 for service in identity prepaid-access network notification assistant; do
  for attempt in $(seq 1 30); do
   if compose exec -T "$service" node -e 'fetch("http://127.0.0.1:3000/health/ready").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))' >/dev/null 2>&1; then break; fi

@@ -1,0 +1,9 @@
+[
+  {
+    "nasId": "REPLACE_WITH_THE_SELECTED_LOWERCASE_NAS_UUID",
+    "url": "https://REPLACE_WITH_THE_REVIEWED_ROUTER_HOST/rest/",
+    "username": "REPLACE_WITH_THE_RESTRICTED_ROUTER_SERVICE_USERNAME",
+    "password": "SUPPLY_PRIVATELY_ON_ORACLE",
+    "caFile": "/run/pamofi/routeros-ca/REPLACE_WITH_THE_SELECTED_LOWERCASE_NAS_UUID.pem"
+  }
+]

@@ -1,0 +1,112 @@
+name: Verify PamoFi
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pamofi-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17.11-alpine3.23
+        env:
+          POSTGRES_USER: pamofi_test_bootstrap
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: postgres
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U pamofi_test_bootstrap -d postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      PAMOFI_TEST_CONFIRM_ISOLATED: '1'
+      PAMOFI_TEST_BOOTSTRAP_DATABASE_URL: postgresql://pamofi_test_bootstrap:disposable_ci_only@127.0.0.1:5432/postgres
+      PAMOFI_TEST_IDENTITY_DATABASE_URL: postgresql://pamofi_identity:demo_only_change_me@127.0.0.1:5432/pamofi_identity
+      PAMOFI_TEST_PREPAID_DATABASE_URL: postgresql://pamofi_prepaid_access:demo_only_change_me@127.0.0.1:5432/pamofi_prepaid_access
+      PAMOFI_TEST_NETWORK_DATABASE_URL: postgresql://pamofi_network:demo_only_change_me@127.0.0.1:5432/pamofi_network
+      PAMOFI_TEST_NOTIFICATION_DATABASE_URL: postgresql://pamofi_notification:demo_only_change_me@127.0.0.1:5432/pamofi_notification
+      PAMOFI_TEST_ASSISTANT_DATABASE_URL: postgresql://pamofi_assistant:demo_only_change_me@127.0.0.1:5432/pamofi_assistant
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.1
+          cache: npm
+          cache-dependency-path: |
+            pamofi-backend/services/*/package-lock.json
+            pamofi-frontend/web/package-lock.json
+            pamofi-frontend/mobile/package-lock.json
+      - name: Initialize the five disposable databases
+        run: docker exec -i '${{ job.services.postgres.id }}' psql -v ON_ERROR_STOP=1 -U pamofi_test_bootstrap -d postgres < pamofi-backend/infra/postgres/init.sql
+      - name: Install independent locked dependencies
+        run: |
+          for project in pamofi-backend/services/*-service pamofi-frontend/web pamofi-frontend/mobile; do
+            (cd "$project" && npm ci --no-audit --no-fund)
+          done
+      - name: Install Chromium and its runtime dependencies
+        working-directory: pamofi-frontend/web
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Build and verify all services, web, and mobile
+        run: node pamofi-backend/local-tools/verify.mjs --integration --browser
+      - name: Verify the Vercel server proxy with real HTTP and TLS
+        run: npm --prefix pamofi-frontend/web run test:proxy
+      - name: Verify protected infrastructure configuration and operations diagnostics
+        run: |
+          node --test pamofi-backend/infra/backup-production/config.test.mjs \
+            pamofi-backend/infra/remote-access/*.test.mjs \
+            pamofi-backend/infra/operations/check.test.mjs \
+            pamofi-backend/infra/production/vercel-config.test.mjs \
+            pamofi-backend/infra/production/router-control-config.test.mjs \
+            pamofi-backend/infra/site-link/*.test.mjs \
+            pamofi-backend/infra/radius-production/*.test.mjs
+          sh -n pamofi-backend/infra/backup-production/render-config.sh
+          sh -n pamofi-backend/infra/backup-production/entrypoint.sh
+          bash -n pamofi-backend/infra/backup-production/backup.sh
+          sh -n pamofi-backend/infra/production/gateway/vercel-entrypoint.sh
+          sh -n pamofi-backend/infra/radius-production/entrypoint.sh
+          bash 'pamofi-backend/local-tools/manual deployment/test-production-volume-preflight.sh'
+      - name: Validate the site firewall in an isolated network namespace
+        run: |
+          if ! command -v nft >/dev/null || ! command -v unshare >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y nftables util-linux
+          fi
+          sh pamofi-backend/infra/site-link/check-nft.sh
+      - name: Verify production migration and runtime privilege separation
+        run: |
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y postgresql-client
+          fi
+          node pamofi-backend/infra/production/test-roles.mjs
+      - name: Verify real FreeRADIUS packets in the isolated lab
+        run: |
+          bash pamofi-backend/pamofi-radius/lab/test-startup-readiness.sh
+          bash pamofi-backend/pamofi-radius/lab/run-lab.sh
+      - name: Verify the production RADIUS transport and mutual TLS boundaries
+        run: node pamofi-backend/infra/radius-production/run-lab.mjs
+      - name: Verify encrypted physical backup and restore
+        run: bash pamofi-backend/infra/backup-lab/run-lab.sh
+      - name: Verify private staging images and database isolation
+        run: bash pamofi-backend/infra/oracle-staging/test-local.sh
+      - name: Verify production TLS, file secrets, runtime workflows and volume protection
+        run: node pamofi-backend/infra/production/run-lab.mjs
+      - name: Verify the split Vercel and Oracle production path
+        run: node pamofi-backend/infra/production/run-vercel-lab.mjs

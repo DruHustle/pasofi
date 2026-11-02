@@ -29,7 +29,7 @@ test('initiation sends server terms, rejects unqualified methods and treats ambi
  const timeout=new PesepayAdapter(config,async()=>{calls++;throw Error('timeout');});
  assert.deepEqual(await timeout.initiate({orderId:id,amountMinor:100,currency:'USD',methodCode:'PZW211',eligibility}),{state:'unknown'});
  const unsafe=new PesepayAdapter(config,async()=>encrypted({referenceNumber:'PP-abc123',redirectUrl:'https://attacker.example/'}));
- assert.deepEqual(await unsafe.initiate({orderId:id,amountMinor:100,currency:'USD',methodCode:'PZW211',eligibility}),{state:'unknown'});
+ assert.deepEqual(await unsafe.initiate({orderId:id,amountMinor:100,currency:'USD',methodCode:'PZW211',eligibility}),{state:'unknown',referenceNumber:'PP-abc123'});
 });
 test('only a server response matching application, reference, currency and amount proves success',async()=>{
  const terms={referenceNumber:'PP-abc123',amountMinor:100,currency:'USD'};
@@ -42,4 +42,16 @@ test('only a server response matching application, reference, currency and amoun
  assert.equal((await check({...result,applicationId:9876})).state,'unknown');
  assert.equal((await check({...result,amountDetails:{amount:1.01,currencyCode:'USD'}})).state,'unknown');
  assert.equal((await check({...result,amountDetails:{amount:1,currencyCode:'ZWG'}})).state,'unknown');
+});
+
+test('known provider references survive missing or malformed checkout URLs without exposing them',async()=>{
+ const input={orderId:randomUUID(),amountMinor:100,currency:'USD',methodCode:'PZW211',eligibility};
+ for(const redirectUrl of [undefined,null,'not-a-url','http://checkout.pesepay.com/pay','https://attacker.example/pay','https://user:pass@checkout.pesepay.com/pay']) {
+  const adapter=new PesepayAdapter(config,async()=>encrypted({referenceNumber:'PP-known-reference',redirectUrl}));
+  assert.deepEqual(await adapter.initiate(input),{state:'unknown',referenceNumber:'PP-known-reference'});
+ }
+ for(const referenceNumber of ['',null,123,'invalid reference','../outside']) {
+  const adapter=new PesepayAdapter(config,async()=>encrypted({referenceNumber,redirectUrl:'https://checkout.pesepay.com/pay'}));
+  assert.deepEqual(await adapter.initiate(input),{state:'unknown'});
+ }
 });

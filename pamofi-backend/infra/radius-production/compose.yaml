@@ -1,0 +1,117 @@
+# Opt-in overlay. Resolve paths relative to infra/production/compose.yaml:
+# docker compose -f infra/production/compose.yaml -f infra/radius-production/compose.yaml ...
+services:
+  prepaid-access:
+    environment:
+      PAMOFI_RADIUS_QUALIFIED: ${PAMOFI_RADIUS_QUALIFIED:?Set explicit RADIUS qualification}
+      PAMOFI_CUSTOMER_NETWORK_ENABLED: ${PAMOFI_CUSTOMER_NETWORK_ENABLED:-false}
+  network:
+    environment:
+      PAMOFI_RADIUS_QUALIFIED: ${PAMOFI_RADIUS_QUALIFIED:?Set explicit RADIUS qualification}
+      PAMOFI_CUSTOMER_NETWORK_ENABLED: ${PAMOFI_CUSTOMER_NETWORK_ENABLED:-false}
+    # A normal bridge supplies the route/SNAT to the host WireGuard interface.
+    # The site-link post-SNAT guard permits only the exact router /32 + HTTPS.
+    # The worker remains disabled in the base until independently qualified.
+    networks: [services, database, router_control]
+  radius-api:
+    profiles: [radius-qualified]
+    image: ${PAMOFI_NETWORK_IMAGE:?Set the immutable network image}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    pids_limit: 100
+    entrypoint: [node, /opt/pamofi-radius/start-authority.mjs]
+    volumes:
+      - ../radius-production/start-authority.mjs:/opt/pamofi-radius/start-authority.mjs:ro
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+      PAMOFI_ROLE_PREFIX: ${PAMOFI_ROLE_PREFIX:-pamofi}
+      PAMOFI_RADIUS_QUALIFIED: ${PAMOFI_RADIUS_QUALIFIED:?Set explicit RADIUS qualification}
+      DATABASE_URL_FILE: /run/secrets/network_runtime_url
+      INTERNAL_NETWORK_SECRET_FILE: /run/secrets/internal_network_secret
+      PREPAID_URL: https://prepaid.internal
+      NODE_EXTRA_CA_CERTS: /run/secrets/internal_ca
+      RADIUS_CA_FILE: /run/secrets/radius_ca
+      RADIUS_SERVER_CERT_FILE: /run/secrets/radius_server_cert
+      RADIUS_SERVER_KEY_FILE: /run/secrets/radius_server_key
+      RADIUS_CLIENT_FINGERPRINT_FILE: /run/secrets/radius_client_fingerprint
+      RADIUS_LISTEN_HOST: 0.0.0.0
+      RADIUS_LISTEN_PORT: '3443'
+    secrets: [network_runtime_url, internal_network_secret, internal_ca, radius_ca, radius_server_cert, radius_server_key, radius_client_fingerprint]
+    networks: [services, database, radius_transport]
+    depends_on:
+      postgres: {condition: service_healthy}
+      internal-gateway: {condition: service_started}
+    healthcheck:
+      test: [CMD, node, -e, "const s=require('node:net').connect(3443,'127.0.0.1');s.setTimeout(2000);s.once('connect',()=>{s.destroy();process.exit(0)});s.once('error',()=>process.exit(1));s.once('timeout',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 4
+  radius:
+    profiles: [radius-qualified]
+    image: freeradius/freeradius-server:3.2.9-alpine@sha256:9e860a6d14ecbccc97448da1d0c5dd15b5e7e6b64777cea21b57e832187a2057
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp, /opt/var/log/radius, /opt/var/run/radiusd, /var/run/radiusd]
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    pids_limit: 64
+    entrypoint: [/bin/sh, /opt/pamofi-radius/entrypoint.sh]
+    environment:
+      PAMOFI_RADIUS_QUALIFIED: ${PAMOFI_RADIUS_QUALIFIED:?Set explicit RADIUS qualification}
+      PAMOFI_RADIUS_TUNNEL_IP: ${PAMOFI_RADIUS_TUNNEL_IP:?Set the inspected Oracle WireGuard IPv4 address}
+    volumes:
+      - ../radius-production/entrypoint.sh:/opt/pamofi-radius/entrypoint.sh:ro
+      - ../radius-production/default.conf:/opt/etc/raddb/sites-enabled/default:ro
+      - ../radius-production/rest.conf:/opt/etc/raddb/mods-enabled/rest:ro
+      - ${PAMOFI_RADIUS_SECRETS_DIR:?Set a new private RADIUS material directory}/clients.conf:/opt/etc/raddb/clients.conf:ro
+    secrets: [radius_ca, radius_client_cert, radius_client_key, radius_bind_ip]
+    ports:
+      - target: 1812
+        published: '1812'
+        host_ip: ${PAMOFI_RADIUS_TUNNEL_IP:?Set the inspected Oracle WireGuard IPv4 address}
+        protocol: udp
+      - target: 1813
+        published: '1813'
+        host_ip: ${PAMOFI_RADIUS_TUNNEL_IP:?Set the inspected Oracle WireGuard IPv4 address}
+        protocol: udp
+    # Published UDP replies need a normal bridge/default route. The authority
+    # connection remains on an independent internal-only transport network.
+    networks: [radius_transport, radius_ingress]
+    depends_on:
+      radius-api: {condition: service_healthy}
+networks:
+  radius_transport:
+    internal: true
+  radius_ingress:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: nat
+      com.docker.network.bridge.enable_ip_masquerade: 'true'
+  router_control:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: nat
+      com.docker.network.bridge.enable_ip_masquerade: 'true'
+secrets:
+  radius_ca:
+    file: ${PAMOFI_RADIUS_SECRETS_DIR:?Set protected RADIUS material}/radius_ca
+  radius_server_cert:
+    file: ${PAMOFI_RADIUS_SECRETS_DIR:?Set protected RADIUS material}/radius_server_cert
+  radius_server_key:
+    file: ${PAMOFI_RADIUS_SECRETS_DIR:?Set protected RADIUS material}/radius_server_key
+  radius_client_cert:
+    file: ${PAMOFI_RADIUS_SECRETS_DIR:?Set protected RADIUS material}/radius_client_cert
+  radius_client_key:
+    file: ${PAMOFI_RADIUS_SECRETS_DIR:?Set protected RADIUS material}/radius_client_key
+  radius_client_fingerprint:
+    file: ${PAMOFI_RADIUS_SECRETS_DIR:?Set protected RADIUS material}/radius_client_fingerprint
+  radius_bind_ip:
+    file: ${PAMOFI_RADIUS_SECRETS_DIR:?Set protected RADIUS material}/radius_bind_ip

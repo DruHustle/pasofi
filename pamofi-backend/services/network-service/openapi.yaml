@@ -1,7 +1,8 @@
 openapi: 3.1.0
 info:
   title: PamoFi network service
-  version: 0.1.0
+  version: 0.2.0
+  description: Private network service; the public customer contract belongs to prepaid-access. RADIUS is a separate mutual-TLS listener.
 paths:
   /health/live:
     get:
@@ -15,3 +16,62 @@ paths:
           description: Service database is reachable
         '503':
           description: Service database unavailable
+  /internal/v1/network/sites:
+    get:
+      security: [{serviceToken: []}]
+      description: Requires prepaid-access issuer/subject, network audience, network:sites scope and a maximum 30-second token lifetime.
+      responses:
+        '200':
+          description: Enabled registered sites with approved HTTPS login URLs
+        '401': {description: Missing or invalid service token}
+        '403': {description: Wrong scope}
+        '404': {description: Network capability disabled}
+        '503': {description: Database or configuration unavailable}
+  /internal/v1/network/credentials:
+    post:
+      security: [{serviceToken: []}]
+      description: Requires prepaid-access issuer/subject, network audience and network:credentials scope. The caller first verifies customer eligibility in prepaid-access.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [customerId, siteId, requestKey]
+              properties:
+                customerId: {type: string, format: uuid}
+                siteId: {type: string, format: uuid}
+                requestKey: {type: string, format: uuid}
+      responses:
+        '200': {description: Private two-minute credential and clean registered login URL; retries do not extend expiry}
+        '400': {description: Invalid request}
+        '401': {description: Missing or invalid service token}
+        '403': {description: Wrong scope}
+        '404': {description: Network capability disabled}
+        '409': {description: Site, credential retry, expiry or issuance limit conflict}
+        '503': {description: Database, service key or encryption key unavailable}
+  /radius/authorize:
+    post:
+      security: [{radiusMutualTls: []}]
+      description: Separate private TLS listener; exact client fingerprint and registered X-PamoFi-NAS required. Accepts FreeRADIUS rlm_rest attribute encoding and returns grant-bound reply attributes.
+      responses:
+        '200': {description: Verified credential with committed bounded ledger grant}
+        '401': {description: Invalid client, NAS, credential, session or grant}
+        '503': {description: Ledger or database unavailable}
+  /radius/accounting:
+    post:
+      security: [{radiusMutualTls: []}]
+      description: Separate private TLS listener. Start, Interim-Update, Stop and Accounting-On/Off; correlation is bound to Class, NAS and session. Positive acknowledgement follows the durable ledger operation.
+      responses:
+        '204': {description: Accounting committed; no reply attributes}
+        '401': {description: Invalid or mismatched accounting evidence}
+        '503': {description: Ledger or database unavailable}
+components:
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    radiusMutualTls:
+      type: mutualTLS

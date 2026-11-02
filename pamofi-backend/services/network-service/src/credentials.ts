@@ -22,7 +22,7 @@ export async function issueRadiusCredential(pool:Pool,input:{customerId:string;n
  if(!key || !Number.isSafeInteger(key.version) || key.version<1 || key.version>2147483647 || !Buffer.isBuffer(key.key) || key.key.length!==32)throw new CredentialError('invalid_key');
  const customerId=input.customerId.toLowerCase(),nasId=input.nasId.toLowerCase(),requestKey=input.requestKey.toLowerCase();
  return transaction(pool,async client=>{
-  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`radius-credential:${customerId}:${requestKey}`]);
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`radius-credential:${customerId}`]);
   const previous=await client.query(`SELECT c.id,c.username,c.nas_id,c.encrypted_secret,c.secret_key_version,c.revoked_at,c.expires_at,c.expires_at>now() AS current,n.enabled
     FROM radius_credentials c JOIN radius_nas n ON n.id=c.nas_id WHERE c.customer_id=$1 AND c.request_key=$2 FOR UPDATE OF c,n`,[customerId,requestKey]);
   if(previous.rowCount){
@@ -34,6 +34,8 @@ export async function issueRadiusCredential(pool:Pool,input:{customerId:string;n
   }
   const nas=await client.query('SELECT id FROM radius_nas WHERE id=$1 AND enabled=true FOR SHARE',[nasId]);
   if(!nas.rowCount)throw new CredentialError('nas_unavailable');
+  const recent=await client.query("SELECT count(*)::int AS total FROM radius_credentials WHERE customer_id=$1 AND created_at>now()-interval '1 minute'",[customerId]);
+  if(recent.rows[0].total>=10)throw new CredentialError('credential_rate_limited');
   const id=randomUUID(),username=randomBytes(24).toString('base64url'),password=randomBytes(32).toString('base64url');
   const encrypted=encrypt(password,key,aad(id,customerId,nasId,key.version));
   const row=await client.query(`INSERT INTO radius_credentials(id,username,secret_hash,customer_id,nas_id,request_key,encrypted_secret,secret_key_version,expires_at)

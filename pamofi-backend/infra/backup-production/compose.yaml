@@ -1,0 +1,25 @@
+# Explicit overlay for infra/production/compose.yaml. Requires an existing B2
+# bucket and independent credentials; never enabled by the demo/staging stack.
+services:
+  postgres:
+    image: pamofi-postgres-backup:17.11-2.57.0
+    build:
+      context: ../backup-production
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=80", "-c", "password_encryption=scram-sha-256", "-c", "archive_mode=on", "-c", "archive_command=pgbackrest --stanza=pamofi archive-push %p", "-c", "archive_timeout=60s", "-c", "wal_level=replica"]
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      B2_BUCKET: ${B2_BUCKET:?Set the independent backup bucket}
+      B2_REGION: ${B2_REGION:?Set the bucket region}
+      BACKUP_REPOSITORY_PREFIX: ${BACKUP_REPOSITORY_PREFIX:?Set a unique environment prefix}
+      B2_KEY_ID_FILE: /run/secrets/b2_key_id
+      B2_APPLICATION_KEY_FILE: /run/secrets/b2_application_key
+      BACKUP_CIPHER_FILE: /run/secrets/backup_cipher
+    secrets: [b2_key_id, b2_application_key, backup_cipher]
+    tmpfs: [/run/pgbackrest]
+    networks: [database, backup_egress]
+secrets:
+  b2_key_id: {file: "${PAMOFI_SECRETS_DIR:?Set secret directory}/b2_key_id"}
+  b2_application_key: {file: "${PAMOFI_SECRETS_DIR:?Set secret directory}/b2_application_key"}
+  backup_cipher: {file: "${PAMOFI_SECRETS_DIR:?Set secret directory}/backup_cipher"}
+networks:
+  backup_egress: {}

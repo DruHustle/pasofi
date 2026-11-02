@@ -1,10 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { jwtVerify } from 'jose';
-import { GrantError, issueGrant, recordAccounting } from './grants.js';
+import { GrantError, issueGrant, recordAccounting, reconcileGrant, markNasRestart, type AbsenceEvidence } from './grants.js';
 
-// This boundary is for an isolated lab only until the network service and
-// production transport are qualified. It is never a public customer API.
+// Private service boundary. Production enablement requires explicit recorded
+// router qualification; the public gateway must never route internal paths.
 const uuid='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
 const id={type:'string',pattern:uuid};
 const session={type:'string',pattern:'^[A-Za-z0-9._:-]{1,128}$'};
@@ -14,7 +14,7 @@ type AccountingBody={grantId:string;siteId:string;nasId:string;generation:string
 
 export function registerRadiusInternal(app:FastifyInstance,pool:Pool|null,demo:boolean) {
  async function authorize(request:FastifyRequest,reply:FastifyReply,scope:string) {
-  if (!demo || process.env.INTERNAL_RADIUS_ENABLED!=='true') { await reply.code(404).send({error:'not_found'}); return false; }
+  if (demo?process.env.INTERNAL_RADIUS_ENABLED!=='true':process.env.PAMOFI_RADIUS_QUALIFIED!=='true') { await reply.code(404).send({error:'not_found'}); return false; }
   const secret=process.env.INTERNAL_NETWORK_SECRET;
   if (!pool || !secret || Buffer.byteLength(secret)<32) { await reply.code(503).send({error:'unavailable'}); return false; }
   const header=request.headers.authorization;
@@ -44,5 +44,26 @@ export function registerRadiusInternal(app:FastifyInstance,pool:Pool|null,demo:b
    if(error instanceof GrantError) return reply.code(409).send({error:error.code});
    return reply.code(503).send({error:'unavailable'});
   }
+ });
+ app.post('/internal/v1/radius/reconcile/pending',async(request,reply)=>{
+  if(!await authorize(request,reply,'radius:reconcile'))return;
+  try {
+   const rows=await pool!.query(`UPDATE access_grants SET reconcile_attempted_at=now() WHERE id IN (
+     SELECT id FROM access_grants WHERE (state<>'closed' AND (disconnect_requested_at IS NOT NULL OR stop_received_at IS NOT NULL OR
+       accounting_anomaly OR deadline<=now() OR COALESCE(last_accounting_at,issued_at)<now()-interval '3 minutes')) OR id IN (SELECT grant_id FROM network_account_holds)
+     ORDER BY reconcile_attempted_at NULLS FIRST,issued_at LIMIT 50 FOR UPDATE SKIP LOCKED)
+     RETURNING id AS "grantId",site_id AS "siteId",nas_id AS "nasId",generation,accounting_session_id AS "sessionId",request_key AS "credentialId"`);
+   return {grants:rows.rows};
+  }catch{return reply.code(503).send({error:'unavailable'});}
+ });
+ app.post<{Body:AbsenceEvidence}>('/internal/v1/radius/reconcile',{schema:{body:{type:'object',additionalProperties:false,
+  required:['grantId','siteId','nasId','generation','sessionId','observationId','observedAt','credentialRevokedAt','absent'],
+  properties:{grantId:id,siteId:id,nasId:id,generation:id,sessionId:session,observationId:id,observedAt:{type:'string',format:'date-time'},credentialRevokedAt:{type:'string',format:'date-time'},absent:{type:'boolean'}}}}},async(request,reply)=>{
+  if(!await authorize(request,reply,'radius:reconcile'))return;
+  try{return await reconcileGrant(pool!,request.body);}catch(error){return reply.code(error instanceof GrantError?409:503).send({error:error instanceof GrantError?error.code:'unavailable'});}
+ });
+ app.post<{Body:{siteId:string;nasId:string}}>('/internal/v1/radius/restart',{schema:{body:{type:'object',additionalProperties:false,required:['siteId','nasId'],properties:{siteId:id,nasId:id}}}},async(request,reply)=>{
+  if(!await authorize(request,reply,'radius:account'))return;
+  try{return await markNasRestart(pool!,request.body.siteId,request.body.nasId);}catch{return reply.code(503).send({error:'unavailable'});}
  });
 }

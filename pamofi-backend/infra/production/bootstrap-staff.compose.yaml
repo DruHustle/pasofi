@@ -1,0 +1,40 @@
+# Explicit one-time overlay. Do not include this in ordinary application startup.
+services:
+  identity-bootstrap:
+    profiles: [bootstrap]
+    image: ${PAMOFI_IDENTITY_IMAGE:?Set the qualified identity image}
+    restart: 'no'
+    user: "${PAMOFI_BOOTSTRAP_UID:?Set the password-file owner UID}:${PAMOFI_BOOTSTRAP_GID:?Set its GID}"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    entrypoint: [node, /opt/pamofi/entrypoint.mjs]
+    command:
+      - bootstrap-staff
+      - --email
+      - ${STAFF_BOOTSTRAP_EMAIL:?Set the first operator email}
+      - --display-name
+      - ${STAFF_BOOTSTRAP_DISPLAY_NAME:?Set the first operator display name}
+      - --password-file
+      - /run/secrets/first_staff_password
+      - --reason
+      - ${STAFF_BOOTSTRAP_REASON:?Set the operator change record reason}
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+      PAMOFI_SERVICE: identity
+      PUBLIC_ORIGIN: https://${PAMOFI_PUBLIC_HOST:?Set the qualified public hostname}
+      MIGRATION_DATABASE_URL_FILE: /run/secrets/identity_migrate_url
+      STAFF_MFA_ENCRYPTION_KEY_FILE: /run/secrets/staff_mfa_encryption_key
+      STAFF_BOOTSTRAP_CONFIRM: ${STAFF_BOOTSTRAP_CONFIRM:?Explicit first-admin acknowledgment required}
+      STAFF_BOOTSTRAP_ENVIRONMENT: production
+      STAFF_BOOTSTRAP_DATABASE: pamofi_identity
+    volumes:
+      - ./entrypoint.mjs:/opt/pamofi/entrypoint.mjs:ro
+    secrets: [identity_migrate_url, staff_mfa_encryption_key, first_staff_password]
+    networks: [database]
+    depends_on:
+      postgres: {condition: service_healthy}
+secrets:
+  first_staff_password: {file: "${PAMOFI_SECRETS_DIR:?Set the protected secret directory}/first_staff_password"}

@@ -1,0 +1,26 @@
+# Optional RouterOS management wiring. Default base/RADIUS deployments leave the
+# reconciler disabled. Use true only for a reviewed controlled activation.
+services:
+  network:
+    environment:
+      NETWORK_RECONCILER_ENABLED: ${PAMOFI_ROUTER_CONTROL_QUALIFIED:?Set explicit router-control qualification to true or false}
+      ROUTEROS_ROUTERS_FILE: /run/secrets/routeros_routers
+    secrets:
+      - routeros_routers
+    volumes:
+      - type: bind
+        source: ${PAMOFI_ROUTER_CONTROL_DIR:?Set the protected router-control material directory}/ca
+        target: /run/pamofi/routeros-ca
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [services, database, router_control]
+networks:
+  router_control:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: nat
+      com.docker.network.bridge.enable_ip_masquerade: 'true'
+secrets:
+  routeros_routers:
+    file: ${PAMOFI_ROUTER_CONTROL_DIR:?Set the protected router-control material directory}/routers.json
