@@ -1,5 +1,7 @@
 # Onesa production deployment — 2 November 2026
 
+The later [mobile-first release record](../2026-11-02-mobile-first-release/README.md) supersedes the website deployment and assistant image identities below; the remaining details here describe the earlier deployment.
+
 This is a deployment and recovery record, not cash-sale or hotspot acceptance. The owner deferred administrator MFA enrollment. Production cash commerce, online payments, SMS and customer network access remain disabled; no live cash transaction or physical hotspot test has been performed.
 
 ## Verified deployment
