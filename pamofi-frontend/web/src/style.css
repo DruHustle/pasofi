@@ -76,3 +76,41 @@
   .section-head h2 { font-size: 34px; margin: 10px 0 6px; }
   .catalogue-label { margin-top: 22px; }
 }
+
+/* Color and clear actions help customers compare offers at a glance. */
+.demo { background: #c8efe0; color: #174f43; }
+.hero h1 em { color: #007d6f; }
+.primary { background: #007468; border-color: #007468; border-radius: 8px; }
+.primary:hover:not(:disabled) { background: #005c53; border-color: #005c53; }
+.secondary { border-color: #9dbdaf; border-radius: 8px; }
+.secondary:hover:not(:disabled) { background: #e7f4ed; }
+.card { display: flex; flex-direction: column; border-radius: 12px; border-top: 5px solid #f3a65b; box-shadow: 0 6px 24px rgba(24, 74, 60, .07); }
+.card:nth-child(2) { border-top-color: #0c947e; }
+.card:nth-child(3) { border-top-color: #e07862; }
+.card:nth-child(4) { border-top-color: #8a76b9; }
+.card:nth-child(5) { border-top-color: #d0a02e; }
+.card.featured { background: #d9f3e7; border-color: #0c947e; }
+.card h3 { margin-top: 20px; }
+.card-rule { margin: 18px 0 14px; }
+.card-bottom { margin-top: auto; align-items: stretch; flex-direction: column; gap: 14px; }
+.card-bottom strong { font-size: 20px; }
+.card-bottom .arrow { width: 100%; min-height: 44px; height: auto; padding: 10px 12px; display: flex; justify-content: space-between; gap: 8px; border-radius: 7px; background: #006f62; border: 1px solid #006f62; color: #fff; font-size: 12px; font-weight: 700; text-align: left; }
+.card-bottom .arrow:hover:not(:disabled) { background: #00584f; }
+.card-bottom .arrow:disabled { background: #e5ebe6; border-color: #e5ebe6; color: #53665d; opacity: 1; }
+.tabs .selected { background: #006f62; color: #fff; }
+@media (max-width: 600px) {
+  .card-bottom .arrow { font-size: 11px; }
+  .card h3 { margin-top: 16px; }
+}
+@media (max-width: 600px) {
+  .header nav button { font-size: 12px; line-height: 1.2; }
+}
+@media (max-width: 600px) {
+  .hero-actions > button { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; }
+  .hero-actions > button span { margin-left: 0; }
+  .cards .card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+.card:nth-child(1) { background: #fff1df; }
+.card:nth-child(3) { background: #ffebe5; }
+.card:nth-child(4) { background: #f0eafd; }
+.card:nth-child(5) { background: #fff3d0; }
