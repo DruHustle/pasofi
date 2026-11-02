@@ -19,7 +19,7 @@ test('B2 config encrypts and verifies TLS, separates PGDATA, and keeps credentia
   const result=spawnSync('sh',[renderer,target],{env,encoding:'utf8'});assert.equal(result.status,0,result.stderr);assert.equal(result.stdout,'');assert.equal(result.stderr,'');
   assert.equal((await stat(target)).mode&0o777,0o600);const config=await readFile(target,'utf8');
   for(const value of Object.values(values))assert.ok(config.includes(value),'Expected secret only in private config');
-  for(const line of ['repo1-s3-endpoint=s3.us-west-004.backblazeb2.com','repo1-storage-verify-tls=y','repo1-cipher-type=aes-256-cbc','repo1-path=/isolated-test','archive-check=y','archive-copy=y','pg1-path=/var/lib/postgresql/data/pgdata'])assert.ok(config.split('\n').includes(line),`Missing required setting ${line}`);
+  for(const line of ['repo1-s3-endpoint=s3.us-west-004.backblazeb2.com','repo1-storage-verify-tls=y','repo1-cipher-type=aes-256-cbc','repo1-path=/isolated-test','archive-check=y','archive-copy=y','pg1-path=/var/lib/postgresql/data/pgdata','pg1-user=pamofi_bootstrap'])assert.ok(config.split('\n').includes(line),`Missing required setting ${line}`);
   // Atomic replacement must retain private mode even if an old file was broad.
   const replaced=spawnSync('sh',[renderer,target],{env,encoding:'utf8'});assert.equal(replaced.status,0);assert.equal((await stat(target)).mode&0o777,0o600);
  }finally{await rm(root,{recursive:true,force:true});}
