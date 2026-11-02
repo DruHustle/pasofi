@@ -119,6 +119,17 @@ for (const width of [320, 390]) {
     await page.locator('#explore').getByRole('button', { name: 'Explore help', exact: true }).click();
     await expect(page).toHaveURL(/\/#help$/);
     await expect(page.getByRole('heading', { name: 'Here to help.', exact: true })).toBeVisible();
+    await test.step('Production footer recovery uses account wording and closes back to the public page', async () => {
+      const publicUrl = page.url(), recover = page.locator('footer').getByRole('button', { name: 'Recover', exact: true });
+      await recover.click();
+      await expect(page.getByRole('heading', { name: 'Recover your account', exact: true })).toBeVisible();
+      await expect(page.getByText(/demo access/i)).toHaveCount(0);
+      await expect(page).toHaveURL(publicUrl);
+      await page.getByRole('button', { name: 'Close recovery', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Recover your account', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Here to help.', exact: true })).toBeVisible();
+      await expect(page).toHaveURL(publicUrl); await expect(recover).toBeFocused();
+    });
     expect(state.mutations).toEqual([]); expect(state.unexpected).toEqual([]); expect(errors).toEqual([]);
   });
 }

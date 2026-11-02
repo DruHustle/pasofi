@@ -88,7 +88,7 @@ export default function Recovery({ close, recovered }: { close: () => void; reco
     } finally { if (mounted.current) setBusy(false); }
   }
   return <section className="purchase" aria-labelledby="recover-heading" aria-busy={busy}>
-    <div className="purchase-head"><h2 id="recover-heading" ref={heading} tabIndex={-1}>Recover demo access</h2><button className="close-button" onClick={close} aria-label="Close recovery">×</button></div>
+    <div className="purchase-head"><h2 id="recover-heading" ref={heading} tabIndex={-1}>Recover your account</h2><button className="close-button" onClick={close} aria-label="Close recovery">×</button></div>
     <p>Enter the account reference and recovery key you saved. A phone number or order reference alone cannot recover an account.</p>
     <form onSubmit={submit} className="recovery-form"><label>Account reference<input autoComplete="off" autoCapitalize="none" spellCheck={false} required maxLength={100} value={accountReference} onChange={event => setReference(event.target.value)} /></label><label>Recovery key<input type="password" autoComplete="off" autoCapitalize="none" spellCheck={false} required maxLength={100} value={recoveryKey} onChange={event => setKey(event.target.value)} /></label>
       {error && <p role="alert">{error}</p>}<button className="primary" disabled={busy} type="submit">{busy ? 'Verifying recovery…' : 'Recover access'} <span aria-hidden="true">→</span></button>
