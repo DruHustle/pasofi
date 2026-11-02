@@ -81,9 +81,22 @@ These findings verify the public preparation state. They do not establish workin
 
 ### Test evidence
 
-Focused checks passed before publishing the candidate: 14 navigation/recovery browser regressions, 18 catalogue/premium/customer browser checks, and 9 real-database commerce regressions. Independent source review found and resolved the delayed-response defects above.
+The complete strict local gate passed on the application source published in commit `44327f33c2fc8bd9c440d70a00a763703bb31d04`. This documentation follow-up changes no application, configuration or test code. Failed, skipped or interrupted runs are not counted as acceptance.
 
-The full strict application/browser gate and repository CI results are recorded below when completed. A failed, skipped or interrupted run is not counted as acceptance.
+| Gate | Result | Scope |
+| --- | --- | --- |
+| Builds and TypeScript | 7 passed | Five backend services, web and mobile |
+| Backend tests | 121 passed | Identity 26; prepaid access/commerce 69; network 8; notifications 14; assistant/help 4 |
+| Web browser acceptance | 88 passed | Customer lifecycle, agent/admin workflows, real MFA/cash-sale/receipt integration, navigation, recovery, unavailable states, responsive layout and out-of-order responses |
+| Mobile browser acceptance | 10 passed | Offline previews, credentialed gateway behaviour, cookie qualification, voucher/quote safeguards and usage/session changes |
+| Full strict gate | **219 passed; zero skipped or pending** | `node pamofi-backend/local-tools/verify.mjs --integration --browser`, fresh isolated PostgreSQL data and real Chromium |
+| Vercel proxy | 12 passed | Real HTTP/TLS proxy regression checks |
+| Infrastructure configuration | 41 passed | Backup, remote access, operations, Vercel/router configuration, site link and RADIUS configuration |
+| Production database role qualification | 152 checks passed | Migration/runtime privilege boundaries and authenticated runtime workflows on isolated databases |
+
+The full gate includes the 14 new navigation/recovery regressions and 8 new catalogue regressions. Focused execution also verified all 9 real-database commerce tests. Independent source review found and verified the delayed-response fixes above; tests deliberately return the old response after a newer purchase starts.
+
+[Pull request #13](https://github.com/DruHustle/pamofi/pull/13) records the candidate's source, review summary and final GitHub Actions results. Its Checks tab is the authority for the exact final head's PostgreSQL 17.11, infrastructure lab and native compile outcomes. The change does not publish a native store release or establish production deployment by itself.
 
 ### Remaining launch requirements
 
