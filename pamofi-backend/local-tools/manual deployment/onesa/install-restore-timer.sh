@@ -33,6 +33,7 @@ for f in b2_key_id b2_application_key backup_cipher; do [ -s "$creds/$f" ]; done
 expected_id=$(cat "$root/cluster-system-id")
 [[ "$expected_id" =~ ^[0-9]+$ ]]
 docker network inspect $(docker network ls -q) --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' | python3 -c 'import ipaddress,sys; n=ipaddress.ip_network("10.245.244.0/24"); assert all(not n.overlaps(ipaddress.ip_network(x.strip())) for x in sys.stdin if x.strip()), "Restore drill subnet overlaps an existing network"'
+ip -j -4 route show table all | python3 -c 'import ipaddress,json,sys; n=ipaddress.ip_network("10.245.244.0/24"); assert all(not n.overlaps(ipaddress.ip_network(r["dst"],strict=False)) for r in json.load(sys.stdin) if r.get("dst","default") != "default"), "Restore drill subnet overlaps a host route"'
 docker volume create --label pamofi.purpose=monthly-restore-drill "$volume" >/dev/null
 volume_created=true
 docker network create --label pamofi.purpose=monthly-restore-drill --subnet 10.245.244.0/24 "$network" >/dev/null
