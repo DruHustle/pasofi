@@ -265,3 +265,120 @@ test('a legacy committed sale retries its exact saved body without inventing cas
   });
   await openStaff(page); await expect(page.getByText('Do not collect cash again.', { exact: false })).toBeVisible(); await page.getByRole('checkbox', { name: /without collecting payment again/ }).check(); await page.getByRole('button', { name: 'Retry saved sale safely' }).click(); await expect(page.getByText('stock was not debited twice', { exact: false })).toBeVisible(); await expect(page.getByText('Cash confirmation was not recorded for this earlier sale.', { exact: true })).toBeVisible();
 });
+
+test('staff approvals remain available when unrelated commerce reads fail', async ({ page }) => {
+  let decided = false;
+  await mock(page, async (route, path) => {
+    if (path === '/api/capabilities') { await json(route, { ...capabilities, staffSales: false, vouchers: false, receiptPairing: false, paymentCheckout: false }); return true; }
+    if (path === '/api/staff/session') { await json(route, staff('admin')); return true; }
+    if (path === '/api/staff/users') { await json(route, { users: [staff('admin'), staff('agent', 'pending', agentId)], nextCursor: null }); return true; }
+    if (path === '/api/admin/bundles' || path === '/api/staff/inventory') { await json(route, { error: 'unavailable' }, 503); return true; }
+    if (path === `/api/staff/users/${agentId}/decision`) { decided = true; await json(route, { ...staff('agent', 'approved', agentId), version: 2 }); return true; }
+    return false;
+  });
+  await openStaff(page); await page.getByRole('button', { name: 'Review access' }).click();
+  await page.getByRole('checkbox', { name: site.name, exact: true }).check(); await page.getByLabel('Reason', { exact: true }).fill('Reviewed assigned-site agent application');
+  await page.getByRole('button', { name: 'Save staff decision' }).click(); await expect(page.getByText('Staff decision saved.', { exact: false })).toBeVisible(); expect(decided).toBe(true);
+  await page.getByRole('button', { name: 'Bundle catalogue', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Bundle catalogue could not be loaded.');
+  await expect(page.getByRole('button', { name: 'Retry unavailable sections' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Save draft bundle' })).toHaveCount(0);
+});
+
+test('paused commerce allows administrator draft setup while stock allocation remains disabled', async ({ page }) => {
+  let draft: unknown;
+  await mock(page, async (route, path, method) => {
+    if (path === '/api/capabilities') { await json(route, { ...capabilities, staffSales: false, vouchers: false, receiptPairing: false, paymentCheckout: false }); return true; }
+    if (path === '/api/staff/session') { await json(route, staff('admin')); return true; }
+    if (path === '/api/staff/users') { await json(route, { users: [staff('admin'), staff('agent', 'approved', agentId)], nextCursor: null }); return true; }
+    if (path === '/api/staff/inventory') { await json(route, { inventory: [] }); return true; }
+    if (path === '/api/admin/bundles') {
+      if (method === 'POST') { draft = route.request().postDataJSON(); await json(route, { product: { ...product, published: false } }, 201); }
+      else await json(route, { products: [{ ...product, published: true }] });
+      return true;
+    }
+    return false;
+  });
+  await openStaff(page); await page.getByRole('button', { name: 'Bundle catalogue', exact: true }).click();
+  await page.getByLabel('Unique version ID').fill('review-draft'); await page.getByLabel('Price in USD').fill('1.50'); await page.getByLabel('Data allowance in GB').fill('3'); await page.getByLabel('Validity in days').fill('2'); await page.getByLabel('Reason', { exact: true }).fill('Prepare reviewed draft before launch');
+  await page.getByRole('button', { name: 'Save draft bundle' }).click(); await expect(page.getByText('A new draft bundle version is saved.', { exact: false })).toBeVisible();
+  expect(draft).toEqual({ id: 'review-draft', priceMinor: 150, currency: 'USD', byteLimit: '3000000000', validitySeconds: 172800, published: false, reason: 'Prepare reviewed draft before launch' });
+  await page.getByRole('button', { name: 'Inventory', exact: true }).click();
+  await expect(page.getByText('Sales and stock allocation are paused.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Allocate inventory' })).toBeDisabled();
+});
+
+for (const delivery of ['receipt', 'sms'] as const) {
+  test(`invalid ${delivery} delivery input stays editable and does not create a pending sale`, async ({ page }) => {
+    const requests: unknown[] = [];
+    await mock(page, async (route, path, method) => {
+      if (path === '/api/staff/session') { await json(route, staff()); return true; }
+      if (path === '/api/staff/inventory') { await json(route, { inventory: [{ agentId: staffId, siteId, siteName: site.name, bundleId: 'flex', quantity: 1 }] }); return true; }
+      if (path === '/api/staff/sales') {
+        if (method === 'POST') { requests.push(route.request().postDataJSON()); await json(route, { sale: { ...sale(), delivery }, replayed: false }, 201); }
+        else await json(route, { sales: [], hasMore: false, nextOffset: null });
+        return true;
+      }
+      return false;
+    });
+    await openStaff(page); await page.getByLabel('Customer delivery').selectOption(delivery);
+    const input = page.getByLabel(delivery === 'receipt' ? 'Customer pairing code' : 'Customer mobile number');
+    await input.fill(delivery === 'receipt' ? 'ABC' : '+263 12');
+    await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click();
+    await expect(page.getByText(delivery === 'receipt' ? /complete 10-character pairing code/ : /valid Zimbabwe number/)).toBeVisible();
+    await expect(input).toBeEnabled(); expect(requests).toHaveLength(0);
+    expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':sale')))).toEqual([]);
+    await input.fill(delivery === 'receipt' ? 'ABCD-234 567' : '077 123 4567');
+    await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click();
+    await expect(page.getByText('Demo sale confirmed:', { exact: false })).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject(delivery === 'receipt' ? { pairingCode: 'ABCD234567' } : { phone: '263771234567' });
+  });
+}
+
+test('an old malformed pending sale is editable after its authoritative validation rejection', async ({ page }) => {
+  const key = '12345678-1234-4123-8123-123456789abc', invalid = { siteId, bundleId: 'flex', delivery: 'receipt', pairingCode: 'ABC' };
+  await page.addInitScript(({ staffId, key, invalid }) => sessionStorage.setItem(`pamofi.operation:staff:${staffId}:sale`, JSON.stringify({ key, payload: JSON.stringify(invalid) })), { staffId, key, invalid });
+  await mock(page, async (route, path, method) => {
+    if (path === '/api/staff/session') { await json(route, staff()); return true; }
+    if (path === '/api/staff/inventory') { await json(route, { inventory: [{ agentId: staffId, siteId, siteName: site.name, bundleId: 'flex', quantity: 1 }] }); return true; }
+    if (path === '/api/staff/sales') {
+      if (method === 'POST') { expect(route.request().headers()['idempotency-key']).toBe(key); expect(route.request().postDataJSON()).toEqual(invalid); await json(route, { error: 'invalid_sale' }, 400); }
+      else await json(route, { sales: [], hasMore: false, nextOffset: null });
+      return true;
+    }
+    return false;
+  });
+  await openStaff(page); await page.getByRole('checkbox', { name: /without collecting payment again/ }).check(); await page.getByRole('button', { name: 'Retry saved sale safely' }).click();
+  await expect(page.getByText('This request did not record a sale or debit inventory.', { exact: false })).toBeVisible();
+  await expect(page.getByLabel('Customer pairing code')).toBeEnabled();
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':sale')))).toEqual([]);
+});
+
+test('allocation rollbacks permit correction while legacy rejection and lost responses preserve the original request', async ({ page }) => {
+  const keys: string[] = [];
+  await mock(page, async (route, path, method) => {
+    if (path === '/api/staff/session') { await json(route, staff('admin')); return true; }
+    if (path === '/api/staff/users') { await json(route, { users: [staff('admin'), staff('agent', 'approved', agentId)], nextCursor: null }); return true; }
+    if (path === '/api/admin/bundles') { await json(route, { products: [{ ...product, published: true }] }); return true; }
+    if (path === '/api/staff/inventory') { await json(route, { inventory: [] }); return true; }
+    if (path === '/api/admin/inventory/allocations' && method === 'POST') {
+      keys.push(route.request().headers()['idempotency-key']);
+      if (keys.length <= 3) await json(route, { error: ['allocation_agent_not_eligible', 'site_or_bundle_unavailable', 'agent_not_eligible'][keys.length - 1] }, 409);
+      else if (keys.length === 4) await route.abort('failed');
+      else await json(route, { allocationId: saleId, replayed: true });
+      return true;
+    }
+    return false;
+  });
+  await openStaff(page); await page.getByRole('button', { name: 'Inventory', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Agent', exact: true }).selectOption(agentId); await page.getByRole('combobox', { name: 'Site', exact: true }).selectOption(siteId); await page.getByRole('combobox', { name: 'Bundle', exact: true }).selectOption('flex'); await page.getByLabel('Reason', { exact: true }).fill('Allocate reviewed stock to assigned site');
+  await page.getByRole('button', { name: 'Allocate inventory' }).click(); await expect(page.getByText('The selected agent is no longer approved', { exact: false })).toBeVisible(); await expect(page.getByLabel('Quantity')).toBeEnabled();
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':allocation')))).toEqual([]);
+  await page.getByRole('button', { name: 'Allocate inventory' }).click(); await expect(page.getByText('The selected site or bundle is no longer available.', { exact: false })).toBeVisible(); await expect(page.getByLabel('Quantity')).toBeEnabled();
+  await page.getByRole('button', { name: 'Allocate inventory' }).click(); await expect(page.getByRole('button', { name: 'Retry saved allocation safely' })).toBeEnabled(); await expect(page.getByLabel('Quantity')).toBeDisabled();
+  await page.getByRole('button', { name: 'Retry saved allocation safely' }).click(); await expect.poll(() => keys.length).toBe(4); await expect(page.getByRole('button', { name: 'Retry saved allocation safely' })).toBeEnabled(); await expect(page.getByLabel('Quantity')).toBeDisabled();
+  await page.getByRole('button', { name: 'Retry saved allocation safely' }).click(); await expect(page.getByText('Inventory allocation confirmed.', { exact: false })).toBeVisible();
+  expect(keys).toHaveLength(5); expect(new Set(keys.slice(0, 3)).size).toBe(3); expect(keys[3]).toBe(keys[2]); expect(keys[4]).toBe(keys[2]);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':allocation')))).toEqual([]);
+});

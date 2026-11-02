@@ -90,7 +90,9 @@ jobs:
 
   ios:
     name: iOS unsigned simulator app (API unconfigured)
-    runs-on: macos-26
+    # Standard Intel host avoids the ARM runner capacity queue; the Xcode 26+
+    # gate and generic simulator build (all supported architectures) stay intact.
+    runs-on: macos-26-intel
     timeout-minutes: 35
     steps:
       - name: Check out source

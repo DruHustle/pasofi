@@ -7,6 +7,13 @@ type Stock = { agentId: string; siteId: string; siteName: string; bundleId: stri
 export type Sale = { id: string; agentId: string; siteId: string; siteName: string; bundleId: string; priceMinor: number; commissionMinor: number; commissionBps: number; currency: string; byteLimit: string; validitySeconds: number; soldAt: string; startBy: string; delivery: string; simulation: boolean; payment?: CashEvidence };
 type SalePayload = { siteId: string; bundleId: string; delivery: 'receipt' | 'sms' | 'both'; pairingCode?: string; phone?: string; payment?: { method: 'cash'; confirmed: true; amountMinor: number; currency: string } };
 type Receipt = { sale: Sale; voucher: { id: string; code: string; state: string } };
+const normalizedPairing = (value: string) => value.toUpperCase().replace(/[-\s]/g, '');
+const normalizedPhone = (value: string) => value.replace(/[\s()-]/g, '').replace(/^\+/, '').replace(/^0(?=7[0-9]{8}$)/, '263');
+function invalidDelivery(payload: SalePayload): string | null {
+  if (payload.delivery !== 'sms' && !/^[A-Z2-9]{10}$/.test(normalizedPairing(payload.pairingCode ?? ''))) return 'Enter the complete 10-character pairing code from the customer’s device. Spaces and hyphens are accepted.';
+  if (payload.delivery !== 'receipt' && !/^263[0-9]{9}$/.test(normalizedPhone(payload.phone ?? ''))) return 'Enter a valid Zimbabwe number, for example +263 77 123 4567 or 077 123 4567.';
+  return null;
+}
 export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; capabilities: Capabilities | null }) {
   const [sites, setSites] = useState<Site[]>([]), [products, setProducts] = useState<Product[]>([]), [stock, setStock] = useState<Stock[]>([]);
   const [sales, setSales] = useState<Sale[]>([]), [nextOffset, setNextOffset] = useState<number | null>(null);
@@ -42,9 +49,13 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
   const product = products.find(item => item.id === bundleId), available = stock.find(item => item.siteId === siteId && item.bundleId === bundleId)?.quantity ?? 0;
   async function sell(event: React.FormEvent) {
     event.preventDefault(); if (busy || !confirmed || !capabilities?.staffSales || (!pending && !product)) return;
-    setBusy(true); setMessage(''); setReceipt(null);
     // A legacy pending body must replay byte-for-byte, without inventing a new cash attestation.
-    const payload: SalePayload = pending && savedPayload.current ? savedPayload.current : { siteId, bundleId, delivery, ...(delivery !== 'sms' ? { pairingCode: pairingCode.trim().toUpperCase() } : {}), ...(delivery !== 'receipt' ? { phone: phone.trim() } : {}), payment: { method: 'cash', confirmed: true, amountMinor: product!.price_minor, currency: product!.currency } };
+    const payload: SalePayload = pending && savedPayload.current ? savedPayload.current : { siteId, bundleId, delivery, ...(delivery !== 'sms' ? { pairingCode: normalizedPairing(pairingCode) } : {}), ...(delivery !== 'receipt' ? { phone: normalizedPhone(phone) } : {}), payment: { method: 'cash', confirmed: true, amountMinor: product!.price_minor, currency: product!.currency } };
+    const invalid = invalidDelivery(payload);
+    // Validate new input before saving an immutable retry request. An old saved
+    // request is still sent unchanged and needs an authoritative rejection.
+    if (!pending && invalid) { setMessage(invalid); setConfirmed(false); return; }
+    setBusy(true); setMessage(''); setReceipt(null);
     try {
       await verify();
       const key = mutationIntent(owner, 'sale', payload); savedPayload.current = payload; setPending(true);
@@ -57,9 +68,10 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
     } catch (error) {
       // Only these domain rejections run after the same-key replay lock and roll back.
       // Gateway/availability errors can race another committed request and stay pending.
-      const rolledBack = error instanceof ApiError && error.status === 409 && ['out_of_stock', 'bundle_unavailable', 'pairing_unavailable', 'pairing_required', 'invalid_phone', 'cash_confirmation_required', 'cash_amount_mismatch'].includes(error.code);
+      const invalidSavedRequest = error instanceof ApiError && error.status === 400 && error.code === 'invalid_sale' && !!invalid;
+      const rolledBack = invalidSavedRequest || (error instanceof ApiError && error.status === 409 && ['out_of_stock', 'bundle_unavailable', 'pairing_unavailable', 'pairing_required', 'invalid_phone', 'cash_confirmation_required', 'cash_amount_mismatch'].includes(error.code));
       if (rolledBack) { finishMutation(owner, 'sale'); savedPayload.current = null; }
-      if (live.current) { if (rolledBack) { setPending(false); setConfirmed(false); setMessage(`${messageFor(error)} This request did not record a sale or debit inventory. Review the details before trying again.`); } else setMessage(messageFor(error, 'The sale response could not be verified. Retry the saved request to check the same sale; do not collect payment again.')); }
+      if (live.current) { if (rolledBack) { setPending(false); setConfirmed(false); setMessage(`${invalidSavedRequest ? invalid : messageFor(error)} This request did not record a sale or debit inventory. Review the details before trying again.`); } else setMessage(messageFor(error, 'The sale response could not be verified. Retry the saved request to check the same sale; do not collect payment again.')); }
     }
     finally { if (live.current) setBusy(false); }
   }

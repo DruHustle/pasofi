@@ -25,10 +25,22 @@ paths:
           description: Catalogue unavailable
   /v1/orders:
     get:
-      summary: List orders belonging to the authenticated customer
+      summary: List owned orders or recover one owned order by its saved request key
+      description: The optional requestKey performs a read-only exact lookup within the authenticated customer's orders, including historical quotes whose bundle or checkout is no longer available. It never creates an order or starts a payment. A missing result does not prove that an earlier in-flight request cannot still complete.
+      parameters:
+        - in: query
+          name: requestKey
+          required: false
+          schema:
+            type: string
+            minLength: 16
+            maxLength: 128
+            pattern: '^[A-Za-z0-9_-]{16,128}$'
       responses:
         '200':
-          description: Resolved customerId and orders array, up to 100 entries; clients must match the owner before displaying history
+          description: Resolved customerId and orders array. Without requestKey, up to 100 entries and no lookupKey property. With requestKey, at most one order and lookupKey echoes the validated exact key. Clients must match the owner, lookup key and expected bundle before restoring a saved checkout.
+        '400':
+          description: Invalid request key query
         '401':
           description: No valid customer session
         '503':
@@ -345,6 +357,7 @@ paths:
     post:
       security: [{StaffSession: []}]
       summary: Allocate stock to an approved agent at an approved site
+      description: Commerce must be enabled. A matching recorded request is replayed before rechecking target eligibility. New allocations validate the approved agent, assigned site and published bundle under the request lock.
       parameters:
         - {$ref: '#/components/parameters/IdempotencyKey'}
       requestBody:
@@ -363,6 +376,7 @@ paths:
       responses:
         '201': {description: allocationId and replayed false; stock and audit committed atomically}
         '200': {description: Original allocationId and replayed true}
+        '409': {description: allocation_agent_not_eligible or site_or_bundle_unavailable after a new request is rolled back; idempotency_conflict preserves the original recorded request}
         '409': {description: Conflict or agent/site/bundle unavailable}
   /v1/staff/sales:
     get:

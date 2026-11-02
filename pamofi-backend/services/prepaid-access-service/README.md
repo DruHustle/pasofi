@@ -23,6 +23,8 @@ Payment review outcomes remain attached to the exact provider charge on retries.
 
 `GET /v1/access` shows active access first, the usable FIFO queue next, and historical purchases afterward. Optional `limit` (1–100, default 100) and `offset` (0–1,000,000, default 0) paginate the authenticated customer's records; `hasMore` and `nextOffset` indicate another page. All service responses use `Cache-Control: no-store` so customer history, entitlement data and internal authority responses are not cached.
 
+`GET /v1/orders?requestKey=...` recovers at most one order belonging to the authenticated customer with that exact saved idempotency key (`[A-Za-z0-9_-]`, 16–128 characters). The response includes `customerId`, an explicit `lookupKey` echo and `orders`. This read-only lookup remains available when checkout is disabled or the bundle is unpublished; it never creates a quote or starts a payment. Clients must verify the owner, echoed key and expected bundle before restoring the order, and preserve the saved request if the result is missing or unverifiable. The existing no-query route still lists up to 100 owned orders without a `lookupKey` property.
+
 
 Historical reconciliation regressions retain a provider reference even when an initiation response contains a missing or untrusted checkout URL. This preserves investigation evidence without enabling another charge or restarting the removed provider.
 
@@ -31,6 +33,8 @@ Idle PostgreSQL connection failures are handled without terminating the process;
 ## Staff commerce and private receipts
 
 Commerce requires `PAMOFI_COMMERCE_ENABLED=true`, a valid delivery keyring and configured identity service authority. Every staff request resolves its current approved role, site scopes and MFA-completed session from identity. The browser never supplies an authoritative actor, role, price or commission. Admins create sites, publish immutable bundle versions and allocate stock. Agents sell only their own inventory at assigned sites. Support can inspect scoped sale/delivery history but cannot sell, reveal vouchers or resend them.
+
+Approved MFA-verified administrators can prepare sites, inspect/create/publish catalogue versions, and read site/inventory setup while commerce is paused or a voucher keyring is unavailable. These setup routes retain administrator and exact-origin checks. Enabling setup does not enable sales, stock allocation, receipt pairing, vouchers, payments, or network access; those operations retain their own gates. Non-administrator site/inventory reads remain unavailable while commerce is paused.
 
 | Route | Contract |
 | --- | --- |
@@ -47,6 +51,8 @@ Commerce requires `PAMOFI_COMMERCE_ENABLED=true`, a valid delivery keyring and c
 | `GET /v1/staff/sales/:id/delivery`, `POST /v1/staff/sales/:id/resend` | Sanitized delivery status and explicit idempotent resend to the same saved recipient. Unknown delivery remains blocked. |
 
 All prices are integer minor units. `PAMOFI_AGENT_COMMISSION_BPS` defaults to zero and accepts 0–10000. Sales permanently snapshot price, currency, allowance, validity, site name and commission rate/amount. Allocation/resend reasons require 10–500 characters. Retry an uncertain sale with the same UUID key and immutable request; its committed response remains recoverable during a later delivery outage.
+
+Allocation retries check the committed request under the per-administrator idempotency lock before rechecking the target agent's mutable eligibility. A matching committed allocation remains recoverable after that agent is disabled or reassigned, without adding stock again. A new request rejected under that lock returns `allocation_agent_not_eligible` or `site_or_bundle_unavailable` after rollback; the web form permits correction. The former code requires a valid authoritative target record and is intentionally distinct from older deployments' pre-replay `agent_not_eligible` response. Identity outages, service authentication failures, malformed or mismatched target records, older ambiguous responses, and idempotency conflicts retain the saved request. Invalid new pairing/phone input is validated before saving a sale intent; pending sale bodies still replay unchanged.
 
 New agent sales require `payment:{method:'cash',confirmed:true,amountMinor,currency}`. The amount and currency must equal the published server bundle terms; the browser cannot set the sale price. The transaction records the authenticated agent, server confirmation time and received minor units alongside the immutable sale. Receipts return `payment:{method:'cash',evidence:'agent_attestation',receivedMinor,currency,confirmedAt,confirmedBy}`. This records the agent's explicit cash attestation; it is not independent evidence of physical cash or a provider settlement. Demo sales retain `simulation:true`. Digital payment methods are never accepted by this cash-sale path.
 

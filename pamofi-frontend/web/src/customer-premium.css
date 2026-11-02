@@ -254,3 +254,100 @@
   .customer-workspace .premium-usage .usage-explanation{grid-column:1;grid-row:7;margin:0}
   .customer-workspace .premium-usage .usage-refresh{grid-column:2;grid-row:7;justify-self:end;align-self:start}
 }
+
+/* Shared customer palette: the native build keeps this file byte-for-byte. */
+.customer-workspace {
+  --customer-emerald: #30e1b9;
+  --customer-lime: #c6ef46;
+  --customer-amber: #ffb547;
+  --customer-lavender: #c4b5fd;
+  --customer-muted: #47645b;
+}
+.customer-workspace .eyebrow,
+.customer-workspace .customer-page-heading .eyebrow,
+.customer-workspace .customer-profile-card .eyebrow { font-size: 11px; }
+.customer-workspace .customer-page-heading p { font-size: 14px; }
+.customer-workspace .primary { color: #fff; background: var(--customer-forest); border-color: var(--customer-forest); font-size: 14px; }
+.customer-workspace .primary:hover:not(:disabled) { color: #fff; background: #20574b; border-color: #20574b; }
+.customer-workspace .secondary { font-size: 14px; }
+.customer-workspace .text-button { font-size: 13px; }
+.customer-workspace .customer-section-tabs button { font-size: 13px; }
+.customer-workspace .customer-section-tabs button.selected { color: var(--customer-forest); background: var(--customer-lime); border-color: #7d9c33; }
+.customer-workspace .premium-usage { border-top: 4px solid var(--customer-emerald); }
+.customer-workspace .usage-card-top .eyebrow { color: #d0e8dc; font-size: 11px; }
+.customer-workspace .usage-connection-pill { font-size: 12px; }
+.customer-workspace .premium-usage .usage-freshness,
+.customer-workspace .premium-usage .usage-meter-label,
+.customer-workspace .premium-usage .usage-breakdown dt,
+.customer-workspace .premium-usage .usage-breakdown small,
+.customer-workspace .premium-usage .usage-validity small,
+.customer-workspace .premium-usage .usage-allowances small,
+.customer-workspace .premium-usage .usage-timestamps p,
+.customer-workspace .premium-usage .usage-note,
+.customer-workspace .premium-usage .usage-explanation summary,
+.customer-workspace .premium-usage .usage-refresh { font-size: 12px; }
+.customer-workspace .usage-ring-fill { stroke: var(--customer-lime); }
+.customer-workspace .premium-usage progress { accent-color: var(--customer-lime); }
+.customer-workspace .premium-usage progress::-webkit-progress-value { background: var(--customer-lime); }
+.customer-workspace .premium-usage progress::-moz-progress-bar { background: var(--customer-lime); }
+.customer-workspace .premium-usage .usage-top-up,
+.customer-workspace .customer-welcome-card > .primary { color: var(--customer-forest); background: var(--customer-lime); border-color: var(--customer-lime); }
+.customer-workspace .premium-usage .usage-top-up:hover:not(:disabled),
+.customer-workspace .customer-welcome-card > .primary:hover:not(:disabled) { background: #d5fa68; color: var(--customer-forest); border-color: #d5fa68; }
+.customer-workspace .customer-quick-actions button { font-size: 12px; font-weight: 650; min-height: 100px; border: 1px solid #102b291a; }
+.customer-workspace .customer-quick-actions button:nth-child(1) { background: var(--customer-emerald); }
+.customer-workspace .customer-quick-actions button:nth-child(2) { background: var(--customer-amber); }
+.customer-workspace .customer-quick-actions button:nth-child(3) { background: var(--customer-lavender); }
+.customer-workspace .customer-quick-actions button:nth-child(4) { background: var(--customer-lime); }
+.customer-workspace .customer-quick-actions button:nth-child(n) > span { color: var(--customer-forest); background: #ffffff88; border-color: transparent; box-shadow: none; }
+.customer-workspace .customer-quick-actions button:hover > span { border-color: var(--customer-forest); }
+.customer-workspace .customer-bundle-row span,
+.customer-workspace .customer-bundle-list small,
+.customer-workspace .customer-soft-banner p,
+.customer-workspace .customer-empty-state p,
+.customer-workspace .customer-welcome-card > small,
+.customer-workspace .customer-wifi-intro p,
+.customer-workspace .customer-history-summary p,
+.customer-workspace .customer-history-usage p,
+.customer-workspace .customer-voucher-content > p,
+.customer-workspace .customer-agent-checkout > p,
+.customer-workspace .customer-order-summary p,
+.customer-workspace .customer-order-summary > small,
+.customer-workspace .customer-steps small,
+.customer-workspace .cash-path p,
+.customer-workspace .customer-provider-list small,
+.customer-workspace .customer-payment-status .quote-expiry p,
+.customer-workspace .customer-profile-card p,
+.customer-workspace .pairing-card > span,
+.customer-workspace .pairing-card > small,
+.customer-workspace .customer-private-note,
+.customer-workspace .customer-muted { font-size: 12px; }
+.customer-workspace .customer-welcome-card p,
+.customer-workspace .customer-voucher-content > p,
+.customer-workspace .customer-agent-checkout > p { font-size: 14px; }
+.customer-workspace .customer-private-note,
+.customer-workspace .customer-muted,
+.customer-workspace .customer-provider-list small { color: #43614d; }
+.customer-workspace .form-grid label,
+.customer-workspace .private-value label,
+.customer-workspace .private-receipt label,
+.customer-workspace .check-label,
+.customer-workspace .cash-path ol { font-size: 13px; }
+.customer-workspace .customer-wifi-intro,
+.customer-workspace .customer-profile-card { background: #cdf7e6; border-color: #a8dfc8; }
+.customer-workspace .customer-profile-avatar,
+.customer-workspace .customer-record-icon { background: var(--customer-lime); color: var(--customer-forest); }
+.customer-workspace .customer-profile-language,
+.customer-workspace .customer-status-tag { font-size: 12px; }
+.customer-workspace .customer-voucher-art { background: var(--customer-amber); color: var(--customer-forest); }
+.customer-workspace .customer-voucher-art > span:last-child { color: #244c3d; font-size: 10px; }
+.customer-workspace .customer-voucher-art > i { border-top-color: #244c3d66; }
+.customer-workspace .customer-order-summary { background: #edf8d1; border-color: #c9df9d; }
+.customer-workspace .cash-path { background: #fff3db; border-color: #ead4a6; }
+.customer-workspace .cash-path > .customer-record-icon { background: var(--customer-amber); color: var(--customer-forest); }
+.customer-workspace .pairing-card { border-top: 4px solid var(--customer-emerald); }
+@media (max-width: 480px) {
+  .customer-workspace .customer-quick-actions { gap: 7px; }
+  .customer-workspace .customer-quick-actions button { padding: 12px 3px; font-size: 12px; }
+  .customer-workspace .customer-quick-actions button > span { width: 42px; height: 42px; }
+}
