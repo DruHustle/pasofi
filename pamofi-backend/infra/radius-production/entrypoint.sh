@@ -19,4 +19,6 @@ printf '%s\n' "$bound" | awk -F. '
  {for(i=1;i<=4;i++) if($i !~ /^(0|[1-9][0-9]*)$/ || $i>255) exit 1;
   if(!($1==10 || ($1==172 && $2>=16 && $2<=31) || ($1==192 && $2==168))) exit 1}
 ' || { echo 'A private IPv4 tunnel bind is required.' >&2; exit 1; }
-exec radiusd -f -l stdout
+# The pinned Alpine image normally adds /opt/sbin through its own entrypoint.
+# This guarded entrypoint replaces it, so use the immutable image's full path.
+exec /opt/sbin/radiusd -f -l stdout

@@ -34,6 +34,17 @@ function run(command,args,{cwd=here,env=process.env,input='',timeout=120000,allo
 }
 const docker=(args,options={})=>run('docker',args,{env:dockerEnvironment,...options});
 const compose=(args,options={})=>docker(['compose','-p',project,'-f',file,...args],options);
+async function requireRadiusRunning(){
+  const names=['radius','radius-wrong-client','radius-wrong-ca'];
+  const ids=(await compose(['ps','--all','--quiet',...names])).stdout.trim().split(/\s+/).filter(Boolean);
+  if(ids.length!==names.length)throw Error('A RADIUS fixture container was not created');
+  for(const state of JSON.parse((await docker(['inspect',...ids])).stdout)){
+    if(state.State.Status!=='running'||state.State.Running!==true||state.RestartCount!==0){
+      const name=state.Config.Labels['com.docker.compose.service'];
+      throw Error(`${name} failed startup: status=${state.State.Status}, exit=${state.State.ExitCode}, restarts=${state.RestartCount}`);
+    }
+  }
+}
 async function unusedPrefixes(count){
   const ids=(await docker(['network','ls','-q'])).stdout.trim().split(/\s+/).filter(Boolean);
   const networks=ids.length?JSON.parse((await docker(['network','inspect',...ids])).stdout):[];
@@ -109,6 +120,7 @@ try{
   },secrets};
   await writeFile(file,JSON.stringify(config),{mode:0o600});
   stage='container startup';created=true;await compose(['up','-d'],{timeout:180000});
+  await requireRadiusRunning();
   const containers=(await compose(['ps','-q'])).stdout.trim().split(/\s+/).filter(Boolean);
   for(const state of JSON.parse((await docker(['inspect',...containers])).stdout)){
     const name=state.Config.Labels['com.docker.compose.service'],bindings=state.HostConfig.PortBindings||{};
@@ -120,12 +132,18 @@ try{
   const auth='User-Name = "fixture_user_123456"\nUser-Password = "fixture_password_32_characters_safe"\nAcct-Session-Id = "TRANSPORT-LAB"\nMessage-Authenticator = 0x00000000000000000000000000000000\n';
   const packet=(nasName,authPort,kind,secret,input)=>compose(['exec','-T',nasName==='nas-a'?'nas-a-packets':nasName,'/opt/bin/radclient','-x','-t','2','-r','1',`${serverIp}:${authPort+(kind==='auth'?0:1)}`,kind,secret],{input,timeout:10000,allowFailure:true});
   stage='published UDP authentication from off-bridge NAS';let accepted;
-  for(let attempt=0;attempt<20;attempt++){accepted=await packet('nas-a',1812,'auth',secretA,auth);if(accepted.stdout.includes('Received Access-Accept'))break;await new Promise(done=>setTimeout(done,500));}
+  for(let attempt=0;attempt<20;attempt++){
+    await requireRadiusRunning();
+    accepted=await packet('nas-a',1812,'auth',secretA,auth);
+    if(accepted.stdout.includes('Received Access-Accept'))break;
+    await new Promise(done=>setTimeout(done,500));
+  }
   assert.match(accepted.stdout,/Received Access-Accept/);assert.match(accepted.stdout,/Mikrotik-Total-Limit = 1000000/);
   stage='source identity, PAP and shared-secret denials';
   const chap='User-Name = "fixture_user_123456"\nCHAP-Password = 0x000000000000000000000000000000000000\nAcct-Session-Id = "TRANSPORT-LAB"\nMessage-Authenticator = 0x00000000000000000000000000000000\n';
   for(const [nasName,secret,input]of [['nas-b',secretB,auth+'NAS-Identifier = "nas_a"\n'],['nas-unknown',secretA,auth],['nas-a','c'.repeat(64),auth],['nas-a',secretA,chap]])assert.doesNotMatch((await packet(nasName,1812,'auth',secret,input)).stdout,/Received Access-Accept/);
   stage='mTLS pin and CA denials';
+  await requireRadiusRunning();
   for(const port of [1814,1816])assert.doesNotMatch((await packet('nas-a',port,'auth',secretA,auth)).stdout,/Received Access-Accept/);
   const withoutCertificate=await compose(['exec','-T','radius-api','node','--input-type=module','-e',"import https from 'node:https';import fs from 'node:fs';const r=https.get('https://radius-api:3443/',{ca:fs.readFileSync('/run/secrets/radius_ca'),minVersion:'TLSv1.3',timeout:2000},()=>process.exit(1));r.on('error',e=>{console.log(e.code);process.exit(e.code==='ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED'?0:1)});r.on('timeout',()=>process.exit(1));"],{allowFailure:true});assert.equal(withoutCertificate.code,0,withoutCertificate.stdout+withoutCertificate.stderr);
   stage='published UDP accounting response and denial';
@@ -148,7 +166,7 @@ try{
   console.log('Production RADIUS transport lab passed: actual overlay, private published UDP across bridges with NAS source preserved, HTTPS egress and observed host-source NAT, closed gates, source/secret/PAP isolation, mTLS CA/client-pin/no-certificate rejection, accounting and authority outage. This is synthetic transport evidence; real ledger behavior is covered separately by pamofi-radius/lab.');
 }catch(error){
   let detail=error.message;for(const secret of redactions)detail=detail.replaceAll(secret,'[redacted]');console.error(`Production RADIUS transport lab failed during ${stage}: ${detail}`);
-  if(created&&!stopped){const logs=await compose(['logs','--tail','12','radius','radius-api','nas-a'],{allowFailure:true});let output=logs.stdout+logs.stderr;for(const secret of redactions)output=output.replaceAll(secret,'[redacted]');console.error(output.slice(-5000));}
+  if(created&&!stopped){const logs=await compose(['logs','--tail','12','radius','radius-wrong-client','radius-wrong-ca','radius-api','nas-a'],{allowFailure:true});let output=logs.stdout+logs.stderr;for(const secret of redactions)output=output.replaceAll(secret,'[redacted]');console.error(output.slice(-7000));}
   process.exitCode=1;
 }finally{
   cleaning=true;
