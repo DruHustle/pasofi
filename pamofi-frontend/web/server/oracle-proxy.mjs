@@ -14,7 +14,7 @@ const rules = [
   [/^\/api\/staff\/(register|login|mfa\/(setup|confirm|verify))$/, ['POST']],
   [/^\/api\/staff\/session$/, ['GET', 'DELETE']],
   [/^\/api\/staff\/(users|audit|sites|inventory)$/, ['GET']],
-  [new RegExp(`^/api/staff/users/${UUID}/(decision|revoke-sessions)$`), ['POST']],
+  [new RegExp(`^/api/staff/users/${UUID}/(decision|revoke-sessions|recover-mfa)$`), ['POST']],
   [/^\/api\/staff\/sales$/, ['GET', 'POST']],
   [new RegExp(`^/api/staff/sales/${UUID}/(receipt|delivery)$`), ['GET']],
   [new RegExp(`^/api/staff/sales/${UUID}/resend$`), ['POST']],

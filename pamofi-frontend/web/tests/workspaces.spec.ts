@@ -137,13 +137,14 @@ test('checkout survives a lost response and only authoritative fulfillment unloc
   const keys: string[] = []; let paid = false, lost = true;
   await mock(page, async (route, path, method) => {
     if (path === '/api/orders' && method === 'POST') { keys.push(route.request().headers()['idempotency-key']); if (lost) { lost = false; await route.abort('failed'); } else await json(route, { order: order() }, 201); return true; }
+    if (path === '/api/orders' && method === 'GET') { const lookupKey = new URL(route.request().url()).searchParams.get('requestKey'); expect(lookupKey).toBe(keys[0]); await json(route, { lookupKey, orders: [] }); return true; }
     if (path === `/api/orders/${orderId}/checkout`) { await json(route, { attemptId: saleId, state: 'pending', redirectUrl: 'https://payments.example.test/checkout', simulation: true }); return true; }
     if (path === `/api/orders/${orderId}/status`) { await json(route, { order: order(paid ? 'payment_confirmed' : 'awaiting_payment'), attempts: [{ id: saleId, state: paid ? 'verified_success' : 'pending' }], entitlementId: paid ? saleId : null, entitlementRevokedAt: null, fulfillmentState: paid ? 'fulfilled' : 'unconfirmed', simulation: true }); return true; }
     if (path === `/api/orders/${orderId}/mock-payment`) { paid = true; await json(route, { state: 'fulfilled', simulation: true }); return true; }
     return false;
   });
   await openCustomer(page); await page.getByRole('button', { name: 'Online payment', exact: true }).click(); await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Prepare checkout' }).click(); await expect(page.getByText('Checkout could not be confirmed.', { exact: false })).toBeVisible();
-  await page.reload(); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByText('unfinished checkout details were restored', { exact: false })).toBeVisible(); await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Retry this checkout safely' }).click(); await expect(page.getByRole('link', { name: /Continue to payment provider/ })).toHaveAttribute('href', 'https://payments.example.test/checkout');
+  await page.reload(); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByText('Your checkout is still saved. Its order could not be loaded.', { exact: false })).toBeVisible(); expect(keys).toHaveLength(1); await expect(page.getByRole('button', { name: 'Check saved checkout status' })).toBeVisible(); await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Retry this checkout safely' }).click(); await expect(page.getByRole('link', { name: /Continue to payment provider/ })).toHaveAttribute('href', 'https://payments.example.test/checkout');
   expect(keys).toHaveLength(2); expect(new Set(keys).size).toBe(1); await page.getByRole('button', { name: 'Check verified payment status' }).click(); await expect(page.getByText('Payment not confirmed.', { exact: false })).toBeVisible(); await expect(page.getByRole('button', { name: 'Review another bundle' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Simulate successful payment' }).click(); await expect(page.getByText('Simulated payment verified.', { exact: false })).toBeVisible(); await page.getByRole('button', { name: 'Review another bundle' }).click(); await expect(page.getByRole('button', { name: 'Prepare checkout' })).toBeVisible(); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.includes('purchase-details') || key.includes(':checkout:') || key.includes(':order:')))).toEqual([]);
 });
@@ -381,4 +382,28 @@ test('allocation rollbacks permit correction while legacy rejection and lost res
   await page.getByRole('button', { name: 'Retry saved allocation safely' }).click(); await expect(page.getByText('Inventory allocation confirmed.', { exact: false })).toBeVisible();
   expect(keys).toHaveLength(5); expect(new Set(keys.slice(0, 3)).size).toBe(3); expect(keys[3]).toBe(keys[2]); expect(keys[4]).toBe(keys[2]);
   expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':allocation')))).toEqual([]);
+});
+
+test('administrator must confirm identity verification before recovering another authenticator', async ({ page }) => {
+  let payload: unknown;
+  await mock(page, async (route, path) => {
+    if (path === '/api/staff/session') { await json(route, staff('admin')); return true; }
+    if (path === '/api/staff/users') { await json(route, { users: [staff('admin'), staff('agent', 'approved', agentId)], nextCursor: null }); return true; }
+    if (path === '/api/admin/bundles') { await json(route, { products: [] }); return true; }
+    if (path === '/api/staff/inventory') { await json(route, { inventory: [] }); return true; }
+    if (path === `/api/staff/users/${agentId}/recover-mfa`) {
+      payload = route.request().postDataJSON();
+      await json(route, { ...staff('agent', 'pending', agentId), siteIds: [], version: 2, mfaEnrolled: false }); return true;
+    }
+    return false;
+  });
+  await openStaff(page);
+  await page.getByRole('button', { name: 'Review access' }).click();
+  await page.getByLabel('Decision').selectOption('recover_mfa');
+  await page.getByLabel('Reason', { exact: true }).fill('Verified identity by independent process');
+  await expect(page.getByRole('button', { name: 'Save staff decision' })).toBeDisabled();
+  await page.getByRole('checkbox', { name: /I verified this person/ }).check();
+  await page.getByRole('button', { name: 'Save staff decision' }).click();
+  await expect(page.getByText('Authenticator recovery started.', { exact: false })).toBeVisible();
+  expect(payload).toEqual({ expectedVersion: 1, reason: 'Verified identity by independent process' });
 });

@@ -1,0 +1,17 @@
+# Production completion checklist — 2 November 2026
+
+Working record; update with evidence as work proceeds. Statuses distinguish implementation, isolation/staging, deployment and live verification.
+
+| Area | Current status and evidence | Next action or dependency |
+| --- | --- | --- |
+| Source and deployed revisions | Reviewed main `55acdf86f1767ae3b5169b4be758c650a9bd4992` is live on Vercel `dpl_GiFtciKWu5rwnw3oV5enDdQyAUpx`; the previous deployment is `dpl_4obF4knNS2ycWz8nftHUAULMTxPs`. | Qualify and deploy compatible backend and frontend; record final image/deployment identities and rollback. |
+| Software defects | PR #13 merged; exact merge [full CI](https://github.com/DruHustle/pamofi/actions/runs/41538257320), [UI](https://github.com/DruHustle/pamofi/actions/runs/41538257293) and [native](https://github.com/DruHustle/pamofi/actions/runs/41538257436) passed. | Audit remaining recovery, support and workflow gaps; reproduce and test any corrections. |
+| Backend/frontend compatibility | Reviewed prepaid image is deployed and healthy; 18 unchanged migration checksums matched and the isolated restore drill passed. Anonymous exact-order lookup returned 401. | Verify owner-scoped live lookup only if a disposable account is authorized; isolated suite covers owner isolation and lookup echo. |
+| Catalogue and sites | Public API reports zero bundles and sites. Owner approved the prior five candidate terms, 5% commission and Kuwadzana as first site; publication and stock remain pending. | Verify exact terms against the approved candidates and configure through MFA-authorized administration; no synthetic stock or sale. |
+| Administrator and agents | First owner account bootstrapped; owner deferred MFA. No approved production agent has been supplied. | Owner enrolls MFA and onboards an assigned agent; no bypass. |
+| Cash sale, receipt and voucher | Isolated end-to-end tests exist; live capabilities report staff sales, receipt pairing and vouchers disabled. | Qualify setup and enable only when approved site, agent, actual stock and operating prerequisites are ready. A genuine controlled transaction requires participant, amount and accounting treatment. |
+| Customer and staff recovery | Customer recovery exists; the separately audited administrator-assisted lost-authenticator recovery is implemented and being qualified. Staff password reset is not implemented or enabled. | Complete qualification and deployment of MFA recovery; implement non-enumerating, rate-limited, single-use password reset after an approved delivery channel is selected. |
+| Payment and SMS | Production capabilities disabled; no merchant/test accounts or qualified SMS provider. | Keep disabled; qualify direct provider contracts and delivery separately; do not introduce Pesepay. |
+| Support and service information | Help exists, but approved contact, privacy, refund and legal policy content is missing. | Prepare accessible entry points without invented commitments; obtain approved content. |
+| Tests, deployment and rollback | New encrypted differential backup and isolated restore passed before the reviewed backend/frontend rollout; exact images, checks and rollback are in the [release record](../local-tools/release-evidence/2026-11-02-reviewed-production/README.md). | Qualify remaining changes and repeat the affected live checks. |
+| Physical and native boundaries | Network access and mobile cookies disabled; no physical router or real-device acceptance. | Preserve disabled flags and prepare two-site acceptance checklist. |
