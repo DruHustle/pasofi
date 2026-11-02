@@ -35,36 +35,39 @@ function withUsage(item: Entitlement, snapshot: UsageSnapshot | null): Entitleme
   // must not roll back a newer usage snapshot (or vice versa).
   return update ? { ...item, ...update, consumed_bytes: BigInt(update.consumed_bytes) > BigInt(item.consumed_bytes) ? update.consumed_bytes : item.consumed_bytes, activated_at: item.activated_at ?? update.activated_at, revoked_at: item.revoked_at ?? update.revoked_at } : item;
 }
-export default function CustomerAccess({ close, capabilities, selectedBundle = null, initialTab = 'access', recovered, onNavigate, onBuyData }: { close: () => void; capabilities: Capabilities; selectedBundle?: Product | null; initialTab?: CustomerTab; recovered: () => void; onNavigate?: (tab: CustomerTab) => void; onBuyData?: () => void }) {
+export default function CustomerAccess({ close, capabilities, selectedBundle = null, requestedBundleId = null, initialTab = 'access', recovered, onNavigate, onBuyData }: { close: () => void; capabilities: Capabilities; selectedBundle?: Product | null; requestedBundleId?: string | null; initialTab?: CustomerTab; recovered: () => void; onNavigate?: (tab: CustomerTab, bundleId?: string) => void; onBuyData?: () => void }) {
   const [tab, setTab] = useState<CustomerTab>(selectedBundle ? capabilities.staffSales && capabilities.receiptPairing ? 'receipt' : 'purchase' : initialTab), [owner, setOwner] = useState<string | null>(null);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
   const [access, setAccess] = useState<Entitlement[]>([]), [nextOffset, setNextOffset] = useState<number | null>(null);
   const [voucherCode, setVoucherCode] = useState(''), [pairing, setPairing] = useState<Pairing | null>(null), [pairingState, setPairingState] = useState(''), [receipt, setReceipt] = useState<Receipt | null>(null);
-  const [sites, setSites] = useState<Site[]>([]), [products, setProducts] = useState<Product[]>([]), [bundleId, setBundleId] = useState(selectedBundle?.id ?? ''), [siteId, setSiteId] = useState('');
+  const [sites, setSites] = useState<Site[]>([]), [products, setProducts] = useState<Product[]>([]), [bundleId, setBundleId] = useState(selectedBundle?.id ?? requestedBundleId ?? ''), [siteId, setSiteId] = useState('');
   const [methods, setMethods] = useState<PaymentMethod[]>([]), [methodCode, setMethodCode] = useState(''), [methodsLoading, setMethodsLoading] = useState(false);
   const [order, setOrder] = useState<Order | null>(null), [payment, setPayment] = useState<PaymentStatus | null>(null), [redirectUrl, setRedirectUrl] = useState('');
   const [checkoutPending, setCheckoutPending] = useState(false);
-  const restoredMethod = useRef('');
+  const [catalogueLoaded, setCatalogueLoaded] = useState(false), [recoveryReminder, setRecoveryReminder] = useState(false);
+  const restoredMethod = useRef(''), savedOrderLookup = useRef(0);
   const [signout, setSignout] = useState(false), [agreed, setAgreed] = useState(false), [leaving, setLeaving] = useState(false);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const live = useRef(false), heading = useRef<HTMLHeadingElement>(null), ownerRef = useRef<string | null>(null), polling = useRef(false), generation = useRef(0), accessList = useRef<HTMLUListElement>(null), lastUsage = useRef<UsageSnapshot | null>(null);
-  const previousInitialTab = useRef(initialTab), previousBundle = useRef(selectedBundle?.id ?? null);
-  function selectTab(next: CustomerTab) { setTab(next); onNavigate?.(next); }
+  const previousInitialTab = useRef(initialTab), previousBundle = useRef(selectedBundle?.id ?? requestedBundleId ?? null);
+  function selectTab(next: CustomerTab, selection = bundleId) { setTab(next); onNavigate?.(next, selection); }
   function buyData() { if (onBuyData) onBuyData(); else selectTab(capabilities.staffSales && capabilities.receiptPairing ? 'receipt' : 'purchase'); }
   useEffect(() => {
     if (previousInitialTab.current !== initialTab) { previousInitialTab.current = initialTab; setTab(initialTab); heading.current?.focus(); }
   }, [initialTab]);
   useEffect(() => {
-    if (!selectedBundle || previousBundle.current === selectedBundle.id) return;
-    previousBundle.current = selectedBundle.id;
+    const nextBundleId = selectedBundle?.id ?? requestedBundleId;
+    if (!nextBundleId || previousBundle.current === nextBundleId) return;
+    previousBundle.current = nextBundleId;
     if (order || checkoutPending) { selectTab('purchase'); setMessage('Your earlier checkout is still saved. Check its verified status before choosing a different bundle.'); return; }
-    setBundleId(selectedBundle.id); selectTab(capabilities.staffSales && capabilities.receiptPairing ? 'receipt' : 'purchase');
-  }, [selectedBundle?.id]);
+    // Explicit checkout/receipt routes own the screen; a changed ID only updates selection.
+    setBundleId(nextBundleId);
+  }, [selectedBundle?.id, requestedBundleId]);
   const isCurrent = (revision: number) => live.current && generation.current === revision;
   function invalidateAccount(expectedOwner?: string) {
     if (expectedOwner && ownerRef.current !== expectedOwner) return;
     ++generation.current; ownerRef.current = null; lastUsage.current = null; clearSessionSecrets();
-    if (live.current) { setOwner(null); setAccess([]); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setOrder(null); setPayment(null); setRedirectUrl(''); setCheckoutPending(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
+    if (live.current) { setOwner(null); setAccess([]); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setOrder(null); setPayment(null); setRedirectUrl(''); setCheckoutPending(false); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
   }
   function mergeUsage(snapshot: UsageSnapshot) {
     if (snapshot.customerId !== ownerRef.current || !live.current) return;
@@ -98,13 +101,13 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     (async () => {
       try {
         const id = await currentSession(); if (!isCurrent(revision)) return; remember(id);
-        try { const saved = sessionStorage.getItem(`pamofi.operation:customer:${id}:purchase-details`); if (saved) { const draft = JSON.parse(JSON.parse(saved).payload) as { bundleId: string; siteId: string; methodCode: string }; restoredMethod.current = draft.methodCode; setBundleId(draft.bundleId); setSiteId(draft.siteId); setMethodCode(draft.methodCode); setCheckoutPending(true); selectTab('purchase'); setMessage('Your unfinished checkout details were restored. Safely retry or check its verified status before starting another purchase.'); } } catch { /* Storage is required and checked before a new checkout request. */ }
+        try { const saved = sessionStorage.getItem(`pamofi.operation:customer:${id}:purchase-details`); if (saved) { const draft = JSON.parse(JSON.parse(saved).payload) as { bundleId: string; siteId: string; methodCode: string }; restoredMethod.current = draft.methodCode; setBundleId(draft.bundleId); setSiteId(draft.siteId); setMethodCode(draft.methodCode); setCheckoutPending(true); selectTab('purchase', draft.bundleId); setMessage('Your unfinished checkout details were restored. Safely retry or check its verified status before starting another purchase.'); void restoreSavedOrder(id, revision, draft.bundleId).catch(() => { if (isCurrent(revision)) setMessage('Your checkout is still saved. Its order could not be loaded. Retry the saved-order check before starting another payment.'); }); } } catch { /* Storage is required and checked before a new checkout request. */ }
         await refreshAccess();
       }
       catch (error) { if (!(error instanceof ApiError && error.status === 401) && isCurrent(revision)) setMessage(messageFor(error)); }
       finally { if (isCurrent(revision)) setLoading(false); }
     })();
-    Promise.all([api<{ sites: Site[] }>('/api/sites'), api<{ products: Product[] }>('/api/bundles')]).then(([locations, catalogue]) => { if (live.current) { setSites(locations.sites); setSiteId(value => value || locations.sites[0]?.id || ''); setProducts(catalogue.products); setBundleId(value => value || catalogue.products[0]?.id || ''); } }).catch(error => { if (live.current) setMessage(messageFor(error)); });
+    Promise.all([api<{ sites: Site[] }>('/api/sites'), api<{ products: Product[] }>('/api/bundles')]).then(([locations, catalogue]) => { if (live.current) { setSites(locations.sites); setSiteId(value => value || locations.sites[0]?.id || ''); setProducts(catalogue.products); setCatalogueLoaded(true); setBundleId(value => value || catalogue.products[0]?.id || ''); } }).catch(error => { if (live.current) setMessage(messageFor(error)); });
     const timer = setInterval(() => setNow(Date.now()), 5_000);
     return () => { live.current = false; ++generation.current; clearInterval(timer); };
   }, []);
@@ -142,7 +145,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       const result = await api<{ entitlementId: string; replayed: boolean }>('/api/vouchers/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
       if (!result.entitlementId) throw Error('invalid_redemption');
       if (!isCurrent(revision)) return;
-      setVoucherCode(''); setReceipt(null); setMessage(result.replayed ? 'This voucher was already redeemed into your account. Your existing bundle is shown below.' : 'Voucher redeemed. Your bundle is queued; time starts only after a successful hotspot connection.'); selectTab('access');
+      setVoucherCode(''); setReceipt(null); setRecoveryReminder(true); setMessage(result.replayed ? 'This voucher was already redeemed into your account. Your existing bundle is shown below.' : 'Voucher redeemed. Your bundle is queued; time starts only after a successful hotspot connection.'); selectTab('access');
       await refreshAccess(); await usage.refresh();
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'The voucher response could not be confirmed. Retrying the same voucher is safe and cannot create a second bundle.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
@@ -157,11 +160,46 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'The pairing could not be created or has expired. Try again to receive a fresh code.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
+  async function restoreSavedOrder(id: string, revision: number, originalBundle: string) {
+    // Read-only lookup. Never create an order or replay a provider payment merely
+    // because a page was restored, the catalogue changed, or checkout was paused.
+    const lookup = ++savedOrderLookup.current, orderKey = `pamofi.operation:customer:${id}:order:${originalBundle}`, detailsKey = `pamofi.operation:customer:${id}:purchase-details`;
+    const raw = sessionStorage.getItem(orderKey), details = sessionStorage.getItem(detailsKey);
+    const sameIntent = () => {
+      if (!isCurrent(revision) || ownerRef.current !== id || lookup !== savedOrderLookup.current) return false;
+      try { return sessionStorage.getItem(orderKey) === raw && sessionStorage.getItem(detailsKey) === details; } catch { return false; }
+    };
+    try {
+      if (!raw || !details) throw Error('saved_order_reference_missing');
+      const saved = JSON.parse(raw) as { key: string; payload: string };
+      const payload = JSON.parse(saved.payload) as { bundleId: string; mode: string };
+      if (!/^[A-Za-z0-9_-]{16,128}$/.test(saved.key) || payload.bundleId !== originalBundle || payload.mode !== 'checkout') throw Error('invalid_saved_order');
+      const result = await api<{ customerId: string; lookupKey?: string; orders: (Order & { purchase_mode?: string })[] }>(`/api/orders?requestKey=${encodeURIComponent(saved.key)}`);
+      // A slower lookup cannot replace a resolved or newer purchase, or overwrite
+      // a more recent recovery result from this same customer session.
+      if (!sameIntent()) return;
+      // The echo distinguishes exact lookup support from an older backend that
+      // ignores the query and returns an unrelated recent-order list.
+      if (result.customerId !== id || result.lookupKey !== saved.key || !Array.isArray(result.orders) || result.orders.length !== 1) throw Error('saved_order_not_confirmed');
+      const found = result.orders[0];
+      if (!/^[0-9a-f-]{36}$/i.test(found.id) || found.bundle_id !== originalBundle || found.purchase_mode !== 'checkout'
+        || !Number.isSafeInteger(found.price_minor) || found.price_minor < 1 || !/^[A-Z]{3}$/.test(found.currency) || !Number.isFinite(Date.parse(found.quote_expires_at))) throw Error('invalid_saved_order');
+      setOrder(found); setMessage('Your saved order was found. Check its verified payment status before paying again.');
+    } catch (error) { if (sameIntent()) throw error; }
+  }
+  async function restoreOrder() {
+    if (busy || !checkoutPending) return;
+    const revision = generation.current; setBusy(true); setMessage('');
+    try { const id = await identity(); await restoreSavedOrder(id, revision, bundleId); }
+    catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'The saved order could not be confirmed. Your original purchase details are preserved. Try checking again; do not start another payment.')); }
+    finally { if (isCurrent(revision)) setBusy(false); }
+  }
   async function checkPayment() {
     if (!order) return; const revision = generation.current; await identity();
     const result = await api<PaymentStatus>(`/api/orders/${order.id}/status`);
     if (isCurrent(revision)) {
       setOrder(result.order); setPayment(result);
+      if (result.fulfillmentState === 'fulfilled' && result.entitlementId) setRecoveryReminder(true);
       const settled = result.safeToRequote === true || ['fulfilled', 'reversed'].includes(result.fulfillmentState) || (result.fulfillmentState === 'unconfirmed' && result.attempts.length > 0 && result.attempts.every(attempt => ['failed', 'reversed'].includes(attempt.state)));
       if (settled && ownerRef.current) { finishMutation(`customer:${ownerRef.current}`, `order:${result.order.bundle_id}`); finishMutation(`customer:${ownerRef.current}`, `checkout:${result.order.id}`); finishMutation(`customer:${ownerRef.current}`, 'purchase-details'); setCheckoutPending(false); setRedirectUrl(''); }
       if (result.entitlementId || result.fulfillmentState === 'reversed' || result.fulfillmentState === 'pending_review') { setRedirectUrl(''); await refreshAccess(); await usage.refresh(); }
@@ -174,6 +212,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       const id = await identity();
       const result = await api<{ orderId: string; state: string; safeToRequote: boolean; replayed: boolean }>(`/api/orders/${order.id}/expire-unused`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       if (result.orderId !== order.id || result.state !== 'expired_unused' || result.safeToRequote !== true) throw Error('unverified_quote_expiry');
+      if (!isCurrent(revision) || ownerRef.current !== id) return;
       finishMutation(`customer:${id}`, `order:${order.bundle_id}`); finishMutation(`customer:${id}`, `checkout:${order.id}`); finishMutation(`customer:${id}`, 'purchase-details');
       if (isCurrent(revision)) { setCheckoutPending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setAgreed(false); restoredMethod.current = ''; setMessage('The service closed the expired unused quote and verified that no payment attempt exists. Review the current terms before preparing a fresh quote.'); }
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'Quote closure could not be verified. The original purchase details are preserved; retry this same closure or check payment status.')); }
@@ -257,6 +296,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     {loading && <div className="customer-loading" role="status"><span className="customer-loading-dot" />Checking your account…</div>}
     {message && <p className="feedback" role="status">{message}</p>}
     {!loading && !owner && <p className="notice customer-session-notice">No account is active in this browser. Buying, redeeming a voucher, or creating a private receipt starts a customer account. <button className="text-button" onClick={recovered}>Recover an existing account</button></p>}
+    {recoveryReminder && owner && tab !== 'recovery' && <aside className="notice customer-recovery-reminder"><strong>Keep access to your bundle.</strong><p>Save your account reference and recovery key before changing devices or clearing this browser.</p><button className="secondary" onClick={() => { setRecoveryReminder(false); selectTab('recovery'); }}>Review recovery & devices</button></aside>}
+    {catalogueLoaded && bundleId && !product && (tab === 'receipt' || tab === 'purchase') && <p className="notice" role="status">{checkoutPending || order ? 'This bundle is no longer published. Your saved purchase is preserved; check its verified status before paying again.' : 'The selected bundle is no longer published. Choose an available bundle before continuing.'}</p>}
     {checkoutPending && tab !== 'purchase' && <button className="customer-pending-checkout" onClick={() => selectTab('purchase')}><CustomerGlyph name="receipt" /><span><strong>Your checkout is saved</strong><small>Check its status before starting another payment.</small></span><CustomerGlyph name="arrow" /></button>}
 
     {tab === 'access' && <>
@@ -296,25 +337,26 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       <ol className="customer-steps"><li><span>1</span><div><strong>Choose your bundle</strong><small>Confirm the price with an authorized agent.</small></div></li><li><span>2</span><div><strong>Pair and pay</strong><small>Show your code, then pay the exact cash amount.</small></div></li><li><span>3</span><div><strong>Redeem and connect</strong><small>Use the voucher delivered privately to this page.</small></div></li></ol>
       {!capabilities.receiptPairing ? <p className="notice">Private receipt pairing is not enabled here yet.</p> : <><button className="primary" disabled={busy || (!!pairing && pairingState === 'pending' && Date.parse(pairing.expiresAt) > now)} onClick={pair}>Create private pairing code<CustomerGlyph name="arrow" /></button>{pairing && <div className="pairing-card"><span>SHOW THIS CODE TO YOUR AGENT</span><strong>{pairing.code}</strong><small>{pairingState === 'pending' && Date.parse(pairing.expiresAt) > now ? `Waiting for your receipt · expires ${localDate(pairing.expiresAt)}` : pairingState === 'ready' ? 'Receipt ready' : 'Pairing expired · create a new code'}</small></div>}</>}
       {receipt && <div className="private-receipt"><div className="customer-receipt-heading"><CustomerGlyph name="receipt" /><h4>{receipt.sale.simulation ? 'Demo receipt' : 'Your receipt'}</h4></div><p>{receipt.sale.siteName} · {receipt.sale.bundleId.toUpperCase()} · {money(receipt.sale.priceMinor, receipt.sale.currency)}</p><p>{Number(receipt.sale.byteLimit) / 1e9} GB · {receipt.sale.validitySeconds / 86400} days · Start by {localDate(receipt.sale.startBy)}</p><p className="cash-evidence">{cashDescription(receipt.sale.payment, receipt.sale.simulation)}</p><label>Private voucher<input readOnly value={receipt.voucher.code} autoComplete="off" /></label><button className="primary" disabled={busy || !capabilities.vouchers} onClick={() => redeem(undefined, receipt.voucher.code)}>Redeem this receipt's voucher</button><small>Receipt reference: {receipt.sale.id}</small></div>}
-    </section><aside className="workspace-card customer-order-summary"><span className="customer-record-icon"><CustomerGlyph name="wifi" /></span><div className="eyebrow">YOUR NEXT BUNDLE</div>{selectedBundle ? <><h3>{selectedBundle.id.toUpperCase()}</h3><strong className="customer-summary-data">{Number(selectedBundle.byte_limit) / 1e9}<small>GB</small></strong><p>{selectedBundle.validity_seconds / 86400} days after connection</p><div className="customer-summary-price"><span>Cash price</span><strong>{money(selectedBundle.price_minor, selectedBundle.currency)}</strong></div><small>Ask the agent for this published bundle. Check the issued receipt before redeeming.</small></> : <><h3>A little more online.</h3><p>Choose your bundle with the agent and check its price before you pay.</p>{onBuyData && <button className="secondary" onClick={onBuyData}>Explore bundles</button>}</>}<div className="customer-private-note"><CustomerGlyph name="shield" /><span>Your bundle time starts when you first connect.</span></div></aside></div>}
+    </section><aside className="workspace-card customer-order-summary"><span className="customer-record-icon"><CustomerGlyph name="wifi" /></span><div className="eyebrow">YOUR NEXT BUNDLE</div>{product ? <><h3>{product.id.toUpperCase()}</h3><strong className="customer-summary-data">{Number(product.byte_limit) / 1e9}<small>GB</small></strong><p>{product.validity_seconds / 86400} days after connection</p><div className="customer-summary-price"><span>Cash price</span><strong>{money(product.price_minor, product.currency)}</strong></div><small>Ask the agent for this published bundle. Check the issued receipt before redeeming.</small></> : <><h3>A little more online.</h3><p>Choose your bundle with the agent and check its price before you pay.</p>{onBuyData && <button className="secondary" onClick={onBuyData}>Explore bundles</button>}</>}<div className="customer-private-note"><CustomerGlyph name="shield" /><span>Your bundle time starts when you first connect.</span></div></aside></div>}
 
     {tab === 'purchase' && <section className="workspace-card customer-payment-card">
       {capabilities.staffSales && <div className="cash-path"><span className="customer-record-icon"><CustomerGlyph name="receipt" /></span><h3>Buy from an authorized agent</h3><ol><li>Choose your bundle and confirm its cash price with the agent.</li><li>Show your private pairing code, then pay the agreed cash amount.</li><li>Redeem the voucher in your receipt to add the queued data.</li></ol>{capabilities.receiptPairing && <button className="primary" onClick={() => selectTab('receipt')}>Get a private agent receipt</button>}<p>Time starts after a successful hotspot connection. A cash receipt alone does not connect your device.</p></div>}
       <div className="eyebrow">MORE WAYS TO CONNECT</div><h3>{capabilities.paymentMode === 'mock' ? 'Optional online payment simulation' : 'Online payment options'}</h3>
-      {!capabilities.paymentCheckout ? <><p className="notice">Online checkout is not enabled here. Use a voucher from an authorized agent when available.</p><div className="customer-provider-list" aria-label="Payment integrations awaiting activation"><span>EcoCash<small>Pending</small></span><span>InnBucks<small>Pending</small></span><span>Bank & card<small>Pending</small></span><span>Apple Pay<small>Pending</small></span><span>Google Pay<small>Pending</small></span></div></> : <>
-        <form className="form-grid" onSubmit={checkout}><fieldset disabled={busy || !!order || checkoutPending}><label>Purchase site<select required value={siteId} onChange={event => setSiteId(event.target.value)}><option value="">Choose a site</option>{sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><label>Bundle<select required value={bundleId} onChange={event => setBundleId(event.target.value)}><option value="">Choose a bundle</option>{products.map(item => <option key={item.id} value={item.id}>{item.id.toUpperCase()} · {money(item.price_minor, item.currency)}</option>)}</select></label>
+      {!capabilities.paymentCheckout ? <><p className="notice">Online checkout is not enabled here. Use a voucher from an authorized agent when available.</p><div className="customer-provider-list" aria-label="Payment integrations awaiting activation"><span>EcoCash<small>Pending</small></span><span>InnBucks<small>Pending</small></span><span>Bank & card<small>Pending</small></span></div></> : <>
+        <form className="form-grid" onSubmit={checkout}><fieldset disabled={busy || !!order || checkoutPending}><label>Purchase site<select required value={siteId} onChange={event => setSiteId(event.target.value)}><option value="">Choose a site</option>{sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><label>Bundle<select required value={bundleId} onChange={event => { setBundleId(event.target.value); onNavigate?.('purchase', event.target.value); }}><option value="">Choose a bundle</option>{products.map(item => <option key={item.id} value={item.id}>{item.id.toUpperCase()} · {money(item.price_minor, item.currency)}</option>)}</select></label>
           {product && <div className="summary-tile"><strong>{money(product.price_minor, product.currency)}</strong><span>{Number(product.byte_limit) / 1e9} GB · {product.validity_seconds / 86400} days · One active connection</span></div>}
           <label>Payment method<select required disabled={methodsLoading} value={methodCode} onChange={event => setMethodCode(event.target.value)}><option value="">{methodsLoading ? 'Checking payment methods…' : 'Choose an enabled method'}</option>{methods.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select></label>{method && <small>Provider limits: {money(method.minMinor, method.currency)} to {money(method.maxMinor, method.currency)}.</small>}
         </fieldset><label className="check-label"><input type="checkbox" required checked={agreed} onChange={event => setAgreed(event.target.checked)} disabled={busy} />I have reviewed the price, allowance, and validity. {capabilities.paymentMode === 'mock' ? 'This is a simulation.' : 'Payment confirmation does not mean I am connected.'}</label><button className="primary" disabled={busy || !methodEligible || !agreed || (!!payment && (payment.fulfillmentState !== 'unconfirmed' || payment.safeToRequote === true))}>{order || checkoutPending ? 'Retry this checkout safely' : 'Prepare checkout'}</button></form>
         {!methodsLoading && methods.length === 0 && <p>No configured payment method is available for this bundle and site.</p>}
         {redirectUrl && <a className="primary button-link" href={redirectUrl} target="_blank" rel="noopener noreferrer">Continue to payment provider ↗</a>}
+      </>}
+      {checkoutPending && !order && <div className="notice customer-saved-order"><h4>Check your saved purchase</h4><p>Its status can be checked even if the bundle or payment method is no longer offered. This check does not start a payment.</p><button className="secondary" disabled={busy} onClick={restoreOrder}>Check saved checkout status</button></div>}
         {order && <div className={`payment-status customer-payment-status ${paymentVerified ? 'is-confirmed' : payment?.fulfillmentState === 'reversed' || paymentFailed ? 'is-reversed' : ''}`}><span className="customer-status-tag">{paymentLabel}</span><h4>Order {order.id.slice(0, 8)}</h4><p>{money(order.price_minor, order.currency)} · Quote expires {localDate(order.quote_expires_at)}</p><button className="secondary" disabled={busy} onClick={check}>Check verified payment status</button>
           {capabilities.paymentMode === 'mock' && <div className="purchase-actions"><button className="secondary" disabled={busy} onClick={() => mock('success')}>Simulate successful payment</button><button className="secondary" disabled={busy} onClick={() => mock('failed')}>Simulate failed payment</button></div>}
           {payment && <p role="status">{payment.safeToRequote === true ? 'Expired unused quote closed. No provider payment was initiated for this order.' : paymentVerified ? `${payment.simulation ? 'Simulated payment' : 'Payment'} verified. Your bundle is queued; internet connection is not yet confirmed.` : payment.fulfillmentState === 'reversed' ? 'Payment reversed. This purchase no longer provides usable access.' : payment.fulfillmentState === 'pending_review' ? 'Payment needs review. Do not pay again while the previous charge and accounted usage are being reconciled.' : `Payment not confirmed. ${payment.attempts.map(attempt => attempt.state.replace(/_/g, ' ')).join(', ') || 'Waiting for a verified provider result.'}`}</p>}
           {(!payment || payment.fulfillmentState === 'unconfirmed') && payment?.safeToRequote !== true && <div className="quote-expiry"><p>If this quote expired before a payment was attempted, the service can close it safely. This does not cancel, reverse or restart an existing provider payment.</p><button className="secondary" disabled={busy} onClick={expireUnusedQuote}>Close an expired unused quote</button></div>}
           {paymentSettled && <button className="secondary" disabled={busy} onClick={() => { setOrder(null); setPayment(null); setRedirectUrl(''); setAgreed(false); restoredMethod.current = ''; setMessage('Choose the terms for a new purchase.'); }}>{payment.safeToRequote === true ? 'Review a fresh quote' : 'Review another bundle'}</button>}
         </div>}
-      </>}
     </section>}
 
     {tab === 'recovery' && <>

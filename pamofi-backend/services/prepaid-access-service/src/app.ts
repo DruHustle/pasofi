@@ -61,10 +61,21 @@ export function buildApp() {
     return data.customerId;
   }
   function originAllowed(request: FastifyRequest) { return !!process.env.PUBLIC_ORIGIN && request.headers.origin === process.env.PUBLIC_ORIGIN; }
-  app.get('/v1/orders', async (request, reply) => {
+  app.get<{Querystring:{requestKey?:string}}>('/v1/orders', {
+    schema:{querystring:{type:'object',additionalProperties:false,properties:{
+      requestKey:{type:'string',minLength:16,maxLength:128,pattern:'^[A-Za-z0-9_-]{16,128}$'}
+    }}}
+  }, async (request, reply) => {
     if (!pool) return reply.code(503).send({ error:'unavailable' });
     try {
       const id = await customer(request); if (!id) return reply.code(401).send({ error:'not_authenticated' });
+      const {requestKey}=request.query;
+      if(requestKey!==undefined){
+        // Recover only this customer's original quote, even if its bundle or
+        // checkout is now unavailable. A lookup never creates or retries payment.
+        const rows=await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode FROM purchase_orders WHERE customer_id=$1 AND idempotency_key=$2 LIMIT 1',[id,requestKey]);
+        return {customerId:id,lookupKey:requestKey,orders:rows.rows};
+      }
       const rows = await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode FROM purchase_orders WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 100',[id]);
       return { customerId:id,orders:rows.rows };
     } catch { return reply.code(503).send({error:'unavailable'}); }

@@ -15,14 +15,137 @@ const origin='http://localhost:5173';
 async function setup(options={}){
  const pool=new pg.Pool({connectionString:url,max:10}),site=randomUUID(),otherSite=randomUUID(),customer=randomUUID(),otherCustomer=randomUUID(),admin=randomUUID(),agent=randomUUID(),otherAgent=randomUUID(),support=randomUUID();
  const staff={admin:{staffId:admin,role:'admin',siteIds:[],version:1,mfaVerified:true},agent:{staffId:agent,role:'agent',siteIds:[site],version:1,mfaVerified:true},other:{staffId:otherAgent,role:'agent',siteIds:[site,otherSite],version:1,mfaVerified:true},support:{staffId:support,role:'support',siteIds:[site],version:1,mfaVerified:true}};
- const server=createServer(async(req,res)=>{try{const {payload}=await jwtVerify((req.headers.authorization??'').replace(/^Bearer /,''),new TextEncoder().encode(identitySecret),{issuer:'prepaid-access',subject:'prepaid-access',audience:'identity'});const cookie=req.headers.cookie??'';let result;if(req.url==='/internal/v1/session'&&payload.scope==='identity:resolve'){if(!cookie.includes('customer=')){res.writeHead(401);res.end('{}');return;}result={customerId:cookie.includes('customer=other')?otherCustomer:customer};}else if(req.url==='/internal/v1/staff/session'&&payload.scope==='staff:resolve'){const name=/staff=([^;]+)/.exec(cookie)?.[1];if(name==='pending'){res.writeHead(403);res.end('{}');return;}result=staff[name];if(!result){res.writeHead(401);res.end('{}');return;}}else if(req.url?.startsWith('/internal/v1/staff/users/')&&payload.scope==='staff:read'){const id=req.url.split('/').at(-1),found=Object.values(staff).find(s=>s.staffId===id);if(!found){res.writeHead(404);res.end('{}');return;}result={...found,status:'approved'};}else throw Error();res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(result));}catch{res.writeHead(401);res.end('{}');}});
+ const targetIdentity={response:null,requests:0};
+ const server=createServer(async(req,res)=>{try{
+  const {payload}=await jwtVerify((req.headers.authorization??'').replace(/^Bearer /,''),new TextEncoder().encode(identitySecret),{issuer:'prepaid-access',subject:'prepaid-access',audience:'identity'}),cookie=req.headers.cookie??'';let result;
+  if(req.url==='/internal/v1/session'&&payload.scope==='identity:resolve'){
+   if(!cookie.includes('customer=')){res.writeHead(401);res.end('{}');return;}result={customerId:cookie.includes('customer=other')?otherCustomer:customer};
+  }else if(req.url==='/internal/v1/staff/session'&&payload.scope==='staff:resolve'){
+   const name=/staff=([^;]+)/.exec(cookie)?.[1];if(name==='pending'){res.writeHead(403);res.end('{}');return;}result=staff[name];if(!result){res.writeHead(401);res.end('{}');return;}
+  }else if(req.url?.startsWith('/internal/v1/staff/users/')&&payload.scope==='staff:read'){
+   ++targetIdentity.requests;if(targetIdentity.response){res.writeHead(targetIdentity.response.status,{'content-type':'application/json'});res.end(JSON.stringify(targetIdentity.response.body));return;}
+   const id=req.url.split('/').at(-1),found=Object.values(staff).find(s=>s.staffId===id);if(!found){res.writeHead(404);res.end('{}');return;}result={...found,status:found.status??'approved'};
+  }else throw Error();
+  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(result));
+ }catch{res.writeHead(401);res.end('{}');}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
- const env={DATABASE_URL:url,APP_ENV:'demo',NODE_ENV:'development',IDENTITY_URL:`http://127.0.0.1:${server.address().port}`,INTERNAL_IDENTITY_SECRET:identitySecret,INTERNAL_DELIVERY_SECRET:deliverySecret,PUBLIC_ORIGIN:origin,PAMOFI_COMMERCE_ENABLED:'true',VOUCHER_DELIVERY_ACTIVE_KEY_ID:'v1',VOUCHER_DELIVERY_KEYS_JSON:JSON.stringify({v1:randomBytes(32).toString('base64')}),PAMOFI_AGENT_COMMISSION_BPS:'1000',PAMOFI_PAYMENTS_ENABLED:'true',PAMOFI_PAYMENT_MODE:'mock',PAYMENT_RECONCILIATION_WORKER_ENABLED:'false',PAMOFI_SMS_DELIVERY_ENABLED:'false'};
+ const env={DATABASE_URL:url,APP_ENV:'demo',NODE_ENV:'development',IDENTITY_URL:`http://127.0.0.1:${server.address().port}`,INTERNAL_IDENTITY_SECRET:identitySecret,INTERNAL_DELIVERY_SECRET:deliverySecret,PUBLIC_ORIGIN:origin,PAMOFI_COMMERCE_ENABLED:'true',VOUCHER_DELIVERY_ACTIVE_KEY_ID:'v1',VOUCHER_DELIVERY_KEYS_JSON:JSON.stringify({v1:randomBytes(32).toString('base64')}),PAMOFI_AGENT_COMMISSION_BPS:'1000',PAMOFI_PAYMENTS_ENABLED:'true',PAMOFI_PAYMENT_MODE:'mock',PAYMENT_RECONCILIATION_WORKER_ENABLED:'false',PAMOFI_SMS_DELIVERY_ENABLED:'false',...(options.env??{})};
  const saved=Object.fromEntries(Object.keys(env).map(k=>[k,process.env[k]]));Object.assign(process.env,env);const app=buildApp();
  const call=(method,path,body,who='admin',key=randomUUID())=>app.inject({method,url:path,headers:{origin,cookie:who.startsWith('customer')?`customer=${who==='customer2'?'other':'main'}`:`staff=${who}`,'idempotency-key':key},...(body===undefined?{}:{payload:body})});
  async function cleanup(){await app.close();await new Promise(resolve=>server.close(resolve));await pool.query('DELETE FROM commerce_audit WHERE actor_id=ANY($1::uuid[])',[[admin,agent,otherAgent,support]]);await pool.query('DELETE FROM receipt_pairings WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM access_grants WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM payment_reviews WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM verified_charges WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_entitlements WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM provider_payment_attempts WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM event_outbox WHERE aggregate_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM agent_sale_deliveries WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM issued_vouchers WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM agent_sales WHERE agent_id=ANY($1::uuid[])',[[agent,otherAgent]]);await pool.query('DELETE FROM inventory_allocations WHERE actor_id=$1',[admin]);await pool.query('DELETE FROM agent_site_inventory WHERE site_id=ANY($1::uuid[])',[[site,otherSite]]);await pool.query('DELETE FROM sales_locations WHERE id=ANY($1::uuid[])',[[site,otherSite]]);await pool.end();for(const [k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
- await call('POST','/v1/admin/sites',{id:site,name:options.siteName??'Test site one'});await call('POST','/v1/admin/sites',{id:otherSite,name:'Test site two'});return {pool,app,call,cleanup,site,otherSite,customer,otherCustomer,admin,agent,otherAgent,support};
+ await call('POST','/v1/admin/sites',{id:site,name:options.siteName??'Test site one'});await call('POST','/v1/admin/sites',{id:otherSite,name:'Test site two'});return {pool,app,call,cleanup,site,otherSite,customer,otherCustomer,admin,agent,otherAgent,support,staff,targetIdentity};
 }
+test('administrators can prepare sites and catalogue while commerce stays closed',{skip:!url},async()=>{
+ const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false',PAMOFI_PAYMENTS_ENABLED:'false',VOUCHER_DELIVERY_KEYS_JSON:''}}),bundleId=`setup-${randomUUID().slice(0,8)}`;
+ try{
+  const capabilities=(await f.app.inject({url:'/v1/capabilities'})).json();
+  for(const capability of ['staffSales','vouchers','receiptPairing','paymentCheckout'])assert.equal(capabilities[capability],false);
+  assert.equal((await f.call('GET','/v1/staff/sites')).statusCode,200);
+  assert.equal((await f.call('GET','/v1/staff/inventory')).statusCode,200);
+  assert.equal((await f.call('GET','/v1/admin/bundles')).statusCode,200);
+  assert.equal((await f.app.inject({url:'/v1/admin/bundles'})).statusCode,401);
+  assert.equal((await f.call('GET','/v1/admin/bundles',undefined,'pending')).statusCode,403);
+  assert.equal((await f.call('GET','/v1/admin/bundles',undefined,'agent')).statusCode,403);
+  assert.equal((await f.call('GET','/v1/staff/inventory',undefined,'support')).statusCode,403);
+  f.staff.admin.mfaVerified=false;
+  assert.equal((await f.call('GET','/v1/admin/bundles')).statusCode,503);
+  f.staff.admin.mfaVerified=true;
+  const draft={id:bundleId,priceMinor:150,currency:'USD',byteLimit:'3000000000',validitySeconds:86400,published:false,reason:'Reviewed draft for isolated setup test'};
+  assert.equal((await f.app.inject({method:'POST',url:'/v1/admin/bundles',headers:{origin:'https://foreign.example',cookie:'staff=admin'},payload:draft})).statusCode,403);
+  assert.equal((await f.call('POST','/v1/admin/bundles',draft,'agent')).statusCode,403);
+  const created=await f.call('POST','/v1/admin/bundles',draft);assert.equal(created.statusCode,201);assert.equal(created.json().product.published,false);
+  assert.equal((await f.app.inject({url:'/v1/bundles'})).json().products.some(item=>item.id===bundleId),false);
+  assert.equal((await f.call('PATCH',`/v1/admin/bundles/${bundleId}`,{published:true,reason:'Reviewed publication for setup test'})).statusCode,200);
+  assert.equal((await f.app.inject({url:'/v1/bundles'})).json().products.some(item=>item.id===bundleId),true);
+  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId,quantity:1,reason:'Stock must remain disabled'})).statusCode,404);
+  assert.equal((await f.call('POST','/v1/staff/sales',{},'agent')).statusCode,404);
+  assert.equal((await f.call('POST','/v1/receipt-pairings',{},'customer')).statusCode,404);
+  assert.equal((await f.call('POST','/v1/vouchers/redeem',{code:'ABCD-EFGH-JKLM-2345'},'customer')).statusCode,404);
+  const after=(await f.app.inject({url:'/v1/capabilities'})).json();assert.equal(after.staffSales,false);assert.equal(after.vouchers,false);
+ }finally{await f.pool.query('DELETE FROM bundle_versions WHERE id=$1',[bundleId]);await f.cleanup();}
+});
+test('allocation replay survives target changes and new rejected allocations do not change inventory',{skip:!url},async()=>{
+ const f=await setup();try{
+  const body={agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:2,reason:'Stock for an isolated replay test'},key=randomUUID();
+  const original=await f.call('POST','/v1/admin/inventory/allocations',body,'admin',key);assert.equal(original.statusCode,201);
+  f.staff.agent.status='disabled';f.staff.agent.siteIds=[];
+  const replay=await f.call('POST','/v1/admin/inventory/allocations',body,'admin',key);
+  assert.equal(replay.statusCode,200);assert.equal(replay.json().allocationId,original.json().allocationId);assert.equal(replay.json().replayed,true);
+  const newRequest=await f.call('POST','/v1/admin/inventory/allocations',body);
+  assert.equal(newRequest.statusCode,409);assert.equal(newRequest.json().error,'allocation_agent_not_eligible');
+  const conflict=await f.call('POST','/v1/admin/inventory/allocations',{...body,quantity:3},'admin',key);
+  assert.equal(conflict.statusCode,409);assert.equal(conflict.json().error,'idempotency_conflict');
+  f.staff.agent.status='approved';f.staff.agent.siteIds=[f.site];
+  const unavailable=await f.call('POST','/v1/admin/inventory/allocations',{...body,bundleId:'not-published-for-test'});
+  assert.equal(unavailable.statusCode,409);assert.equal(unavailable.json().error,'site_or_bundle_unavailable');
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM inventory_allocations WHERE actor_id=$1',[f.admin])).rows[0].n,1);
+  assert.equal((await f.pool.query('SELECT quantity FROM agent_site_inventory WHERE agent_id=$1 AND site_id=$2 AND bundle_id=$3',[f.agent,f.site,'mini'])).rows[0].quantity,2);
+ }finally{await f.cleanup();}
+});
+test('allocation identity outages never claim ineligibility and committed retries bypass target lookups',{skip:!url},async()=>{
+ const f=await setup();try{
+  const body={agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:2,reason:'Stock for isolated identity fault testing'},committedKey=randomUUID(),pendingKey=randomUUID();
+  const committed=await f.call('POST','/v1/admin/inventory/allocations',body,'admin',committedKey);assert.equal(committed.statusCode,201);
+  const validTarget={...f.staff.agent,status:'approved'};
+  const failures=[
+   ...[401,403,503].map(status=>({status,body:{error:'identity_unavailable'}})),
+   {status:200,body:{}},
+   {status:200,body:{...validTarget,staffId:f.otherAgent}},
+   {status:200,body:{...validTarget,siteIds:['invalid-site']}},
+   {status:200,body:{...validTarget,status:'unknown'}},
+   {status:200,body:{...validTarget,status:['approved']}},
+   {status:200,body:{...validTarget,role:['agent']}},
+   {status:200,body:{...validTarget,version:null}},
+  ];
+  for(const failure of failures){
+   f.targetIdentity.response=failure;
+   const rejected=await f.call('POST','/v1/admin/inventory/allocations',body,'admin',pendingKey);
+   assert.equal(rejected.statusCode,503);assert.equal(rejected.json().error,'unavailable');
+   const requests=f.targetIdentity.requests,replay=await f.call('POST','/v1/admin/inventory/allocations',body,'admin',committedKey);
+   assert.equal(replay.statusCode,200);assert.equal(replay.json().allocationId,committed.json().allocationId);assert.equal(replay.json().replayed,true);assert.equal(f.targetIdentity.requests,requests);
+  }
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM inventory_allocations WHERE actor_id=$1',[f.admin])).rows[0].n,1);
+  assert.equal((await f.pool.query('SELECT quantity FROM agent_site_inventory WHERE agent_id=$1 AND site_id=$2 AND bundle_id=$3',[f.agent,f.site,'mini'])).rows[0].quantity,2);
+  f.targetIdentity.response=null;
+  const recovered=await f.call('POST','/v1/admin/inventory/allocations',body,'admin',pendingKey);assert.equal(recovered.statusCode,201);
+  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',body,'admin',pendingKey)).json().allocationId,recovered.json().allocationId);
+  assert.equal((await f.pool.query('SELECT quantity FROM agent_site_inventory WHERE agent_id=$1 AND site_id=$2 AND bundle_id=$3',[f.agent,f.site,'mini'])).rows[0].quantity,4);
+ }finally{await f.cleanup();}
+});
+test('saved order lookup is exact, owner-scoped and read-only while checkout and its bundle are unavailable',{skip:!url},async()=>{
+ const f=await setup({env:{PAMOFI_PAYMENTS_ENABLED:'false',PAMOFI_COMMERCE_ENABLED:'false'}}),bundleId=`lookup-${randomUUID().slice(0,8)}`;
+ try{
+  const draft={id:bundleId,priceMinor:150,currency:'USD',byteLimit:'3000000000',validitySeconds:86400,published:false,reason:'Unpublished historical quote lookup test'};
+  assert.equal((await f.call('POST','/v1/admin/bundles',draft)).statusCode,201);
+  const firstKey=randomUUID(),secondKey=randomUUID(),firstId=randomUUID(),secondId=randomUUID(),otherId=randomUUID();
+  for(const [id,owner,key]of[[firstId,f.customer,firstKey],[secondId,f.customer,secondKey],[otherId,f.otherCustomer,firstKey]]){
+   await f.pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at,purchase_mode) SELECT $1,$2,$3,id,price_minor,currency,byte_limit,validity_seconds,'awaiting_payment',now()-interval '1 minute','checkout' FROM bundle_versions WHERE id=$4",[id,owner,key,bundleId]);
+  }
+  assert.equal((await f.app.inject({url:'/v1/capabilities'})).json().paymentCheckout,false);
+  assert.equal((await f.app.inject({url:'/v1/bundles'})).json().products.some(product=>product.id===bundleId),false);
+  const owned=await f.call('GET',`/v1/orders?requestKey=${firstKey}`,undefined,'customer');
+  assert.equal(owned.statusCode,200);assert.equal(owned.headers['cache-control'],'no-store');
+  assert.equal(owned.json().customerId,f.customer);assert.equal(owned.json().lookupKey,firstKey);assert.deepEqual(owned.json().orders.map(order=>order.id),[firstId]);assert.equal(owned.json().orders[0].bundle_id,bundleId);
+  const other=await f.call('GET',`/v1/orders?requestKey=${firstKey}`,undefined,'customer2');
+  assert.equal(other.json().customerId,f.otherCustomer);assert.equal(other.json().lookupKey,firstKey);assert.deepEqual(other.json().orders.map(order=>order.id),[otherId]);
+  const excluded=await f.call('GET',`/v1/orders?requestKey=${secondKey}`,undefined,'customer2');
+  assert.deepEqual(excluded.json(),{customerId:f.otherCustomer,lookupKey:secondKey,orders:[]});
+  for(const key of[randomUUID(),'a'.repeat(16),'z'.repeat(128)]){
+   const missing=await f.call('GET',`/v1/orders?requestKey=${key}`,undefined,'customer');
+   assert.equal(missing.statusCode,200);assert.deepEqual(missing.json(),{customerId:f.customer,lookupKey:key,orders:[]});
+  }
+  assert.equal((await f.app.inject({url:`/v1/orders?requestKey=${firstKey}`})).statusCode,401);
+  for(const key of['','short','a'.repeat(15),'a'.repeat(129),'a'.repeat(16)+'!'])assert.equal((await f.call('GET',`/v1/orders?requestKey=${encodeURIComponent(key)}`,undefined,'customer')).statusCode,400);
+  assert.equal((await f.call('GET',`/v1/orders?requestKey=${firstKey}&requestKey=${secondKey}`,undefined,'customer')).statusCode,400);
+  const legacy=(await f.call('GET','/v1/orders',undefined,'customer')).json();
+  assert.equal(legacy.customerId,f.customer);assert.equal(Object.hasOwn(legacy,'lookupKey'),false);assert.deepEqual(legacy.orders.map(order=>order.id).sort(),[firstId,secondId].sort());
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[f.customer,f.otherCustomer]])).rows[0].n,3);
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM provider_payment_attempts WHERE customer_id=ANY($1::uuid[])',[[f.customer,f.otherCustomer]])).rows[0].n,0);
+ }finally{
+  await f.pool.query('DELETE FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[f.customer,f.otherCustomer]]);
+  await f.pool.query('DELETE FROM bundle_versions WHERE id=$1',[bundleId]);await f.cleanup();
+ }
+});
 test('approved roles and site scopes protect inventory, immutable sales and private receipt redemption',{skip:!url},async()=>{
  const f=await setup();try{
   assert.equal((await f.app.inject({url:'/v1/staff/inventory'})).statusCode,401);
