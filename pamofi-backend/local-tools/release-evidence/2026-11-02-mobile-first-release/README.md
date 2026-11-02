@@ -1,5 +1,7 @@
 # Mobile-first production release — 2 November 2026
 
+The subsequent [availability release](../2026-11-02-availability-release/README.md) supersedes the website deployment and rollback references below.
+
 This record distinguishes the live guest checks from isolated tests. It does not certify that PamoFi is ready to sell or deliver Wi-Fi.
 
 ## Production deployment
