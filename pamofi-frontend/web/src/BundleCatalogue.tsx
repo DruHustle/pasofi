@@ -20,9 +20,9 @@ export function bundleDuration(seconds: number) {
   const amount = seconds / (unit === 'day' ? 86400 : unit === 'hour' ? 3600 : 60);
   return `${Number(amount.toFixed(2))} ${unit}${amount === 1 ? '' : 's'}`;
 }
-export default function BundleCatalogue({ bundles, demo, capabilities, error, retry, choose, help }: {
+export default function BundleCatalogue({ bundles, demo, capabilities, error, retry, refreshAvailability, choose, help }: {
   bundles: Product[] | null; demo: boolean; capabilities: Capabilities | null; error: boolean;
-  retry: () => void; choose: (bundle: Product, button: HTMLButtonElement) => void; help: () => void;
+  retry: () => void; refreshAvailability: () => void; choose: (bundle: Product, button: HTMLButtonElement) => void; help: () => void;
 }) {
   const [filter, setFilter] = useState('all');
   const available = filters.filter(f => f.id === 'all' || bundles?.some(f.matches));
@@ -31,12 +31,12 @@ export default function BundleCatalogue({ bundles, demo, capabilities, error, re
   const visible = bundles?.filter(selected.matches) ?? [];
   const availableToBuy = demo || capabilities?.staffSales || capabilities?.paymentCheckout;
   return <section className="pf-catalogue" id="explore" aria-labelledby="catalogue-heading" tabIndex={-1}>
-    <div className="pf-section-heading"><div><span className="pf-eyebrow">A LITTLE MORE FREEDOM</span><h2 id="catalogue-heading">Find your fit.</h2><p>Pick your data. Make more of your day.</p></div><button className="pf-text-link" onClick={help}>Help & FAQs <Icon name="arrow"/></button></div>
+    <div className="pf-section-heading"><div><span className="pf-eyebrow">A LITTLE MORE FREEDOM</span><h2 id="catalogue-heading" tabIndex={-1}>Find your fit.</h2><p>Pick your data. Make more of your day.</p></div><button className="pf-text-link" onClick={help}>Help & FAQs <Icon name="arrow"/></button></div>
     <div className="pf-filter-row" role="group" aria-label="Bundle duration">{available.map(f => <button key={f.id} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</button>)}</div>
     <div className="pf-catalogue-caption"><span>{demo ? 'Candidate bundles · demo only' : 'Published bundles'}</span><span>Data + time · Pay once</span></div>
     {error ? <div className="pf-empty" role="status"><span className="pf-empty-icon"><Icon name="wifi"/></span><h3>Let’s try that again.</h3><p>Bundle information is temporarily unavailable.</p><button className="pf-button pf-button-secondary" onClick={retry}>Retry bundles</button></div>
       : bundles === null ? <div className="pf-bundle-grid" role="status" aria-label="Loading bundle information"><span className="pf-sr-only">Loading bundle information…</span>{[1, 2, 3].map(i => <div key={i} className="pf-bundle-skeleton" aria-hidden="true"><span/><span/><span/></div>)}</div>
-      : bundles.length === 0 ? <div className="pf-empty"><span className="pf-empty-icon"><Icon name="grid"/></span><h3>More connection is on the way.</h3><p role="status">No bundles are published yet. Check back when PamoFi launches.</p><button className="pf-button pf-button-secondary" onClick={help}>Explore help <Icon name="arrow"/></button></div>
+      : bundles.length === 0 ? <div className="pf-empty"><span className="pf-empty-icon"><Icon name="grid"/></span><h3>More connection is on the way.</h3><p role="status">No bundles are published yet. Check back when PamoFi launches.</p><div className="purchase-actions"><button className="pf-button pf-button-secondary" onClick={refreshAvailability}>Refresh availability</button><button className="pf-button pf-button-secondary" onClick={help}>Explore help <Icon name="arrow"/></button></div></div>
       : <div className="pf-bundle-grid">{visible.map(bundle => {
         const data = bundleData(bundle.byte_limit), featured = bundle.id === 'flex';
         const label = demo ? `Try ${bundle.id} demo bundle` : capabilities?.staffSales ? `Buy ${bundle.id} from an agent` : capabilities?.paymentCheckout ? `Review ${bundle.id} bundle` : `${bundle.id} purchasing is not available`;
