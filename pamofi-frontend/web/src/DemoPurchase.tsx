@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { RecoverySetup } from './Recovery';
+import { ensureSession } from './session';
 type Bundle = {id:string;price_minor:number;currency:string;byte_limit:string;validity_seconds:number};
 type Order = {id:string;bundle_id:string;price_minor:number;currency:string;status:string;quote_expires_at:string};
 type Entitlement = {id:string;bundle_id:string;byte_limit:string;activated_at:string|null;revoked_at:string|null;start_by:string};
 async function api(path:string, init?:RequestInit) { const r=await fetch(path,{...init,credentials:'same-origin'}); if(!r.ok) throw Error(`request_${r.status}`); return r.json(); }
-async function session() { const r=await fetch('/api/session',{credentials:'same-origin'}); if(r.status===401) await api('/api/session',{method:'POST'}); else if(!r.ok) throw Error('identity_unavailable'); }
+const session = ensureSession;
 export default function DemoPurchase({bundle,close}:{bundle:Bundle|null;close:()=>void}) {
   const heading=useRef<HTMLHeadingElement>(null);
   useEffect(()=>{heading.current?.focus();},[]);

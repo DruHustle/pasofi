@@ -1,7 +1,7 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import pg from 'pg';
 import { jwtVerify } from 'jose';
 const { Pool } = pg;
@@ -48,6 +48,7 @@ export function buildApp() {
     } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
   app.get('/v1/session', async (request, reply) => {
+    reply.header('Cache-Control','no-store');
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
     try { const customerId = await current(request); return customerId ? { customerId } : reply.code(401).send({ error: 'not_authenticated' }); }
     catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
@@ -109,22 +110,41 @@ export function buildApp() {
     } catch {return reply.code(503).send({error:'identity_unavailable'});}
   });
   app.post('/v1/session', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply: FastifyReply) => {
+    reply.header('Cache-Control','no-store');
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
     if (request.headers.origin !== origin) return reply.code(403).send({ error: 'origin_rejected' });
     try {
       const existing = await current(request);
       if (existing) return { customerId: existing };
-      const token = randomBytes(32).toString('base64url');
-      const id = randomUUID();
+      const key = request.headers['idempotency-key'];
+      if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(key) || Buffer.from(key,'base64url').toString('base64url') !== key) return reply.code(400).send({error:'invalid_idempotency_key'});
+      const secret=process.env.SESSION_CREATION_SECRET;
+      if (!secret || Buffer.byteLength(secret)<32 || (!demo && secret.startsWith('DEMO_ONLY_'))) return reply.code(503).send({error:'identity_unavailable'});
+      const requestHash=createHash('sha256').update('pamofi-session-request\0').update(key).digest();
+      const token=createHmac('sha256',secret).update('pamofi-session-token\0').update(key).digest('base64url');
+      const hashedToken=tokenHash(token);
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[requestHash.toString('hex')]);
+        const previous=await client.query(`SELECT s.customer_id,s.token_hash,s.revoked_at,s.expires_at>now() AS session_valid,c.expires_at>now() AS retry_valid
+          FROM customer_session_creations c JOIN customer_sessions s ON s.token_hash=c.session_token_hash WHERE c.request_hash=$1 FOR UPDATE OF c,s`,[requestHash]);
+        if(previous.rowCount){
+          const row=previous.rows[0];
+          if(row.revoked_at || !row.session_valid || !row.retry_valid){await client.query('ROLLBACK');return reply.code(409).send({error:'session_retry_expired'});}
+          if(!timingSafeEqual(hashedToken,row.token_hash)){await client.query('ROLLBACK');return reply.code(503).send({error:'identity_unavailable'});}
+          await client.query('COMMIT');
+          reply.setCookie(cookieName,token,{path:'/',httpOnly:true,secure:!demo,sameSite:'lax',maxAge:30*86400});
+          return {customerId:row.customer_id};
+        }
+        const id=randomUUID();
         await client.query('INSERT INTO customers (id) VALUES ($1)', [id]);
-        await client.query("INSERT INTO customer_sessions (token_hash, customer_id, expires_at) VALUES ($1, $2, now() + interval '30 days')", [tokenHash(token), id]);
+        await client.query("INSERT INTO customer_sessions (token_hash, customer_id, expires_at) VALUES ($1, $2, now() + interval '30 days')", [hashedToken,id]);
+        await client.query('INSERT INTO customer_session_creations(request_hash,session_token_hash) VALUES ($1,$2)',[requestHash,hashedToken]);
         await client.query('COMMIT');
+        reply.setCookie(cookieName,token,{path:'/',httpOnly:true,secure:!demo,sameSite:'lax',maxAge:30*86400});
+        return reply.code(201).send({customerId:id});
       } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
-      reply.setCookie(cookieName, token, { path: '/', httpOnly: true, secure: !demo, sameSite: 'lax', maxAge: 30 * 86400 });
-      return reply.code(201).send({ customerId: id });
     } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
   return app;

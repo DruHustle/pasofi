@@ -40,6 +40,7 @@ services:
       NODE_ENV: production
       PUBLIC_ORIGIN: https://pamofi.vercel.app
       INTERNAL_IDENTITY_SECRET: ${INTERNAL_IDENTITY_SECRET:?required}
+      SESSION_CREATION_SECRET: ${SESSION_CREATION_SECRET:?required}
     depends_on:
       postgres: {condition: service_healthy}
   prepaid-access:

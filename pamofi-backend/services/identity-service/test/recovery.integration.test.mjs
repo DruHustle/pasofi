@@ -5,10 +5,10 @@ import pg from 'pg';
 import { buildApp } from '../dist/app.js';
 const url=process.env.PAMOFI_TEST_DATABASE_URL, origin='http://localhost:5173';
 test('recovery requires reference and key, restores ownership, and rotates without races',{skip:!url},async()=>{
- process.env.DATABASE_URL=url;process.env.APP_ENV='demo';process.env.NODE_ENV='development';process.env.PUBLIC_ORIGIN=origin;
+ process.env.DATABASE_URL=url;process.env.APP_ENV='demo';process.env.NODE_ENV='development';process.env.PUBLIC_ORIGIN=origin;process.env.SESSION_CREATION_SECRET='DEMO_ONLY_insecure_local_session_creation_secret_123456789';
  const app=buildApp(), pool=new pg.Pool({connectionString:url});let customer;
  try{
-  const initial=await app.inject({method:'POST',url:'/v1/session',headers:{origin}});assert.equal(initial.statusCode,201);customer=initial.json().customerId;
+  const initial=await app.inject({method:'POST',url:'/v1/session',headers:{origin,'idempotency-key':randomBytes(32).toString('base64url')}});assert.equal(initial.statusCode,201);customer=initial.json().customerId;
   const cookie=initial.headers['set-cookie'].split(';')[0];
   const setup=await app.inject({method:'POST',url:'/v1/recovery/setup',headers:{origin,cookie}});assert.equal(setup.statusCode,201);assert.equal(setup.headers['cache-control'],'no-store');
   const {accountReference,recoveryKey}=setup.json();assert.equal(accountReference.length,14);assert.equal(recoveryKey.length,43);

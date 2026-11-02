@@ -4,7 +4,7 @@ This Compose stack is a private staging environment, not a production prepaid Wi
 
 Use individually generated 32-byte random hexadecimal values for the PostgreSQL bootstrap password, each of the five database-role passwords, and each internal service secret. Store them in a mode-0600 `.env` file outside version control. Set `PAMOFI_RELEASE` to the exact release tag of the five prebuilt `linux/amd64` images. The database role passwords must be distinct. Back up and restore must be designed and tested before storing real data; this stack is not a backup strategy.
 
-Example `.env` variable names: `POSTGRES_PASSWORD`, `IDENTITY_DB_PASSWORD`, `PREPAID_DB_PASSWORD`, `NETWORK_DB_PASSWORD`, `NOTIFICATION_DB_PASSWORD`, `ASSISTANT_DB_PASSWORD`, `INTERNAL_IDENTITY_SECRET`, `INTERNAL_EVENTS_SECRET`, `PAMOFI_RELEASE`. Never put real values in the repository.
+Example `.env` variable names: `POSTGRES_PASSWORD`, `IDENTITY_DB_PASSWORD`, `PREPAID_DB_PASSWORD`, `NETWORK_DB_PASSWORD`, `NOTIFICATION_DB_PASSWORD`, `ASSISTANT_DB_PASSWORD`, `INTERNAL_IDENTITY_SECRET`, `INTERNAL_EVENTS_SECRET`, `SESSION_CREATION_SECRET`, `PAMOFI_RELEASE`. Never put real values in the repository.
 
 Before initializing a new volume, ensure the non-secret `init.sh` is mode 0755, and run a container as UID 70 to verify it can read and execute the bind mount. A restrictive extraction umask can otherwise leave a partially initialized PostgreSQL volume. Start PostgreSQL first and wait for readiness. Run each service's migrations as a separate release step before starting its container. Health checks run inside each container and verify only process/database readiness. The staging database roles currently have migration privileges; production must use separate runtime and migration roles.
 

@@ -4,7 +4,7 @@ const identity = 'http://127.0.0.1:18081';
 const prepaid = 'http://127.0.0.1:18082';
 const origin = 'http://localhost:5173';
 async function makeCustomer() {
-  const res = await fetch(`${identity}/v1/session`, { method:'POST', headers:{origin} });
+  const res = await fetch(`${identity}/v1/session`, { method:'POST', headers:{origin,'idempotency-key':randomBytes(32).toString('base64url')} });
   assert.equal(res.status,201);
   return res.headers.get('set-cookie').split(';')[0];
 }

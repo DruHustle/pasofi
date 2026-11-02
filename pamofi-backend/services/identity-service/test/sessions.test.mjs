@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildApp } from '../dist/app.js';
 import { SignJWT } from 'jose';
+import { randomBytes } from 'node:crypto';
 const integration = process.env.PAMOFI_TEST_DATABASE_URL;
 test('customer session is opaque, reuses an existing cookie and checks request origin', {skip: !integration}, async () => {
   process.env.DATABASE_URL = integration;
@@ -9,10 +10,11 @@ test('customer session is opaque, reuses an existing cookie and checks request o
   process.env.NODE_ENV = 'development';
   process.env.PUBLIC_ORIGIN = 'http://localhost:5173';
   process.env.INTERNAL_IDENTITY_SECRET = 'DEMO_ONLY_insecure_local_service_secret_123456789';
+  process.env.SESSION_CREATION_SECRET = 'DEMO_ONLY_insecure_local_session_creation_secret_123456789';
   const app = buildApp();
   const denied = await app.inject({method:'POST',url:'/v1/session',headers:{origin:'http://evil.example'}});
   assert.equal(denied.statusCode,403);
-  const created = await app.inject({method:'POST',url:'/v1/session',headers:{origin:'http://localhost:5173'}});
+  const created = await app.inject({method:'POST',url:'/v1/session',headers:{origin:'http://localhost:5173','idempotency-key':randomBytes(32).toString('base64url')}});
   assert.equal(created.statusCode,201);
   assert.match(created.headers['set-cookie'], /HttpOnly/);
   assert.match(created.headers['set-cookie'], /SameSite=Lax/);

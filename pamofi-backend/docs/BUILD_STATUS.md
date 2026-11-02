@@ -6,7 +6,7 @@ The requested end state is a full prepaid Wi-Fi platform with financial, access 
 
 ## Implemented
 
-- Five separately packaged Node/TypeScript/Fastify services with liveness and database readiness checks, separate database roles and databases in local Compose. Identity has an origin-checked, rate-limited customer session flow backed by PostgreSQL and HttpOnly opaque cookies, and is wired to simulated purchases and recovery. Retry after a lost first response without the cookie can create another identity.
+- Five separately packaged Node/TypeScript/Fastify services with liveness and database readiness checks, separate database roles and databases in local Compose. Identity has an origin-checked, rate-limited customer session flow backed by PostgreSQL and HttpOnly opaque cookies, and is wired to simulated purchases and recovery. A short-lived random retry secret makes a lost first session response retryable without creating another identity.
 - PostgreSQL-backed candidate catalogue, with exact requested prices, decimal byte limits serialized as strings, and durations. Demo seed publishes candidate products locally only.
 - PostgreSQL-backed grant reservations and accounting primitives, with tested lifecycle and counter rules: FIFO activation, deadlines, gigawords, regression uncertainty and absolute grant deadlines. They are not connected to RADIUS or network enforcement.
 - Read-only FAQ service and responsive React customer interface with explicit demo labeling. The local UI can create and confirm simulated purchases and show their queued entitlements; it does not make real payments or connect devices.
@@ -49,7 +49,9 @@ Next engineering step: implement secure customer identity and a testable Postgre
 - Oracle CLI reauthenticated. The requested fallback VM is shared with multiple existing services and has limited disk/memory headroom. It was inspected read-only. No PamoFi backend has been deployed or changes made to the VM. A separate A1 VM may exceed the current Always Free allocation; do not assume it is free.
 - Counter arithmetic tests pass, including values greater than 2^32 and conservative handling of regressions. The prepaid migration was run twice against demo PostgreSQL, applying once. This does not verify ledger or RADIUS functionality.
 
-Identity integration: migrations applied locally and `PAMOFI_TEST_DATABASE_URL=... npm test` passed with real PostgreSQL. Cookie-bearing repeat requests reuse the same identity; lost first-response idempotency and cross-service authorization remain unimplemented.
+Earlier identity integration: migrations were applied locally and `PAMOFI_TEST_DATABASE_URL=... npm test` passed with real PostgreSQL. At that point only cookie-bearing repeat requests reused the same identity; lost first-response idempotency and cross-service authorization were still unimplemented.
+
+Update: session creation now requires a client-generated secret when no cookie exists. Its verifier and session verifier are stored transactionally; a stable server HMAC key permits reissuing the same HttpOnly cookie for 24 hours without storing it in plaintext. PostgreSQL and browser tests covered lost responses, concurrent retries, service restart, secret changes, expiration and revocation. The browser keeps the temporary retry secret in tab-scoped storage until the cookie is confirmed. Production still needs managed, versioned key rotation and complete authorization.
 
 Fresh-checkout verification: cloned commit f2521e2 into a temporary directory, then independently ran `npm ci`, `npm test` and `npm run build` in the frontend and all five service directories under Node 24. All passed. The identity PostgreSQL integration test was skipped in that clean-checkout run and was separately run against the local demo database.
 
