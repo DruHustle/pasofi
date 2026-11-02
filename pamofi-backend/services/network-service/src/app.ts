@@ -1,5 +1,7 @@
 import Fastify from 'fastify';
 import pg from 'pg';
+import {registerNetworkInternal} from './internal.js';
+import {startReconciler} from './reconciler.js';
 const { Pool } = pg;
 export function buildApp() {
   const app = Fastify({ logger: false, bodyLimit: 16384 });
@@ -14,6 +16,10 @@ export function buildApp() {
     try { await pool.query('SELECT 1'); return { status: 'ready' }; }
     catch { return reply.code(503).send({ status: 'not_ready' }); }
   });
-
+  app.addHook('onSend',async(_request,reply,payload)=>{reply.header('Cache-Control','no-store');return payload;});
+  registerNetworkInternal(app,pool);
+  if(pool&&process.env.NETWORK_RECONCILER_ENABLED==='true') {
+    const stop=startReconciler(pool);app.addHook('preClose',stop);
+  }
   return app;
 }

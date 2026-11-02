@@ -4,10 +4,13 @@ import rateLimit from '@fastify/rate-limit';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import pg from 'pg';
 import { jwtVerify } from 'jose';
+import { registerStaffRoutes } from './staff.js';
+import { registerHandoffRoutes } from './handoff.js';
+import { trustedProxies } from './trusted-proxies.js';
 const { Pool } = pg;
 const tokenHash = (token: string) => createHash('sha256').update(token).digest();
 export function buildApp() {
-  const app = Fastify({ logger: false, bodyLimit: 16384 });
+  const app = Fastify({ logger: false, bodyLimit: 16384, trustProxy: trustedProxies(), ajv: { customOptions: { removeAdditional: false } } });
   const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 2000 }) : null;
   // pg discards the broken idle connection; handling its error keeps the
   // service alive so readiness and later requests can recover. Never log DSNs.
@@ -18,6 +21,10 @@ export function buildApp() {
   const validOrigin = (() => { try { const u = new URL(origin!); return u.origin === origin && (u.protocol === 'https:' || (demo && u.protocol === 'http:' && ['localhost','127.0.0.1'].includes(u.hostname))); } catch { return false; } })();
   app.register(cookie);
   app.register(rateLimit, { global: false });
+  // Route-specific rate limits are attached by the plugin's onRoute hook. Wait
+  // for that hook to exist before registering any routes in this sync builder.
+  app.after(error => {
+  if (error) throw error;
   app.addHook('onClose', async () => { if (pool) await pool.end(); });
   app.get('/health/live', async () => ({ status: 'ok', service: 'identity' }));
   app.get('/health/ready', async (_request, reply) => {
@@ -166,6 +173,9 @@ export function buildApp() {
         return reply.code(201).send({customerId:id});
       } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
+  });
+  registerStaffRoutes(app, { pool, demo, origin, validOrigin });
+  registerHandoffRoutes(app, { pool, demo, origin, validOrigin });
   });
   return app;
 }

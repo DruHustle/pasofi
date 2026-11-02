@@ -4,6 +4,17 @@ The mobile source is `pamofi-frontend/mobile`. The checked-in native projects ar
 
 The `Build PamoFi native previews` workflow compiles fresh web assets, runs the pinned Capacitor 8.6.0 synchronization, then independently builds Android and iOS. A successful job uploads its binary, exact source commit, toolchain version and SHA-256 checksum for 14 days. A workflow definition or successful web build alone does not mean a native binary has been built: inspect the native job result and its artifact.
 
+## Verified native run
+
+Both native compilation jobs succeeded on **2026-11-02** in [workflow run 41373579356](https://github.com/DruHustle/pamofi/actions/runs/41373579356). The branch head was `649a5625dec4ec69715aa0225ae4a022ad407ddd`; the pull-request workflow compiled GitHub's merge commit `443cab073457bfdf238788daf08e38202c6af279`, which appears in the artifact names and source metadata.
+
+| Output | Artifact | Uploaded archive size | Evidence |
+| --- | --- | --- | --- |
+| Android debug APK | [13110367862](https://github.com/DruHustle/pamofi/actions/runs/41373579356/artifacts/13110367862) | 3,949,802 bytes | Gradle 8.14.3 reported BUILD SUCCESSFUL; artifact upload completed. |
+| Unsigned iOS simulator app | [13110560776](https://github.com/DruHustle/pamofi/actions/runs/41373579356/artifacts/13110560776) | 1,501,207 bytes | Xcode 26.6 reported BUILD SUCCEEDED for arm64 and x86_64 simulator; artifact upload completed. |
+
+These GitHub artifacts expire on **2026-11-16**. The uploaded archive SHA-256 digests are `ada54f0961f0aa292fc2715bf21a1452da6eb7d06992e75052cc2b60bbc62f13` (Android) and `826e780d46dff3a61825ab95570b4ec453e1d16dcbfb8d89c79c0452b2c8e332` (iOS). Each archive also contains a checksum for its enclosed native binary/archive. The limitations below still apply: this run proves native compilation and packaging, not device behavior or connected production service acceptance.
+
 ## What the artifacts are
 
 - Android: a debug APK signed with the disposable Android debug key. It is not a release-signed APK/AAB or a Google Play submission.

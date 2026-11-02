@@ -10,7 +10,7 @@ test('access pagination shows active access and the FIFO queue ahead of old hist
  const pool=new pg.Pool({connectionString:url,max:4}),customer=randomUUID(),other=randomUUID();
  const oldIds=Array.from({length:102},()=>randomUUID()),active=randomUUID(),queuedFirst=randomUUID(),queuedSecond=randomUUID(),foreign=randomUUID();
  const ids=[...oldIds,active,queuedFirst,queuedSecond,foreign];
- const env={DATABASE_URL:url,APP_ENV:'demo',NODE_ENV:'development',IDENTITY_URL:'http://identity.test',INTERNAL_IDENTITY_SECRET:'test_only_identity_secret_of_at_least_32_bytes'};
+ const env={DATABASE_URL:url,APP_ENV:'demo',NODE_ENV:'development',IDENTITY_URL:'http://identity.test',INTERNAL_IDENTITY_SECRET:'test_only_identity_secret_of_at_least_32_bytes',PAMOFI_PAYMENTS_ENABLED:'false',PAMOFI_PESEPAY_SANDBOX_ENABLED:'false'};
  const saved=Object.fromEntries(Object.keys(env).map(key=>[key,process.env[key]]));
  Object.assign(process.env,env);
  t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({customerId:customer}),{headers:{'content-type':'application/json'}}));
@@ -58,9 +58,14 @@ test('access pagination shows active access and the FIFO queue ahead of old hist
 
 test('a terminated idle database connection does not crash the service',{skip:!url},async()=>{
  const control=new pg.Pool({connectionString:url,max:1});
- const original=process.env.DATABASE_URL,applicationName=`pamofi-prepaid-recovery-${randomUUID()}`,connection=new URL(url);
+ const keys=['DATABASE_URL','PAMOFI_PAYMENTS_ENABLED','PAMOFI_PESEPAY_SANDBOX_ENABLED'],saved=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
+ const applicationName=`pamofi-prepaid-recovery-${randomUUID()}`,connection=new URL(url);
  connection.searchParams.set('application_name',applicationName);
  process.env.DATABASE_URL=connection.toString();
+ // This case measures one idle health connection, independently of an outer
+ // browser/demo environment that may enable provider reconciliation workers.
+ process.env.PAMOFI_PAYMENTS_ENABLED='false';
+ process.env.PAMOFI_PESEPAY_SANDBOX_ENABLED='false';
  const app=buildApp();
  try {
   assert.equal((await app.inject({url:'/health/ready'})).statusCode,200);
@@ -73,6 +78,6 @@ test('a terminated idle database connection does not crash the service',{skip:!u
   assert.equal((await app.inject({url:'/health/ready'})).statusCode,200);
  } finally {
   await app.close();await control.end();
-  if(original===undefined)delete process.env.DATABASE_URL;else process.env.DATABASE_URL=original;
+  for(const [key,value]of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}
  }
 });

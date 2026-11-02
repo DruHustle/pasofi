@@ -5,8 +5,8 @@ type Adapter=Pick<PesepayAdapter,'initiate'|'check'>;
 type Eligibility=Parameters<PesepayAdapter['initiate']>[0]['eligibility'];
 export class PaymentError extends Error {constructor(public readonly code:string){super(code);}}
 async function tx<T>(pool:Pool,fn:(client:PoolClient)=>Promise<T>):Promise<T>{const client=await pool.connect();try{await client.query('BEGIN');const r=await fn(client);await client.query('COMMIT');return r;}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}
-// Caller must authenticate ownership and supply a recently discovered, merchant-
-// enabled and site-qualified method. No public production route uses this yet.
+// The checkout boundary authenticates ownership and supplies the server's
+// merchant-enabled, site-qualified method and immutable order terms.
 export async function beginProviderPayment(pool:Pool,customerId:string,orderId:string,requestKey:string,siteId:string,methodCode:string,eligibility:Eligibility,adapter:Adapter){
  const attempt=await tx(pool,async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`${customerId}:${requestKey}`]);
@@ -14,7 +14,7 @@ export async function beginProviderPayment(pool:Pool,customerId:string,orderId:s
   if(!order.rowCount)throw new PaymentError('order_not_found');
   const previous=await client.query('SELECT * FROM provider_payment_attempts WHERE customer_id=$1 AND request_key=$2',[customerId,requestKey]);
   if(previous.rowCount){if(previous.rows[0].order_id!==orderId || previous.rows[0].site_id!==siteId || previous.rows[0].method_code!==methodCode)throw new PaymentError('idempotency_conflict');return {created:false,row:previous.rows[0],order:order.rows[0]};}
-  if(order.rows[0].status!=='awaiting_payment'||!order.rows[0].quote_valid)throw new PaymentError('order_not_payable');
+  if(order.rows[0].status!=='awaiting_payment'||order.rows[0].expired_unused_at||!order.rows[0].quote_valid)throw new PaymentError('order_not_payable');
   const method=eligibility?.method as {code?:unknown}|undefined;
   if(method?.code!==methodCode || !eligibleMethod(method,order.rows[0].currency,order.rows[0].price_minor,eligibility.merchantEnabledCodes,eligibility.siteQualifiedCodes))throw new PaymentError('method_not_qualified');
   const unresolved=await client.query("SELECT id FROM provider_payment_attempts WHERE order_id=$1 AND state IN ('initiating','unknown','pending','review')",[orderId]);
@@ -49,6 +49,24 @@ export async function beginProviderPayment(pool:Pool,customerId:string,orderId:s
   await pool.query("UPDATE provider_payment_attempts SET state='unknown',updated_at=now() WHERE id=$1 AND state='initiating'",[attempt.row.id]);
   return {attemptId:attempt.row.id,state:'unknown',redirectUrl:null};
  }
+}
+export async function expireUnusedOrder(pool:Pool,customerId:string,orderId:string){
+ return tx(pool,async client=>{
+  const found=await client.query(`SELECT purchase_mode,status,expired_unused_at,quote_expires_at<=clock_timestamp() AS expired
+   FROM purchase_orders WHERE id=$1 AND customer_id=$2 FOR UPDATE`,[orderId,customerId]);
+  if(!found.rowCount)throw new PaymentError('order_not_found');
+  const order=found.rows[0];
+  if(order.purchase_mode!=='checkout')throw new PaymentError('wrong_order_mode');
+  if(order.expired_unused_at)return {orderId,state:'expired_unused',safeToRequote:true,replayed:true};
+  if(order.status!=='awaiting_payment')throw new PaymentError('order_not_expirable');
+  if(!order.expired)throw new PaymentError('quote_still_valid');
+  const used=await client.query(`SELECT EXISTS(SELECT 1 FROM provider_payment_attempts WHERE order_id=$1)
+    OR EXISTS(SELECT 1 FROM verified_charges WHERE order_id=$1)
+    OR EXISTS(SELECT 1 FROM purchase_entitlements WHERE order_id=$1) AS present`,[orderId]);
+  if(used.rows[0].present)throw new PaymentError('payment_attempt_exists');
+  await client.query('UPDATE purchase_orders SET expired_unused_at=clock_timestamp() WHERE id=$1',[orderId]);
+  return {orderId,state:'expired_unused',safeToRequote:true,replayed:false};
+ });
 }
 export async function markStaleInitiationsUnknown(pool:Pool,minimumAgeSeconds:number,attemptId?:string){
  if(!Number.isInteger(minimumAgeSeconds)||minimumAgeSeconds<60)throw new PaymentError('invalid_stale_age');

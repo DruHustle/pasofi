@@ -44,7 +44,7 @@ Device acceptance must also cover app relaunch, interrupted requests, cookie blo
 
 ## Customer privacy and state
 
-Recovery keys, one-time handoff codes and short-lived network credentials remain in component memory. The app never puts them in URLs. Private receipts are retrieved by the owning customer. A voucher request carries its code only in a POST body. Idempotent purchase details and retry keys are scoped to the customer in tab/session storage so an ambiguous response can be retried safely; they are cleared after verified completion or successful sign out.
+Recovery keys, one-time handoff codes and short-lived network credentials remain in component memory. The app never puts them in URLs. Private receipts are retrieved by the owning customer. A voucher request carries its code only in a POST body. Idempotent purchase details and retry keys are scoped to the customer in tab/session storage so an ambiguous response can be retried safely; they are cleared after verified completion or successful sign out. Closing an expired unused quote requires a durable server fence with no payment attempt; client time alone never releases the saved purchase for another charge.
 
 Preparing payment checkout is not payment confirmation. Queued access is not an active connection. The UI uses authoritative fulfillment/reversal/review state for purchases and recent verified hotspot accounting for connectivity. A disconnect request stays pending until confirmed by the service.
 
@@ -62,9 +62,9 @@ Start the normal unconfigured mobile Vite server and run:
 PAMOFI_CHROME_PATH=/path/to/chrome npm run test:browser
 ```
 
-Set `PAMOFI_BASE_URL` if that preview is not at `http://localhost:5173`. The suite preserves two offline phone-layout journeys. Four additional tests start and stop their own local Vite fixture with a public `https://api.pamofi.test` configuration and intercepted synthetic API responses. They check capability refusal, credentialed transport and redemption, blocked-cookie refusal, and gateway failure with offline fallback. They do not contact a commercial gateway.
+Set `PAMOFI_BASE_URL` if that preview is not at `http://localhost:5173`. The suite preserves two offline phone-layout journeys. Five additional tests start and stop their own local Vite fixture with a public `https://api.pamofi.test` configuration and intercepted synthetic API responses. They check capability refusal, credentialed transport and redemption, blocked-cookie refusal, gateway failure with offline fallback, and preservation of a saved quote when an existing provider attempt prevents safe closure. They do not contact a commercial gateway.
 
-The repository's strict `local-tools/verify.mjs --integration --browser` runs both frontend suites with no skipped/flaky tests and owns its local service processes. It remains separate from native build/device acceptance. Capacitor Android/iOS sync can also be checked in disposable copies of the native projects without changing tracked native assets. The native CI workflow builds unsigned test artifacts; signing, store release and native gateway qualification remain owner-controlled external acceptance steps.
+The repository's strict `local-tools/verify.mjs --integration --browser` runs both frontend suites with no skipped/flaky tests and owns its local service processes. It remains separate from native build/device acceptance. Capacitor Android/iOS sync can also be checked in disposable copies of the native projects without changing tracked native assets. The [native CI run 41373579356](https://github.com/DruHustle/pamofi/actions/runs/41373579356) succeeded for both an API-unconfigured Android debug APK and an unsigned iOS simulator app (Xcode 26.6, arm64 and x86_64). Its merge source is `443cab073457bfdf238788daf08e38202c6af279`. Android artifact `13110367862` is 3,949,802 bytes; iOS artifact `13110560776` is 1,501,207 bytes; both expire on 16 November 2026. See `NATIVE_BUILDS.md` for use and reproduction. Production signing, store release, physical-device behavior and native gateway qualification remain separate external acceptance steps.
 
 ## Development dependency override
 

@@ -43,7 +43,7 @@ const channel = (() => { try { return typeof BroadcastChannel !== 'undefined' ? 
 export function clearSessionSecrets() {
   try {
     for (const key of Object.keys(sessionStorage)) {
-      if (key === storageKey || key.startsWith('pamofi.orderRetry:')) sessionStorage.removeItem(key);
+      if (key === storageKey || key.startsWith('pamofi.orderRetry:') || key.startsWith('pamofi.operation:customer:')) sessionStorage.removeItem(key);
     }
   } catch { /* No stored secrets are available when storage is disabled. */ }
 }

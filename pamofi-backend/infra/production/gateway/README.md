@@ -1,0 +1,13 @@
+# Public and private TLS gateways
+
+The public listener terminates the configured public certificate, forwards the reviewed web/API route allowlist through the private `web` service, overwrites incoming proxy-address headers, and rejects direct `/internal/` and `/v1/` requests. The web service and all backend listeners have no host ports. `PAMOFI_PUBLIC_HOST` is a validated hostname, and `PUBLIC_ORIGIN` must be the matching `https://` origin.
+
+Mount `public.conf.template` at `/etc/nginx/templates/default.conf.template`; use `NGINX_ENVSUBST_FILTER=^PAMOFI_PUBLIC_HOST$` so nginx variables remain intact. Mount `internal.conf` at `/etc/nginx/conf.d/default.conf` and `internal-common.conf` at `/etc/nginx/pamofi/internal-common.conf` in a separate private nginx container. Give the latter service network aliases `identity.internal`, `prepaid.internal`, `network.internal`, and `notification.internal`. No internal port is published.
+
+The private certificate must have those four DNS names in its SAN extension. Mount its CA certificate in each calling service as `/run/secrets/internal_ca`, set `NODE_EXTRA_CA_CERTS` to that path, and use the HTTPS aliases as service URLs. Never turn off certificate verification. Internal requests still require scoped, short-lived service tokens. TLS termination does not grant application authority.
+
+Only trusted private proxy source ranges belong in `PAMOFI_TRUST_PROXY_CIDRS`; the production service-network subnet provides that explicit range. Untrusted browser-supplied forwarding headers are replaced at public ingress. Do not expose a backend or the `web` container directly while trusting that header chain.
+
+Public certificate renewal is an operator-owned host task: provision certificates outside Git, atomically replace the secret source files, validate `nginx -t`, then reload the gateway and verify the served chain and expiry. Neither the source review nor a passing CI test registers a domain or obtains a production certificate.
+
+The default frontend CSP permits form submission only to its own origin. Hotspot credentials can be copied into the registered HTTPS router login page. To enable direct form POST, explicitly list the same qualified router HTTPS origins in the web build's `VITE_PAMOFI_ROUTER_FORM_ORIGINS` and in `form-action` in the web nginx configuration. No wildcard origin, credential query string or browser-to-router management API is used.

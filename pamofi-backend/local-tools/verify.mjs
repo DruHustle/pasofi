@@ -73,7 +73,7 @@ function sanitizedEnvironment() {
   // Do not inherit a real service's database, credentials, feature flags, or
   // provider configuration into a test process. npm/browser runtime settings stay.
   for (const key of Object.keys(env)) {
-    if (/^(?:DATABASE_URL$|PG[A-Z_]|APP_ENV$|NODE_ENV$|NODE_OPTIONS$|PUBLIC_ORIGIN$|HOST$|PORT$|IDENTITY_URL$|NOTIFICATION_URL$|PREPAID_URL$|OUTBOX_|INTERNAL_|PESEPAY_|SENDAI_|RADIUS_|PAMOFI_)/.test(key)) delete env[key];
+    if (/^(?:DATABASE_URL$|PG[A-Z_]|APP_ENV$|NODE_ENV$|NODE_OPTIONS$|PUBLIC_ORIGIN$|HOST$|PORT$|IDENTITY_URL$|NOTIFICATION_URL$|NOTIFICATION_DELIVERY_|PREPAID_URL$|NETWORK_URL$|NETWORK_RECONCILER_|ROUTEROS_|STAFF_|SESSION_CREATION_SECRET$|VOUCHER_|DELIVERY_|VITE_PAMOFI_|OUTBOX_|INTERNAL_|PESEPAY_|SENDAI_|RADIUS_|PAMOFI_)/.test(key)) delete env[key];
   }
   return { ...env, APP_ENV: 'demo', NODE_ENV: 'development', PAMOFI_PESEPAY_SANDBOX_ENABLED: 'false', OUTBOX_DISPATCH_ENABLED: 'false' };
 }
@@ -236,19 +236,28 @@ async function main() {
     SESSION_CREATION_SECRET: 'DEMO_ONLY_insecure_local_session_creation_secret_123456789',
     INTERNAL_EVENTS_SECRET: 'DEMO_ONLY_insecure_local_events_secret_123456789',
     INTERNAL_NETWORK_SECRET: 'DEMO_ONLY_network_lab_key_0123456789abcdef',
+    INTERNAL_DELIVERY_SECRET: 'DEMO_ONLY_delivery_worker_secret_0123456789abcdef',
+    STAFF_MFA_ENCRYPTION_KEY: '11'.repeat(32),
+    PAMOFI_COMMERCE_ENABLED: 'true',
+    VOUCHER_DELIVERY_ACTIVE_KEY_ID: 'v1',
+    VOUCHER_DELIVERY_KEYS_JSON: JSON.stringify({v1:Buffer.alloc(32,17).toString('base64')}),
+    PAMOFI_SMS_DELIVERY_ENABLED: 'true',
+    PAMOFI_PAYMENTS_ENABLED: 'true', PAMOFI_PAYMENT_MODE: 'mock',
+    DELIVERY_WORKER_ENABLED: 'false', NOTIFICATION_DELIVERY_MODE: 'mock',
     INTERNAL_RADIUS_ENABLED: 'true',
-    IDENTITY_URL: address('identity'), NOTIFICATION_URL: address('notification'), PREPAID_URL: address('prepaid-access'),
+    IDENTITY_URL: address('identity'), NOTIFICATION_URL: address('notification'), PREPAID_URL: address('prepaid-access'), NETWORK_URL: address('network'),
   };
   const servers = [];
   for (const name of services) {
     await ports[name].release();
-    servers.push(launch(`${name}: isolated demo server`, process.execPath, ['dist/server.js'], serviceDirectory(name), { ...demoEnv, DATABASE_URL: databases[name], PORT: String(ports[name].port) }));
+    servers.push(launch(`${name}: isolated demo server`, process.execPath, ['dist/server.js'], serviceDirectory(name), { ...demoEnv, PAMOFI_PAYMENTS_ENABLED:'false', DATABASE_URL: databases[name], PORT: String(ports[name].port) }));
   }
   await Promise.all(services.map((name, index) => ready(servers[index], `${address(name)}/health/ready`, name === 'prepaid-access' ? 'prepaid-access' : name)));
   for (const name of services) {
     checkChildren(servers);
     const testEnv = {
       ...demoEnv,
+      PAMOFI_PAYMENTS_ENABLED:'false',
       DATABASE_URL: databases[name],
       // The network RADIUS suite also checks the prepaid ledger; its credentials
       // suite receives the separate network URL explicitly.
@@ -261,6 +270,15 @@ async function main() {
     await nodeTests(name, testEnv);
   }
   if (browser) {
+    // Database suites exercise their own workers and disposable queue fixtures.
+    // Enable the shared mock checkout worker only after those suites finish.
+    const prepaidIndex=services.indexOf('prepaid-access');
+    stopChild(servers[prepaidIndex].child,'SIGTERM');
+    if(!await completesWithin(servers[prepaidIndex].done,12000))throw Error('Prepaid test server did not stop before browser qualification');
+    servers[prepaidIndex]=launch('prepaid-access: browser mock checkout server',process.execPath,['dist/server.js'],serviceDirectory('prepaid-access'),{
+      ...demoEnv,DATABASE_URL:databases['prepaid-access'],PORT:String(ports['prepaid-access'].port)
+    });
+    await ready(servers[prepaidIndex],`${address('prepaid-access')}/health/ready`,'prepaid-access');
     const catalogue = await fetch(`${address('prepaid-access')}/v1/bundles`, { signal: AbortSignal.timeout(3000) });
     const catalogueBody = await catalogue.json();
     if (!catalogue.ok || catalogueBody.candidate !== true || !Array.isArray(catalogueBody.products) || !catalogueBody.products.some(product => product.id === 'flex')) throw Error('Browser tests require the disposable candidate catalogue from infra/postgres/init.sql');
@@ -274,7 +292,9 @@ async function main() {
       await ready(vite, address(name));
       const report = join(cwd, 'test-results', 'verification-summary.json');
       await mkdir(dirname(report), { recursive: true });
-      await run(`${name}: browser tests`, process.execPath, ['node_modules/@playwright/test/cli.js', 'test', '--reporter=line,json'], cwd, { ...uiEnv, PLAYWRIGHT_JSON_OUTPUT_FILE: report });
+      await run(`${name}: browser tests`, process.execPath, ['node_modules/@playwright/test/cli.js', 'test', '--reporter=line,json'], cwd, { ...uiEnv,
+        PAMOFI_TEST_CONFIRM_ISOLATED:'1', PAMOFI_TEST_IDENTITY_DATABASE_URL:databases.identity, PAMOFI_TEST_PREPAID_DATABASE_URL:databases['prepaid-access'],
+        PLAYWRIGHT_JSON_OUTPUT_FILE: report });
       const stats = JSON.parse(await readFile(report, 'utf8')).stats;
       if (!stats || !['expected', 'unexpected', 'skipped', 'flaky'].every(field => Number.isInteger(stats[field])) || stats.expected < 1 || stats.unexpected || stats.skipped || stats.flaky) throw Error(`${name}: browser gate requires passing tests with no skipped, flaky, or unexpected cases`);
       counts.push({ project: `${name} browser`, tests: stats.expected, passed: stats.expected, skipped: 0, todo: 0 });

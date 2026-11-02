@@ -1,0 +1,43 @@
+# Site 01 — first MikroTik inspection, 2 November 2026
+
+Read through the user-authorized, already signed-in WebFig session at `http://192.168.88.1/webfig/`. This was a read-only inspection; no router settings, credentials, firmware or traffic rules were changed.
+
+| Item | Observed state |
+| --- | --- |
+| Board | hAP lite |
+| Architecture / CPU | SMIPS, one MIPS 24Kc core, 650 MHz |
+| RouterOS | 7.18.2 stable, build 11 March 2025 |
+| Memory | 32 MiB total; approximately 8–9 MiB free during inspection |
+| Flash | 16 MiB total; 7.8 MiB free |
+| Current mode | Home AP; country Zimbabwe |
+| Uplink | ether1 active; DHCP on an upstream private /24 network |
+| Existing management LAN | 192.168.88.1/24, DHCP enabled, existing wireless clients connected |
+| Interfaces | ether1–ether4, default bridge, wlan1, pwr-line1, loopback |
+| HotSpot servers | None |
+| RADIUS servers | None |
+| HTTPS management | www-ssl disabled; no certificate selected |
+| Other management services | HTTP, WinBox, SSH, Telnet, FTP and API services listed as enabled; no per-service source restrictions visible |
+| Firewall | Default input protection drops traffic not coming from LAN; default WAN forwarding protection present; established/related FastTrack enabled |
+
+## Consequences for PamoFi
+
+This device is suitable for a measured pilot subject to actual capacity and firmware qualification; the inspection does not establish a supported paying-customer count. Its small RAM/flash budget makes a load test and free-space check necessary before changing packages or increasing concurrent sessions. The backend, databases, RADIUS authority and payment/SMS workers stay on the server.
+
+Preserve the existing management LAN and wireless connection. Prepare a separate customer interface/bridge and subnet, explicitly isolated from management and upstream private networks. Do not run the Quick Set replacement configuration over the existing live LAN. Provision a certificate and a restricted service account for HTTPS management over the private management tunnel. The PamoFi worker uses only authenticated server-side HTTPS REST calls; no management password is placed in the customer app.
+
+Exclude all customer traffic from FastTrack before testing quotas: MikroTik documents that FastTrack bypasses accounting, queues and the HotSpot universal client. IPv6 must not provide an unmetered bypass around the IPv4 HotSpot. Only permit the chosen portal and verified provider endpoints in the walled garden; do not create broad wildcard internet access.
+
+The exact public portal hostname, private server/tunnel addresses, device certificate, service/RADIUS credentials, and customer interface/subnet are deployment inputs. They have not been invented or enabled. A first-site configuration can only be applied after those values and a recoverable management path are concrete. Creating a router management account or enabling new access is a separate consequential change from this read-only inspection.
+
+Before a RouterOS upgrade, export configuration without secrets, make a separately protected recovery backup, check flash capacity and review the target release for this architecture. Since RouterOS7.20, SMIPS HotSpot is a separate package; an upgrade must retain the matching HotSpot capability. Do not assume the latest package set is interchangeable with the inspected7.18.2 device.
+
+## Hardware acceptance sequence
+
+1. Record current bridge members, IP routes, DHCP/DNS, device-mode and package support, time synchronization, firewall rule order and a tested local recovery connection.
+2. Create the isolated pilot customer network, management tunnel/certificate, per-NAS RADIUS identity and server-side registry entry with the same site UUID as sales administration.
+3. Test one synthetic customer: short-lived credentials, successful RADIUS Start, 64-bit upload plus download accounting, byte limit, session timeout and rate enforcement.
+4. Verify server outage fails closed; duplicate and reordered accounting does not double-charge; credential replay cannot create a second session; explicit disconnect requires actual NAS absence plus final Stop before reuse.
+5. Reboot the NAS with an active synthetic grant and verify uncertain reservations remain blocked until evidenced operator resolution. Repeat across the second physical site before claiming cross-site acceptance.
+6. Run a controlled concurrent-client load test, observe memory/CPU/latency and verify client isolation, management isolation, IPv6 controls, FastTrack exclusion and recovery. Record measured results and approved limits.
+
+References: [RouterOS REST API](https://help.mikrotik.com/docs/spaces/ROS/pages/47579162/REST+API), [FastTrack behavior](https://help.mikrotik.com/docs/spaces/ROS/pages/130220087/Connection+tracking), and [MikroTik7.20 release notes](https://forum.mikrotik.com/t/v7-20-stable-is-released/265196).

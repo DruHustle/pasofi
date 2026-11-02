@@ -1,8 +1,8 @@
 # PamoFi backend
 
-PamoFi Wi-Fi Hotspot by Onesa. Five independent services implement a tested development foundation for prepaid Wi-Fi. **This is a demonstration and laboratory system, not a live Wi-Fi sales service.**
+PamoFi Wi-Fi Hotspot by Onesa. Five independent services implement customer identity, staff/MFA, site-scoped commerce, prepaid accounting, delivery and network lifecycle authority. **The source and isolated journeys are implemented; live service activation still requires provider, router and deployment qualification.**
 
-The web demo can create a customer session, simulate a bundle purchase, show queued access, recover that account in another browser, and sign out. Backend domain functions cover agent stock, vouchers, payment reconciliation, delivery attempts, grant reservations and cumulative accounting. Those functions are not all exposed as customer or staff journeys. No real purchase, SMS delivery or customer internet connection is available.
+The web application exposes customer vouchers/private receipts, gated checkout and verified status, recovery/handoff, staff password/MFA and pending approval, assigned-site agent stock/sales, and administrator catalogue/allocation/audit/network review. The strict browser gate exercises a real isolated administrator-to-agent-to-customer sale and redemption journey, alongside failure mocks. Network disconnect/reconciliation and delivery workers have independent service tests. Actual payment, SMS and physical hotspot acceptance remain disabled until explicitly qualified; no source change creates a merchant account, public host or live customer connection.
 
 See [current build status](docs/BUILD_STATUS.md), [architecture](docs/ARCHITECTURE.md) and [testing](docs/TESTING.md) for the precise boundaries.
 
@@ -21,7 +21,7 @@ npm ci
 npm run dev
 ```
 
-Open <http://localhost:5173>. Vite proxies the customer APIs to the backend. Each service has its own manifest, lockfile, Dockerfile, migrations and API contract; there are no frontend imports of backend code.
+Open <http://localhost:5173>. Vite proxies the explicitly allowed customer/staff/admin APIs to their owning services. Each service has its own manifest, lockfile, Dockerfile, migrations and API contract; there are no frontend imports of backend code.
 
 The demo seeds five candidate bundles, uses public test credentials, and enables simulated purchases only with both `APP_ENV=demo` and `NODE_ENV=development`. Keep this configuration local. Services bind to host loopback ports 18081–18085 and PostgreSQL to 55432. Data persists in the development-only `pamofi-demo-db` volume.
 
@@ -41,6 +41,6 @@ Docker images consume locally built `dist` directories. Build before creating an
 
 ## Operations boundary
 
-The private Oracle staging configuration publishes no ports or bundles and disables demo payments and lab RADIUS. It is not a customer API. Production still needs completed staff and agent journeys, approved provider integrations, physical router qualification, secure ingress, separate migration/runtime privileges, independent encrypted backups, restore drills and operating evidence.
+The private Oracle staging configuration publishes no ports or bundles and disables demo payments and lab RADIUS. It is not a customer API. The production source now includes TLS gateway contracts, protected secret-file loading, separate owner/migration/runtime privileges and an independent pgBackRest/B2 backup overlay. These require an authenticated public host, trusted certificates, real secret/key custody, provider and physical-router qualification, monitoring, off-host restore/fencing drills and operating evidence. The first router was inspected read-only; its approved customer HotSpot configuration and management tunnel have not been activated.
 
 Do not use demo credentials or lab certificates on real infrastructure. A persistent Docker volume is not an independent backup; see [BACKUPS.md](docs/BACKUPS.md).

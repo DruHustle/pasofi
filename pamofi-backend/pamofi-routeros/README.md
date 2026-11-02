@@ -1,3 +1,9 @@
 # RouterOS
 
-No installation script is ready. Inspect the actual model, RouterOS version, architecture, storage, interfaces, routing and existing rules before generating a site-specific reviewed configuration. Do not apply demo settings to a live router.
+The [first router inspection](site-01/INSPECTION.md) records the actual SMIPS hAP lite, RouterOS 7.18.2, existing interfaces/routing and management posture observed read-only on 2026-11-02. No Quick Set, password, uplink, LAN, wireless, firmware or customer HotSpot changes were made.
+
+The owner has no always-on site computer for a local Tailscale subnet router. The prepared [remote-access plan](../infra/remote-access/README.md) therefore uses the router's native outbound WireGuard tunnel to a selected public Linux hub, with Tailscale advertising only its management address. The public host, authenticated tailnet and exact access changes are still required; the offline generator has not enabled remote access.
+
+The software now supports registered sites, private two-minute credentials, mutual-TLS RADIUS authorization/accounting and a certificate-verified RouterOS disconnect/absence adapter. Those capabilities remain gated until a site-specific HotSpot and private-management configuration are approved and tested on the real router. See the [network service contract](../services/network-service/README.md), [FreeRADIUS lab](../pamofi-radius/README.md) and inspection acceptance list. Existing home management and uplink behavior must remain recoverable throughout activation.
+
+Do not paste a generic router setup or apply public demo credentials to the live unit. Generate the customer network only after selecting the physical guest interface/SSID, private management path, addressing, trusted certificates, registered NAS identity and exact firewall ordering from the inspected state. Verify FastTrack/IPv6 behavior, rate/byte enforcement, one active customer across sites, reboot, delayed accounting and physical disconnection before removing a software qualification gate.

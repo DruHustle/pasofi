@@ -35,9 +35,10 @@ function parseClass(body:RadiusInput) {
  return {grantId:parts[1],generation:parts[2]};
 }
 export function buildRadiusApp(options:Options) {
- if(process.env.APP_ENV!=='demo' || process.env.NODE_ENV!=='development' || process.env.INTERNAL_RADIUS_ENABLED!=='true') throw new Error('radius_lab_only');
+ const demo=process.env.APP_ENV==='demo'&&process.env.NODE_ENV==='development';
+ if(demo?process.env.INTERNAL_RADIUS_ENABLED!=='true':process.env.PAMOFI_RADIUS_QUALIFIED!=='true') throw new Error('radius_not_qualified');
  const upstream=new URL(options.prepaidUrl);
- if(!['http:','https:'].includes(upstream.protocol) || upstream.username || upstream.password || upstream.pathname!=='/' || upstream.search || upstream.hash || Buffer.byteLength(options.networkSecret)<32) throw new Error('invalid_radius_lab_configuration');
+ if((upstream.protocol!=='https:'&&!(demo&&upstream.protocol==='http:')) || upstream.username || upstream.password || upstream.pathname!=='/' || upstream.search || upstream.hash || Buffer.byteLength(options.networkSecret)<32 || (!demo&&options.networkSecret.startsWith('DEMO_ONLY'))) throw new Error('invalid_radius_configuration');
  const normalized=options.clientFingerprint.replaceAll(':','').toLowerCase();
  if(!/^[a-f0-9]{64}$/.test(normalized)) throw new Error('invalid_radius_client_fingerprint');
  const expectedFingerprint=Buffer.from(normalized,'hex');
@@ -50,9 +51,9 @@ export function buildRadiusApp(options:Options) {
   if(!fingerprint || !/^[a-f0-9]{64}$/.test(fingerprint) || !timingSafeEqual(expectedFingerprint,Buffer.from(fingerprint,'hex'))) throw new RadiusInvalid();
   const name=request.headers['x-pamofi-nas'];
   if(typeof name!=='string' || !/^[A-Za-z0-9_-]{1,64}$/.test(name)) throw new RadiusInvalid();
-  const result=await options.pool.query('SELECT id,site_id FROM radius_nas WHERE client_name=$1 AND enabled=true',[name]);
+  const result=await options.pool.query('SELECT id,site_id,client_name FROM radius_nas WHERE client_name=$1 AND enabled=true',[name]);
   if(result.rowCount!==1) throw new RadiusInvalid();
-  return result.rows[0] as {id:string;site_id:string};
+  return result.rows[0] as {id:string;site_id:string;client_name:string};
  }
  async function ledger(path:string,scope:string,payload:unknown) {
   const token=await new SignJWT({scope}).setProtectedHeader({alg:'HS256'}).setIssuer('network').setSubject('network').setAudience('prepaid-access').setIssuedAt().setExpirationTime('15s').sign(new TextEncoder().encode(options.networkSecret));
@@ -72,6 +73,14 @@ export function buildRadiusApp(options:Options) {
    if(!Buffer.isBuffer(stored) || stored.length!==32 || !timingSafeEqual(actual,stored) || rows.rowCount!==1) throw new RadiusInvalid();
    const credential=rows.rows[0];
    const grant=await ledger('/internal/v1/radius/grants','radius:grant',{customerId:credential.customer_id,siteId:nas.site_id,nasId:nas.id,requestKey:credential.id,sessionId});
+   // Revocation, expiry or a NAS registry change can occur while the ledger
+   // request is in flight. Recheck the live local authority before emitting
+   // Access-Accept; a stale successful grant response is not sufficient.
+   const live=await options.pool.query(`SELECT 1 FROM radius_credentials c JOIN radius_nas n ON n.id=c.nas_id
+     WHERE c.id=$1 AND c.customer_id=$2 AND c.nas_id=$3 AND c.username=$4 AND c.secret_hash=$5
+       AND c.revoked_at IS NULL AND c.expires_at>clock_timestamp() AND n.enabled=true AND n.site_id=$6 AND n.client_name=$7`,
+     [credential.id,credential.customer_id,nas.id,name,actual,nas.site_id,nas.client_name]);
+   if(live.rowCount!==1)throw new RadiusInvalid();
    if(typeof grant.grantId!=='string' || !uuid.test(grant.grantId) || typeof grant.generation!=='string' || !uuid.test(grant.generation) || typeof grant.reservedBytes!=='string' || !/^[1-9][0-9]{0,19}$/.test(grant.reservedBytes) || typeof grant.deadline!=='string') throw new Error('invalid_grant');
    const bytes=BigInt(grant.reservedBytes),deadline=Date.parse(grant.deadline),remaining=Math.floor((deadline-Date.now())/1000)-30;
    if(bytes>maximum || !Number.isFinite(deadline) || !Number.isSafeInteger(remaining) || remaining<=0 || remaining>86400) throw new RadiusInvalid();
@@ -81,7 +90,13 @@ export function buildRadiusApp(options:Options) {
  });
  app.post<{Body:RadiusInput}>('/radius/accounting',async(request,reply)=>{
   try {
-   const nas=await registeredNas(request),body=request.body,sessionId=value(body,'Acct-Session-Id'),status=value(body,'Acct-Status-Type'),grant=parseClass(body);
+   const nas=await registeredNas(request),body=request.body,status=value(body,'Acct-Status-Type');
+   if(status==='Accounting-On'||status==='Accounting-Off') {
+    await ledger('/internal/v1/radius/restart','radius:account',{siteId:nas.site_id,nasId:nas.id});
+    await options.pool.query('UPDATE radius_credentials SET revoked_at=COALESCE(revoked_at,now()) WHERE nas_id=$1',[nas.id]);
+    return reply.code(204).send();
+   }
+   const sessionId=value(body,'Acct-Session-Id'),grant=parseClass(body);
    if(!session.test(sessionId) || !['Start','Interim-Update','Stop'].includes(status)) throw new RadiusInvalid();
    // RouterOS describes output as client upload. Gigawords are required on
    // interim/stop so a missing high word cannot silently create free traffic.

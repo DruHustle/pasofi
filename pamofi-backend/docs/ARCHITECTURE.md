@@ -1,41 +1,41 @@
 # Architecture
 
-PamoFi separates browser applications from independently deployable backend services. Web and mobile have their own dependencies and builds. Backend services communicate through scoped APIs and events; they do not import each other's code or query each other's operational databases.
+PamoFi separates its independent web and mobile applications from five independently deployable backend services. Each project owns its dependencies and build. Services communicate through scoped APIs and reference-only events; application code never imports another service's implementation or queries its operational database.
 
 ## Service boundaries
 
 | Service | Owns | Implemented boundary |
 | --- | --- | --- |
-| Identity | Customers, sessions, session-creation retries, recovery | HttpOnly cookie sessions, same-origin mutations, scoped internal resolution, versioned recovery and current-session logout |
-| Prepaid access | Catalogue, orders, payments, agent inventory, vouchers, entitlements, grants, accounting, outbox | Sole money and allowance authority; transactions and concurrency tests protect state changes |
-| Network | Registered NAS records, temporary credentials, RADIUS adapter | Private lab adapter authenticates FreeRADIUS with mutual TLS and asks prepaid access for authorization |
-| Notification | Event inbox, delivery jobs, provider evidence | Deduplicated ingestion and SMS attempt ledger; secure delivery lookup and operational sending remain unfinished |
-| Assistant | Reviewed public help | Read-only FAQ and bounded search; no model, customer credentials, payment actions or router access |
+| Identity | Customer sessions/recovery/handoff, staff password/MFA/roles/scopes, approval audit | HttpOnly cookies, exact-origin mutations, scoped internal resolution, versioned decisions and revocation |
+| Prepaid access | Catalogue, orders/charges, sites, agent stock/sales, vouchers/receipts, entitlements/grants/accounting, outbox | Sole money and allowance authority; current identity resolution and transactional authorization protect every mutation |
+| Network | Registered NAS records, temporary credentials, RADIUS adapter, router observations | Scoped private calls, mutual-TLS RADIUS boundary and controlled HTTPS RouterOS lookup/disconnect/re-query |
+| Notification | Event inbox, delivery jobs/leases, submission and provider evidence | Authenticated delivery lookup, idempotent jobs/resends, polling of known references and no automatic ambiguous resend |
+| Assistant | Reviewed public help | Read-only FAQ/search with no model, personal account authority or router/payment action |
 
-One PostgreSQL instance may host five databases, with separate roles. Demo and staging initialization revoke public access to service databases. Production still requires separate runtime/migration privileges and operational recovery controls.
+One PostgreSQL cluster may host all five databases. The [production foundation](../infra/production/README.md) defines a non-login owner, separate migration login and narrowly granted runtime login for each database. Migration checksums and reviewed grant manifests fail on unreviewed changes. Demo credentials and privilege choices remain separate from that production configuration.
 
-## Customer flow
+## Customer and agent flow
 
-Identity creates a session with a short-lived client retry secret. A lost first response can be retried without creating another customer. The browser confirms the cookie is usable before continuing.
+Identity creates a customer session using a short-lived client retry secret. A lost first response can be retried without creating another customer, and the client verifies that the cookie is usable before proceeding. Recovery uses a reference and high-entropy key; rotation is versioned. Browser handoff uses a separately pasted, single-use two-minute code and explicit consent, never a credential in a URL. Logout revokes the current session and creation retry mapping without changing other sessions or ledger records.
 
-Prepaid resolves the customer through identity using a short-lived service token. It snapshots terms into an order and binds the idempotency key to that customer and payload. Demo confirmation creates one mock payment and queued entitlement transactionally. The browser preserves a pending purchase across an interrupted response and reload.
+An agent has an approved MFA-verified identity and assigned sites. Administrators allocate published bundle inventory. A sale snapshots exact terms and commission, atomically debits stock, issues the encrypted voucher, consumes any private customer pairing and appends an outbox event. An ambiguous response is retried with the same owner-scoped key and payload. Only the paired customer can read a private receipt and redeem its voucher. Redemption creates queued access; it neither starts validity nor establishes a connection.
 
-Recovery requires an account reference and high-entropy key; only its verifier is stored. Rotation is versioned. An ambiguous response must not leave the old key displayed as valid. Logout revokes the current session and its creation-retry record without changing other sessions or the ledger.
+Hosted checkout independently snapshots an order, checks configured merchant/site method eligibility, and preserves initiation/reconciliation identity. The customer's UI reflects authoritative fulfillment, reversal or review status. A return URL or callback is only a hint; provider verification must match the reference, application, currency and amount. Duplicate or out-of-order observations cannot create duplicate entitlement or erase a reversal/review.
 
-## Access enforcement boundary
+## Access lifecycle
 
-The intended rule is one active connection per customer across all sites. The lab reserves an entitlement before authorization and binds it to the NAS and accounting session. Validity starts on verified accounting Start. Upload and download counters are cumulative; duplicates do not charge twice. Ambiguous or regressing counters retain an uncertain reservation.
+Prepaid reserves an entitlement before authorization and binds it to the customer, site, NAS, credential generation and accounting session. The database enforces one live reservation per customer. Validity starts on verified accounting Start. Upload and download counters are cumulative; duplicate accounting does not charge twice, while regression or ambiguous evidence retains an uncertain reservation/hold.
 
-A Stop packet alone does not release a reservation. Verified termination, final accounting reconciliation, router reboot handling and physical enforcement remain release blockers. Lab authority cannot be enabled in production.
+The customer requests credentials and disconnect through prepaid's public boundary. Network revokes the matching credential and queries the exact generated username on the registered router. It deletes only matched session IDs and independently queries again. A successful DELETE or Stop alone is insufficient to release a reservation: final usage, fresh independent absence and credential fencing must agree. Lost Stop, reboot or late higher usage remains blocked for evidence-based reconciliation. The admin review accepts exact cumulative counters with version, reason and evidence; it does not invent unknown usage or write off balances.
 
-## Payment and delivery evidence
+Software tests use a local HTTPS RouterOS fake and real FreeRADIUS packets. The production qualification gates stay disabled until physical sites and their private transport have passed the required enforcement and failure tests.
 
-A browser redirect or callback does not prove payment. Server reconciliation must match provider reference, application, currency and amount. Repeated and out-of-order responses preserve review/reversal state. A known reference survives an unusable checkout redirect so verification can continue without another payment initiation.
+## Delivery and frontend boundaries
 
-Prepaid outbox and notification inbox provide durable deduplication. SMS acceptance is distinct from delivery. A known message ID survives malformed optional metadata so status lookup remains possible; ambiguous submission is not automatically resent.
+Prepaid emits reference-only events; no phone number or voucher enters the outbox payload. Notification retrieves transient encrypted delivery details through authenticated service calls. Submission and delivery remain distinct. A known provider ID survives malformed optional metadata so polling can continue. An unknown outcome cannot trigger an automatic resend. Agent/admin resend is explicitly authorized, reasoned, idempotent and tied to the saved recipient; support sees sanitized scoped evidence only.
 
-## Configuration and tests
+The web gateway and Vite proxy allow only the reviewed public customer/staff/admin routes. Browser code never calls internal authority or provider callbacks. Cross-tab changes and action-time owner/version checks prevent stale sessions from authorizing another account's work. Async staff generation checks also prevent delayed initial or post-MFA responses from restoring a cleared account view.
 
-Demo, staging and production behavior are explicit. The web proxy allowlists customer routes; internal endpoints are not forwarded. No production credentials are needed for testing. See [TESTING.md](TESTING.md), the service OpenAPI files and [BUILD_STATUS.md](BUILD_STATUS.md).
+The independent mobile client accepts only a configured HTTPS origin, credentialed CORS and the deployment's explicit qualified-cookie capability. It offers an offline preview otherwise. The current service returns `mobileCookies: false`; compiled native packages do not establish native authentication qualification.
 
-Successful source or laboratory tests do not establish live provider, router, native-store or infrastructure acceptance.
+See [TESTING.md](TESTING.md), the service OpenAPI files and [BUILD_STATUS.md](BUILD_STATUS.md) for evidence and remaining deployment/provider/router/device boundaries.

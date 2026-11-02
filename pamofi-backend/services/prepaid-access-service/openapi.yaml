@@ -34,8 +34,8 @@ paths:
         '503':
           description: Authoritative service unavailable
     post:
-      summary: Create or retry a demo-only quote
-      description: Requires the configured origin, an authenticated session, and a customer-scoped idempotency key. Disabled when NODE_ENV is production.
+      summary: Create or retry a server-priced quote
+      description: Requires the configured origin, an authenticated session, and a customer-scoped idempotency key. Demo mode is available only in demo/development. Checkout mode requires explicit provider configuration. Idempotency binds both bundle and mode.
       parameters:
         - in: header
           name: Idempotency-Key
@@ -55,13 +55,18 @@ paths:
               properties:
                 bundleId:
                   type: string
+                  pattern: '^[a-z][a-z0-9-]{0,39}$'
+                mode:
+                  type: string
+                  enum: [demo, checkout]
+                  default: demo
       responses:
         '201':
-          description: Demo quote created
+          description: Quote created with immutable server terms and purchase_mode
         '200':
           description: Existing quote for the same payload
         '409':
-          description: Idempotency key used for different bundle
+          description: Idempotency key used for different bundle or mode
   /v1/orders/{id}/demo-confirm:
     post:
       summary: Confirm an explicitly simulated payment
@@ -79,7 +84,7 @@ paths:
         '404':
           description: Order unavailable or simulation disabled
         '409':
-          description: Quote expired
+          description: Quote expired or checkout order cannot use demo confirmation
   /v1/access:
     get:
       summary: List the current customer's access and purchase history
@@ -106,3 +111,463 @@ paths:
           description: Invalid pagination parameters
         '401':
           description: No valid customer session
+  /v1/capabilities:
+    get:
+      summary: Read explicit configured feature gates
+      responses:
+        '200':
+          description: SMS capability also checks notification availability and simulation mode; mobileCookies remains false
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [demo, paymentMode, paymentCheckout, vouchers, receiptPairing, staffSales, deliverySms, networkAccess, mobileCookies]
+                properties:
+                  demo: {type: boolean}
+                  paymentMode: {type: string, enum: [disabled, mock, sandbox, production]}
+                  paymentCheckout: {type: boolean}
+                  vouchers: {type: boolean}
+                  receiptPairing: {type: boolean}
+                  staffSales: {type: boolean}
+                  deliverySms: {type: boolean}
+                  networkAccess: {type: boolean}
+                  mobileCookies: {const: false}
+  /v1/sites:
+    get:
+      summary: List active commercial locations
+      responses:
+        '200': {description: 'sites array of UUID id and name; this does not establish router availability'}
+  /v1/payments/methods:
+    get:
+      summary: List qualified methods for server-priced bundle and active site
+      parameters:
+        - {in: query, name: siteId, required: true, schema: {type: string, format: uuid}}
+        - {in: query, name: bundleId, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'enabled, mode, simulation and methods array of code/name/currency/integer minMinor/maxMinor'}
+        '404': {description: Checkout disabled or site/bundle unavailable}
+  /v1/orders/{id}/checkout:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      security: [{CustomerSession: []}]
+      summary: Initiate or recover one customer-owned checkout
+      description: Exact origin required. Unknown/review attempts block a second charge. An untrusted redirect is never returned.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [siteId, methodCode]
+              properties:
+                siteId: {type: string, format: uuid}
+                methodCode: {type: string}
+      responses:
+        '200': {description: 'attemptId, state, nullable redirectUrl and simulation'}
+        '409': {description: Idempotency conflict or quote/method/payment cannot be initiated}
+  /v1/orders/{id}/status:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{CustomerSession: []}]
+      summary: Read current verified fulfillment for a customer-owned order
+      responses:
+        '200':
+          description: Historical order status alone does not establish current fulfillment; revoked entitlementId is null
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order: {type: object}
+                  attempts: {type: array, items: {type: object}}
+                  fulfillmentState: {type: string, enum: [unconfirmed, fulfilled, reversed, pending_review]}
+                  entitlementId: {type: [string, 'null'], format: uuid}
+                  entitlementRevokedAt: {type: [string, 'null'], format: date-time}
+                  safeToRequote: {type: boolean, description: True only after durable server closure of an expired quote with no prior payment attempt}
+                  simulation: {type: boolean}
+        '404': {description: Order not owned or checkout disabled}
+  /v1/orders/{id}/expire-unused:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      security: [{CustomerSession: []}]
+      summary: Fence an expired unused quote before reviewing fresh purchase terms
+      description: Requires the configured browser origin. The owned order ID is the idempotency identity. Serializes with initiation and refuses every prior payment attempt, charge or entitlement; client-clock expiry is insufficient.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses:
+        '200':
+          description: Durable quote closure, including identical retries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orderId, state, safeToRequote, replayed]
+                properties:
+                  orderId: {type: string, format: uuid}
+                  state: {type: string, const: expired_unused}
+                  safeToRequote: {type: boolean, const: true}
+                  replayed: {type: boolean}
+        '401': {description: Customer session required}
+        '403': {description: Origin rejected}
+        '404': {description: Order not owned or checkout disabled}
+        '409': {description: 'quote_still_valid, payment_attempt_exists, wrong_order_mode or order_not_expirable'}
+        '503': {description: Identity or payment storage unavailable; retain the existing intent}
+  /v1/orders/{id}/mock-payment:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      security: [{CustomerSession: []}]
+      summary: Exercise the synthetic provider reconciliation path
+      description: Registered only in explicit mock demo/development mode. Makes no real charge; reversal is final.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: {type: string, enum: [success, failed, reversed]}
+      responses:
+        '200': {description: Reconciliation state and simulation true}
+        '409': {description: Reversal is final}
+  /v1/staff/sites:
+    get:
+      security: [{StaffSession: []}]
+      summary: List active locations in the current approved staff scope
+      responses:
+        '200': {description: sites array of id/name}
+        '403': {description: Staff not approved or MFA not completed}
+  /v1/staff/inventory:
+    get:
+      security: [{StaffSession: []}]
+      summary: Read authorized stock quantities
+      responses:
+        '200': {description: 'inventory array of agentId, siteId, siteName, bundleId, quantity'}
+  /v1/admin/sites:
+    post:
+      security: [{StaffSession: []}]
+      summary: Create a location as an approved MFA-verified administrator
+      description: Body id or UUID Idempotency-Key fixes the site identity; different names for the same ID conflict. Router setup is independent.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                id: {type: string, format: uuid}
+                name: {type: string, minLength: 1, maxLength: 100}
+      responses:
+        '201': {description: site created}
+        '200': {description: Same site recovered}
+        '409': {description: Idempotency conflict}
+  /v1/admin/bundles:
+    get:
+      security: [{StaffSession: []}]
+      summary: List all catalogue versions including drafts as an administrator
+      responses:
+        '200': {description: 'products with id, price_minor, currency, byte_limit string, validity_seconds, published'}
+    post:
+      security: [{StaffSession: []}]
+      summary: Create immutable catalogue terms with an audit reason
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, priceMinor, currency, byteLimit, validitySeconds, published, reason]
+              properties:
+                id: {type: string, pattern: '^[a-z][a-z0-9-]{0,39}$'}
+                priceMinor: {type: integer, minimum: 1, maximum: 2147483647}
+                currency: {const: USD}
+                byteLimit: {type: string, pattern: '^[0-9]{1,19}$'}
+                validitySeconds: {type: integer, minimum: 60, maximum: 31536000}
+                published: {type: boolean}
+                reason: {$ref: '#/components/schemas/Reason'}
+      responses:
+        '201': {description: Product version and audit created}
+        '200': {description: Existing identical terms recovered}
+        '409': {description: Existing version terms are immutable}
+  /v1/admin/bundles/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    patch:
+      security: [{StaffSession: []}]
+      summary: Publish or withdraw a version with an audit reason
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [published, reason]
+              properties:
+                published: {type: boolean}
+                reason: {$ref: '#/components/schemas/Reason'}
+      responses:
+        '200': {description: Product id/publication state and durable audit}
+  /v1/admin/inventory/allocations:
+    post:
+      security: [{StaffSession: []}]
+      summary: Allocate stock to an approved agent at an approved site
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agentId, siteId, bundleId, quantity, reason]
+              properties:
+                agentId: {type: string, format: uuid}
+                siteId: {type: string, format: uuid}
+                bundleId: {type: string}
+                quantity: {type: integer, minimum: 1, maximum: 100000}
+                reason: {$ref: '#/components/schemas/Reason'}
+      responses:
+        '201': {description: allocationId and replayed false; stock and audit committed atomically}
+        '200': {description: Original allocationId and replayed true}
+        '409': {description: Conflict or agent/site/bundle unavailable}
+  /v1/staff/sales:
+    get:
+      security: [{StaffSession: []}]
+      summary: List authorized sales without voucher codes
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        '200': {description: 'sales array, hasMore and nullable nextOffset; agent owns sales, support sees assigned sites, admin sees all'}
+    post:
+      security: [{StaffSession: []}]
+      summary: Sell one voucher from the authenticated agent's site stock
+      description: Exact origin and current approved agent/MFA/site scope required. Receipt and both require pairingCode; sms and both require phone. Prices and commission come from server configuration and are immutable snapshots.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [siteId, bundleId, delivery]
+              properties:
+                siteId: {type: string, format: uuid}
+                bundleId: {type: string}
+                delivery: {type: string, enum: [receipt, sms, both]}
+                pairingCode: {type: string, minLength: 10, maxLength: 32}
+                phone: {type: string, description: Zimbabwe mobile number normalized to 263 and nine digits}
+      responses:
+        '201': {description: sale snapshot and replayed false; no plaintext voucher}
+        '200': {description: Original sale snapshot and replayed true}
+        '409': {description: Stock/pairing/delivery unavailable or idempotency conflict}
+  /v1/staff/sales/{id}/receipt:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{StaffSession: []}]
+      summary: Read the private voucher receipt as the owning agent or an administrator
+      responses:
+        '200': {description: 'receipt {sale,voucher:{id,code,state}} and simulation; no-store'}
+        '403': {description: Support or another unauthorized role cannot reveal vouchers}
+        '404': {description: Sale outside current ownership/site scope}
+  /v1/staff/sales/{id}/delivery:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{StaffSession: []}]
+      summary: Read sanitized delivery status in staff sale scope
+      responses:
+        '200': {description: 'state, simulation, attempts and optional latest job metadata; no phone, voucher or provider credentials'}
+  /v1/staff/sales/{id}/resend:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      security: [{StaffSession: []}]
+      summary: Explicitly resend the saved voucher to its saved recipient
+      description: Owning agent or administrator only. Unknown or otherwise unresolved delivery blocks resend; no new voucher or entitlement is created.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: {$ref: '#/components/schemas/Reason'}
+      responses:
+        '201': {description: New jobId and replayed false}
+        '200': {description: Original jobId and replayed true}
+        '409': {description: Idempotency conflict or unresolved delivery}
+  /v1/receipt-pairings:
+    post:
+      security: [{CustomerSession: []}]
+      summary: Create a private five-minute receipt pairing code
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '201': {description: 'pairing {id,code,expiresAt} and replayed false; code is ten random characters'}
+        '200': {description: Original pairing and replayed true}
+        '409': {description: Original unused pairing expired}
+  /v1/receipt-pairings/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{CustomerSession: []}]
+      summary: Poll the owning customer's private receipt
+      responses:
+        '200': {description: 'status pending/expired/ready; ready includes receipt {sale,voucher:{id,code,state}}'}
+        '404': {description: Unknown pairing or different customer}
+  /v1/vouchers/redeem:
+    post:
+      security: [{CustomerSession: []}]
+      summary: Redeem one voucher into the current customer account
+      description: Exact origin required; 10 requests per minute. Paired vouchers belong only to the paired customer. Redemption does not activate validity or connect a device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string, maxLength: 64}
+      responses:
+        '200': {description: entitlementId and replayed; an owner retry returns the original entitlement}
+        '409': {description: invalid_or_used including ownership mismatch}
+        '429': {description: Request rate exceeded}
+  /internal/v1/deliveries/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{InternalBearer: []}]
+      summary: Resolve a delivery reference for the notification service
+      description: Private route. Requires notification issuer/subject, prepaid-access audience and delivery:read scope using INTERNAL_DELIVERY_SECRET. Never expose through a public gateway.
+      responses:
+        '200': {description: 'deliveryReference, saleId, simulation and channel none or sms; sms includes transient to/from/message with the same voucher'}
+        '410': {description: Voucher start-by deadline passed}
+  /v1/network/sites:
+    get:
+      security: [{CustomerSession: []}]
+      summary: List qualified network sites with configured safe login URLs
+      responses:
+        '200': {description: sites with id/name/loginUrl}
+        '404': {description: Network feature disabled}
+  /v1/network/session:
+    get:
+      security: [{CustomerSession: []}]
+      summary: Read this customer's current reservation and observed connection state
+      responses:
+        '200': {description: 'nullable session with id, siteId, state, accountedAt, deadline, chargedBytes, disconnectRequested and connected'}
+  /v1/network/credentials:
+    post:
+      security: [{CustomerSession: []}]
+      summary: Request a short-lived site credential for eligible access
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [siteId, requestKey]
+              properties:
+                siteId: {type: string, format: uuid}
+                requestKey: {type: string, format: uuid}
+      responses:
+        '200': {description: username/password/expiresAt/loginUrl; no-store, no logging, no URL transport}
+        '409': {description: Existing reservation, accounting hold or no usable entitlement}
+  /v1/network/disconnect:
+    post:
+      security: [{CustomerSession: []}]
+      summary: Request termination while retaining the reservation until verified closure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [grantId]
+              properties:
+                grantId: {type: string, format: uuid}
+      responses:
+        '202': {description: state disconnect_pending}
+        '200': {description: state closed}
+        '404': {description: Grant not owned by this customer}
+  /v1/admin/network/reviews:
+    get:
+      security: [{StaffSession: []}]
+      summary: List uncertain or held reservations for MFA-verified administrators
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        '200': {description: 'reviews with grant/customer/site/NAS IDs, version string, cumulative counter maxima including late evidence, charged/reserved byte strings, absence/fencing dates, anomaly and reason; hasMore/nextOffset'}
+  /v1/admin/network/reviews/{id}/resolve:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      security: [{StaffSession: []}]
+      summary: Settle bounded verified final usage with an immutable operator audit
+      description: Requires current MFA administrator, exact origin, expected review version, fresh independent absence/fencing, no other live grant and final counters that include all evidence without exceeding the reservation. Never estimates unknown usage.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, finalUpload, finalDownload, reason, evidenceReference]
+              properties:
+                expectedVersion: {type: string, pattern: '^[1-9][0-9]*$'}
+                finalUpload: {$ref: '#/components/schemas/Counter'}
+                finalDownload: {$ref: '#/components/schemas/Counter'}
+                reason: {$ref: '#/components/schemas/Reason'}
+                evidenceReference: {$ref: '#/components/schemas/Reason'}
+      responses:
+        '200': {description: 'state closed, grantId, chargedBytes, additionalBytes, version and replayed; only this hold is cleared'}
+        '409': {description: Stale review, idempotency conflict, insufficient evidence, another unresolved session or unbounded final usage}
+components:
+  securitySchemes:
+    CustomerSession:
+      type: apiKey
+      in: cookie
+      name: __Host-pamofi_session
+      description: Same-origin opaque customer session resolved by identity; demo uses pamofi_demo_session.
+    StaffSession:
+      type: apiKey
+      in: cookie
+      name: __Host-pamofi_staff_session
+      description: Current approved MFA-completed staff session; demo uses pamofi_demo_staff_session. Authority is resolved on every request.
+    InternalBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Scoped service-to-service JWT with issuer/subject/audience/iat/exp validation; never a browser authorization token.
+  parameters:
+    Id: {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+    IdempotencyKey: {in: header, name: Idempotency-Key, required: true, schema: {type: string, format: uuid}}
+    Limit: {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+    Offset: {in: query, name: offset, schema: {type: integer, minimum: 0, maximum: 1000000, default: 0}}
+  schemas:
+    Reason: {type: string, minLength: 10, maxLength: 500}
+    Counter: {type: string, pattern: '^(0|[1-9][0-9]{0,19})$', description: Nonnegative decimal counter; domain validates the unsigned 64-bit bound.}

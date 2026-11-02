@@ -1,6 +1,6 @@
 # PamoFi help
 
-The assistant provides reviewed public guidance with no model dependency. It explains bundle timing/data accounting, pending payments, top-ups, planned vouchers, recovery, key replacement, shared-browser sign-out and preview limits.
+The assistant provides reviewed public guidance with no model dependency. It explains bundle timing/data accounting, pending payments, top-ups, voucher use, recovery, key replacement, shared-browser sign-out and preview limits.
 
 `GET /v1/help` returns versioned articles with stable IDs, categories, questions and answers. Optional `q` searches reviewed text case-insensitively; it is limited to 200 characters and requires every word to match. Unsupported questions return an empty list. The web interface searches loaded articles locally and offers loading, unavailable and retry states.
 

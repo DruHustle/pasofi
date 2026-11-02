@@ -16,7 +16,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     services:
       postgres:
         image: postgres:17.11-alpine3.23
@@ -33,6 +33,7 @@ jobs:
           --health-retries 20
     env:
       PAMOFI_TEST_CONFIRM_ISOLATED: '1'
+      PAMOFI_TEST_BOOTSTRAP_DATABASE_URL: postgresql://pamofi_test_bootstrap:disposable_ci_only@127.0.0.1:5432/postgres
       PAMOFI_TEST_IDENTITY_DATABASE_URL: postgresql://pamofi_identity:demo_only_change_me@127.0.0.1:5432/pamofi_identity
       PAMOFI_TEST_PREPAID_DATABASE_URL: postgresql://pamofi_prepaid_access:demo_only_change_me@127.0.0.1:5432/pamofi_prepaid_access
       PAMOFI_TEST_NETWORK_DATABASE_URL: postgresql://pamofi_network:demo_only_change_me@127.0.0.1:5432/pamofi_network
@@ -64,9 +65,26 @@ jobs:
         run: npx --no-install playwright install --with-deps chromium
       - name: Build and verify all services, web, and mobile
         run: node pamofi-backend/local-tools/verify.mjs --integration --browser
+      - name: Verify protected backup configuration, remote plan and operations diagnostics
+        run: |
+          node --test pamofi-backend/infra/backup-production/config.test.mjs \
+            pamofi-backend/infra/remote-access/plan.test.mjs \
+            pamofi-backend/infra/operations/check.test.mjs
+          sh -n pamofi-backend/infra/backup-production/render-config.sh
+          sh -n pamofi-backend/infra/backup-production/entrypoint.sh
+          bash -n pamofi-backend/infra/backup-production/backup.sh
+      - name: Verify production migration and runtime privilege separation
+        run: |
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y postgresql-client
+          fi
+          node pamofi-backend/infra/production/test-roles.mjs
       - name: Verify real FreeRADIUS packets in the isolated lab
         run: bash pamofi-backend/pamofi-radius/lab/run-lab.sh
       - name: Verify encrypted physical backup and restore
         run: bash pamofi-backend/infra/backup-lab/run-lab.sh
       - name: Verify private staging images and database isolation
         run: bash pamofi-backend/infra/oracle-staging/test-local.sh
+      - name: Verify production TLS, file secrets, runtime workflows and volume protection
+        run: node pamofi-backend/infra/production/run-lab.mjs

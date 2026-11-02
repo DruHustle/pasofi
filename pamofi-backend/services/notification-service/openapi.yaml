@@ -15,3 +15,117 @@ paths:
           description: Service database is reachable
         '503':
           description: Service database unavailable
+  /internal/v1/events:
+    post:
+      security: [{ServiceBearer: []}]
+      summary: Atomically receive one prepaid sale event and delivery reference
+      description: Requires prepaid-access issuer/subject, notification audience, event:deliver scope and INTERNAL_EVENTS_SECRET. Matching duplicates succeed; changed immutable content conflicts. No phone or voucher belongs in the event.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id, type, version, producer, aggregateId, aggregateVersion, occurredAt, correlationId, payload]
+              properties:
+                id: {type: string, format: uuid}
+                type: {const: agent.sale.created}
+                version: {const: 1}
+                producer: {const: prepaid-access}
+                aggregateId: {type: string, format: uuid}
+                aggregateVersion: {const: 1}
+                occurredAt: {type: string, format: date-time}
+                correlationId: {type: string, format: uuid}
+                payload:
+                  type: object
+                  additionalProperties: false
+                  required: [deliveryReference]
+                  properties:
+                    deliveryReference: {type: string, format: uuid}
+      responses:
+        '200': {description: accepted true after durable commit or verified duplicate}
+        '401': {description: Missing or invalid service authority}
+        '403': {description: Incorrect scope}
+        '409': {description: Event content conflicts}
+  /internal/v1/delivery/capabilities:
+    get:
+      security: [{ServiceBearer: []}]
+      summary: Report explicitly configured delivery mode
+      description: Uses INTERNAL_DELIVERY_SECRET and delivery:status scope. Valid prepaid lookup configuration is required before enabled can be true.
+      responses:
+        '200':
+          description: Current configured capability; mock is synthetic
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, mode, simulation]
+                properties:
+                  enabled: {type: boolean}
+                  mode: {type: string, enum: [disabled, mock, sendai]}
+                  simulation: {type: boolean}
+  /internal/v1/deliveries/{id}/status:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{ServiceBearer: []}]
+      summary: Read sanitized latest delivery state for a sale reference
+      description: Requires INTERNAL_DELIVERY_SECRET and delivery:status scope. No phone, message, voucher or provider credential is returned. Queued means no durable inbox job has arrived yet; provider acceptance is not delivery evidence.
+      responses:
+        '200':
+          description: Latest state and sanitized attempts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state, simulation, attempts]
+                properties:
+                  id: {type: string, format: uuid}
+                  state: {type: string, enum: [queued, awaiting_delivery_details, ready, submitting, submitted, delivered, failed, unknown, canceled]}
+                  createdAt: {type: string, format: date-time}
+                  lastError: {type: [string, 'null']}
+                  simulation: {type: boolean}
+                  attempts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string, format: uuid}
+                        state: {type: string}
+                        createdAt: {type: string, format: date-time}
+                        deliveredAt: {type: [string, 'null'], format: date-time}
+                        chargeAmount: {type: [string, 'null']}
+                        chargeScale: {type: [integer, 'null']}
+                        chargeCurrency: {type: [string, 'null']}
+  /internal/v1/deliveries/{id}/resend:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      security: [{ServiceBearer: []}]
+      summary: Create one explicit audited resend for the same saved delivery reference
+      description: Requires INTERNAL_DELIVERY_SECRET and delivery:resend scope. Prepaid must supply its authenticated staff actor. All previous jobs must be terminal; unknown or submitting attempts cannot be resent. The worker looks up the same recipient and voucher without creating another entitlement.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId, actorId, reason]
+              properties:
+                requestId: {type: string, format: uuid}
+                actorId: {type: string, format: uuid}
+                reason: {type: string, minLength: 10, maxLength: 500}
+      responses:
+        '201': {description: jobId and replayed false}
+        '200': {description: Same jobId and replayed true for identical immutable request}
+        '409': {description: Disabled, unresolved, not-ready delivery or idempotency conflict}
+components:
+  securitySchemes:
+    ServiceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived scoped service JWT with issuer/subject/audience/iat/exp checks. Private endpoints must never be routed publicly.
+  parameters:
+    Id: {in: path, name: id, required: true, schema: {type: string, format: uuid}}

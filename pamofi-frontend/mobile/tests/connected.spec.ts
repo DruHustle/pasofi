@@ -71,3 +71,19 @@ test('a gateway that cannot retain the mobile cookie never redeems a voucher', a
 test('gateway failure preserves the useful offline preview and offers retry', async ({ page, configuredBaseURL }) => {
   await page.route(`${apiOrigin}/api/**`, route => route.abort('failed')); await open(page, configuredBaseURL); await expect(page.getByRole('button', { name: 'Retry service connection' })).toBeVisible(); await page.getByRole('button', { name: '← Offline preview' }).click(); await page.getByRole('button', { name: /Explore bundles/ }).click(); await expect(page.getByRole('button', { name: 'View Flex example bundle' })).toBeVisible();
 });
+
+test('mobile refuses to discard a saved quote when a provider payment attempt exists', async ({ page, configuredBaseURL }) => {
+  const siteId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', orderId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const orderKeys: string[] = []; let closures = 0;
+  await mock(page, async (route, path, method, reply) => {
+    if (path === '/api/capabilities') { await reply({ ...capabilities, paymentMode: 'mock', paymentCheckout: true }); return true; }
+    if (path === '/api/sites') { await reply({ sites: [{ id: siteId, name: 'Configured test site' }] }); return true; }
+    if (path === '/api/payments/methods') { await reply({ enabled: true, methods: [{ code: 'mock', name: 'Mock provider', currency: 'USD', minMinor: 1, maxMinor: 100000 }] }); return true; }
+    if (path === '/api/orders' && method === 'POST') { orderKeys.push(route.request().headers()['idempotency-key']); await reply({ order: { id: orderId, bundle_id: 'flex', price_minor: 100, currency: 'USD', status: 'awaiting_payment', quote_expires_at: new Date(Date.now() - 60_000).toISOString() } }); return true; }
+    if (path === `/api/orders/${orderId}/checkout`) { await reply({ attemptId: entitlementId, state: 'unknown', redirectUrl: null, simulation: true }); return true; }
+    if (path === `/api/orders/${orderId}/expire-unused`) { closures++; expect(method).toBe('POST'); expect(route.request().postDataJSON()).toEqual({}); await reply({ error: 'payment_attempt_exists' }, 409); return true; }
+    return false;
+  });
+  await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Buy a bundle', exact: true }).click(); await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Prepare checkout' }).click(); await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible(); await page.getByRole('button', { name: 'Close an expired unused quote' }).click(); await expect(page.getByText('A payment attempt already exists for this order.', { exact: false })).toBeVisible(); expect(closures).toBe(1); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':purchase-details')).length)).toBe(1); await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toBeDisabled(); await expect(page.getByRole('button', { name: 'Review a fresh quote' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Retry this checkout safely' }).click(); await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible(); expect(orderKeys).toHaveLength(2); expect(new Set(orderKeys).size).toBe(1);
+});

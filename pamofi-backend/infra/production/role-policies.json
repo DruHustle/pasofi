@@ -1,0 +1,53 @@
+{
+  "identity": {
+    "customers": ["SELECT", "INSERT"],
+    "customer_sessions": ["SELECT", "INSERT", "UPDATE"],
+    "customer_recovery": ["SELECT", "INSERT", "UPDATE"],
+    "customer_session_creations": ["SELECT", "INSERT", "UPDATE (request_hash)"],
+    "customer_handoffs": ["SELECT", "INSERT", "UPDATE"],
+    "staff_users": ["SELECT", "INSERT", "UPDATE"],
+    "staff_auth_challenges": ["SELECT", "INSERT", "UPDATE"],
+    "staff_sessions": ["SELECT", "INSERT", "UPDATE"],
+    "staff_audit_events": ["SELECT", "INSERT"],
+    "staff_bootstrap_guard": []
+  },
+  "prepaid-access": {
+    "bundle_versions": ["SELECT", "INSERT", "UPDATE"],
+    "purchase_orders": ["SELECT", "INSERT", "UPDATE"],
+    "purchase_entitlements": ["SELECT", "INSERT", "UPDATE"],
+    "mock_payment_records": [],
+    "mock_provider_payments": [],
+    "agent_inventory": [],
+    "agent_sales": ["SELECT", "INSERT", "UPDATE (id)"],
+    "issued_vouchers": ["SELECT", "INSERT", "UPDATE"],
+    "event_outbox": ["SELECT", "INSERT", "UPDATE"],
+    "outbox_replay_audit": ["SELECT", "INSERT"],
+    "provider_payment_attempts": ["SELECT", "INSERT", "UPDATE"],
+    "verified_charges": ["SELECT", "INSERT", "UPDATE"],
+    "payment_reviews": ["SELECT", "INSERT"],
+    "payment_reconciliation_jobs": ["SELECT", "INSERT", "UPDATE"],
+    "sales_locations": ["SELECT", "INSERT", "UPDATE"],
+    "agent_site_inventory": ["SELECT", "INSERT", "UPDATE"],
+    "inventory_allocations": ["SELECT", "INSERT"],
+    "agent_sale_deliveries": ["SELECT", "INSERT", "UPDATE"],
+    "receipt_pairings": ["SELECT", "INSERT", "UPDATE"],
+    "commerce_audit": ["SELECT", "INSERT"],
+    "network_account_holds": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+    "grant_reconciliation_events": ["SELECT", "INSERT"],
+    "network_operator_resolutions": ["SELECT", "INSERT"],
+    "access_grants": ["SELECT", "INSERT", "UPDATE"]
+  },
+  "network": {
+    "radius_nas": ["SELECT", "INSERT", "UPDATE"],
+    "radius_credentials": ["SELECT", "INSERT", "UPDATE"],
+    "router_reconciliation_status": ["SELECT", "INSERT", "UPDATE"]
+  },
+  "notification": {
+    "event_inbox": ["SELECT", "INSERT"],
+    "delivery_jobs": ["SELECT", "INSERT", "UPDATE"],
+    "delivery_attempts": ["SELECT", "INSERT", "UPDATE"],
+    "delivery_resend_requests": ["SELECT", "INSERT"],
+    "mock_sms_sink": []
+  },
+  "assistant": {}
+}
