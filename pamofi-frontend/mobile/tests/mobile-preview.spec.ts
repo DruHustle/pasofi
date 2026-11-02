@@ -7,6 +7,8 @@ for (const platform of ['small-phone', 'large-phone'] as const) {
     page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) calls.push(request.url()); });
     await page.goto('/');
     await expect(page.getByText('Offline preview')).toBeVisible();
+    await expect(page.locator('.mobile-hero-art img')).toHaveJSProperty('complete', true);
+    expect(await page.locator('.mobile-hero-art img').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
     await page.context().setOffline(true);
     await page.screenshot({path:testInfo.outputPath(`pamofi-${platform}-home.png`),fullPage:true});
     await page.getByRole('button',{name:'Explore bundles'}).click();

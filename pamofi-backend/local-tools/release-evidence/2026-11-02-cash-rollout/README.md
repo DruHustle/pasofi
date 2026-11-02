@@ -1,5 +1,7 @@
 # Cash rollout discovery — 2 November 2026
 
+This is a historical discovery snapshot. For the later verified Onesa deployment, see [the production deployment record](../2026-11-02-onesa-production/README.md).
+
 **Status: prepared and under verification; no production cash deployment or live cash acceptance has been completed.** Do not interpret this record as a go-live approval.
 
 ## Verified resources

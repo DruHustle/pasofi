@@ -1,5 +1,9 @@
 # Build status — 2 November 2026
 
+**Current deployment:** The web frontend is live at https://pamofi.onesa.eu and the authenticated API gateway is at https://api.pamofi.onesa.eu on the owner-selected shared Onesa UG Backend. Cash commerce, providers, SMS and customer-network access remain disabled; first-admin MFA is deferred. Independent encrypted backups, restore evidence, alerts and API certificate renewal are configured. See the [verified Onesa deployment record](../local-tools/release-evidence/2026-11-02-onesa-production/README.md). Native device/cookie qualification and real sales and hotspot acceptance remain outstanding.
+
+The sections below preserve the earlier source review and discovery snapshot. References to deployment or backup resources as missing describe that historical checkpoint, not the later verified deployment.
+
 **Customer, staff, agent and administrator source flows are implemented. The final local strict run passed 168 integration/browser tests with zero skipped or pending cases, including cash confirmation through automatic usage updates. The recorded CI checkpoint also passed the production infrastructure laboratories. Commercial hotspot operation still requires physical-router, native-cookie and deployment qualification.**
 
 The selected hosting is now **Vercel frontend + Oracle backend**, with **Starlink upstream of the MikroTik**. The owner explicitly requested software completion before physical hotspot tests. The software follow-up adds the same-origin Vercel proxy, authenticated Oracle split-host gateway, private production RADIUS package and outbound-only site-link preparation. Exact deployment identities/secrets and physical acceptance remain separate from these provider choices.

@@ -246,3 +246,20 @@ test('bundle and help links can be revisited with browser history and opened dir
   await page.goto('/#help');
   await expect(page.getByRole('heading', { name: 'Here to help.' })).toBeVisible();
 });
+
+test('service banner reflects disabled, demo and unavailable capabilities without claiming purchases are live', async ({ page }) => {
+  let state: 'disabled' | 'demo' | 'unavailable' = 'disabled';
+  await mockApi(page, async (route, path) => {
+    if (path !== '/api/capabilities') return false;
+    if (state === 'unavailable') await json(route, { error: 'unavailable' }, 503);
+    else await json(route, { demo: state === 'demo', staffSales: false, networkAccess: false });
+    return true;
+  });
+  await page.goto('/');
+  await expect(page.locator('.demo')).toContainText('SERVICE IN PREPARATION');
+  await expect(page.locator('.demo')).toContainText('Purchases and connections are not yet available');
+  state = 'demo'; await page.reload();
+  await expect(page.locator('.demo')).toContainText('DEMONSTRATION');
+  state = 'unavailable'; await page.reload();
+  await expect(page.locator('.demo')).toContainText('SERVICE STATUS UNAVAILABLE');
+});
