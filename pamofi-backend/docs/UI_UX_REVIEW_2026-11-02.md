@@ -81,7 +81,7 @@ These findings verify the public preparation state. They do not establish workin
 
 ### Test evidence
 
-The complete strict local gate passed on the application source published in commit `44327f33c2fc8bd9c440d70a00a763703bb31d04`. This documentation follow-up changes no application, configuration or test code. Failed, skipped or interrupted runs are not counted as acceptance.
+The complete strict local gate passed on the application source published in commit `44327f33c2fc8bd9c440d70a00a763703bb31d04`. Application and test source remain unchanged after that accepted run. A subsequent workflow adjustment changes only the standard iOS build host, as explained below. Failed, skipped or interrupted runs are not counted as acceptance.
 
 | Gate | Result | Scope |
 | --- | --- | --- |
@@ -97,6 +97,12 @@ The complete strict local gate passed on the application source published in com
 The full gate includes the 14 new navigation/recovery regressions and 8 new catalogue regressions. Focused execution also verified all 9 real-database commerce tests. Independent source review found and verified the delayed-response fixes above; tests deliberately return the old response after a newer purchase starts.
 
 [Pull request #13](https://github.com/DruHustle/pamofi/pull/13) records the candidate's source, review summary and final GitHub Actions results. Its Checks tab is the authority for the exact final head's PostgreSQL 17.11, infrastructure lab and native compile outcomes. The change does not publish a native store release or establish production deployment by itself.
+
+### CI runner issue found during release verification
+
+The initial iOS job on `macos-26` received no runner and executed no steps before cancellation after approximately 15 minutes. Its [job annotations](https://github.com/DruHustle/pamofi/actions/runs/41533718938/job/125580158386) explicitly reported a hosted-runner acquisition failure, an internal server error and macOS ARM capacity constraints. The full web/backend/infrastructure verification, UI package and Android build had passed on that same application source.
+
+Use the supported standard `macos-26-intel` runner for the iOS job. The existing Xcode 26-or-newer check, SDK inspection, pinned dependencies, unsigned generic simulator build with `ONLY_ACTIVE_ARCH=NO`, package-resolution check and artifact provenance remain intact. This changes the build host, not the iOS deployment target or app functionality. [GitHub's runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) lists this standard host for private repositories; its [macOS 26 image](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-Readme.md) documents the installed toolchain. Final acceptance still requires an actual successful iOS compilation.
 
 ### Remaining launch requirements
 
