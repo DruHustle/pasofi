@@ -16,6 +16,19 @@ active: both new interfaces remain disabled. A separate reviewed plan must
 qualify HTTPS, authentication, DHCP, isolation and accounting before enabling
 the radio or allowing any customer traffic.
 
+The separate `network-plan.mjs` prepares a fixed `10.77.10.0/24` first-site
+pilot address, pool, DHCP network and a disabled DHCP server, while requiring
+the existing bridge and radio to remain disabled and retaining the deny rules.
+It does not add a DNS override, NAT, HotSpot or RADIUS. Reinspect all current
+routes and address pools for overlaps before using this fixed subnet; its
+preflight checks the exact route and names, not every possible wider overlap.
+Check the review file with RouterOS dry-run and use Safe Mode for any import.
+
+```sh
+node --test pamofi-backend/infra/pilot-isolation/network-plan.test.mjs
+node pamofi-backend/infra/pilot-isolation/network-plan.mjs /private/tmp/pamofi-pilot-network.rsc
+```
+
 Run `node --test pamofi-backend/infra/pilot-isolation/plan.test.mjs` and prepare
 a new review file with `node pamofi-backend/infra/pilot-isolation/plan.mjs
 /private/tmp/pamofi-pilot-isolation.rsc`. Inspect and checksum the file, retain
