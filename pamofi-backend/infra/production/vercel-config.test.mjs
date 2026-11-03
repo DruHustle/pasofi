@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, chmod, lstat, symlink, link, unlink, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, chmod, lstat, symlink, link, unlink, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,7 +52,7 @@ test('Vercel credential generator is additive, private, silent and refuses any o
 test('secret preflight rejects public directories, repository storage, symlinks, hard links and writable files', async () => temporary(async directory => {
   const secrets = join(directory, 'secrets'); await mkdir(secrets, { mode: 0o700 });
   const file = join(secrets, 'value'); await writeFile(file, 'value', { mode: 0o444 });
-  assert.equal(await protectedDirectory(secrets), secrets);
+  assert.equal(await protectedDirectory(secrets), await realpath(secrets));
   await chmod(secrets, 0o755); await assert.rejects(protectedDirectory(secrets)); await chmod(secrets, 0o700);
   const alias = join(directory, 'alias'); await symlink(secrets, alias); await assert.rejects(protectedDirectory(alias));
   await symlink(file, join(secrets, 'linked')); await assert.rejects(protectedFile(secrets, 'linked'));

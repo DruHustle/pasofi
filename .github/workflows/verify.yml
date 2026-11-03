@@ -75,7 +75,10 @@ jobs:
             pamofi-backend/infra/production/vercel-config.test.mjs \
             pamofi-backend/infra/production/router-control-config.test.mjs \
             pamofi-backend/infra/site-link/*.test.mjs \
-            pamofi-backend/infra/radius-production/*.test.mjs
+            pamofi-backend/infra/radius-production/*.test.mjs \
+            pamofi-backend/infra/pilot-isolation/*.test.mjs \
+            pamofi-backend/pamofi-routeros/site-01/*.test.mjs \
+            pamofi-backend/pamofi-routeros/site-02/*.test.mjs
           sh -n pamofi-backend/infra/backup-production/render-config.sh
           sh -n pamofi-backend/infra/backup-production/entrypoint.sh
           bash -n pamofi-backend/infra/backup-production/backup.sh

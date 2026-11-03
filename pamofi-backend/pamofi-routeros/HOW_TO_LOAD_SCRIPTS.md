@@ -21,6 +21,14 @@ dry-run on their respective routers**; the individual Kuwadzana HotSpot and
 torrent components were previously imported on Site 1. Don't run the Lawfield
 file on the Kuwadzana router.
 
+For the current bench setup, the owner reported connecting Lawfield's
+`ether1` to a Kuwadzana LAN port; verify the port labels before changing
+anything. This is a temporary upstream path, not proof that Lawfield's
+Starlink connection works. If Lawfield's WAN and LAN both use
+`192.168.88.0/24`, their routes overlap and need a site-specific correction
+before the tunnel can be qualified. The Lawfield file reports routes and pools
+but does not change or repair them.
+
 ## Before loading a file
 
 1. Connect to the intended router in WinBox and confirm its identity. The
