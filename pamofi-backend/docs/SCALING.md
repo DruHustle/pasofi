@@ -27,14 +27,16 @@ separate impact review because other Onesa services use the same host.
 Oracle's free-tenancy documentation lists up to two AMD E2.1.Micro instances,
 plus a total of 1,500 ARM A1 OCPU-hours and 9,000 GB-hours per month (roughly
 2 OCPUs and 12 GB continuously), and 200 GB of combined boot and block volume
-storage. Oracle's price list separately states a larger A1 monthly free
-allowance for paid tenancies: 3,000 OCPU-hours and 18,000 GB-hours. Confirm the
-account's subscription and applicable offer before assuming which allowance
-applies. Oracle can also report temporary lack of shape capacity.
+storage. The owner reported that the account is Free Tier. Oracle's price list
+separately states a larger A1 monthly free allowance for paid tenancies:
+3,000 OCPU-hours and 18,000 GB-hours. Do not apply the paid-tenancy allowance
+to this Free Tier account without verifying a change in subscription. Oracle
+can also report temporary lack of shape capacity.
 
-The two existing ARM instances together allocate 2 OCPUs and 12 GB. The three
-identified boot volumes total 200 GB, and the regional Always Free storage quota
-reported zero remaining. Oracle reported one additional AMD Micro slot in the
+The two existing ARM instances together allocate 2 OCPUs and 12 GB, matching
+the documented continuous Free Tier ARM allowance. The three identified boot
+volumes total 200 GB, and the regional Always Free storage quota reported zero
+remaining. Oracle reported one additional AMD Micro slot in the
 PamoFi VM's availability domain, but another VM also needs a boot volume and
 physical capacity. A general service quota being available is not evidence
 that additional usage would be free. Do not terminate an instance or delete a
