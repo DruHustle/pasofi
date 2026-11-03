@@ -64,6 +64,12 @@ bash "$guard_script" start
 nft list table inet pfi_site01 >/dev/null
 iptables -C ONESA_WORKER_INPUT -i enp0s6 -p udp --dport 51821 -m comment --comment pamofi-site01-wireguard -j ACCEPT
 if bash "$guard_script" start >/dev/null 2>&1; then echo 'Guard accepted a duplicate start.' >&2; exit 1; fi
+iptables -D ONESA_WORKER_INPUT -i enp0s6 -p udp --dport 51821 -m comment --comment pamofi-site01-wireguard -j ACCEPT
+if bash "$guard_script" stop >/dev/null 2>&1; then
+  echo 'Guard accepted an unexpected missing transport rule.' >&2; exit 1
+fi
+nft list table inet pfi_site01 >/dev/null
+iptables -I ONESA_WORKER_INPUT 1 -i enp0s6 -p udp --dport 51821 -m comment --comment pamofi-site01-wireguard -j ACCEPT
 mkdir "$test_dir/failing-ip"
 printf '#!/bin/sh\nexit 1\n' > "$test_dir/failing-ip/ip"
 chmod 700 "$test_dir/failing-ip/ip"

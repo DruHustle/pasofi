@@ -26,12 +26,11 @@ if ! interface_snapshot=$(ip -o link show); then
   exit 1
 fi
 interface_present=false
-if printf '%s\n' "$interface_snapshot" | awk -F': ' -v wanted="$interface" '
-  { name=$2; sub(/@.*/, "", name); if (name == wanted) found=1 }
-  END { exit !found }
-'; then
-  interface_present=true
-fi
+while IFS= read -r link_line; do
+  if [[ $link_line == *": $interface:"* || $link_line == *": $interface@"* ]]; then
+    interface_present=true
+  fi
+done <<< "$interface_snapshot"
 
 if [[ $1 == start ]]; then
   [[ -f "$nft_file" && ! -L "$nft_file" ]] || { echo 'Reviewed nft batch is missing or is a symlink.' >&2; exit 1; }
@@ -69,12 +68,18 @@ else
     echo 'Stop the PamoFi WireGuard interface before removing its guard.' >&2
     exit 1
   fi
-  # Close transport first. Never remove a rule that does not match exactly.
-  if iptables -C "$chain" "${rule[@]}" 2>/dev/null; then
-    iptables -D "$chain" "${rule[@]}"
+  # A missing or unreadable rule is not proof that the transport is closed.
+  # Require the exact rule before changing anything and close it first.
+  iptables -S "$chain" >/dev/null
+  if ! iptables -C "$chain" "${rule[@]}" 2>/dev/null; then
+    echo 'Site transport rule is missing or unreadable; inspect firewall state.' >&2
+    exit 1
   fi
-  if nft list table inet "$table" >/dev/null 2>&1; then
-    nft delete table inet "$table"
+  iptables -D "$chain" "${rule[@]}"
+  if ! nft list table inet "$table" >/dev/null 2>&1; then
+    echo 'Transport closed, but the site guard table is missing or unreadable; inspect firewall state.' >&2
+    exit 1
   fi
+  nft delete table inet "$table"
   echo 'PamoFi site-01 guard removed.'
 fi
