@@ -250,3 +250,30 @@ test('cash workflow, recovery, staff and network routes are available through or
     const head = await call('/api/capabilities', { method: 'HEAD' }); assert.equal(head.status, 200); assert.equal(head.body, ''); privateResponse(head);
   });
 });
+
+test('Vercel source captures are removed without altering application pagination or accepting conflicting routes', async () => {
+  await withProxy({}, async call => {
+    const cursor = '17c4d8af-3950-44e1-84a0-f8b4d38c0862';
+    for (const url of [
+      `/api/gateway?__pamofi_path=staff%2Fusers&path=staff%2Fusers&after=${cursor}`,
+      `/api/staff/users?__pamofi_path=staff%2Fusers&path=staff%2Fusers&after=${cursor}`,
+      `/api/staff/users?path=staff%2Fusers&after=${cursor}`,
+    ]) {
+      const response = await call(url);
+      assert.equal(response.status, 200);
+      assert.equal(events.at(-1).url, `/api/staff/users?after=${cursor}`);
+    }
+    for (const url of [
+      '/api/gateway?__pamofi_path=staff%2Fusers&path=staff%2Faudit',
+      '/api/staff/users?path=staff%2Fusers&path=staff%2Fusers',
+      '/api/staff/users?path=staff%2Fusers&%70ath=staff%2Fusers',
+      '/api/staff/users?path=..%2Fstaff%2Fusers',
+    ]) {
+      const before = events.length;
+      const response = await call(url);
+      assert.equal(response.status, 400, url);
+      assert.equal(events.length, before);
+      privateResponse(response);
+    }
+  });
+});

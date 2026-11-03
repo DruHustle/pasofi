@@ -160,6 +160,9 @@ try {
   const admin = await enroll('operator@pamofi.invalid');
   check(admin.data.role, 'admin'); check(admin.data.mfaVerified, true);
   response = await request('/api/staff/users', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).users.length, 1);
+  response = await request('/api/gateway?__pamofi_path=staff%2Fusers&path=staff%2Fusers', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).users.length, 1);
+  check(forwarded.at(-1).target, '/api/staff/users');
+  response = await request('/api/gateway?__pamofi_path=staff%2Faudit&path=staff%2Fusers', { cookie: admin.cookie }); check(response.status, 400);
   response = await request('/api/staff/audit', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).events[0].action, 'bootstrap');
   response = await request('/api/staff/users/' + admin.data.staffId + '/recover-mfa', { method: 'POST', cookie: admin.cookie, body: { expectedVersion: admin.data.version, reason: 'Verify self recovery remains forbidden' } }); check(response.status, 409); check(JSON.parse(response.text).error, 'self_recovery_rejected');
   check((await request('/api/admin/bundles', { cookie: admin.cookie })).status, 200);
