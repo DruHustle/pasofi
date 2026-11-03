@@ -178,3 +178,33 @@ test('desktop tagline and navigation title meet normal-text contrast on their ac
     expect(ratio, `${selector} normal-text contrast`).toBeGreaterThanOrEqual(4.5);
   }
 });
+
+test('home actions and connection card retain readable contrast', async ({ page }) => {
+  await fixture(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.' })).toBeVisible();
+  for (const [foreground, background] of [
+    ['.pf-connection-copy h2', '.pf-connection-card'],
+    ['.pf-connection-copy h2 span', '.pf-connection-card'],
+    ['.pf-connection-copy p', '.pf-connection-card'],
+    ['.pf-connection-actions .pf-button-primary', '.pf-connection-actions .pf-button-primary'],
+    ...[1, 2, 3, 4].map(n => [`.pf-quick-actions button:nth-child(${n}) strong`, `.pf-quick-actions button:nth-child(${n})`]),
+  ]) {
+    const colors = await page.evaluate(([fg, bg]) => [getComputedStyle(document.querySelector(fg)!).color, getComputedStyle(document.querySelector(bg)!).backgroundColor], [foreground, background]);
+    const lum = (value: string) => (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number).map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4).reduce((sum, n, i) => sum + n * [.2126, .7152, .0722][i], 0);
+    const [a, b] = colors.map(lum), ratio = (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+    expect(ratio, `${foreground} against ${background}`).toBeGreaterThanOrEqual(4.5);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test('support and draft service information remain reachable directly and from the footer', async ({ page }) => {
+  await fixture(page); await page.goto('/#help');
+  await expect(page.getByRole('link', { name: '+263 715 092 221' })).toHaveAttribute('href', 'tel:+263715092221');
+  await page.getByRole('link', { name: 'Service terms' }).click();
+  await expect(page.getByRole('heading', { name: 'Service terms', exact: true })).toBeVisible();
+  await expect(page.getByText('These details are being finalized before service launch.')).toBeVisible();
+  await page.getByRole('link', { name: 'Privacy', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Privacy information' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Privacy information' })).toBeVisible();
+});
