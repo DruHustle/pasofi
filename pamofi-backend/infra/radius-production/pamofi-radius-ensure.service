@@ -1,0 +1,11 @@
+[Unit]
+Description=Ensure guarded PamoFi private RADIUS transport
+Requires=docker.service wg-quick@pfi-site01.service pamofi-site01-guard.service
+After=docker.service wg-quick@pfi-site01.service pamofi-site01-guard.service
+OnFailure=pamofi-alert@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pamofi-radius-ensure ensure
+TimeoutStartSec=2m
+NoNewPrivileges=yes

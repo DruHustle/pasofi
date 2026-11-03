@@ -1,0 +1,10 @@
+[Unit]
+Description=Check PamoFi private RADIUS transport at boot and every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=pamofi-radius-ensure.service
+
+[Install]
+WantedBy=timers.target
