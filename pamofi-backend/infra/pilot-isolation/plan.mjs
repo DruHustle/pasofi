@@ -15,6 +15,7 @@ export function buildPlan() {
   return [
     '{',
     '# REVIEW ONLY: disabled isolated pilot scaffold, no hotspot or customer access.',
+    ':error "Pilot import held: investigate bridge-port conflict before applying"',
     ':if ([:len [/interface wireless find where name="wlan1" and mode="ap-bridge" and disabled=no]] != 1) do={ :error "Expected active wlan1 access point is missing" }',
     ...[bridge,wifi].map(name=>`:if ([:len [/interface find where name="${name}"]] > 0) do={ :error "Pilot interface name already exists" }`),
     `:if ([:len [/interface wireless security-profiles find where name="${profile}"]] > 0) do={ :error "Pilot security profile already exists" }`,
