@@ -145,6 +145,26 @@ and [HotSpot configuration](https://help.mikrotik.com/docs/spaces/ROS/pages/5645
 
 ## Software verification
 
+### Onesa first-site runtime check
+
+`onesa-radius-ensure.py` and the accompanying systemd service/timer are pinned
+to the reviewed Onesa first-site containers, image IDs, private port bindings,
+Docker networks and tunnel. The check refuses changed definitions, requires
+the site guard and WireGuard services, checks the private RADIUS certificates
+for 30 days' remaining life, starts stopped reviewed containers and confirms
+the authority's health and exact UDP listeners. Failures use the existing
+PamoFi alert service. It does not test a NAS packet or customer access.
+
+The timer intentionally restarts those exact stopped containers every five
+minutes. Disable and stop the timer before planned RADIUS shutdown or rollback.
+Requalify and update the pinned definitions before replacing either image,
+secret directory, network or tunnel. Verify startup across an actual host
+restart before claiming boot recovery.
+
+```sh
+python3 pamofi-backend/infra/radius-production/onesa-radius-ensure.test.py
+```
+
 ```sh
 node --test pamofi-backend/infra/radius-production/config.test.mjs
 node pamofi-backend/infra/radius-production/run-lab.mjs
