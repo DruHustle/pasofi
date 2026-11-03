@@ -13,8 +13,11 @@ export function buildNetworkPlan(){
     // RouterOS can prefix the stored comment with interface-not-ready messages
     // when the bridge is disabled. Match the intended suffix, while still
     // requiring the exact chain, interface, drop action and enabled setting.
-    ...['/ip firewall filter','/ipv6 firewall filter'].map(menu=>`:if ([:len [${menu} find where comment~"PamoFi pilot:" and action=drop and disabled=no]] != 4) do={ :error "Expected four pilot deny rules per IP family" }`),
-    ...['/ip firewall filter','/ipv6 firewall filter'].flatMap(menu=>[['input','in'],['output','out'],['forward','in'],['forward','out']].map(([chain,direction])=>`:if ([:len [${menu} find where chain="${chain}" and ${direction}-interface="pfi-pilot-br" and action=drop and disabled=no and comment~"PamoFi pilot: ${chain} ${direction}\\$"]] != 1) do={ :error "Unexpected pilot deny rule" }`)),
+    ...['/ip firewall filter','/ipv6 firewall filter'].map(menu=>`:if ([:len [${menu} find where comment~"PamoFi pilot:" and action=drop]] != 4) do={ :error "Expected four pilot deny rules per IP family" }`),
+    ...['/ip firewall filter','/ipv6 firewall filter'].flatMap(menu=>[
+      ...[['input','in'],['output','out'],['forward','in'],['forward','out']].map(([chain,direction])=>`:if ([:len [${menu} find where chain="${chain}" and ${direction}-interface="pfi-pilot-br" and action=drop and comment~"PamoFi pilot: ${chain} ${direction}\\$"]] != 1) do={ :error "Unexpected pilot deny rule" }`),
+      `:foreach pfiRule in=[${menu} find where comment~"PamoFi pilot:" and action=drop] do={ :if ([${menu} get $pfiRule disabled] = true) do={ :error "Pilot deny rule is disabled" } }`,
+    ]),
     ':if ([:len [/ip address find where interface="pfi-pilot-br"]] != 0) do={ :error "Pilot bridge already has an IPv4 address" }',
     ':if ([:len [/ip route find where dst-address="10.77.10.0/24"]] != 0) do={ :error "Pilot subnet already has a route" }',
     ':if ([:len [/ip pool find where name="pfi-pilot-pool"]] != 0) do={ :error "Pilot pool already exists" }',

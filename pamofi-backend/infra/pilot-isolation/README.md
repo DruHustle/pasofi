@@ -24,9 +24,11 @@ routes and address pools for overlaps before using this fixed subnet; its
 preflight checks the exact route and names, not every possible wider overlap.
 Check the review file with RouterOS dry-run and use Safe Mode for any import.
 On RouterOS 7.25.1, an inactive rule can have interface-not-ready messages
-prepended to its comment while the bridge is disabled. The guard checks match
-the expected comment suffix and independently require the intended chain,
-interface, drop action, enabled setting and exact counts. The import prints
+prepended to its comment while the bridge is disabled. A `find where
+disabled=no` filter also omitted the observed inactive rules even though they
+were not marked disabled. The guard checks match the expected comment suffix
+and independently require the intended chain, interface, drop action and exact
+counts, then read each matched rule's disabled property directly. The import prints
 the bridge, radio, DHCP and gateway readbacks; validate them in Safe Mode.
 
 ```sh
