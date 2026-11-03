@@ -86,11 +86,36 @@ do not overwrite the first interface or advertise whole customer networks.
 Owner access can be layered onto the reviewed Oracle management path with its
 own authenticated account/policy; no owner or tailnet grant is created here.
 
+## Onesa site-01 host guard
+
+The `site01-firewall.sh` guard is deliberately pinned to the inspected Onesa
+host: `enp0s6`, the existing `ONESA_WORKER_INPUT` chain, UDP 51821, interface
+`pfi-site01`, and the reviewed nft batch for `10.77.254.1` and `10.77.254.2`.
+It refuses a modified, symlinked, non-root-owned or writable batch, an existing
+site interface, an existing guard table, or a duplicate transport rule. It
+adds only its own nft table and exact tagged input rule; it does not replace or
+save the shared firewall. Removal refuses while the site interface exists and
+also refuses if interface inventory cannot be read. It closes its transport
+rule before removing its table. A partially installed or
+unexpected state requires operator inspection rather than automatic adoption.
+
+The `pamofi-site01-guard.service` and `wg-quick-site01-guard.conf` files define
+the intended dependency and ordering: the guard follows the existing persistent
+firewall and precedes `wg-quick@pfi-site01`. The guard script expects the
+reviewed batch at `/etc/pamofi/site01/guard.nft` and its installed script at
+`/usr/local/lib/pamofi/site01-firewall.sh`. Those files and their parent
+directories must be root-controlled; the WireGuard configuration and private
+key must also be root-protected. Merely checking in these files does not install,
+enable or start the service. Inspect the current host and cloud state again,
+verify the actual site/peer and off-host key recovery, then follow a reviewed
+installation and rollback procedure before activation.
+
 ## Qualification
 
 ```sh
 node --test pamofi-backend/infra/site-link/plan.test.mjs
 sh pamofi-backend/infra/site-link/check-nft.sh
+sudo bash pamofi-backend/infra/site-link/test-site01-firewall.sh
 ```
 
 The second command requires Linux `nft`, `unshare`, and root or passwordless sudo
@@ -106,6 +131,11 @@ outage/reconnection; router reboot and local recovery. Neither unit tests nor
 Linux syntax validation execute RouterOS or establish a live tunnel.
 Use the [production RADIUS authentication contract](../radius-production/README.md#hotspot-authentication-contract)
 for HTTPS login/PAP qualification and actual upload/download accounting checks.
+
+The site-01 host guard test also creates a disposable network namespace. It
+checks the actual digest-pinned batch, rejection of altered files and existing
+interfaces, duplicate-start refusal, refusal to remove a live interface's guard,
+and preservation of an existing drop rule. It never modifies the host firewall.
 
 References: [Starlink IP policy](https://starlink.com/support/article/1192f3ef-2a17-31d9-261a-a59d215629f4),
 [Starlink VPN support](https://starlink.com/support/article/e5dc0b86-09b4-084b-918b-3fa181e5fb5d),
