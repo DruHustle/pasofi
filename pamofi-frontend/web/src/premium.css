@@ -149,3 +149,5 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
   .pf-nav-dot { background: var(--pf-lime); }
   .pf-bundle-price > span { font-size: 12px; }
 }
+
+.staff-mfa-qr{display:inline-flex;padding:8px;background:#fff;border-radius:12px;max-width:100%;overflow:auto}.staff-mfa-qr svg{display:block;max-width:100%;height:auto}

@@ -69,6 +69,8 @@ const handoff = JSON.parse(result.text); check(handoff.continueUrl, `${origin}/h
 result = await request('/api/handoff/redeem', { method: 'POST', body: { handoffCode: handoff.handoffCode } }); check(result.status, 200); check(JSON.parse(result.text).customerId, customerId);
 check((await request('/api/handoff/redeem', { method: 'POST', body: { handoffCode: handoff.handoffCode } })).status, 401);
 
+result = await request('/api/staff/password-reset/availability'); check(result.status, 200); check(JSON.parse(result.text).enabled, false);
+result = await request('/api/staff/password-reset/request', { method: 'POST', body: { email: 'operator@pamofi.invalid' } }); check(result.status, 503);
 result = await request('/api/staff/login', { method: 'POST', body: { email: 'operator@pamofi.invalid', password } }); check(result.status, 200);
 const challenge = token(result, '__Host-pamofi_staff_challenge'); assert.ok(challenge); checks++;
 check(JSON.parse(result.text).next, 'mfa_setup');

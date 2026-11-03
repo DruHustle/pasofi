@@ -2,11 +2,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { jwtVerify } from 'jose';
+import { configuredStaffResetDelivery, type StaffResetDelivery } from './staff-reset-mail.js';
+import { strongStaffPassword } from './staff-password-policy.js';
 import { acceptedTotpCounter, decryptMfa, encryptMfa, freshOpaque, hashPassword, isOpaque, mfaKey, newTotpSecret, opaqueHash, totp, verifyPassword } from './staff-crypto.js';
 
 const uuid = { type: 'string', pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' };
 const email = { type: 'string', minLength: 3, maxLength: 254, pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' };
 const password = { type: 'string', minLength: 15, maxLength: 128, pattern: '\\S' };
+const newPassword = { type: 'string', minLength: 18, maxLength: 128, pattern: '\\S' };
 const expectedVersion = { type: 'integer', minimum: 1, maximum: 2147483646 };
 const reason = { type: 'string', minLength: 5, maxLength: 500, pattern: '\\S' };
 const codeBody = { type: 'object', additionalProperties: false, required: ['code'], properties: { code: { type: 'string', pattern: '^\\d{6}$' } } };
@@ -24,9 +27,10 @@ export const publicStaff = (row: Record<string, any>) => ({
   version: row.version, mfaEnrolled: !!row.mfa_enrolled_at, createdAt: new Date(row.created_at).toISOString()
 });
 
-export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Pool | null; demo: boolean; origin?: string; validOrigin: boolean }) {
+export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Pool | null; demo: boolean; origin?: string; validOrigin: boolean; resetDelivery?: StaffResetDelivery; resetJobs: Set<Promise<void>> }) {
   const { pool, demo, origin, validOrigin } = options;
   const key = mfaKey(demo);
+  const resetDelivery = options.resetDelivery ?? configuredStaffResetDelivery(origin);
   const sessionCookie = demo ? 'pamofi_demo_staff_session' : '__Host-pamofi_staff_session';
   const challengeCookie = demo ? 'pamofi_demo_staff_challenge' : '__Host-pamofi_staff_challenge';
   const attributes = { path: '/', httpOnly: true, secure: !demo, sameSite: 'lax' as const };
@@ -94,10 +98,11 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
 
   app.post<{ Body: { email: string; password: string; displayName: string } }>('/v1/staff/register', {
     preHandler: publicGuard, config: { rateLimit: { max: 8, timeWindow: '1 minute' } },
-    schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'password', 'displayName'], properties: { email, password, displayName: { type: 'string', minLength: 2, maxLength: 80, pattern: '\\S' } } } }
+    schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'password', 'displayName'], properties: { email, password: newPassword, displayName: { type: 'string', minLength: 2, maxLength: 80, pattern: '\\S' } } } }
   }, async (request, reply) => execute(reply, async () => {
     const name = request.body.displayName.trim();
     if (name.length < 2) return fail(400, 'invalid_display_name');
+    if (!strongStaffPassword(request.body.password, request.body.email, name)) return fail(400, 'weak_password');
     const encoded = await hashPassword(request.body.password);
     await pool!.query('INSERT INTO staff_users(id,email,display_name,password_hash) VALUES($1,$2,$3,$4) ON CONFLICT(email) DO NOTHING', [randomUUID(), request.body.email.toLowerCase(), name, encoded]);
     // A duplicate address neither changes credentials nor reveals registration.
@@ -131,6 +136,70 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     reply.setCookie(challengeCookie, outcome.token, { ...attributes, maxAge: 300 });
     return { staffId: outcome.staffId, next: outcome.enrolled ? 'mfa_verify' : 'mfa_setup', expiresIn: 300 };
   }));
+
+  // Requests return the same response before any account lookup or email is
+  // attempted. Work is bounded and the per-account throttle is stored in the
+  // database; a full queue drops requests uniformly rather than enumerating.
+  app.get('/v1/staff/password-reset/availability', { preHandler: publicGuard }, async () => ({ enabled: !!resetDelivery }));
+  app.post<{ Body: { email: string } }>('/v1/staff/password-reset/request', {
+    preHandler: publicGuard, config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    schema: { body: { type: 'object', additionalProperties: false, required: ['email'], properties: { email } } }
+  }, async (request, reply) => {
+    if (!resetDelivery) return reply.code(503).send({ error: 'staff_recovery_unavailable' });
+    const address = request.body.email.toLowerCase();
+    if (options.resetJobs.size < 8) {
+      let task: Promise<void>;
+      task = new Promise<void>(resolve => setImmediate(resolve)).then(async () => {
+        const token = freshOpaque();
+        const eligible = await transaction(async client => {
+          const found = await client.query(`UPDATE staff_users SET password_reset_requested_at=now()
+            WHERE email=$1 AND status IN ('pending','approved')
+              AND (password_reset_requested_at IS NULL OR password_reset_requested_at<now()-interval '2 minutes')
+            RETURNING id,email,version`, [address]);
+          if (!found.rowCount) return null;
+          const user = found.rows[0];
+          await client.query("DELETE FROM staff_password_reset_tokens WHERE staff_id=$1 AND expires_at<now()-interval '1 day'", [user.id]);
+          await client.query("INSERT INTO staff_password_reset_tokens(token_hash,staff_id,staff_version,expires_at) VALUES($1,$2,$3,now()+interval '15 minutes')", [opaqueHash(token),user.id,user.version]);
+          return user.email as string;
+        });
+        if (eligible) await resetDelivery.send(eligible, token);
+      }).catch(() => { console.error('Staff recovery delivery could not be completed.'); }).finally(() => { options.resetJobs.delete(task); });
+      options.resetJobs.add(task);
+    }
+    return reply.code(202).send({ status: 'accepted' });
+  });
+  app.post<{ Body: { email: string; code: string; password: string } }>('/v1/staff/password-reset/confirm', {
+    preHandler: publicGuard, config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'code', 'password'], properties: {
+      email, code: { type: 'string', pattern: '^[A-Za-z0-9_-]{43}$' }, password: newPassword
+    } } }
+  }, async (request, reply) => {
+    if (!resetDelivery) return reply.code(503).send({ error: 'staff_recovery_unavailable' });
+    if (!isOpaque(request.body.code)) return reply.code(400).send({ error: 'invalid_recovery' });
+    return execute(reply, async () => transaction(async client => {
+      // Match the high-entropy token before fetching the account, so a wrong
+      // code follows the same database path for known and unknown addresses.
+      const hash = opaqueHash(request.body.code);
+      const match = await client.query(`SELECT t.staff_id FROM staff_password_reset_tokens t JOIN staff_users u ON u.id=t.staff_id
+        WHERE t.token_hash=$1 AND u.email=$2 AND t.consumed_at IS NULL AND t.expires_at>now()`, [hash, request.body.email.toLowerCase()]);
+      if (!match.rowCount) return fail(400, 'invalid_recovery');
+      // Lock the account before the token, serializing different outstanding
+      // codes for the same person and fencing changes to role or MFA.
+      const found = await client.query('SELECT * FROM staff_users WHERE id=$1 FOR UPDATE', [match.rows[0].staff_id]);
+      const user = found.rows[0];
+      if (!user || !['pending','approved'].includes(user.status)) return fail(400, 'invalid_recovery');
+      const token = await client.query(`SELECT token_hash FROM staff_password_reset_tokens WHERE staff_id=$1 AND token_hash=$2
+        AND staff_version=$3 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`, [user.id, hash, user.version]);
+      if (!token.rowCount) return fail(400, 'invalid_recovery');
+      if (!strongStaffPassword(request.body.password, user.email, user.display_name)) return fail(400, 'weak_password');
+      const encoded = await hashPassword(request.body.password);
+      const changed = await client.query('UPDATE staff_users SET password_hash=$2,failed_passwords=0,version=version+1,updated_at=now() WHERE id=$1 RETURNING *', [user.id, encoded]);
+      await client.query('UPDATE staff_password_reset_tokens SET consumed_at=now() WHERE token_hash=$1', [token.rows[0].token_hash]);
+      await invalidate(client, user.id);
+      await audit(client, null, user, changed.rows[0], 'password_reset', 'Password reset using a single-use recovery code');
+      return { status: 'password_reset', mfaUnchanged: true };
+    }));
+  });
 
   app.post('/v1/staff/mfa/setup', { preHandler: publicGuard, config: { rateLimit: { max: 10, timeWindow: '1 minute' } }, schema: { body: { type: 'object', additionalProperties: false } } }, async (request, reply) => execute(reply, async () => {
     return transaction(async client => {

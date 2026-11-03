@@ -1,0 +1,7 @@
+# Production recovery status, 2026-11-03
+
+The source tree merged as `19b8fd51766fdae8709839df7713060dc25f150f` is deployed. Frontend deployment `dpl_J4Kvb6n7rdZC3mvFc3fPQahizNym` replaced `dpl_GiFtciKWu5rwnw3oV5enDdQyAUpx` and proxies to the existing Oracle gateway. Identity migration 008 was applied after a fresh encrypted backup and isolated restore drill. Oracle rollback image and environment references are recorded under `/home/ubuntu/pamofi/production/rollback-mfa-26b367b/`; rolling images back does not reverse the additive migration.
+
+The owner reported successful MFA enrollment. An anonymous request to the deployed MFA recovery route returned 401; no actual staff authenticator was reset. One expressly authorized disposable nonfinancial production customer was created. Its own exact-order lookup returned no orders, and the customer session was signed out and subsequently rejected. No sale, payment, voucher or stock transaction was created. This check does not demonstrate cross-account isolation against an existing order; isolated tests cover that scenario.
+
+Cash sales, voucher redemption and Wi-Fi connection remain unavailable pending operational prerequisites. The owner will onboard agents. Payment-provider and SMS qualification remain outstanding. Email-based staff password recovery is not deployed or enabled by this record; see `STAFF_RECOVERY.md` for the Resend TLS qualification finding.

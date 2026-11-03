@@ -1,0 +1,24 @@
+# Optional, NOT included in the normal production stack. A pre-existing,
+# independently restricted SMTP egress network and a qualified real provider
+# are required before an operator enables this overlay.
+services:
+  identity:
+    environment:
+      STAFF_RESET_DELIVERY_ENABLED: ${PAMOFI_STAFF_RESET_ENABLED:?Choose true or false explicitly}
+      STAFF_RESET_DELIVERY_QUALIFIED: ${PAMOFI_STAFF_RESET_QUALIFIED:?Record actual delivery qualification}
+      STAFF_RESET_SMTP_HOST: ${PAMOFI_STAFF_RESET_SMTP_HOST:?Set the approved SMTP hostname}
+      STAFF_RESET_SMTP_PORT: ${PAMOFI_STAFF_RESET_SMTP_PORT:?Set 465 or 587}
+      STAFF_RESET_SMTP_USER: ${PAMOFI_STAFF_RESET_SMTP_USER:?Set the approved SMTP username}
+      STAFF_RESET_EMAIL_FROM: ${PAMOFI_STAFF_RESET_EMAIL_FROM:?Set the verified sender}
+      STAFF_RESET_SMTP_PASSWORD_FILE: /run/secrets/staff_reset_smtp_password
+    secrets:
+      - staff_reset_smtp_password
+    networks:
+      - staff_mail_egress
+secrets:
+  staff_reset_smtp_password:
+    file: ${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/staff_reset_smtp_password
+networks:
+  staff_mail_egress:
+    external: true
+    name: ${PAMOFI_STAFF_MAIL_EGRESS_NETWORK:?Create a separately restricted approved SMTP egress network}
