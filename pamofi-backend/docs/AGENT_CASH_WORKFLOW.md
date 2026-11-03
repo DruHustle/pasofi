@@ -29,6 +29,19 @@ New agent inventory sales require a cash attestation containing the exact server
 
 This is evidence that the agent confirmed receiving cash. Software cannot independently observe physical banknotes. The administrator's operating process must still reconcile the agent's recorded sales, physical cash, commission and inventory. The application does not claim bank settlement or an automated physical cash refund.
 
+## Proposed end-of-shift reconciliation
+
+The owner should review this procedure and settle the cash handover arrangement before enabling live sales. It does not authorize a sale or establish that a deposit was made.
+
+1. Agree the agent, site, currency, shift start and end, and opening cash float. Keep a separate count for each currency; do not convert amounts or include the float as sales.
+2. Obtain an authorized transaction-level record of the site's committed sales for the agreed shift and agent. Record each sale reference once, its amount and its recorded commission. The updated administrator **Sales and delivery** view shows the agent identity, sale reference and recorded commission; the agent's recent-sales view also shows the sale reference. Until that update is deployed, the existing production administrator view does not show those fields. The paginated list is not a frozen shift report: make sure no sales are being added during the count, load every relevant page, and verify completeness before reconciling. Qualify the procedure before launch. Investigate ambiguous submissions using the original retry and receipt before including or excluding them; never issue a replacement merely to balance the count.
+3. Independently count the cash on hand. Compare cash sales with the counted cash after subtracting the opening float and any separately documented, owner-approved cash movements. Record and investigate any difference without changing historical sale or tender evidence.
+4. Add the **recorded per-sale** commission amounts, which already reflect the approved 5% rounded down to whole cents per sale. Do not calculate 5% of the shift total: it can produce a different result. Record whether commission is paid separately or retained from the handover according to the owner's agreed arrangement; do not assume a payment occurred.
+5. Reconcile opening inventory plus authorized allocations and adjustments, less committed sales, to closing inventory by bundle. Review unexplained differences against the inventory records and sale references rather than creating fictitious transactions.
+6. Record the shift, counts, sales and commission totals, exceptions, handover amount, and responsible agent and reviewer in a securely held operating record. Confirm receipt of the physical handover separately. Escalate unresolved discrepancies before the next allocation.
+
+PamoFi's current sale attestation records the agent's cash confirmation; it does not prove a cash count, commission payout, handover or bank deposit.
+
 Historical committed sales that predate tender evidence remain recoverable with an explicit **unrecorded** method. The application never invents a past cash confirmation to make a legacy receipt look complete.
 
 ## Lost responses and corrections

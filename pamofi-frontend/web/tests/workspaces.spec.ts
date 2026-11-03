@@ -90,6 +90,7 @@ test('a lost agent sale response restores the exact intent and cannot debit stoc
   await page.reload(); await page.getByRole('button', { name: 'Staff', exact: true }).click(); await expect(page.getByLabel('Customer pairing code')).toHaveValue('ABCD234567');
   await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Retry saved sale safely' }).click();
   await expect(page.getByText('stock was not debited twice', { exact: false })).toBeVisible(); expect(keys).toHaveLength(2); expect(new Set(keys).size).toBe(1);
+  await expect(page.getByText(`Sale reference: ${saleId}`)).toBeVisible();
   await page.getByRole('button', { name: 'View private receipt' }).click(); await expect(page.getByLabel('Voucher code', { exact: true })).toHaveValue('PRIVATEVOUCHER234567'); await page.getByRole('button', { name: 'Hide receipt' }).click(); await expect(page.getByLabel('Voucher code', { exact: true })).toHaveCount(0);
 });
 
@@ -101,7 +102,30 @@ test('support sees scoped delivery evidence but cannot expose vouchers or resend
     return false;
   });
   await openStaff(page); await page.getByRole('button', { name: 'Delivery status', exact: true }).click(); await expect(page.getByText('Simulated SMS: Delivery outcome unknown')).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Commission' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'View private receipt' })).toHaveCount(0); await expect(page.getByRole('button', { name: 'Request SMS resend' })).toHaveCount(0);
+});
+
+test('administrators can reconcile recorded commission with the agent and sale reference', async ({ page }) => {
+  await mock(page, async (route, path) => {
+    if (path === '/api/staff/session') { await json(route, staff('admin')); return true; }
+    if (path === '/api/staff/users') { await json(route, { users: [staff('admin'), staff('agent', 'approved', agentId)], nextCursor: null }); return true; }
+    if (path === '/api/admin/bundles') { await json(route, { products: [] }); return true; }
+    if (path === '/api/staff/inventory') { await json(route, { inventory: [] }); return true; }
+    if (path === '/api/staff/sales') { await json(route, { sales: [{ ...sale(), agentId, priceMinor: 50, commissionMinor: 2, commissionBps: 500, simulation: false }], hasMore: false, nextOffset: null }); return true; }
+    return false;
+  });
+  await openStaff(page);
+  await page.getByRole('button', { name: 'Sales and delivery', exact: true }).click();
+  const row = page.getByRole('row').filter({ hasText: saleId });
+  await expect(row).toContainText(agentId);
+  await expect(row).toContainText('agent member');
+  await expect(row).toContainText('0.50');
+  await expect(row).toContainText('0.02');
+  await expect(row.getByRole('button', { name: 'View private receipt' })).toBeVisible();
+  await expect(page.getByLabel('Voucher code', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Bundle catalogue', exact: true }).click();
+  await expect(page.getByLabel('Publication reason')).toHaveAccessibleDescription('Enter a reason of at least 10 characters to enable the publication buttons.');
 });
 
 test('administrator approval uses the reviewed version and allocation excludes unpublished bundles', async ({ page }) => {
