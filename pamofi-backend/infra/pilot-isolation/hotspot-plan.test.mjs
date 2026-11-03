@@ -14,4 +14,5 @@ test('HTTPS hotspot remains isolated and requires the reviewed identity and RADI
   assert.match(plan,/login-by=https ssl-certificate="pamofi-hotspot-onesaeu\.p12_0" use-radius=yes radius-accounting=yes/);
   assert.match(plan,/hotspot add name="pfi-pilot-hotspot".*disabled=yes/);
   assert.doesNotMatch(plan,/login-by=(?:http-pap|http-chap|cookie|mac|trial)|\/radius (?:set|enable)|\/ip firewall nat|\/ip hotspot walled-garden|\/ip hotspot user add/);
+  assert.doesNotMatch(plan,/https-redirect=/); // RouterOS 7.25.1 rejects this profile parameter.
 });

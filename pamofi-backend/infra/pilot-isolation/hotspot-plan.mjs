@@ -27,7 +27,7 @@ export function buildHotspotPlan(){
       ...[['input','in'],['output','out'],['forward','in'],['forward','out']].map(([chain,direction])=>`:if ([:len [${menu} find where chain="${chain}" and ${direction}-interface="pfi-pilot-br" and action=drop and comment~"PamoFi pilot: ${chain} ${direction}\\$"]] != 1) do={ :error "Unexpected pilot deny rule" }`),
       `:foreach pfiRule in=[${menu} find where comment~"PamoFi pilot:" and action=drop] do={ :if ([${menu} get $pfiRule disabled] = true) do={ :error "Pilot deny rule is disabled" } }`,
     ]),
-    `/ip hotspot profile add name="pfi-pilot-https" hotspot-address=10.77.10.1 dns-name="hotspot.pamofi.onesa.eu" login-by=https ssl-certificate="${cert}" use-radius=yes radius-accounting=yes radius-interim-update=1m https-redirect=no`,
+    `/ip hotspot profile add name="pfi-pilot-https" hotspot-address=10.77.10.1 dns-name="hotspot.pamofi.onesa.eu" login-by=https ssl-certificate="${cert}" use-radius=yes radius-accounting=yes radius-interim-update=1m`,
     '/ip hotspot add name="pfi-pilot-hotspot" interface="pfi-pilot-br" address-pool=none profile="pfi-pilot-https" disabled=yes',
     ':put ("PamoFi hotspot disabled: " . [/ip hotspot get [find where name="pfi-pilot-hotspot"] disabled])',
     ':put ("PamoFi hotspot login: " . [/ip hotspot profile get [find where name="pfi-pilot-https"] login-by])',
