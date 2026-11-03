@@ -1,5 +1,10 @@
 # RouterOS
 
+For the ready-to-load preparation files and WinBox upload, checksum, dry-run,
+Safe Mode and rollback steps, see [How to load the router scripts](HOW_TO_LOAD_SCRIPTS.md).
+The scripts prepare the devices; physical acceptance and service activation
+remain separate work.
+
 The [first router inspection](site-01/INSPECTION.md) records the actual SMIPS hAP lite, RouterOS 7.18.2, existing interfaces/routing and management posture observed read-only on 2026-11-02. No Quick Set, password, uplink, LAN, wireless, firmware or customer HotSpot changes were made.
 
 The owner prefers direct router access and has no always-on site computer. The [remote-access tools](../infra/remote-access/README.md) therefore evaluate direct WireGuard first: a reachable public IPv4 endpoint (with upstream UDP forwarding when needed) or a reachable global IPv6 endpoint can serve the owner's phone/laptop without a separate VPN server. The observed private upstream network alone does not prove CGNAT. Public uplink and IPv6 reachability remain unverified.
