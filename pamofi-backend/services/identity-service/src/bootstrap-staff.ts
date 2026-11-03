@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { hashPassword, mfaKey } from './staff-crypto.js';
+import { strongStaffPassword } from './staff-password-policy.js';
 
 type BootstrapInput = { email: string; displayName: string; password: string; reason: string };
 
@@ -13,6 +14,7 @@ export async function createFirstAdministrator(client: pg.PoolClient, input: Boo
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['pamofi-staff-admin-decisions-v1']);
   const guard = await client.query("SELECT EXISTS(SELECT 1 FROM staff_bootstrap_guard) OR EXISTS(SELECT 1 FROM staff_users WHERE role='admin') AS already_initialized");
   if (guard.rows[0].already_initialized) throw new Error('First administrator already initialized; bootstrap is permanently closed.');
+  if (!strongStaffPassword(input.password, input.email, input.displayName)) throw new Error('Choose a stronger staff password of 18–128 characters.');
   const id = randomUUID(), encoded = await hashPassword(input.password);
   await client.query("INSERT INTO staff_users(id,email,display_name,password_hash,status,role) VALUES($1,$2,$3,$4,'approved','admin')", [id, input.email.toLowerCase(), input.displayName.trim(), encoded]);
   await client.query('INSERT INTO staff_bootstrap_guard(singleton,staff_id) VALUES(true,$1)', [id]);
@@ -46,7 +48,7 @@ export async function bootstrapMain(args = process.argv.slice(2)) {
     const metadata = await file.stat();
     if (!metadata.isFile() || (metadata.mode & 0o077) !== 0 || (typeof process.getuid === 'function' && metadata.uid !== process.getuid()) || metadata.size > 1024) throw new Error('The password file must be a small regular file owned by this user with mode 0600 or 0400.');
     password = (await file.readFile('utf8')).replace(/\r?\n$/, '');
-    if ([...password].length < 15 || [...password].length > 128 || !/\S/.test(password) || /[\r\n]/.test(password)) throw new Error('The password must be 15–128 characters on one line.');
+    if (!strongStaffPassword(password, values['--email'], values['--display-name'])) throw new Error('Choose a stronger staff password of 18–128 characters on one line.');
   } finally { await file.close(); }
   const pool = new pg.Pool({ connectionString: url.toString(), max: 1, connectionTimeoutMillis: 5000 });
   pool.on('error', () => console.error('Bootstrap database connection lost.'));

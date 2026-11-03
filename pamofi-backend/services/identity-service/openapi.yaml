@@ -185,7 +185,7 @@ paths:
   /v1/staff/register:
     post:
       summary: Request a staff account with no approved role
-      description: Requires configured Origin. A valid duplicate request returns the same generic response and never changes the existing password. Email ownership is not verified by registration.
+      description: Requires configured Origin. A valid duplicate request returns the same generic response and never changes the existing password. Email ownership is not verified by registration. New passwords must also pass the local strength check.
       requestBody:
         required: true
         content:
@@ -196,7 +196,7 @@ paths:
               additionalProperties: false
               properties:
                 email: {type: string, maxLength: 254}
-                password: {type: string, minLength: 15, maxLength: 128, writeOnly: true}
+                password: {type: string, minLength: 18, maxLength: 128, writeOnly: true}
                 displayName: {type: string, minLength: 2, maxLength: 80}
       responses:
         '202':
@@ -397,7 +397,7 @@ paths:
   /v1/staff/password-reset/confirm:
     post:
       summary: Replace a staff password with a valid, unexpired, single-use recovery code
-      description: Requires the configured Origin. The transaction consumes the code, increments the staff version, revokes sessions and challenges and appends an audit event. Existing MFA is retained and required on the next sign-in.
+      description: Requires the configured Origin. The transaction consumes the code, increments the staff version, revokes sessions and challenges and appends an audit event. Existing MFA is retained and required on the next sign-in. New passwords must pass the local strength check.
       requestBody:
         required: true
         content:
@@ -409,7 +409,7 @@ paths:
               properties:
                 email: {type: string, format: email, maxLength: 254}
                 code: {type: string, minLength: 43, maxLength: 43}
-                password: {type: string, minLength: 15, maxLength: 128}
+                password: {type: string, minLength: 18, maxLength: 128}
       responses:
         '200': {description: Password reset; existing MFA remains required}
         '400': {description: Invalid, expired or already consumed recovery material}

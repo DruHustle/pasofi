@@ -38,18 +38,21 @@ test('staff application enrolls MFA, remains pending, and exposes no sales or ad
   let authenticated = false;
   await mock(page, async (route, path) => {
     if (path === '/api/staff/session') { await json(route, authenticated ? staff('agent', 'pending') : { error: 'not_authenticated' }, authenticated ? 200 : 401); return true; }
-    if (path === '/api/staff/register') { expect(route.request().postDataJSON().password.length).toBeGreaterThanOrEqual(15); await json(route, { status: 'pending', next: 'login' }, 202); return true; }
+    if (path === '/api/staff/register') { expect(route.request().postDataJSON().password.length).toBeGreaterThanOrEqual(18); await json(route, { status: 'pending', next: 'login' }, 202); return true; }
     if (path === '/api/staff/login') { await json(route, { next: 'mfa_setup', expiresIn: 300, staffId }); return true; }
-    if (path === '/api/staff/mfa/setup') { await json(route, { secret: 'JBSWY3DPEHPK3PXP', expiresIn: 300, staffId }); return true; }
+    if (path === '/api/staff/mfa/setup') { await json(route, { secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/PamoFi%20staff%3Atest?secret=JBSWY3DPEHPK3PXP&issuer=PamoFi%20staff', expiresIn: 300, staffId }); return true; }
     if (path === '/api/staff/mfa/confirm') { authenticated = true; await json(route, staff('agent', 'pending')); return true; }
     return false;
   });
   await page.setViewportSize({ width: 320, height: 850 }); await openStaff(page);
   await page.getByRole('button', { name: 'New team member? Apply for access' }).click();
-  await page.getByLabel('Your name').fill('New agent'); await page.getByLabel('Email', { exact: true }).fill('new@staff.invalid'); await page.getByLabel('Password', { exact: true }).fill('long unique password here');
+  await page.getByLabel('Your name').fill('New agent'); await page.getByLabel('Email', { exact: true }).fill('new@staff.invalid'); await page.getByLabel('Password', { exact: true }).fill('passwordpasswordpassword');
+  await expect(page.getByRole('button', { name: 'Submit staff application' })).toBeDisabled();
+  await page.getByLabel('Password', { exact: true }).fill('long unique password here');
+  await expect(page.getByRole('button', { name: 'Submit staff application' })).toBeEnabled({ timeout: 30000 });
   await page.getByRole('button', { name: 'Submit staff application' }).click(); await expect(page.getByText('Your application has been received.', { exact: false })).toBeVisible();
   await page.getByLabel('Password', { exact: true }).fill('long unique password here'); await page.getByRole('button', { name: 'Continue to verification' }).click();
-  await page.getByRole('button', { name: 'Create authenticator setup key' }).click(); await expect(page.getByTestId('mfa-setup-key')).toBeVisible();
+  await page.getByRole('button', { name: 'Create authenticator setup key' }).click(); await expect(page.getByTestId('mfa-setup-key')).toBeVisible(); await expect(page.getByRole('img', { name: 'Authenticator setup QR code' })).toBeVisible();
   await page.getByLabel('Authenticator code').fill('123456'); await page.getByRole('button', { name: 'Verify authenticator' }).click();
   await expect(page.getByRole('heading', { name: 'Waiting for administrator approval' })).toBeVisible(); await expect(page.getByTestId('mfa-setup-key')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Confirm demo sale' })).toHaveCount(0); await expect(page.getByRole('heading', { name: 'Administration', exact: true })).toHaveCount(0);
@@ -181,13 +184,13 @@ for (const phase of ['initial session', 'MFA confirmation'] as const) {
         return true;
       }
       if (path === '/api/staff/login') { await json(route, { next: 'mfa_setup', expiresIn: 300, staffId }); return true; }
-      if (path === '/api/staff/mfa/setup') { await json(route, { secret: 'JBSWY3DPEHPK3PXP', expiresIn: 300, staffId }); return true; }
+      if (path === '/api/staff/mfa/setup') { await json(route, { secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/PamoFi%20staff%3Atest?secret=JBSWY3DPEHPK3PXP&issuer=PamoFi%20staff', expiresIn: 300, staffId }); return true; }
       if (path === '/api/staff/mfa/confirm') { mfaAccepted = true; await json(route, staff('agent', 'pending')); return true; }
       return false;
     });
     await openStaff(page);
     if (phase === 'MFA confirmation') {
-      await page.getByLabel('Email', { exact: true }).fill('agent@staff.invalid'); await page.getByLabel('Password', { exact: true }).fill('long unique password here'); await page.getByRole('button', { name: 'Continue to verification' }).click(); await page.getByRole('button', { name: 'Create authenticator setup key' }).click(); await expect(page.getByTestId('mfa-setup-key')).toBeVisible(); await page.getByLabel('Authenticator code').fill('123456'); await page.getByRole('button', { name: 'Verify authenticator' }).click();
+      await page.getByLabel('Email', { exact: true }).fill('agent@staff.invalid'); await page.getByLabel('Password', { exact: true }).fill('long unique password here'); await page.getByRole('button', { name: 'Continue to verification' }).click(); await page.getByRole('button', { name: 'Create authenticator setup key' }).click(); await expect(page.getByTestId('mfa-setup-key')).toBeVisible(); await expect(page.getByRole('img', { name: 'Authenticator setup QR code' })).toBeVisible(); await page.getByLabel('Authenticator code').fill('123456'); await page.getByRole('button', { name: 'Verify authenticator' }).click();
     }
     await held;
     await page.evaluate(() => { const channel = new BroadcastChannel('pamofi.staff-session'); channel.postMessage({ kind: 'signed_out' }); channel.close(); });

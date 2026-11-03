@@ -295,9 +295,9 @@
 .customer-workspace .premium-usage .usage-top-up:hover:not(:disabled),
 .customer-workspace .customer-welcome-card > .primary:hover:not(:disabled) { background: #d5fa68; color: var(--customer-forest); border-color: #d5fa68; }
 .customer-workspace .customer-quick-actions button { font-size: 12px; font-weight: 650; min-height: 100px; border: 1px solid #102b291a; }
-.customer-workspace .customer-quick-actions button:nth-child(1) { background: var(--customer-emerald); }
-.customer-workspace .customer-quick-actions button:nth-child(2) { background: var(--customer-amber); }
-.customer-workspace .customer-quick-actions button:nth-child(3) { background: var(--customer-lavender); }
+.customer-workspace .customer-quick-actions button:nth-child(1) { background: #31d8ac; }
+.customer-workspace .customer-quick-actions button:nth-child(2) { background: #a5e6bb; }
+.customer-workspace .customer-quick-actions button:nth-child(3) { background: #78dfc2; }
 .customer-workspace .customer-quick-actions button:nth-child(4) { background: var(--customer-lime); }
 .customer-workspace .customer-quick-actions button:nth-child(n) > span { color: var(--customer-forest); background: #ffffff88; border-color: transparent; box-shadow: none; }
 .customer-workspace .customer-quick-actions button:hover > span { border-color: var(--customer-forest); }
@@ -339,12 +339,12 @@
 .customer-workspace .customer-record-icon { background: var(--customer-lime); color: var(--customer-forest); }
 .customer-workspace .customer-profile-language,
 .customer-workspace .customer-status-tag { font-size: 12px; }
-.customer-workspace .customer-voucher-art { background: var(--customer-amber); color: var(--customer-forest); }
+.customer-workspace .customer-voucher-art { background: #a5e6bb; color: var(--customer-forest); }
 .customer-workspace .customer-voucher-art > span:last-child { color: #244c3d; font-size: 10px; }
 .customer-workspace .customer-voucher-art > i { border-top-color: #244c3d66; }
 .customer-workspace .customer-order-summary { background: #edf8d1; border-color: #c9df9d; }
 .customer-workspace .cash-path { background: #fff3db; border-color: #ead4a6; }
-.customer-workspace .cash-path > .customer-record-icon { background: var(--customer-amber); color: var(--customer-forest); }
+.customer-workspace .cash-path > .customer-record-icon { background: #a5e6bb; color: var(--customer-forest); }
 .customer-workspace .pairing-card { border-top: 4px solid var(--customer-emerald); }
 @media (max-width: 480px) {
   .customer-workspace .customer-quick-actions { gap: 7px; }

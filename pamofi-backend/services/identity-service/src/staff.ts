@@ -3,11 +3,13 @@ import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { jwtVerify } from 'jose';
 import { configuredStaffResetDelivery, type StaffResetDelivery } from './staff-reset-mail.js';
+import { strongStaffPassword } from './staff-password-policy.js';
 import { acceptedTotpCounter, decryptMfa, encryptMfa, freshOpaque, hashPassword, isOpaque, mfaKey, newTotpSecret, opaqueHash, totp, verifyPassword } from './staff-crypto.js';
 
 const uuid = { type: 'string', pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' };
 const email = { type: 'string', minLength: 3, maxLength: 254, pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' };
 const password = { type: 'string', minLength: 15, maxLength: 128, pattern: '\\S' };
+const newPassword = { type: 'string', minLength: 18, maxLength: 128, pattern: '\\S' };
 const expectedVersion = { type: 'integer', minimum: 1, maximum: 2147483646 };
 const reason = { type: 'string', minLength: 5, maxLength: 500, pattern: '\\S' };
 const codeBody = { type: 'object', additionalProperties: false, required: ['code'], properties: { code: { type: 'string', pattern: '^\\d{6}$' } } };
@@ -96,10 +98,11 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
 
   app.post<{ Body: { email: string; password: string; displayName: string } }>('/v1/staff/register', {
     preHandler: publicGuard, config: { rateLimit: { max: 8, timeWindow: '1 minute' } },
-    schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'password', 'displayName'], properties: { email, password, displayName: { type: 'string', minLength: 2, maxLength: 80, pattern: '\\S' } } } }
+    schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'password', 'displayName'], properties: { email, password: newPassword, displayName: { type: 'string', minLength: 2, maxLength: 80, pattern: '\\S' } } } }
   }, async (request, reply) => execute(reply, async () => {
     const name = request.body.displayName.trim();
     if (name.length < 2) return fail(400, 'invalid_display_name');
+    if (!strongStaffPassword(request.body.password, request.body.email, name)) return fail(400, 'weak_password');
     const encoded = await hashPassword(request.body.password);
     await pool!.query('INSERT INTO staff_users(id,email,display_name,password_hash) VALUES($1,$2,$3,$4) ON CONFLICT(email) DO NOTHING', [randomUUID(), request.body.email.toLowerCase(), name, encoded]);
     // A duplicate address neither changes credentials nor reveals registration.
@@ -168,7 +171,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   app.post<{ Body: { email: string; code: string; password: string } }>('/v1/staff/password-reset/confirm', {
     preHandler: publicGuard, config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
     schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'code', 'password'], properties: {
-      email, code: { type: 'string', pattern: '^[A-Za-z0-9_-]{43}$' }, password
+      email, code: { type: 'string', pattern: '^[A-Za-z0-9_-]{43}$' }, password: newPassword
     } } }
   }, async (request, reply) => {
     if (!resetDelivery) return reply.code(503).send({ error: 'staff_recovery_unavailable' });
@@ -188,6 +191,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
       const token = await client.query(`SELECT token_hash FROM staff_password_reset_tokens WHERE staff_id=$1 AND token_hash=$2
         AND staff_version=$3 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`, [user.id, hash, user.version]);
       if (!token.rowCount) return fail(400, 'invalid_recovery');
+      if (!strongStaffPassword(request.body.password, user.email, user.display_name)) return fail(400, 'weak_password');
       const encoded = await hashPassword(request.body.password);
       const changed = await client.query('UPDATE staff_users SET password_hash=$2,failed_passwords=0,version=version+1,updated_at=now() WHERE id=$1 RETURNING *', [user.id, encoded]);
       await client.query('UPDATE staff_password_reset_tokens SET consumed_at=now() WHERE token_hash=$1', [token.rows[0].token_hash]);
