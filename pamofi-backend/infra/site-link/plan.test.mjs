@@ -23,6 +23,7 @@ test('fresh interface preflight and final enablement precede no unguarded forwar
   const text=buildPlan(fixture())['router-service.rsc.review'];
   assert.ok(text.startsWith('{\n')&&text.endsWith('}\n'));
   for(const state of ['peers','/ip address','/ipv6 address','/interface list member','/interface bridge port','/ipv6 route'])assert.ok(text.includes(state));
+  assert.match(text, /\/ipv6 address find where interface="pamofi-service" and \(dynamic=no or link-local=no\)/);
   assert.match(text,/disabled\] != true/);assert.match(text,/public-key\] !=/);
   assert.equal((text.match(/action=drop (?:in|out)-interface="pamofi-service" comment="PamoFi site: no customer/g)||[]).length,4); // Each branch renders its own add.
   const additions=text.indexOf('/ip address add');
