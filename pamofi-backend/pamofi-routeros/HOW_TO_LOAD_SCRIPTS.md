@@ -16,10 +16,12 @@ or shared secret to it.
 
 The Kuwadzana file is specific to the currently installed certificate and
 router public key. A renewed or replaced certificate requires a reviewed script
-update. The combined Kuwadzana script and Lawfield script have **not yet been
-dry-run on their respective routers**; the individual Kuwadzana HotSpot and
-torrent components were previously imported on Site 1. Don't run the Lawfield
-file on the Kuwadzana router.
+update. On 4 November, the Kuwadzana router restarted during an attempted
+checksum, dry-run and import sequence. The outcome of that attempt is unknown;
+**do not rerun the combined script until the router's state and stability have
+been inspected**. Its individual HotSpot and torrent components were previously
+imported on Site 1. The Lawfield script has not yet been dry-run on its router.
+Don't run the Lawfield file on the Kuwadzana router.
 
 For the current bench setup, the owner reported connecting Lawfield's
 `ether1` to a Kuwadzana LAN port; verify the port labels before changing
@@ -102,6 +104,11 @@ but does not change or repair them.
    **Ctrl+D** to roll back and inspect the error. If the terminal disconnects
    or stops responding, do not retry: reconnect and inspect the router first.
    Safe Mode is not a substitute for the off-router backup.
+
+   After a restart or lost session, check the existing configuration and the
+   router's health before deciding whether anything needs to be reapplied.
+   A disconnected Safe Mode session normally rolls back tentative settings,
+   but the result must be inspected; do not assume every operation was undone.
 
 ## What remains before launch
 
