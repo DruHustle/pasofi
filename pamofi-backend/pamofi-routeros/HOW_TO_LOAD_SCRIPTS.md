@@ -33,6 +33,13 @@ hAP lite reported 32 MiB total memory and 7.8 MiB free during inspection. Do
 not use a successful idle CPU reading as proof that it can reliably serve
 customers; investigate stability and qualify the device under expected load.
 
+On 4 November a temporary DHCP-only pilot was run in Safe Mode. A spare device
+associated with `PamoFi Pilot` and received a bound `10.77.10.10` lease.
+IPv4 pilot forwarding drops recorded traffic. The temporary DHCP rules were
+undone afterward; the bridge, radio and pilot DHCP server were confirmed
+disabled, and Safe Mode was released. This check did not exercise DNS, captive
+login, RADIUS, quota enforcement, payment or end-to-end internet isolation.
+
 For the current bench setup, the owner reported connecting Lawfield's
 `ether1` to a Kuwadzana LAN port; verify the port labels before changing
 anything. This is a temporary upstream path, not proof that Lawfield's
