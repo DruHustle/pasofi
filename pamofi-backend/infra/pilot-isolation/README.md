@@ -1,5 +1,10 @@
 # Disabled pilot isolation scaffold
 
+**Hold:** A RouterOS 7.25.1 live import encountered a bridge-port conflict.
+Do not apply this plan until the existing bridge and interface-list state is
+understood, the plan is corrected and retested, and Safe Mode rollback has been
+confirmed. The generated script intentionally stops before making changes.
+
 This review-only plan targets the inspected hAP lite with an existing active
 `wlan1`. It creates a new disabled bridge, inserts IPv4 and IPv6 input, output
 and forwarding drops before existing rules, and attaches a disabled virtual AP
