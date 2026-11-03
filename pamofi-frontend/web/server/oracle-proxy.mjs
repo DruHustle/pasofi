@@ -90,16 +90,19 @@ export function publicRoute(rawUrl, method) {
   const separator = rawUrl.indexOf('?');
   let path = separator < 0 ? rawUrl : rawUrl.slice(0, separator);
   const query = separator < 0 ? '' : rawUrl.slice(separator + 1);
-  const remaining = [], rewritten = [];
+  const remaining = [], rewritten = [], sourcePaths = [];
   for (const part of query ? query.split('&') : []) {
     const equals = part.indexOf('='), key = equals < 0 ? part : part.slice(0, equals), value = equals < 0 ? '' : part.slice(equals + 1);
     let decoded;
     try { decoded = decodeURIComponent(key.replace(/\+/g, ' ')); } catch { throw new ProxyError(400, 'invalid_request'); }
-    if (decoded === '__pamofi_path') {
-      try { rewritten.push(decodeURIComponent(value.replace(/\+/g, ' '))); } catch { throw new ProxyError(400, 'invalid_request'); }
+    if (decoded === '__pamofi_path' || decoded === 'path') {
+      // Vercel appends the named :path* source capture as `path` in
+      // addition to our explicit rewrite parameter. Neither is application data.
+      try { (decoded === 'path' ? sourcePaths : rewritten).push(decodeURIComponent(value.replace(/\+/g, ' '))); }
+      catch { throw new ProxyError(400, 'invalid_request'); }
     } else remaining.push(part);
   }
-  if (rewritten.length > 1) throw new ProxyError(400, 'invalid_request');
+  if (rewritten.length > 1 || sourcePaths.length > 1) throw new ProxyError(400, 'invalid_request');
   // Vercel may present the original URL or the internal rewrite destination.
   // The reserved rewrite value can choose only a public route, never an origin.
   if (path === '/api/gateway') {
@@ -107,6 +110,7 @@ export function publicRoute(rawUrl, method) {
     path = `/api/${rewritten[0]}`;
   } else if (rewritten.length && path !== `/api/${rewritten[0]}`) throw new ProxyError(400, 'invalid_request');
   if (!/^\/api\/[A-Za-z0-9/-]+$/.test(path)) throw new ProxyError(404, 'not_found');
+  if (sourcePaths.length && sourcePaths[0] !== path.slice('/api/'.length)) throw new ProxyError(400, 'invalid_request');
   const rule = rules.find(([pattern]) => pattern.test(path));
   if (!rule) throw new ProxyError(404, 'not_found');
   const methods = rule[1].includes('GET') ? [...rule[1], 'HEAD'] : rule[1];
