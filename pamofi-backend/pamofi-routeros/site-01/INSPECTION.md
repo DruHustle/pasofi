@@ -59,6 +59,10 @@ The exact public portal hostname, private server/tunnel addresses, device certif
 
 Before a RouterOS upgrade, export configuration without secrets, make a separately protected recovery backup, check flash capacity and review the target release for this architecture. Since RouterOS7.20, SMIPS HotSpot is a separate package; an upgrade must retain the matching HotSpot capability. Do not assume the latest package set is interchangeable with the inspected7.18.2 device.
 
+## RouterOS upgrade recheck
+
+On 3 November the owner upgraded this hAP lite from RouterOS 7.18.2 to 7.25.1. WinBox displayed architecture `smips`, 32 MiB total RAM, approximately 9.6 MiB free memory and 7.9 MiB free flash in one sample. The `pamofi-service` interface was shown disabled. The owner ran read-only queries that reported zero peers, zero IPv4 addresses and zero IPv4 routes on that interface. The earlier downloaded backup predates the upgrade; a new encrypted backup made on 7.25.1, a public-key match, package inventory and a fresh route inventory are still needed before applying the service-link plan. In particular, HotSpot is a separate package for SMIPS in this RouterOS generation and its installed state must be checked. No new router configuration or service activation was performed by this recheck.
+
 ## Hardware acceptance sequence
 
 1. Record current bridge members, IP routes, DHCP/DNS, device-mode and package support, time synchronization, firewall rule order and a tested local recovery connection.
