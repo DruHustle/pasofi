@@ -39,7 +39,9 @@ node pamofi-backend/infra/pilot-isolation/network-plan.mjs /private/tmp/pamofi-p
 The separate `hotspot-plan.mjs` prepares a disabled first-router HotSpot
 profile using HTTPS login, the fingerprint-pinned imported certificate and
 RADIUS accounting. It requires the site RADIUS client, pilot bridge, radio and
-DHCP server to stay disabled and refuses existing local HotSpot users. RouterOS
+DHCP server to stay disabled and refuses ordinary local HotSpot users. It allows
+only the built-in `default-trial` record, while setting `login-by=https` without
+trial login. RouterOS
 can automatically add a **router-wide static DNS entry** for the configured
 HotSpot hostname; inspect existing DNS state and the resulting entry. The plan
 does not make DNS, DHCP, forwarding, NAT or a walled garden available to guests,

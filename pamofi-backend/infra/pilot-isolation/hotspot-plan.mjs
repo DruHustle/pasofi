@@ -19,7 +19,8 @@ export function buildHotspotPlan(){
     `:if ([:len [/certificate find where name="${cert}"]] != 1 || [/certificate get [find where name="${cert}"] trusted] != true) do={ :error "Expected trusted hotspot certificate missing" }`,
     `:if ([/certificate get [find where name="${cert}"] fingerprint] != "985a06a8afa387bdad5b174bc88dbe592902f0b7fb01e1a1897a18fe46ef1551") do={ :error "Hotspot certificate fingerprint differs" }`,
     ':if ([:len [/ip hotspot find]] != 0) do={ :error "Existing hotspot requires review" }',
-    ':if ([:len [/ip hotspot user find]] != 0) do={ :error "Existing local hotspot users require review" }',
+    ':if ([:len [/ip hotspot user find where name!="default-trial"]] != 0) do={ :error "Existing local hotspot users require review" }',
+    ':foreach pfiUser in=[/ip hotspot user find] do={ :if ([/ip hotspot user get $pfiUser default] != true) do={ :error "Unexpected non-default hotspot user" } }',
     ':if ([:len [/ip hotspot profile find where name="pfi-pilot-https"]] != 0) do={ :error "Pilot hotspot profile already exists" }',
     ':if ([:len [/ip dns static find where name="hotspot.pamofi.onesa.eu"]] != 0) do={ :error "Existing hotspot DNS entry requires review" }',
     ...['/ip firewall filter','/ipv6 firewall filter'].flatMap(menu=>[
