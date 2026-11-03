@@ -68,6 +68,29 @@ a mismatched existing registration fails instead of silently changing ownership.
 Confirm the matching prepaid site separately. Enabling the selected NAS and
 customer-network capability belongs to controlled physical acceptance later.
 
+## Router client preparation
+
+`router-plan.mjs` creates a review file for one **disabled** RouterOS RADIUS
+client using the site's already generated secret. Provide the secret as a
+private mode-0600 regular file containing its 64 lowercase hexadecimal
+characters, optionally followed by a single newline. The generated review file contains a
+SHA-512 digest and references `pfi-radius-<site>.secret`; it never contains the
+secret itself. Transfer that protected secret file to the selected router only
+through an approved private path and remove its temporary copies after import.
+
+```sh
+node pamofi-backend/infra/radius-production/router-plan.mjs \
+  site01 10.77.254.1 10.77.254.2 /protected/pfi-radius-site01.secret \
+  /protected/new-router-radius-review.rsc
+node --test pamofi-backend/infra/radius-production/router-plan.test.mjs
+```
+
+Inspect the exact router and RADIUS state, check the public-only review file in
+RouterOS using `verbose=yes dry-run`, and use Safe Mode for any actual import.
+The client remains disabled. Never print the secret or run a verbose import
+that expands it. A protected file, a disabled client or a successful syntax
+check does not qualify authentication, accounting, HTTPS or customer access.
+
 ## Deployment overlay
 
 Use the qualified base production environment/image digests and secret files,
