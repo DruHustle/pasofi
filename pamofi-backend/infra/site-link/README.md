@@ -124,6 +124,14 @@ validation there and never modifies the host firewall. Unit tests cover the
 outbound endpoint, reply allowances, rule ordering, IPv6/forward denial, private
 files, no overwrite and invalid/injected/overlapping input rejection.
 
+For RouterOS 7.25, copy the reviewed script to a `.rsc` file without an
+`.auto.rsc` suffix. After transferring that exact review file to the router,
+check its syntax without applying configuration using
+`import file-name=<review-file>.rsc verbose=yes dry-run`. Here `dry-run` is
+a standalone flag, not `dry-run=yes`. A dry run checks syntax; it does not
+establish a handshake, verify live firewall behavior or replace the
+preflight and recovery checks.
+
 Physical qualification is intentionally later: RouterOS import dry-run; fresh
 handshake; actual RADIUS source/reply traffic; certificate-verified HTTPS;
 accounting and quota enforcement; forbidden-port/LAN/other-site denial; Starlink
