@@ -23,6 +23,11 @@ It does not add a DNS override, NAT, HotSpot or RADIUS. Reinspect all current
 routes and address pools for overlaps before using this fixed subnet; its
 preflight checks the exact route and names, not every possible wider overlap.
 Check the review file with RouterOS dry-run and use Safe Mode for any import.
+On RouterOS 7.25.1, an inactive rule can have interface-not-ready messages
+prepended to its comment while the bridge is disabled. The guard checks match
+the expected comment suffix and independently require the intended chain,
+interface, drop action, enabled setting and exact counts. The import prints
+the bridge, radio, DHCP and gateway readbacks; validate them in Safe Mode.
 
 ```sh
 node --test pamofi-backend/infra/pilot-isolation/network-plan.test.mjs
