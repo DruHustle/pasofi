@@ -4,6 +4,7 @@ import {buildPlan} from './plan.mjs';
 
 test('pilot scaffold remains disabled and guards both IP families before adding the radio',()=>{
   const text=buildPlan();
+  assert.ok(text.indexOf(':error "Pilot import held: investigate bridge-port conflict before applying"') < text.indexOf('/interface bridge add'));
   assert.match(text,/bridge add name="pfi-pilot-br" disabled=yes/);
   assert.match(text,/wireless add name="pfi-pilot-wifi".*default-forwarding=no disabled=yes/);
   for(const family of ['/ip firewall filter','/ipv6 firewall filter']) {
