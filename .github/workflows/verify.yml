@@ -89,6 +89,7 @@ jobs:
             sudo apt-get install --no-install-recommends -y nftables util-linux
           fi
           sh pamofi-backend/infra/site-link/check-nft.sh
+          sudo env "PATH=$PATH" bash pamofi-backend/infra/site-link/test-site01-firewall.sh
       - name: Verify production migration and runtime privilege separation
         run: |
           if ! command -v psql >/dev/null; then

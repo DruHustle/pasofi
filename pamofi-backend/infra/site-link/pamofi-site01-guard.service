@@ -1,0 +1,11 @@
+[Unit]
+Description=PamoFi site-01 WireGuard firewall guard
+Requires=netfilter-persistent.service
+After=netfilter-persistent.service
+Before=wg-quick@pfi-site01.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bash /usr/local/lib/pamofi/site01-firewall.sh start
+ExecStop=/usr/bin/bash /usr/local/lib/pamofi/site01-firewall.sh stop
