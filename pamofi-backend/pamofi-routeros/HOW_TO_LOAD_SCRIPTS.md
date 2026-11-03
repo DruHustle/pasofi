@@ -23,6 +23,16 @@ been inspected**. Its individual HotSpot and torrent components were previously
 imported on Site 1. The Lawfield script has not yet been dry-run on its router.
 Don't run the Lawfield file on the Kuwadzana router.
 
+After that restart, a read-only WebFig inspection found the PamoFi WireGuard
+interface running; the pilot bridge, radio, DHCP server, HotSpot and RADIUS
+client were disabled. The two common-port torrent rules and four IPv4 pilot
+drop rules were present but inactive while the pilot bridge was disabled. The
+router log reported a previous kernel failure and an out-of-memory condition;
+the exact trigger and the interrupted import's outcome remain unknown. The
+hAP lite reported 32 MiB total memory and 7.8 MiB free during inspection. Do
+not use a successful idle CPU reading as proof that it can reliably serve
+customers; investigate stability and qualify the device under expected load.
+
 For the current bench setup, the owner reported connecting Lawfield's
 `ether1` to a Kuwadzana LAN port; verify the port labels before changing
 anything. This is a temporary upstream path, not proof that Lawfield's
