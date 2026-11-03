@@ -32,7 +32,7 @@ async function main(){
   if(!st.isFile()||st.isSymbolicLink()||(st.mode&0o077)!==0)throw Error('Secret must be a private regular file');
   let secret=await readFile(secretFile);
   if(secret.length===65&&secret[64]===10)secret=secret.subarray(0,64);
-  if(!/^[a-f0-9]{64}$/.test(secret.toString('ascii'))||secret.length!==64)throw Error('Secret must be 64 lowercase hexadecimal bytes with an optional final newline');
+  if(!/^[a-f0-9]{64}$/.test(secret.toString('latin1'))||secret.length!==64)throw Error('Secret must be 64 lowercase hexadecimal bytes with an optional final newline');
   const secretHash=createHash('sha512').update(secret).digest('hex');
   await writeFile(resolve(target),buildRouterPlan({site,serverIp,routerIp,secretHash}),{mode:0o600,flag:'wx'});
   console.log('Prepared disabled router RADIUS review; no router settings changed.');

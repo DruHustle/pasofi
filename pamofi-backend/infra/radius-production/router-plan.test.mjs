@@ -35,5 +35,8 @@ test('CLI handles a single newline without exposing or overwriting the secret',a
     assert.ok(text.includes(createHash('sha512').update(secret).digest('hex')));
     assert.notEqual(spawnSync(process.execPath,args,{encoding:'utf8'}).status,0);
     assert.equal(await readFile(out,'utf8'),text);
+    const nonAscii=Buffer.alloc(64,0x62);nonAscii[0]=0xe2;
+    await writeFile(file,nonAscii,{mode:0o600});
+    assert.notEqual(spawnSync(process.execPath,[script,'site01','10.77.254.1','10.77.254.2',file,join(dir,'invalid.rsc')],{encoding:'utf8'}).status,0);
   }finally{await rm(dir,{recursive:true,force:true});}
 });
