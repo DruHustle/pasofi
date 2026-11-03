@@ -21,9 +21,11 @@ def validate_definition(name,obj):
     bindings=host.get('PortBindings') or {}
     if bindings!=(PORTS if name==RADIUS else {}):raise ValueError('Unexpected RADIUS port bindings')
     if set(obj.get('NetworkSettings',{}).get('Networks',{}))!=NETWORKS[name]:raise ValueError('Unexpected RADIUS networks')
-    env=set(obj.get('Config',{}).get('Env',[]))
-    if 'PAMOFI_RADIUS_QUALIFIED=true' not in env:raise ValueError('RADIUS transport is not qualified')
-    if name==RADIUS and 'PAMOFI_RADIUS_TUNNEL_IP=10.77.254.1' not in env:raise ValueError('Unexpected tunnel binding')
+    env=obj.get('Config',{}).get('Env',[])
+    def exact_setting(key,value):
+        return [item for item in env if isinstance(item,str) and item.startswith(key+'=')]==[key+'='+value]
+    if not exact_setting('PAMOFI_RADIUS_QUALIFIED','true'):raise ValueError('RADIUS transport is not qualified')
+    if name==RADIUS and not exact_setting('PAMOFI_RADIUS_TUNNEL_IP','10.77.254.1'):raise ValueError('Unexpected tunnel binding')
 
 def run(args):
     return subprocess.run(args,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True).stdout
