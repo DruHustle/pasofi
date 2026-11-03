@@ -95,7 +95,8 @@ It refuses a modified, symlinked, non-root-owned or writable batch, an existing
 site interface, an existing guard table, or a duplicate transport rule. It
 adds only its own nft table and exact tagged input rule; it does not replace or
 save the shared firewall. Removal refuses while the site interface exists and
-closes its transport rule before removing its table. A partially installed or
+also refuses if interface inventory cannot be read. It closes its transport
+rule before removing its table. A partially installed or
 unexpected state requires operator inspection rather than automatic adoption.
 
 The `pamofi-site01-guard.service` and `wg-quick-site01-guard.conf` files define

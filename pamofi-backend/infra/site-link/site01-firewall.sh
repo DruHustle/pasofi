@@ -21,6 +21,17 @@ exec 9>/run/lock/pamofi-site01-firewall.lock
 flock -x 9
 
 rule=(-i "$wan" -p udp --dport "$port" -m comment --comment "$comment" -j ACCEPT)
+if ! interface_snapshot=$(ip -o link show); then
+  echo 'Cannot inspect host interfaces; leave firewall state unchanged.' >&2
+  exit 1
+fi
+interface_present=false
+if printf '%s\n' "$interface_snapshot" | awk -F': ' -v wanted="$interface" '
+  { name=$2; sub(/@.*/, "", name); if (name == wanted) found=1 }
+  END { exit !found }
+'; then
+  interface_present=true
+fi
 
 if [[ $1 == start ]]; then
   [[ -f "$nft_file" && ! -L "$nft_file" ]] || { echo 'Reviewed nft batch is missing or is a symlink.' >&2; exit 1; }
@@ -35,7 +46,7 @@ if [[ $1 == start ]]; then
     echo 'Reviewed nft batch digest does not match the site-01 plan.' >&2
     exit 1
   fi
-  if ip link show dev "$interface" >/dev/null 2>&1; then
+  if [[ $interface_present == true ]]; then
     echo 'An existing site interface requires inspection before starting the guard.' >&2
     exit 1
   fi
@@ -54,7 +65,7 @@ if [[ $1 == start ]]; then
   fi
   echo 'PamoFi site-01 guard installed.'
 else
-  if ip link show dev "$interface" >/dev/null 2>&1; then
+  if [[ $interface_present == true ]]; then
     echo 'Stop the PamoFi WireGuard interface before removing its guard.' >&2
     exit 1
   fi
