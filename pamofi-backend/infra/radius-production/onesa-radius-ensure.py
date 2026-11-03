@@ -13,6 +13,12 @@ EXPECTED={RADIUS:'sha256:9e860a6d14ecbccc97448da1d0c5dd15b5e7e6b64777cea21b57e83
 PORTS={'1812/udp':[{'HostIp':'10.77.254.1','HostPort':'1812'}],'1813/udp':[{'HostIp':'10.77.254.1','HostPort':'1813'}]}
 NETWORKS={RADIUS:{'pamofi-production_radius_ingress','pamofi-production_radius_transport'},AUTHORITY:{'pamofi-production_database','pamofi-production_radius_transport','pamofi-production_services'}}
 CERT_DIR=Path('/home/ubuntu/pamofi/production/radius-preparation-20261103/site01')
+SECRET_DIR=Path('/home/ubuntu/pamofi/production/secrets')
+SOURCE=Path('/home/ubuntu/pamofi/releases/f202fabde8275ad7887c1f30d1426f8d5b1b4733-arm64/source/pamofi-backend/infra/radius-production')
+MOUNTS={
+    RADIUS:{'/opt/pamofi-radius/entrypoint.sh':SOURCE/'entrypoint.sh','/opt/etc/raddb/sites-enabled/default':SOURCE/'default.conf','/opt/etc/raddb/mods-enabled/rest':SOURCE/'rest.conf','/opt/etc/raddb/clients.conf':CERT_DIR/'clients.conf',**{'/run/secrets/'+x:CERT_DIR/x for x in ('radius_ca','radius_client_cert','radius_client_key','radius_bind_ip')}},
+    AUTHORITY:{'/opt/pamofi-radius/start-authority.mjs':SOURCE/'start-authority.mjs',**{'/run/secrets/'+x:CERT_DIR/x for x in ('radius_ca','radius_server_cert','radius_server_key','radius_client_fingerprint')},**{'/run/secrets/'+x:SECRET_DIR/x for x in ('network_runtime_url','internal_network_secret','internal_ca')}},
+}
 
 def validate_definition(name,obj):
     if obj.get('Name')!='/'+name or obj.get('Image')!=EXPECTED[name]:raise ValueError('Unexpected container identity')
@@ -21,6 +27,9 @@ def validate_definition(name,obj):
     bindings=host.get('PortBindings') or {}
     if bindings!=(PORTS if name==RADIUS else {}):raise ValueError('Unexpected RADIUS port bindings')
     if set(obj.get('NetworkSettings',{}).get('Networks',{}))!=NETWORKS[name]:raise ValueError('Unexpected RADIUS networks')
+    mounts=obj.get('Mounts',[])
+    if len(mounts)!=len(MOUNTS[name]) or any(m.get('RW') is not False for m in mounts):raise ValueError('Unexpected RADIUS mounts')
+    if {m.get('Destination'):m.get('Source') for m in mounts}!={k:str(v) for k,v in MOUNTS[name].items()}:raise ValueError('Unexpected RADIUS mount sources')
     env=obj.get('Config',{}).get('Env',[])
     def exact_setting(key,value):
         return [item for item in env if isinstance(item,str) and item.startswith(key+'=')]==[key+'='+value]
