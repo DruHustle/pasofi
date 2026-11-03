@@ -1,0 +1,10 @@
+[Unit]
+Description=PamoFi hotspot certificate expiry check (Oracle host copy)
+After=network-online.target
+OnFailure=pamofi-alert@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pamofi-hotspot-cert-check
+TimeoutStartSec=2m
+NoNewPrivileges=yes
