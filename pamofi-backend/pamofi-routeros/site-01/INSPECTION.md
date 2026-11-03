@@ -43,6 +43,8 @@ The owner then confirmed the production topology will place a Starlink router be
 
 ## Consequences for PamoFi
 
+On 3 November, the reconnected WebFig terminal eventually responded to a read-only resource query. One sample showed 100% CPU and 9.9 MiB free memory; a separate earlier WebFig sample showed 11% CPU, so this is variable load rather than a measured cause. A targeted read of the `admin` account's CLI inactivity policy returned `none`: its inactivity lock/logout is already disabled. This setting applies to CLI sessions and does not establish WebFig session behavior or repair an unresponsive router. No inactivity or other router setting was changed.
+
 This device is suitable for a measured pilot subject to actual capacity and firmware qualification; the inspection does not establish a supported paying-customer count. Its small RAM/flash budget makes a load test and free-space check necessary before changing packages or increasing concurrent sessions. The backend, databases, RADIUS authority and payment/SMS workers stay on the server.
 
 Preserve the existing management LAN and wireless connection. Prepare a separate customer interface/bridge and subnet, explicitly isolated from management and upstream private networks. Do not run the Quick Set replacement configuration over the existing live LAN. Provision a certificate and a restricted service account for HTTPS management over the private management tunnel. The PamoFi worker uses only authenticated server-side HTTPS REST calls; no management password is placed in the customer app.

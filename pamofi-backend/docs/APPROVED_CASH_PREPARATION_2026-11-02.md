@@ -1,6 +1,6 @@
 # Approved cash preparation — production status
 
-The owner approved the then-current five candidate bundle terms, 5% agent commission and Kuwadzana as the first sales site. The five approved terms below have been entered as production bundle versions. Mini, Flex, Week and Fortnight are published; Month remains a draft as of the latest verification on 3 November 2026. Sales and voucher issuance remain paused. Validity starts on the first confirmed hotspot connection; an unused voucher has a 30-day start-by period.
+The owner approved the then-current five candidate bundle terms, 5% agent commission and Kuwadzana as the first sales site. The five approved terms below have been entered as production bundle versions. All five bundles are published as of 3 November 2026. Sales and voucher issuance remain paused. Validity starts on the first confirmed hotspot connection; an unused voucher has a 30-day start-by period.
 
 | Version | USD price | Decimal allowance | Validity |
 | --- | ---: | ---: | ---: |
