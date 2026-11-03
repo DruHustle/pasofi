@@ -1,6 +1,6 @@
-# Approved cash preparation — unpublished
+# Approved cash preparation — production status
 
-The owner approved the then-current five candidate bundle terms, 5% agent commission and Kuwadzana as the first sales site. The values below transcribe those approved terms for review and **are not a command to publish or allocate stock**. Validity starts on the first confirmed hotspot connection; an unused voucher has a 30-day start-by period.
+The owner approved the then-current five candidate bundle terms, 5% agent commission and Kuwadzana as the first sales site. The five approved terms below have been entered as production bundle versions. Mini, Flex and Week are published; Fortnight and Month remain drafts as of 3 November 2026. Sales and voucher issuance remain paused. Validity starts on the first confirmed hotspot connection; an unused voucher has a 30-day start-by period.
 
 | Version | USD price | Decimal allowance | Validity |
 | --- | ---: | ---: | ---: |
@@ -10,4 +10,4 @@ The owner approved the then-current five candidate bundle terms, 5% agent commis
 | fortnight | $5.00 | 35 GB | 14 days |
 | month | $10.00 | 75 GB | 30 days |
 
-Site: **Kuwadzana**. Commission: **5%** (500 basis points). The owner's administrator MFA enrollment, an approved site-assigned agent, actual stock quantities and a reviewed cash reconciliation procedure are prerequisites to activation. Site and draft bundle creation should use the MFA-authorized administration interface so attribution and audit records are retained. Do not create a synthetic agent, arbitrary stock, customer, cash receipt or sale in production. Site creation alone does not configure a hotspot. Before a controlled sale, agree the real participant, bundle, amount, agent, site and accounting treatment. Network access remains separately gated until physical acceptance.
+Site: **Kuwadzana**. Commission: **5%** (500 basis points). The Kuwadzana site record is created, the owner has enrolled MFA, and the configured commission is 500 basis points. An approved site-assigned agent, actual stock quantities, a reviewed cash reconciliation procedure, and a qualified working hotspot are prerequisites to activation. The site and bundle changes were made through the MFA-authorized administration interface; bundle changes have recorded reasons. Do not create a synthetic agent, arbitrary stock, customer, cash receipt or sale in production. Site creation alone does not configure a hotspot. Before a controlled sale, agree the real participant, bundle, amount, agent, site and accounting treatment. Network access remains separately gated until physical acceptance.
