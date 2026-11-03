@@ -15,18 +15,20 @@ export function buildPlan() {
   return [
     '{',
     '# REVIEW ONLY: disabled isolated pilot scaffold, no hotspot or customer access.',
-    ':error "Pilot import held: investigate bridge-port conflict before applying"',
     ':if ([:len [/interface wireless find where name="wlan1" and mode="ap-bridge" and disabled=no]] != 1) do={ :error "Expected active wlan1 access point is missing" }',
     ...[bridge,wifi].map(name=>`:if ([:len [/interface find where name="${name}"]] > 0) do={ :error "Pilot interface name already exists" }`),
     `:if ([:len [/interface wireless security-profiles find where name="${profile}"]] > 0) do={ :error "Pilot security profile already exists" }`,
+    `:if ([:len [/interface bridge port find where comment~"^${tag}"]] > 0) do={ :error "Prior pilot bridge port exists; inspect and recover before applying" }`,
     ...['/ip firewall filter','/ipv6 firewall filter'].map(menu=>`:if ([:len [${menu} find where comment~"^${tag}"]] > 0) do={ :error "Pilot firewall state already exists" }`),
     `/interface bridge add name="${bridge}" disabled=yes comment="${tag} isolated bridge"`,
     ...['/ip firewall filter','/ipv6 firewall filter'].flatMap(menu=>[
       guard(menu,'input','in'),guard(menu,'output','out'),guard(menu,'forward','in'),guard(menu,'forward','out'),
     ]),
     `/interface wireless security-profiles add name="${profile}" mode=none`,
-    `/interface wireless add name="${wifi}" master-interface=wlan1 mode=ap-bridge ssid="PamoFi Pilot" security-profile="${profile}" default-forwarding=no disabled=yes comment="${tag} disabled test radio"`,
+    `/interface wireless add name="${wifi}" master-interface=wlan1 mode=ap-bridge ssid="PamoFi Pilot" security-profile="${profile}" default-forwarding=no wps-mode=disabled disabled=yes comment="${tag} disabled test radio"`,
+    `:if ([:len [/interface bridge port find where interface="${wifi}"]] > 0) do={ :error "Pilot radio already has bridge membership; inspect and roll back" }`,
     `/interface bridge port add bridge="${bridge}" interface="${wifi}" comment="${tag} disabled test port"`,
+    `:if ([:len [/interface bridge port find where interface="${wifi}" and bridge="${bridge}" and comment="${tag} disabled test port"]] != 1) do={ :error "Pilot bridge membership differs from plan" }`,
     '# Both interfaces remain disabled. No IP address, DHCP, NAT, HotSpot or RADIUS is created.',
     '}', '',
   ].join('\n');
