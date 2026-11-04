@@ -1,14 +1,14 @@
-name: Build PamoFi native previews
+name: Build PasoFi native previews
 
 on:
   pull_request:
     paths:
-      - 'pamofi-frontend/mobile/**'
+      - 'pasofi-frontend/mobile/**'
       - '.github/workflows/mobile.yml'
   push:
     branches: [main]
     paths:
-      - 'pamofi-frontend/mobile/**'
+      - 'pasofi-frontend/mobile/**'
       - '.github/workflows/mobile.yml'
   workflow_dispatch:
 
@@ -27,7 +27,7 @@ env:
 defaults:
   run:
     shell: bash
-    working-directory: pamofi-frontend/mobile
+    working-directory: pasofi-frontend/mobile
 
 jobs:
   android:
@@ -44,7 +44,7 @@ jobs:
         with:
           node-version: 24.22.1
           cache: npm
-          cache-dependency-path: pamofi-frontend/mobile/package-lock.json
+          cache-dependency-path: pasofi-frontend/mobile/package-lock.json
       - name: Set up Java 21
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
@@ -67,7 +67,7 @@ jobs:
           test "$license_status" -eq 0
           "$sdkmanager_path" 'platforms;android-36' 'build-tools;36.0.0' 'platform-tools'
       - name: Compile Android debug APK with the checked-in Gradle wrapper
-        working-directory: pamofi-frontend/mobile/android
+        working-directory: pasofi-frontend/mobile/android
         run: |
           test "$(sed -n 's/^distributionUrl=//p' gradle/wrapper/gradle-wrapper.properties)" = 'https\://services.gradle.org/distributions/gradle-8.14.3-all.zip'
           printf '%s\n' '7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172  gradle/wrapper/gradle-wrapper.jar' | sha256sum --check
@@ -84,7 +84,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pamofi-android-api-unconfigured-debug-${{ github.sha }}
-          path: pamofi-frontend/mobile/native-artifacts/
+          path: pasofi-frontend/mobile/native-artifacts/
           if-no-files-found: error
           retention-days: 14
 
@@ -104,7 +104,7 @@ jobs:
         with:
           node-version: 24.22.1
           cache: npm
-          cache-dependency-path: pamofi-frontend/mobile/package-lock.json
+          cache-dependency-path: pasofi-frontend/mobile/package-lock.json
       - name: Verify Xcode 26 or newer
         run: |
           xcodebuild -version
@@ -144,6 +144,6 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pamofi-ios-api-unconfigured-simulator-${{ github.sha }}
-          path: pamofi-frontend/mobile/native-artifacts/
+          path: pasofi-frontend/mobile/native-artifacts/
           if-no-files-found: error
           retention-days: 14

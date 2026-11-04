@@ -1,0 +1,57 @@
+import { test, expect } from '@playwright/test';
+
+for (const platform of ['small-phone', 'large-phone', 'wide-phone'] as const) {
+  test(`${platform} preview works offline and cannot start a purchase`, async ({ page }, testInfo) => {
+    await page.setViewportSize({width: platform === 'small-phone' ? 320 : platform === 'large-phone' ? 390 : 430, height: 780});
+    const calls: string[] = [];
+    page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) calls.push(request.url()); });
+    await page.goto('/');
+    await expect(page.getByText('Offline preview')).toBeVisible();
+    await expect(page.getByText('Live balance unavailable', { exact: true })).toBeVisible();
+    await expect(page.getByText('Connection unverified', { exact: true })).toBeVisible();
+    await expect(page.locator('.mobile-hero-art img')).toHaveJSProperty('complete', true);
+    expect(await page.locator('.mobile-hero-art img').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+    await page.context().setOffline(true);
+    await page.screenshot({path:testInfo.outputPath(`pamofi-${platform}-home.png`),fullPage:true});
+    await page.getByRole('button',{name:'Explore bundles'}).click();
+    await expect(page.getByRole('heading',{name:'Find your fit.'})).toBeVisible();
+    await expect(page.locator('.mobile-card')).toHaveCount(5);
+    await page.getByRole('button', { name: 'Weekly', exact: true }).click();
+    await expect(page.locator('.mobile-card')).toHaveCount(2);
+    await expect(page.getByRole('heading', { name: 'Mini', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Week', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Longer stays', exact: true }).click();
+    await expect(page.locator('.mobile-card')).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Fortnight', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Monthly', exact: true }).click();
+    await expect(page.locator('.mobile-card')).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Month', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Daily', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Unlimited', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'All bundles', exact: true }).click();
+    await page.getByRole('button',{name:'View Flex example bundle'}).click();
+    await expect(page.getByText('Example only. Buying and connecting are not available in this preview.')).toBeVisible();
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await expect(page.getByRole('button',{name:/buy|purchase|pay|recover/i})).toHaveCount(0);
+    await page.screenshot({path:testInfo.outputPath(`pamofi-${platform}-bundles.png`),fullPage:true});
+    await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'History', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Your history.' })).toBeFocused();
+    await expect(page.getByText('This offline preview has no purchase or usage records.', { exact: false })).toBeVisible();
+    await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Account', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'My PasoFi.' })).toBeFocused();
+    await expect(page.getByText('No account is created while you explore.', { exact: false })).toBeVisible();
+    const navTargets = await page.locator('.mobile-nav button').evaluateAll(buttons => buttons.map(button => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })));
+    expect(navTargets.every(target => target.width >= 44 && target.height >= 44)).toBe(true);
+    await page.getByRole('button',{name:'Help',exact:true}).click();
+    await page.getByText('Can I buy a bundle in this app?').click();
+    await expect(page.getByText('Not yet. This is an offline preview. Payments and Wi-Fi connections are not available.')).toBeVisible();
+    await page.getByLabel('Find a quick answer').fill('uploads');
+    await expect(page.locator('.mobile-faq details')).toHaveCount(1);
+    await page.getByLabel('Find a quick answer').fill('unmatched query');
+    await expect(page.getByText('No matching answer.', { exact: false })).toBeVisible();
+    await page.getByLabel('Find a quick answer').clear();
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    expect(calls).toEqual([]);
+    await page.screenshot({path:testInfo.outputPath(`pamofi-${platform}-preview.png`),fullPage:true});
+  });
+}

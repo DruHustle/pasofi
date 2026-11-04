@@ -1,14 +1,14 @@
-name: Preview PamoFi UI
+name: Preview PasoFi UI
 
 on:
   pull_request:
     paths:
-      - 'pamofi-frontend/**'
+      - 'pasofi-frontend/**'
       - '.github/workflows/ui-preview.yml'
   push:
     branches: [main]
     paths:
-      - 'pamofi-frontend/**'
+      - 'pasofi-frontend/**'
       - '.github/workflows/ui-preview.yml'
   workflow_dispatch:
 
@@ -36,20 +36,20 @@ jobs:
           node-version: 24.22.1
           cache: npm
           cache-dependency-path: |
-            pamofi-frontend/web/package-lock.json
-            pamofi-frontend/mobile/package-lock.json
+            pasofi-frontend/web/package-lock.json
+            pasofi-frontend/mobile/package-lock.json
       - name: Build independent frontend previews
         run: |
           for project in web mobile; do
-            npm --prefix "pamofi-frontend/$project" ci --no-audit --no-fund
-            npm --prefix "pamofi-frontend/$project" run build
+            npm --prefix "pasofi-frontend/$project" ci --no-audit --no-fund
+            npm --prefix "pasofi-frontend/$project" run build
           done
       - name: Package reproducible review materials
         run: |
           mkdir -p ui-review
-          git archive --format=tar.gz --output=ui-review/frontend-source.tar.gz HEAD pamofi-frontend .github
-          cp -R pamofi-frontend/web/dist ui-review/web
-          cp -R pamofi-frontend/mobile/dist ui-review/mobile
+          git archive --format=tar.gz --output=ui-review/frontend-source.tar.gz HEAD pasofi-frontend .github
+          cp -R pasofi-frontend/web/dist ui-review/web
+          cp -R pasofi-frontend/mobile/dist ui-review/mobile
           git rev-parse HEAD > ui-review/SOURCE_COMMIT.txt
           printf '%s\n' 'Internal UI review only. No live payment, customer account or physical hotspot qualification is implied.' > ui-review/README.txt
       - name: Upload private UI review artifact

@@ -1,0 +1,41 @@
+# Explicit opt-in: Vercel serves the browser app; Oracle exposes only an
+# authenticated public API gateway. The ordinary same-host base is unchanged.
+services:
+  identity:
+    environment:
+      PUBLIC_ORIGIN: ${PAMOFI_PUBLIC_ORIGIN:?Set the exact HTTPS Vercel browser origin}
+      PUBLIC_ORIGIN_ALIASES: ${PASOFI_PUBLIC_ORIGIN_ALIASES:-[]}
+  prepaid-access:
+    environment:
+      PUBLIC_ORIGIN: ${PAMOFI_PUBLIC_ORIGIN:?Set the exact HTTPS Vercel browser origin}
+      PUBLIC_ORIGIN_ALIASES: ${PASOFI_PUBLIC_ORIGIN_ALIASES:-[]}
+  network:
+    environment:
+      PUBLIC_ORIGIN: ${PAMOFI_PUBLIC_ORIGIN:?Set the exact HTTPS Vercel browser origin}
+  notification:
+    environment:
+      PUBLIC_ORIGIN: ${PAMOFI_PUBLIC_ORIGIN:?Set the exact HTTPS Vercel browser origin}
+  assistant:
+    environment:
+      PUBLIC_ORIGIN: ${PAMOFI_PUBLIC_ORIGIN:?Set the exact HTTPS Vercel browser origin}
+  gateway:
+    entrypoint: [sh, /opt/pamofi/vercel-entrypoint.sh]
+    command: []
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - ./gateway/vercel.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./gateway/vercel-entrypoint.sh:/opt/pamofi/vercel-entrypoint.sh:ro
+    secrets:
+      - public_tls_cert
+      - public_tls_key
+      - vercel_proxy_token
+secrets:
+  vercel_proxy_token:
+    file: ${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/vercel_proxy_token
