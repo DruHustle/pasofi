@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {EcoCashSandboxAdapter,prepareEcoCashPayment} from '../dist/ecocash.js';
+import {EcoCashSandboxAdapter,prepareEcoCashPayment,prepareEcoCashAdjustment} from '../dist/ecocash.js';
 
 const config={environment:'sandbox',username:'synthetic-user',password:'synthetic-password',merchantCode:'001535',merchantPin:'0000',merchantNumber:'263788732685',terminalID:'UAT00003',location:'Synthetic site',superMerchantName:'ECOCASH',merchantName:'PasoFi sandbox fixture'};
 const prepared=()=>prepareEcoCashPayment({attemptId:randomUUID(),orderId:randomUUID(),customerMsisdn:'263773047653',amountMinor:125,currency:'USD'});
@@ -68,4 +68,28 @@ test('EcoCash preparation has no production endpoint or customer-PIN configurati
  const adapter=new EcoCashSandboxAdapter(config,async()=>{calls++;return json(success(p));});
  await assert.rejects(adapter.initiate({...p,clientCorrelator:randomUUID()}),/invalid_prepared/);
  assert.equal(calls,0);
+});
+
+test('sandbox refund uses a separate reference and remains unqualified for settlement',async()=>{
+ const p=prepared(), adjustment=prepareEcoCashAdjustment({adjustmentId:randomUUID(),kind:'REF',original:p,originalEcocashReference:'MP260508.1439.T0782584',amountMinor:100});
+ let calls=0;
+ const adapter=new EcoCashSandboxAdapter(config,async(url,request)=>{
+  calls++;assert.equal(url,'https://developers.ecocash.co.zw/sandbox/payment/v1/transactions/refund/');assert.equal(request.method,'POST');assert.equal(request.redirect,'error');
+  const body=JSON.parse(request.body);assert.equal(body.tranType,'REF');assert.equal(body.clientCorrelator,adjustment.adjustmentId);assert.equal(body.referenceCode,adjustment.adjustmentId);assert.equal(body.originalEcocashReference,adjustment.originalEcocashReference);
+  assert.equal(body.endUserId,p.endUserId);assert.equal(body.paymentAmount.charginginformation.amount,1);assert.equal(body.paymentAmount.charginginformation.currency,'USD');assert.deepEqual(body.paymentAmount.chargeMetaData,{channel:'WEB'});assert.equal(body.pin,undefined);
+  return json({clientCorrelator:adjustment.adjustmentId,originalEcocashReference:adjustment.originalEcocashReference,ecocashReference:'MP260508.1441.R0782599',transactionOperationStatus:'Refunded',responseCode:'00'});
+ });
+ assert.equal(adapter.supportsAutomaticRefunds,false);assert.equal(Object.isFrozen(adjustment),true);assert.equal(Object.isFrozen(adjustment.original),true);
+ assert.deepEqual(await adapter.adjust(adjustment),{state:'review_required',adjustmentId:adjustment.adjustmentId});assert.equal(calls,1);
+});
+test('sandbox adjustments reject unsafe requests and ambiguous outcomes without retry',async()=>{
+ const p=prepared(),make=(values={})=>prepareEcoCashAdjustment({adjustmentId:randomUUID(),kind:'REF',original:p,originalEcocashReference:'MP260508.1439.T0782584',amountMinor:100,...values});
+ for(const bad of [{adjustmentId:p.attemptId},{originalEcocashReference:'bad/ref'},{amountMinor:126},{amountMinor:0},{kind:'UNKNOWN'}])assert.throws(()=>make(bad),/invalid_ecocash_adjustment/);
+ const a=make();let calls=0;const timeout=new EcoCashSandboxAdapter(config,async()=>{calls++;throw Error('timeout');});
+ assert.deepEqual(await timeout.adjust(a),{state:'unknown',adjustmentId:a.adjustmentId});assert.equal(calls,1);
+ const badResponses=[{clientCorrelator:randomUUID()},{originalEcocashReference:'different'},{ecocashReference:''},{responseCode:'01'},{transactionOperationStatus:'Reversed'}];
+ for(const bad of badResponses){const adapter=new EcoCashSandboxAdapter(config,async()=>json({clientCorrelator:a.adjustmentId,originalEcocashReference:a.originalEcocashReference,ecocashReference:'REF-1',responseCode:'00',transactionOperationStatus:'Refunded',...bad}));assert.equal((await adapter.adjust(a)).state,'unknown');}
+ const reversal=make({kind:'REV'});const unqualified=new EcoCashSandboxAdapter(config,async()=>json({clientCorrelator:reversal.adjustmentId,originalEcocashReference:reversal.originalEcocashReference,ecocashReference:'REV-1',responseCode:'00',transactionOperationStatus:'Reversed'}));
+ assert.equal((await unqualified.adjust(reversal)).state,'unknown');
+ await assert.rejects(timeout.adjust({...a,clientCorrelator:randomUUID()}),/invalid_ecocash_adjustment/);assert.equal(calls,1);
 });

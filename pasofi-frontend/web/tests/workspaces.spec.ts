@@ -22,6 +22,9 @@ async function mock(page: Page, handle?: (route: Route, path: string, method: st
     if (path === '/api/capabilities') return json(route, capabilities);
     if (path === '/api/bundles') return json(route, { products: [product], candidate: true });
     if (path === '/api/sites' || path === '/api/staff/sites') return json(route, { sites: [site] });
+    if (path === '/api/staff/cash-refunds') return json(route, { refunds: [] });
+    if (path === '/api/staff/cash-shifts') return json(route, { shifts: [], currencies: ['USD'] });
+    if (path === '/api/staff/cash-references/lookup') return json(route, { status: 'pending', expiresAt: future(), quote: { bundleId: product.id, siteId, siteName: site.name, priceMinor: product.price_minor, currency: product.currency, byteLimit: product.byte_limit, validitySeconds: product.validity_seconds } });
     if (path === '/api/help') return json(route, { articles: [] });
     if (path === '/api/session') return json(route, { customerId });
     if (path === '/api/usage') return json(route, usageSnapshot('0', { allowanceBytes: '0' }));
@@ -85,13 +88,19 @@ test('a lost agent sale response restores the exact intent and cannot debit stoc
     if (path === `/api/staff/sales/${saleId}/receipt`) { await json(route, { receipt: { sale: sale(), voucher: { id: saleId, code: 'PRIVATEVOUCHER234567', state: 'issued' } }, simulation: true }); return true; }
     return false;
   });
-  await openStaff(page); await page.getByLabel('Customer pairing code').fill('ABCD234567'); await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click();
+  await openStaff(page); await page.getByLabel('Customer pairing code').fill('ABCD234567'); await page.getByRole('button', { name: 'Look up cash reference' }).click(); await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click();
   await expect(page.getByText('Retry the saved request', { exact: false })).toBeVisible();
   await page.reload(); await page.getByRole('button', { name: 'Staff', exact: true }).click(); await expect(page.getByLabel('Customer pairing code')).toHaveValue('ABCD234567');
   await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Retry saved sale safely' }).click();
   await expect(page.getByText('stock was not debited twice', { exact: false })).toBeVisible(); expect(keys).toHaveLength(2); expect(new Set(keys).size).toBe(1);
   await expect(page.getByText(`Sale reference: ${saleId}`)).toBeVisible();
-  await page.getByRole('button', { name: 'View private receipt' }).click(); await expect(page.getByLabel('Voucher code', { exact: true })).toHaveValue('PRIVATEVOUCHER234567'); await page.getByRole('button', { name: 'Hide receipt' }).click(); await expect(page.getByLabel('Voucher code', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'View private receipt' }).click(); await expect(page.getByLabel('Voucher code', { exact: true })).toHaveValue('PRIVATEVOUCHER234567');
+  await page.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (value: string) => { document.body.dataset.copiedVoucher = value; } } }); window.print = () => {}; });
+  await page.getByRole('button', { name: 'Copy voucher' }).click(); await expect(page.locator('body')).toHaveAttribute('data-copied-voucher', 'PRIVATEVOUCHER234567');
+  await page.getByRole('button', { name: 'Print receipt' }).click(); await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('.agent-print-receipt')).toContainText('PRIVATEVOUCHER234567'); await expect(page.locator('#root')).toBeHidden();
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint'))); await page.emulateMedia({ media: 'screen' }); await expect(page.locator('.agent-print-receipt')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Hide receipt' }).click(); await expect(page.getByLabel('Voucher code', { exact: true })).toHaveCount(0);
 });
 
 test('support sees scoped delivery evidence but cannot expose vouchers or resend SMS', async ({ page }) => {
@@ -241,9 +250,9 @@ test('only a serialized rolled-back sale rejection unlocks the form; ambiguous g
     }
     return false;
   });
-  await openStaff(page); await page.getByLabel('Customer pairing code').fill('ABCD234567'); await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click();
+  await openStaff(page); await page.getByLabel('Customer pairing code').fill('ABCD234567'); await page.getByRole('button', { name: 'Look up cash reference' }).click(); await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click();
   await expect(page.getByText('This request did not record a sale or debit inventory.', { exact: false })).toBeVisible(); await expect(page.getByLabel('Customer pairing code')).toBeEnabled(); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':sale')))).toEqual([]);
-  await page.getByLabel('Customer pairing code').fill('JKLM234567'); await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click(); await expect(page.getByRole('button', { name: 'Retry saved sale safely' })).toBeEnabled(); await expect(page.getByLabel('Customer pairing code')).toBeDisabled();
+  await page.getByLabel('Customer pairing code').fill('JKLM234567'); await page.getByRole('button', { name: 'Look up cash reference' }).click(); await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click(); await expect(page.getByRole('button', { name: 'Retry saved sale safely' })).toBeEnabled(); await expect(page.getByLabel('Customer pairing code')).toBeDisabled();
   expect(keys).toHaveLength(2); expect(keys[1]).not.toBe(keys[0]); await page.getByRole('button', { name: 'Retry saved sale safely' }).click(); await expect(page.getByText('stock was not debited twice', { exact: false })).toBeVisible(); expect(keys[2]).toBe(keys[1]);
 });
 
@@ -278,7 +287,7 @@ test('published cash-only bundles open private pairing and require the exact age
     return false;
   });
   await page.goto('/#bundles'); await page.getByRole('button', { name: 'Buy flex from an agent' }).click(); await expect(page.getByRole('heading', { name: 'Receive a private agent receipt' })).toBeVisible(); const summary = page.getByRole('complementary').filter({ has: page.getByRole('heading', { name: 'FLEX', exact: true }) }); await expect(summary.getByText('$1.00', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Prepare checkout' })).toHaveCount(0); await expect(page.getByRole('button', { name: 'Create private pairing code' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Close customer workspace' }).click(); await page.getByRole('button', { name: 'Staff', exact: true }).click(); await page.getByLabel('Customer pairing code').fill('ABCD234567'); await expect(page.getByRole('button', { name: 'Confirm cash and issue voucher' })).toBeDisabled(); await page.getByRole('checkbox', { name: 'I have received $1.00 in cash from this customer.', exact: true }).check(); await page.getByRole('button', { name: 'Confirm cash and issue voucher' }).click();
+  await page.getByRole('button', { name: 'Close customer workspace' }).click(); await page.getByRole('button', { name: 'Staff', exact: true }).click(); await page.getByLabel('Customer pairing code').fill('ABCD234567'); await page.getByRole('button', { name: 'Look up cash reference' }).click(); await expect(page.getByRole('button', { name: 'Confirm cash and issue voucher' })).toBeDisabled(); await page.getByRole('checkbox', { name: 'I have received $1.00 in cash from this customer.', exact: true }).check(); await page.getByRole('button', { name: 'Confirm cash and issue voucher' }).click();
   await expect(page.getByText('Cash received: $1.00 · confirmed by agent', { exact: true })).toBeVisible(); expect(received).toEqual({ siteId, bundleId: 'flex', delivery: 'receipt', pairingCode: 'ABCD234567', payment: { method: 'cash', confirmed: true, amountMinor: 100, currency: 'USD' } });
 });
 
@@ -322,15 +331,15 @@ test('paused commerce allows administrator draft setup while stock allocation re
     if (path === '/api/staff/inventory') { await json(route, { inventory: [] }); return true; }
     if (path === '/api/admin/bundles') {
       if (method === 'POST') { draft = route.request().postDataJSON(); await json(route, { product: { ...product, published: false } }, 201); }
-      else await json(route, { products: [{ ...product, published: true }] });
+      else await json(route, { products: [{ ...product, published: true }], currencies: ['USD', 'ZWG'] });
       return true;
     }
     return false;
   });
   await openStaff(page); await page.getByRole('button', { name: 'Bundle catalogue', exact: true }).click();
-  await page.getByLabel('Unique version ID').fill('review-draft'); await page.getByLabel('Price in USD').fill('1.50'); await page.getByLabel('Data allowance in GB').fill('3'); await page.getByLabel('Validity in days').fill('2'); await page.getByLabel('Reason', { exact: true }).fill('Prepare reviewed draft before launch');
+  await page.getByLabel('Unique version ID').fill('review-draft'); await page.getByRole('combobox', { name: 'Currency', exact: true }).selectOption('ZWG'); await page.getByLabel('Price', { exact: true }).fill('1.50'); await page.getByLabel('Data allowance in GB').fill('3'); await page.getByLabel('Validity in days').fill('2'); await page.getByLabel('Reason', { exact: true }).fill('Prepare reviewed draft before launch');
   await page.getByRole('button', { name: 'Save draft bundle' }).click(); await expect(page.getByText('A new draft bundle version is saved.', { exact: false })).toBeVisible();
-  expect(draft).toEqual({ id: 'review-draft', priceMinor: 150, currency: 'USD', byteLimit: '3000000000', validitySeconds: 172800, published: false, reason: 'Prepare reviewed draft before launch' });
+  expect(draft).toEqual({ id: 'review-draft', priceMinor: 150, currency: 'ZWG', byteLimit: '3000000000', validitySeconds: 172800, published: false, reason: 'Prepare reviewed draft before launch' });
   await page.getByRole('button', { name: 'Inventory', exact: true }).click();
   await expect(page.getByText('Sales and stock allocation are paused.', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Allocate inventory' })).toBeDisabled();
@@ -352,11 +361,13 @@ for (const delivery of ['receipt', 'sms'] as const) {
     await openStaff(page); await page.getByLabel('Customer delivery').selectOption(delivery);
     const input = page.getByLabel(delivery === 'receipt' ? 'Customer pairing code' : 'Customer mobile number');
     await input.fill(delivery === 'receipt' ? 'ABC' : '+263 12');
-    await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click();
-    await expect(page.getByText(delivery === 'receipt' ? /complete 10-character pairing code/ : /valid Zimbabwe number/)).toBeVisible();
+    if (delivery === 'receipt') { await page.getByRole('button', { name: 'Look up cash reference' }).click(); await expect(page.getByRole('button', { name: 'Confirm demo sale' })).toBeDisabled(); }
+    else { await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click(); }
+    await expect(page.getByText(delivery === 'receipt' ? /complete customer reference/ : /valid Zimbabwe number/)).toBeVisible();
     await expect(input).toBeEnabled(); expect(requests).toHaveLength(0);
     expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':sale')))).toEqual([]);
     await input.fill(delivery === 'receipt' ? 'ABCD-234 567' : '077 123 4567');
+    if (delivery === 'receipt') await page.getByRole('button', { name: 'Look up cash reference' }).click();
     await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click();
     await expect(page.getByText('Demo sale confirmed:', { exact: false })).toBeVisible();
     expect(requests).toHaveLength(1);
@@ -463,4 +474,43 @@ test('qualified staff password reset uses a generic request and retains the auth
   await page.getByLabel('Confirm new password').fill('A new synthetic passphrase'); await page.getByRole('button', { name: 'Change password' }).click();
   await expect(page.getByText('Password changed. Sign in with your new password and existing authenticator.')).toBeVisible();
   expect(requests).toEqual([{ email: 'staff@example.test' }, { email: 'staff@example.test', code: resetCode, password: 'A new synthetic passphrase' }]);
+});
+
+test('refund cash reservation survives a lost response and cash is returned only after explicit confirmation',async({page})=>{
+ const refundId='12345678-1234-4123-8123-123456789abc';let state='approved';const prepared:string[]=[];let payouts=0;
+ const refund=()=>({id:refundId,saleId,siteName:site.name,bundleId:'flex',amountMinor:100,currency:'USD',reason:'Unused bundle returned by customer',state,requestedAt:future(),decisionNote:'Approved by a separate supervisor',auditHead:'a'.repeat(64),events:[]});
+ await mock(page,async(route,path,method)=>{
+  if(path==='/api/staff/session'){await json(route,staff());return true;}
+  if(path==='/api/staff/inventory'){await json(route,{inventory:[]});return true;}
+  if(path==='/api/staff/sales'){await json(route,{sales:[],hasMore:false,nextOffset:null});return true;}
+  if(path==='/api/staff/cash-refunds'){await json(route,{refunds:[refund()]});return true;}
+  if(path===`/api/staff/cash-refunds/${refundId}/prepare-payout`){expect(method).toBe('POST');prepared.push(route.request().headers()['idempotency-key']);state='paying';if(prepared.length===1)await route.abort();else await json(route,{refund:refund(),replayed:true});return true;}
+  if(path===`/api/staff/cash-refunds/${refundId}/payout`){expect(route.request().postDataJSON()).toEqual({confirmed:true});payouts++;state='paid';await json(route,{refund:refund()});return true;}
+  return false;
+ });
+ await openStaff(page);await page.getByRole('button',{name:'Prepare cash return',exact:true}).click();
+ await page.getByRole('checkbox',{name:'The customer is present and I am ready to return the approved amount.'}).check();await page.getByRole('button',{name:'Reserve cash for refund'}).click();
+ await expect(page.getByRole('button',{name:'Retry saved refund request'})).toBeEnabled();expect(payouts).toBe(0);
+ await page.reload();await page.getByRole('button',{name:'Staff',exact:true}).click();
+ await page.getByRole('checkbox',{name:'I am recovering the saved request and will not return cash a second time.'}).check();await page.getByRole('button',{name:'Retry saved refund request'}).click();
+ await expect(page.getByText('Cash reserved.',{exact:false})).toBeVisible();expect(new Set(prepared).size).toBe(1);expect(prepared.length).toBe(2);expect(payouts).toBe(0);
+ await page.getByRole('button',{name:'Record returned cash'}).click();await expect(page.getByRole('button',{name:'Confirm cash returned'})).toBeDisabled();
+ await page.getByRole('checkbox',{name:'I have returned $1.00 in cash to this customer.'}).check();await page.getByRole('button',{name:'Confirm cash returned'}).click();
+ await expect(page.getByText('Cash return recorded.',{exact:false})).toBeVisible();expect(payouts).toBe(1);await expect(page.getByRole('button',{name:'Record returned cash'})).toHaveCount(0);
+});
+
+test('a lost shift-close response restores the original count and key after reload',async({page})=>{
+ const shiftId='12345678-1234-4123-8123-123456789abc';let closed=false;const requests:{key:string;body:unknown}[]=[];
+ const shift=()=>({id:shiftId,agentId:staffId,siteId,currency:'USD',openingMinor:'100',openedAt:future(),closedAt:closed?future():null,countedMinor:closed?'190':null,expectedMinor:'200',differenceMinor:closed?'-10':null,closeNote:closed?'Ten cents short after count':null,saleCount:'1',salesMinor:'100',commissionMinor:'10',refundsMinor:'0',pendingRefundsMinor:'0',commissionReversedMinor:'0'});
+ await mock(page,async(route,path)=>{
+  if(path==='/api/staff/session'){await json(route,staff());return true;}
+  if(path==='/api/staff/inventory'){await json(route,{inventory:[]});return true;}
+  if(path==='/api/staff/sales'){await json(route,{sales:[],hasMore:false,nextOffset:null});return true;}
+  if(path==='/api/staff/cash-shifts'){await json(route,{shifts:[shift()],currencies:['USD']});return true;}
+  if(path===`/api/staff/cash-shifts/${shiftId}/close`){requests.push({key:route.request().headers()['idempotency-key'],body:route.request().postDataJSON()});closed=true;if(requests.length===1)await route.abort();else await json(route,{shift:shift(),replayed:true});return true;}
+  return false;
+ });
+ await openStaff(page);await page.getByRole('button',{name:'Count and close'}).click();await page.getByLabel('Counted cash').fill('1.90');await page.getByLabel('Reconciliation note').fill('Ten cents short after count');await page.getByRole('checkbox',{name:'I have counted the cash and confirm this amount.'}).check();await page.getByRole('button',{name:'Confirm counted cash and close'}).click();
+ await expect(page.getByRole('button',{name:'Retry saved shift request'})).toBeEnabled();await page.reload();await page.getByRole('button',{name:'Staff',exact:true}).click();
+ await page.getByRole('checkbox',{name:'I am retrying the saved request without changing the cash count.'}).check();await page.getByRole('button',{name:'Retry saved shift request'}).click();await expect(page.getByText('Cash shift saved.',{exact:false})).toBeVisible();await expect(page.getByText('Difference: USD -0.10')).toBeVisible();expect(requests).toHaveLength(2);expect(requests[1]).toEqual(requests[0]);
 });

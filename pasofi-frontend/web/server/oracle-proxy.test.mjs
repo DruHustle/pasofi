@@ -259,7 +259,7 @@ test('cash workflow, recovery, staff and network routes are available through or
     ['GET', '/api/capabilities'], ['GET', '/api/usage?entitlementIds=a%2Cb'], ['POST', '/api/session'], ['DELETE', '/api/session'],
     ['POST', '/api/staff/register'], ['POST', '/api/staff/mfa/confirm'], ['GET', '/api/staff/password-reset/availability'], ['POST', '/api/staff/password-reset/request'], ['POST', '/api/staff/password-reset/confirm'], ['POST', `/api/staff/users/${id}/decision`], ['POST', `/api/staff/users/${id}/recover-mfa`],
     ['POST', '/api/admin/inventory/allocations'], ['POST', '/api/staff/sales'], ['GET', `/api/staff/sales/${id}/receipt`],
-    ['POST', '/api/receipt-pairings'], ['GET', `/api/receipt-pairings/${id}`], ['POST', '/api/vouchers/redeem'],
+    ['GET','/api/staff/cash-refunds'], ['POST','/api/staff/cash-refunds'], ['POST',`/api/staff/cash-refunds/${id}/payout`], ['POST',`/api/staff/cash-refunds/${id}/prepare-payout`], ['POST',`/api/admin/cash-refunds/${id}/decision`], ['GET', '/api/staff/cash-shifts'], ['POST', '/api/staff/cash-shifts'], ['POST', `/api/staff/cash-shifts/${id}/close`], ['POST', '/api/staff/cash-references/lookup'], ['POST', `/api/receipt-pairings/${id}/cancel`], ['POST', '/api/receipt-pairings'], ['GET', `/api/receipt-pairings/${id}`], ['POST', '/api/vouchers/redeem'],
     ['POST', '/api/recovery/rotate'], ['POST', '/api/handoff/redeem'], ['POST', '/api/network/credentials'],
     ['POST', '/api/network/disconnect'], ['PATCH', '/api/admin/bundles/day-1'], ['POST', `/api/admin/network/reviews/${id}/resolve`],
   ];

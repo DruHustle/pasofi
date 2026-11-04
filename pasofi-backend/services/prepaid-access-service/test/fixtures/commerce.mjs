@@ -28,7 +28,7 @@ async function main() {
     if (location.rowCount !== 1 || !/^Browser fixture [a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(location.rows[0].name)) throw Error('owned_browser_site_required');
     const sales = await client.query('SELECT s.id,s.agent_id,s.simulation,d.paired_customer_id FROM agent_sales s LEFT JOIN agent_sale_deliveries d ON d.sale_id=s.id WHERE s.site_id=$1 FOR UPDATE OF s', [site]);
     if (sales.rows.some(s => s.agent_id !== agent || !s.simulation || s.paired_customer_id !== customer)) throw Error('fixture_ownership_mismatch');
-    const foreignStock = await client.query('SELECT 1 FROM agent_site_inventory WHERE site_id=$1 AND agent_id<>$2 UNION ALL SELECT 1 FROM inventory_allocations WHERE site_id=$1 AND agent_id<>$2', [site, agent]);
+    const foreignStock = await client.query('SELECT 1 FROM agent_site_inventory WHERE site_id=$1 AND agent_id<>$2 UNION ALL SELECT 1 FROM inventory_allocations WHERE site_id=$1 AND agent_id<>$2 UNION ALL SELECT 1 FROM cash_shifts WHERE site_id=$1 AND agent_id<>$2', [site, agent]);
     if (foreignStock.rowCount) throw Error('fixture_ownership_mismatch');
     const ids = sales.rows.map(s => s.id);
     const vouchers = await client.query('SELECT id FROM issued_vouchers WHERE sale_id=ANY($1::uuid[])', [ids]);
@@ -62,6 +62,8 @@ async function main() {
     await client.query("DELETE FROM commerce_audit WHERE action='inventory.allocate' AND target_id IN (SELECT id FROM inventory_allocations WHERE site_id=$1 AND agent_id=$2)", [site, agent]);
     await client.query('DELETE FROM inventory_allocations WHERE site_id=$1 AND agent_id=$2', [site, agent]);
     await client.query('DELETE FROM agent_site_inventory WHERE site_id=$1 AND agent_id=$2', [site, agent]);
+    await client.query("DELETE FROM commerce_audit WHERE action IN ('cash.shift.open','cash.shift.close') AND actor_id=$2 AND target_id IN (SELECT id FROM cash_shifts WHERE site_id=$1 AND agent_id=$2)",[site,agent]);
+    await client.query('DELETE FROM cash_shifts WHERE site_id=$1 AND agent_id=$2',[site,agent]);
     await client.query('DELETE FROM sales_locations WHERE id=$1', [site]);
     await client.query('COMMIT');
     console.log(JSON.stringify({removed: true, deliveryReferences: ids}));

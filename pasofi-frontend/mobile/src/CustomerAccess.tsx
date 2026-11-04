@@ -9,7 +9,7 @@ import LiveUsage, { dataAmount, useLiveUsage, type UsageSnapshot } from './LiveU
 import './customer-premium.css';
 
 type Entitlement = { id: string; bundle_id: string; byte_limit: string; consumed_bytes: string; validity_seconds: number; activated_at: string | null; revoked_at: string | null; start_by: string };
-type Pairing = { id: string; code: string; expiresAt: string };
+type Pairing = { id: string; code: string; expiresAt: string; status?: string; quote?: { bundleId: string; siteId: string; siteName: string; priceMinor: number; currency: string; byteLimit: string; validitySeconds: number } };
 type Receipt = { sale: { id: string; siteName: string; bundleId: string; priceMinor: number; currency: string; byteLimit: string; validitySeconds: number; startBy: string; simulation: boolean; payment?: CashEvidence }; voucher: { id: string; code: string; state: string } };
 type Order = { id: string; bundle_id: string; price_minor: number; currency: string; status: string; quote_expires_at: string };
 type PaymentMethod = { code: string; name: string; currency: string; minMinor: number; maxMinor: number };
@@ -41,6 +41,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const [access, setAccess] = useState<Entitlement[]>([]), [nextOffset, setNextOffset] = useState<number | null>(null);
   const [voucherCode, setVoucherCode] = useState(''), [pairing, setPairing] = useState<Pairing | null>(null), [pairingState, setPairingState] = useState(''), [receipt, setReceipt] = useState<Receipt | null>(null);
   const [sites, setSites] = useState<Site[]>([]), [products, setProducts] = useState<Product[]>([]), [bundleId, setBundleId] = useState(selectedBundle?.id ?? requestedBundleId ?? ''), [siteId, setSiteId] = useState('');
+  const [referencePending, setReferencePending] = useState(false);
   const [methods, setMethods] = useState<PaymentMethod[]>([]), [methodCode, setMethodCode] = useState(''), [methodsLoading, setMethodsLoading] = useState(false);
   const [order, setOrder] = useState<Order | null>(null), [payment, setPayment] = useState<PaymentStatus | null>(null), [redirectUrl, setRedirectUrl] = useState('');
   const [checkoutPending, setCheckoutPending] = useState(false);
@@ -59,6 +60,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     const nextBundleId = selectedBundle?.id ?? requestedBundleId;
     if (!nextBundleId || previousBundle.current === nextBundleId) return;
     previousBundle.current = nextBundleId;
+    if (referencePending) { selectTab('receipt'); setMessage('Your cash reference is still saved. Cancel it or check its receipt before choosing another bundle.'); return; }
     if (order || checkoutPending) { selectTab('purchase'); setMessage('Your earlier checkout is still saved. Check its verified status before choosing a different bundle.'); return; }
     // Explicit checkout/receipt routes own the screen; a changed ID only updates selection.
     setBundleId(nextBundleId);
@@ -67,7 +69,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   function invalidateAccount(expectedOwner?: string) {
     if (expectedOwner && ownerRef.current !== expectedOwner) return;
     ++generation.current; ownerRef.current = null; lastUsage.current = null; clearSessionSecrets();
-    if (live.current) { setOwner(null); setAccess([]); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setOrder(null); setPayment(null); setRedirectUrl(''); setCheckoutPending(false); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
+    if (live.current) { setOwner(null); setAccess([]); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setReferencePending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setCheckoutPending(false); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
   }
   function mergeUsage(snapshot: UsageSnapshot) {
     if (snapshot.customerId !== ownerRef.current || !live.current) return;
@@ -102,6 +104,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       try {
         const id = await currentSession(); if (!isCurrent(revision)) return; remember(id);
         try { const saved = sessionStorage.getItem(`pamofi.operation:customer:${id}:purchase-details`); if (saved) { const draft = JSON.parse(JSON.parse(saved).payload) as { bundleId: string; siteId: string; methodCode: string }; restoredMethod.current = draft.methodCode; setBundleId(draft.bundleId); setSiteId(draft.siteId); setMethodCode(draft.methodCode); setCheckoutPending(true); selectTab('purchase', draft.bundleId); setMessage('Your unfinished checkout details were restored. Safely retry or check its verified status before starting another purchase.'); void restoreSavedOrder(id, revision, draft.bundleId).catch(() => { if (isCurrent(revision)) setMessage('Your checkout is still saved. Its order could not be loaded. Retry the saved-order check before starting another payment.'); }); } } catch { /* Storage is required and checked before a new checkout request. */ }
+        const savedReference = sessionStorage.getItem(`pamofi.operation:customer:${id}:receipt-pairing`);
+        if (savedReference) { const draft = JSON.parse(JSON.parse(savedReference).payload) as { bundleId: string; siteId: string }; if (draft.bundleId && draft.siteId) { setReferencePending(true); setBundleId(draft.bundleId); setSiteId(draft.siteId); await createReference(id, draft, revision); } else { finishMutation(`customer:${id}`, 'receipt-pairing'); } }
         await refreshAccess();
       }
       catch (error) { if (!(error instanceof ApiError && error.status === 401) && isCurrent(revision)) setMessage(messageFor(error)); }
@@ -129,10 +133,10 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     return () => controller.abort();
   }, [siteId, bundleId, capabilities.paymentCheckout]);
   useEffect(() => {
-    if (!pairing || pairingState !== 'pending' || Date.parse(pairing.expiresAt) <= now || polling.current || document.hidden) return;
+    if (!pairing || pairingState !== 'pending' || polling.current || document.hidden) return;
     polling.current = true; const revision = generation.current;
     void (async () => {
-      try { await identity(); const result = await api<{ status: string; receipt?: Receipt }>(`/api/receipt-pairings/${pairing.id}`); if (isCurrent(revision)) { setPairingState(result.status); if (result.status === 'ready' || result.status === 'expired') { if (ownerRef.current) finishMutation(`customer:${ownerRef.current}`, 'receipt-pairing'); } if (result.receipt) { setReceipt(result.receipt); setMessage('Your private receipt is ready. Redeem its voucher to queue the bundle; this does not connect you automatically.'); } } }
+      try { await identity(); const result = await api<{ status: string; receipt?: Receipt }>(`/api/receipt-pairings/${pairing.id}`); if (isCurrent(revision)) { setPairingState(result.status); if (['ready', 'expired', 'cancelled'].includes(result.status)) { setReferencePending(false); if (ownerRef.current) finishMutation(`customer:${ownerRef.current}`, 'receipt-pairing'); } if (result.receipt) { setReceipt(result.receipt); setMessage('Your private receipt is ready. Redeem its voucher to queue the bundle; this does not connect you automatically.'); } } }
       catch (error) { if (isCurrent(revision)) setMessage(messageFor(error)); }
       finally { polling.current = false; }
     })();
@@ -150,14 +154,40 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'The voucher response could not be confirmed. Retrying the same voucher is safe and cannot create a second bundle.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
+  async function createReference(id: string, payload: { bundleId: string; siteId: string }, revision: number) {
+    const key = mutationIntent(`customer:${id}`, 'receipt-pairing', payload);
+    const result = await api<{ pairing: Pairing }>('/api/receipt-pairings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(payload) }).catch(error => {
+      if (error instanceof ApiError && ((error.status === 409 && error.code === 'site_or_bundle_unavailable') || (error.status === 400 && error.code === 'cash_selection_required'))) {
+        finishMutation(`customer:${id}`, 'receipt-pairing'); if (isCurrent(revision)) setReferencePending(false);
+      }
+      throw error;
+    });
+    if (!isCurrent(revision)) return;
+    setPairing(result.pairing);
+    // A committed receipt must still be fetched even after its reference expires.
+    const terminal = ['cancelled', 'expired'].includes(result.pairing.status ?? '');
+    setPairingState(terminal ? result.pairing.status! : 'pending');
+    setReferencePending(!terminal);
+    if (terminal) finishMutation(`customer:${id}`, 'receipt-pairing');
+  }
   async function pair() {
-    if (busy || !capabilities.receiptPairing) return; const revision = generation.current; setBusy(true); setMessage(''); setReceipt(null);
+    if (busy || !capabilities.receiptPairing || !bundleId || !siteId) return; const revision = generation.current; setBusy(true); setMessage(''); setReceipt(null);
     try {
-      const id = await identity(true); if (pairing && (Date.parse(pairing.expiresAt) <= Date.now() || pairingState !== 'pending')) finishMutation(`customer:${id}`, 'receipt-pairing'); const key = mutationIntent(`customer:${id}`, 'receipt-pairing', {});
-      const result = await api<{ pairing: Pairing }>('/api/receipt-pairings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: '{}' });
-      if (Date.parse(result.pairing.expiresAt) <= Date.now()) { finishMutation(`customer:${id}`, 'receipt-pairing'); throw Error('pairing_expired'); }
-      if (isCurrent(revision)) { setPairing(result.pairing); setPairingState('pending'); }
-    } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'The pairing could not be created or has expired. Try again to receive a fresh code.')); }
+      const id = await identity(true);
+      const saved = sessionStorage.getItem(`pamofi.operation:customer:${id}:receipt-pairing`);
+      const payload = saved ? JSON.parse(JSON.parse(saved).payload) as { bundleId: string; siteId: string } : { bundleId, siteId };
+      setBundleId(payload.bundleId); setSiteId(payload.siteId); setReferencePending(true);
+      await createReference(id, payload, revision);
+    } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'Your cash reference request is saved. Retry it to recover the same code before paying.')); }
+    finally { if (isCurrent(revision)) setBusy(false); }
+  }
+  async function cancelReference() {
+    if (busy || !pairing) return; const revision = generation.current; setBusy(true); setMessage('');
+    try {
+      const id = await identity();
+      await api(`/api/receipt-pairings/${pairing.id}/cancel`, { method: 'POST' });
+      if (isCurrent(revision)) { finishMutation(`customer:${id}`, 'receipt-pairing'); setReferencePending(false); setPairingState('cancelled'); setMessage('Unpaid reference cancelled. You can choose another bundle or location.'); }
+    } catch (error) { if (isCurrent(revision)) { setMessage(messageFor(error)); setNow(Date.now()); } }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
   async function restoreSavedOrder(id: string, revision: number, originalBundle: string) {
@@ -335,8 +365,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
 
     {tab === 'receipt' && <div className="customer-checkout-layout"><section className="workspace-card customer-agent-checkout"><div className="eyebrow">CASH, MADE SIMPLE</div><h3>Receive a private agent receipt</h3><p>Create a pairing code on your own device and show it to the agent. Agree the bundle and pay its exact cash price. The agent confirms receipt of cash before issuing your voucher. Keep this page open; your private receipt appears automatically.</p>
       <ol className="customer-steps"><li><span>1</span><div><strong>Choose your bundle</strong><small>Confirm the price with an authorized agent.</small></div></li><li><span>2</span><div><strong>Pair and pay</strong><small>Show your code, then pay the exact cash amount.</small></div></li><li><span>3</span><div><strong>Redeem and connect</strong><small>Use the voucher delivered privately to this page.</small></div></li></ol>
-      {!capabilities.receiptPairing ? <p className="notice">Private receipt pairing is not enabled here yet.</p> : <><button className="primary" disabled={busy || (!!pairing && pairingState === 'pending' && Date.parse(pairing.expiresAt) > now)} onClick={pair}>Create private pairing code<CustomerGlyph name="arrow" /></button>{pairing && <div className="pairing-card"><span>SHOW THIS CODE TO YOUR AGENT</span><strong>{pairing.code}</strong><small>{pairingState === 'pending' && Date.parse(pairing.expiresAt) > now ? `Waiting for your receipt · expires ${localDate(pairing.expiresAt)}` : pairingState === 'ready' ? 'Receipt ready' : 'Pairing expired · create a new code'}</small></div>}</>}
-      {receipt && <div className="private-receipt"><div className="customer-receipt-heading"><CustomerGlyph name="receipt" /><h4>{receipt.sale.simulation ? 'Demo receipt' : 'Your receipt'}</h4></div><p>{receipt.sale.siteName} · {receipt.sale.bundleId.toUpperCase()} · {money(receipt.sale.priceMinor, receipt.sale.currency)}</p><p>{Number(receipt.sale.byteLimit) / 1e9} GB · {receipt.sale.validitySeconds / 86400} days · Start by {localDate(receipt.sale.startBy)}</p><p className="cash-evidence">{cashDescription(receipt.sale.payment, receipt.sale.simulation)}</p><label>Private voucher<input readOnly value={receipt.voucher.code} autoComplete="off" /></label><button className="primary" disabled={busy || !capabilities.vouchers} onClick={() => redeem(undefined, receipt.voucher.code)}>Redeem this receipt's voucher</button><small>Receipt reference: {receipt.sale.id}</small></div>}
+      {!capabilities.receiptPairing ? <p className="notice">Private receipt pairing is not enabled here yet.</p> : <><fieldset className="form-grid" disabled={busy || referencePending}><label>Cash location<select value={siteId} onChange={event => setSiteId(event.target.value)}><option value="">Choose a location</option>{sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><label>Cash bundle<select value={bundleId} onChange={event => setBundleId(event.target.value)}><option value="">Choose a bundle</option>{products.map(item => <option key={item.id} value={item.id}>{item.id.toUpperCase()} · {money(item.price_minor, item.currency)}</option>)}</select></label></fieldset><button className="primary" disabled={busy || (!referencePending && (!product || !siteId)) || (!!pairing && pairingState === 'pending' && Date.parse(pairing.expiresAt) > now)} onClick={pair}>Create private pairing code<CustomerGlyph name="arrow" /></button>{pairing && <div className="pairing-card"><span>SHOW THIS CODE TO YOUR AGENT</span><strong>{pairing.code}</strong><small>{pairingState === 'pending' && Date.parse(pairing.expiresAt) > now ? `Waiting for your receipt · expires ${localDate(pairing.expiresAt)}` : pairingState === 'ready' ? 'Receipt ready' : pairingState === 'cancelled' ? 'Reference cancelled' : 'Pairing expired · create a new code'}</small>{pairing.quote && <p>{pairing.quote.siteName} · {pairing.quote.bundleId.toUpperCase()} · {money(pairing.quote.priceMinor, pairing.quote.currency)}<br />{Number(pairing.quote.byteLimit) / 1e9} GB · {pairing.quote.validitySeconds / 86400} days after connection</p>}{referencePending && <button className="secondary" disabled={busy} onClick={cancelReference}>Cancel unpaid reference</button>}</div>}</>}
+      {receipt && <div className="private-receipt"><div className="customer-receipt-heading"><CustomerGlyph name="receipt" /><h4>{receipt.sale.simulation ? 'Demo receipt' : 'Your receipt'}</h4></div><p>{receipt.sale.siteName} · {receipt.sale.bundleId.toUpperCase()} · {money(receipt.sale.priceMinor, receipt.sale.currency)}</p><p>{Number(receipt.sale.byteLimit) / 1e9} GB · {receipt.sale.validitySeconds / 86400} days · Start by {localDate(receipt.sale.startBy)}</p><p className="cash-evidence">{cashDescription(receipt.sale.payment, receipt.sale.simulation)}</p>{!receipt.voucher.code && <p className="notice">{receipt.voucher.state === 'refunded' ? 'The agent recorded a cash refund for this sale.' : 'This voucher has been withdrawn. A supervisor approved your refund; the agent still needs to return the cash.'}</p>}<label>Private voucher<input readOnly value={receipt.voucher.code} autoComplete="off" /></label><button className="primary" disabled={busy || !capabilities.vouchers || !receipt.voucher.code} onClick={() => redeem(undefined, receipt.voucher.code)}>Redeem this receipt's voucher</button><small>Receipt reference: {receipt.sale.id}</small></div>}
     </section><aside className="workspace-card customer-order-summary"><span className="customer-record-icon"><CustomerGlyph name="wifi" /></span><div className="eyebrow">YOUR NEXT BUNDLE</div>{product ? <><h3>{product.id.toUpperCase()}</h3><strong className="customer-summary-data">{Number(product.byte_limit) / 1e9}<small>GB</small></strong><p>{product.validity_seconds / 86400} days after connection</p><div className="customer-summary-price"><span>Cash price</span><strong>{money(product.price_minor, product.currency)}</strong></div><small>Ask the agent for this published bundle. Check the issued receipt before redeeming.</small></> : <><h3>A little more online.</h3><p>Choose your bundle with the agent and check its price before you pay.</p>{onBuyData && <button className="secondary" onClick={onBuyData}>Explore bundles</button>}</>}<div className="customer-private-note"><CustomerGlyph name="shield" /><span>Your bundle time starts when you first connect.</span></div></aside></div>}
 
     {tab === 'purchase' && <section className="workspace-card customer-payment-card">

@@ -1,12 +1,12 @@
 # Direct payment preparation
 
-Reviewed on 2026-11-02. Cash sales remain the application purchase path. External digital checkout is unavailable; environment flags cannot activate Pesepay, EcoCash or a bank. Local demo simulation remains available independently.
+Provider contract rechecked on 2026-11-04; earlier comparison was reviewed on 2026-11-02. Cash sales remain the application purchase path. External digital checkout is unavailable; environment flags cannot activate Pesepay, EcoCash or a bank. Local demo simulation remains available independently.
 
 ## Bank and Zimswitch selection
 
 The [payment investigation](../../docs/PAYMENT_INTEGRATION_RESEARCH_2026-11-02.md) now compares Stanbic, CBZ/iVeri, CABS and ZB/Smile&Pay, with current-source dates and pricing limitations. Stanbic is the first commercial candidate for online Visa/Mastercard, CBZ provides a strong documented integration alternative, CABS must confirm its online acquiring offer, and ZB is a candidate for combined cards and wallets. No bank has been selected or merchant account approved by this work.
 
-Zimswitch is a payment network and online-gateway route onboarded through an acquiring bank. CABS card issuing and physical POS support do not prove online merchant Visa/Mastercard acceptance. PamoFi requires the actual merchant contract, enabled card brands/currencies, settlement arrangement, sandbox and authenticated verification/refund specification before implementing that bank's adapter. Published customer/account charges are not merchant commission, and no tariff is an application constant.
+Zimswitch is a payment network and online-gateway route onboarded through an acquiring bank. CABS card issuing and physical POS support do not prove online merchant Visa/Mastercard acceptance. PasoFi requires the actual merchant contract, enabled card brands/currencies, settlement arrangement, sandbox and authenticated verification/refund specification before implementing that bank's adapter. Published customer/account charges are not merchant commission, and no tariff is an application constant.
 
 `paymentConfiguration` enables only explicit demo-mode simulation: `PAMOFI_PAYMENTS_ENABLED=true`, `PAMOFI_PAYMENT_MODE=mock`, and the application's demo/development environment checks. `PAMOFI_PAYMENT_PROVIDER` may be absent for existing demo configurations or exactly `mock`. Any other explicit value, including an empty or misspelled value, disables checkout; naming an unsupported bank/provider must not silently select a mock payment. Production remains disabled even with an explicit mock selector.
 
@@ -36,6 +36,8 @@ The [Go Live page](https://developers.ecocash.co.zw/docs/go-live) requires merch
 Initiation always returns `lookup_required`, including transport errors and reported success. Lookup verifies the echoed correlation, reference and customer, checks the provider reference shape and requires the documented status/code combination. A matching result returns `review_required` with `settlement_terms_unverified`. It never infers monetary proof from the request or accepts unqualified extra response fields as a new settlement contract. It cannot create an entitlement or mark a charge verified.
 
 Responses are bounded to 64 KiB; requests have finite timeouts and disallow redirects. Callback URLs are omitted because the reviewed public pages do not specify an authenticated callback and replay-protection contract. Customer PINs are never requested. The merchant sandbox PIN belongs only in private adapter configuration. Credentials use JavaScript private fields and are not returned with observations.
+
+The standalone adapter can also prepare a sandbox-only `REF` or `REV` request against the documented refund endpoint, using a fresh adjustment identifier and an original EcoCash reference. The request amount is capped at the original request amount. A documented, matching `Refunded` response still returns `review_required`; a reversal response or ambiguous result stays `unknown`. The module does not track cumulative refunds, retry a POST, change the ledger, or enable a provider. The future caller must persist adjustment context, prove the original settlement and enforce cumulative refund limits before any provider call. These sandbox helpers are not a production refund system.
 
 Contract tests use fake HTTP responses only. They cover the documented request/authentication, loss of the initiation response, repeated lookup without another POST, reference/customer mismatch, status/code mismatch, oversized/malformed/error replies, rejection of production configuration and the absence of automatic fulfillment.
 

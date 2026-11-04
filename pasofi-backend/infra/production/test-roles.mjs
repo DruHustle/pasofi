@@ -110,6 +110,12 @@ async function main() {
         query(runtimeEnv, `UPDATE staff_audit_events SET reason='Modified audit' WHERE id='${auditId}'`, true);
         query(runtimeEnv, `DELETE FROM staff_audit_events WHERE id='${auditId}'`, true);
       }
+      if (service === 'prepaid-access') {
+        query(runtimeEnv, "UPDATE cash_refund_events SET payload='{}'", true);
+        query(runtimeEnv, 'DELETE FROM cash_refund_events', true);
+        query(runtimeEnv, 'DELETE FROM cash_refunds', true);
+        query(runtimeEnv, 'DELETE FROM cash_shifts', true);
+      }
       if (service === 'network') {
         const nas = randomUUID(), site = randomUUID();
         query(ownerEnv, `INSERT INTO radius_nas(id,site_id,client_name,site_name,login_url,enabled) VALUES('${nas}','${site}','role_proof','Role proof','https://router.example.test/login',false)`);
