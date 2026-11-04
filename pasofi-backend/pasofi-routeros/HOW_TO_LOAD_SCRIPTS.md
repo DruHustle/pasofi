@@ -36,9 +36,9 @@ pilot bridge, Wi-Fi, DHCP, HotSpot and RADIUS client were disabled. Do not run
 the incremental captive-detection correction against this state. The prepared
 [PasoFi hostname pilot](site-01/pasofi-kuwadzana-pilot-v2.rsc) requires the
 reviewed transition certificate and private key to be imported on the router
-first. Exporting that production private key to this Mac was rejected by the
-automatic approval review. The script has not been syntax-checked or run on the
-router, and service remains disabled.
+first. Secure transfer and import of that certificate remain outstanding. The
+script has not been syntax-checked or run on the router, and service remains
+disabled.
 
 The owner ran the short Kuwadzana check on 4 November. It identified the
 router, reported 8,007,680 bytes of free memory, an enabled tunnel, one each
