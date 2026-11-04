@@ -18,3 +18,22 @@ discovery, the welcome page, direct router sign-in, failed login and successful
 login on real devices before enabling sales. RouterOS can redirect ordinary
 HTTP requests, but cannot transparently redirect arbitrary HTTPS requests
 without a certificate error. Do not bypass such errors.
+
+## Isolated Kuwadzana pilot
+
+`pilot-login.html` is a self-contained offline login page for the current
+Kuwadzana test. `site-01/pasofi-kuwadzana-branded-login-v2.rsc` copies the
+router's existing complete HotSpot directory, replaces only the copy's login
+page and points the pilot profile to the copy. It checks the router identity,
+certificate, HTTPS and isolation before changing the profile. It does not
+activate guest forwarding, change sales, or qualify authentication. The files
+in the copied directory may persist after Safe Mode rollback; the original
+folder remains untouched. If a previous attempt leaves the copy behind, inspect
+it before retrying. Files must be saved to flash when the router has a flash
+disk.
+
+With the isolated pilot already running in the existing Safe Mode terminal,
+upload the `.rsc`, run its verbose dry run, then import it. Leave Safe Mode
+open and reconnect a spare device to check automatic discovery, the PasoFi
+page and certificate. A physical authentication and accounting test is still
+required; do not collect a cash payment for this isolated pilot.

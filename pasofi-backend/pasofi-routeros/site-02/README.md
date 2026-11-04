@@ -24,3 +24,9 @@ firewall scope, NAS identity and secret, TLS certificate, non-overlapping guest
 network and HotSpot profile. Verify the actual router and uplink, local recovery,
 private transport, access denial, accounting, quotas, restart and reconnection.
 Do not advertise Lawfield Farm as available until those tests pass.
+
+`lawfield-pilot-login.html` is the offline, Lawfield-branded draft login page.
+It is not installed: the hostname, certificate, local network and login flow
+must first be verified on the actual Lawfield router. It does not create a
+HotSpot, permit internet access or enable sales. Preserve the existing RouterOS
+HotSpot directory and DHCP captive-discovery assets when preparing installation.
