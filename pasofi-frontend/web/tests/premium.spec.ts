@@ -42,6 +42,7 @@ async function fixture(page: Page, options: { guest?: boolean; queued?: boolean;
     if (path === '/api/orders') return json(route, { customerId, orders: [] });
     if (path === '/api/receipt-pairings' && request.method() === 'POST') {
       state.pairings++;
+      const selection = request.postDataJSON(); expect(selection.siteId).toBe(siteId); expect(products.some(item => item.id === selection.bundleId)).toBe(true);
       return json(route, { pairing: { id: pairingId, code: 'ABCD234567', expiresAt: new Date(Date.now() + 600000).toISOString() } }, 201);
     }
     if (path === `/api/receipt-pairings/${pairingId}`) return json(route, { status: 'pending' });
@@ -196,4 +197,29 @@ test('offline dashboard retains its confirmed balance and visibly withdraws conn
   await expect(page.getByTestId('usage-remaining')).toHaveText('4.000 GB');
   await expect(page.getByText('Connection status not verified', { exact: true })).toBeVisible();
   await expect(page.getByTestId('usage-connection-status')).not.toHaveText(/^Connected/);
+});
+
+test('cash reference keeps the selected terms through a lost response, reload and cancellation', async ({ page }) => {
+  await fixture(page);
+  const requests: { key: string; body: unknown }[] = [];
+  let cancelled = false;
+  await page.route('**/api/receipt-pairings**', async route => {
+    const req = route.request(), path = new URL(req.url()).pathname;
+    if (path.endsWith('/cancel')) { cancelled = true; return json(route, { status: 'cancelled' }); }
+    if (req.method() === 'GET') return json(route, { status: cancelled ? 'cancelled' : 'pending' });
+    const body = req.postDataJSON(); requests.push({ key: req.headers()['idempotency-key'], body });
+    if (requests.length === 1) return route.abort();
+    return json(route, { pairing: { id: pairingId, code: 'ABCD234567', expiresAt: new Date(Date.now() + 300000).toISOString(), status: 'pending', quote: { bundleId: body.bundleId, siteId, siteName: 'Kuwadzana test hotspot', priceMinor: 100, currency: 'USD', byteLimit: '5000000000', validitySeconds: 604800 } }, replayed: true });
+  });
+  await page.goto('/#bundles'); await page.getByRole('button', { name: 'Buy flex from an agent' }).click();
+  await page.getByRole('button', { name: 'Create private pairing code' }).click();
+  await expect(page.getByText('Your cash reference request is saved.', { exact: false })).toBeVisible();
+  await expect(page.getByLabel('Cash bundle')).toBeDisabled();
+  await page.reload();
+  await expect(page.getByText('ABCD234567', { exact: true })).toBeVisible();
+  expect(requests).toHaveLength(2); expect(requests[1]).toEqual(requests[0]); expect(requests[0].body).toEqual({ bundleId: 'flex', siteId });
+  await expect(page.getByText('Kuwadzana test hotspot · FLEX · $1.00')).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel unpaid reference' }).click();
+  await expect(page.getByLabel('Cash bundle')).toBeEnabled();
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':receipt-pairing')))).toEqual([]);
 });

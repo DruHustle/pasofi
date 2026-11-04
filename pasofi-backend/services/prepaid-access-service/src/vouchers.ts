@@ -37,6 +37,7 @@ export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bund
   if(previous.rowCount){
     const sale=previous.rows[0],expectedFingerprint=sale.payment_method==='cash'?fingerprint:legacyFingerprint;
     if(sale.site_id!==siteId || sale.bundle_id!==bundleId || (sale.request_hash&&!sale.request_hash.equals(expectedFingerprint))) throw new VoucherError('idempotency_conflict');
+    if((await client.query("SELECT id FROM cash_refunds WHERE sale_id=$1 AND state IN ('approved','paying','paid')",[sale.id])).rowCount)return {saleId:sale.id,voucherId:null,code:'',replayed:true};
     const voucher=await client.query("SELECT * FROM issued_vouchers WHERE sale_id=$1 AND state IN ('valid','redeemed')",[sale.id]);
     if(!voucher.rowCount) throw new VoucherError('delivery_unavailable');
     return {saleId:sale.id,voucherId:voucher.rows[0].id,code:format(decrypt(voucher.rows[0],deliveryKey)),replayed:true};
@@ -45,23 +46,32 @@ export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bund
   // a payment provider. Validate only after replay so older committed requests
   // remain recoverable without inventing cash evidence for historical sales.
   if(options.siteInventory&&(!payment||payment.method!=='cash'||payment.confirmed!==true))throw new VoucherError('cash_confirmation_required');
+  const product=await client.query('SELECT price_minor,currency,byte_limit::text,validity_seconds FROM bundle_versions WHERE id=$1 AND published=true',[bundleId]);
+  if(!product.rowCount) throw new VoucherError('bundle_unavailable');
+  if(options.siteInventory&&(!Number.isSafeInteger(payment!.amountMinor)||payment!.amountMinor!==product.rows[0].price_minor||payment!.currency!==product.rows[0].currency))throw new VoucherError('cash_amount_mismatch');
+  let shiftId:string|null=null;
+  if(options.siteInventory){
+   const shift=(await client.query('SELECT id FROM cash_shifts WHERE agent_id=$1 AND site_id=$2 AND currency=$3 AND closed_at IS NULL FOR UPDATE',[agentId,siteId,product.rows[0].currency])).rows[0];
+   if(!shift)throw new VoucherError('shift_required');shiftId=shift.id;
+  }
   const stock=options.siteInventory?
    await client.query('SELECT quantity FROM agent_site_inventory WHERE agent_id=$1 AND site_id=$2 AND bundle_id=$3 FOR UPDATE',[agentId,siteId,bundleId]):
    await client.query('SELECT quantity FROM agent_inventory WHERE agent_id=$1 AND bundle_id=$2 FOR UPDATE',[agentId,bundleId]);
   if(!stock.rowCount || stock.rows[0].quantity<1) throw new VoucherError('out_of_stock');
-  const product=await client.query('SELECT price_minor,currency,byte_limit::text,validity_seconds FROM bundle_versions WHERE id=$1 AND published=true',[bundleId]);
-  if(!product.rowCount) throw new VoucherError('bundle_unavailable');
-  if(options.siteInventory&&(!Number.isSafeInteger(payment!.amountMinor)||payment!.amountMinor!==product.rows[0].price_minor||payment!.currency!==product.rows[0].currency))throw new VoucherError('cash_amount_mismatch');
   let pairedCustomer:string|null=null,pairingId:string|null=null;
   if(options.pairingCode){
-   const pairing=await client.query('SELECT id,customer_id FROM receipt_pairings WHERE code_hash=$1 AND expires_at>now() AND sale_id IS NULL FOR UPDATE',[digest(normalized(options.pairingCode))]);
-   if(!pairing.rowCount)throw new VoucherError('pairing_unavailable');pairedCustomer=pairing.rows[0].customer_id;pairingId=pairing.rows[0].id;
+   const pairing=await client.query('SELECT * FROM receipt_pairings WHERE code_hash=$1 AND expires_at>clock_timestamp() AND sale_id IS NULL AND cancelled_at IS NULL FOR UPDATE',[digest(normalized(options.pairingCode))]);
+   if(!pairing.rowCount)throw new VoucherError('pairing_unavailable');
+   const reference=pairing.rows[0],terms=product.rows[0];
+   if(reference.expires_at.getTime()<=Date.now())throw new VoucherError('pairing_unavailable');
+   if(reference.bundle_id!==bundleId||reference.site_id!==siteId||reference.price_minor!==terms.price_minor||reference.currency!==terms.currency||String(reference.byte_limit)!==String(terms.byte_limit)||reference.validity_seconds!==terms.validity_seconds)throw new VoucherError('pairing_terms_mismatch');
+   pairedCustomer=reference.customer_id;pairingId=reference.id;
   }
   if(options.siteInventory&&delivery!=='sms'&&!pairingId)throw new VoucherError('pairing_required');
   if(options.siteInventory&&delivery!=='receipt'&&(!options.phone||!/^263[0-9]{9}$/.test(options.phone)))throw new VoucherError('invalid_phone');
   const item=product.rows[0], saleId=randomUUID();
-  await client.query(`INSERT INTO agent_sales (id,agent_id,site_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,start_by,site_name,commission_bps,commission_minor,delivery,simulation,request_hash,payment_method,cash_received_minor,cash_confirmed_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+interval '30 days',$10,$11,$12,$13,$14,$15,$16,$17,CASE WHEN $16='cash' THEN now() ELSE NULL END)`,[saleId,agentId,siteId,requestKey,bundleId,item.price_minor,item.currency,item.byte_limit,item.validity_seconds,options.siteName??'',commissionBps,Math.floor(item.price_minor*commissionBps/10000),delivery,options.simulation??true,options.siteInventory?fingerprint:legacyFingerprint,options.siteInventory?'cash':null,options.siteInventory?item.price_minor:null]);
+  await client.query(`INSERT INTO agent_sales (id,agent_id,site_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,start_by,site_name,commission_bps,commission_minor,delivery,simulation,request_hash,payment_method,cash_received_minor,cash_confirmed_at,shift_id)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+interval '30 days',$10,$11,$12,$13,$14,$15,$16,$17,CASE WHEN $16='cash' THEN now() ELSE NULL END,$18)`,[saleId,agentId,siteId,requestKey,bundleId,item.price_minor,item.currency,item.byte_limit,item.validity_seconds,options.siteName??'',commissionBps,Math.floor(item.price_minor*commissionBps/10000),delivery,options.simulation??true,options.siteInventory?fingerprint:legacyFingerprint,options.siteInventory?'cash':null,options.siteInventory?item.price_minor:null,shiftId]);
   if(options.siteInventory)await client.query('UPDATE agent_site_inventory SET quantity=quantity-1 WHERE agent_id=$1 AND site_id=$2 AND bundle_id=$3',[agentId,siteId,bundleId]);
   else await client.query('UPDATE agent_inventory SET quantity=quantity-1 WHERE agent_id=$1 AND bundle_id=$2',[agentId,bundleId]);
   if(options.siteInventory){
@@ -82,6 +92,7 @@ export async function redeemVoucher(pool:Pool, customerId:string, raw:string) {
     FROM issued_vouchers v JOIN agent_sales s ON s.id=v.sale_id LEFT JOIN agent_sale_deliveries d ON d.sale_id=s.id WHERE v.code_hash=$1 FOR UPDATE OF v`,[digest(code)]);
   if(!result.rowCount) throw new VoucherError('invalid_or_used');
   const v=result.rows[0];
+  if((await client.query("SELECT id FROM cash_refunds WHERE sale_id=$1 AND state IN ('approved','paying','paid')",[v.sale_id])).rowCount)throw new VoucherError('voucher_refunded');
   if(v.paired_customer_id&&v.paired_customer_id!==customerId)throw new VoucherError('invalid_or_used');
   if(v.state==='redeemed' && v.redeemed_by===customerId){
     const prior=await client.query('SELECT id FROM purchase_entitlements WHERE source_voucher_id=$1',[v.id]);
@@ -107,4 +118,10 @@ export async function replaceVoucher(pool:Pool, saleId:string, key:DeliveryKeys)
  });
 }
 
-export async function readVoucher(pool:Pool,saleId:string,keys:DeliveryKeys){const rows=await pool.query("SELECT * FROM issued_vouchers WHERE sale_id=$1 AND state IN ('valid','redeemed')",[saleId]);if(!rows.rowCount)throw new VoucherError('delivery_unavailable');const row=rows.rows[0];return {id:row.id,code:format(decrypt(row,keys)),state:row.state};}
+export async function readVoucher(pool:Pool,saleId:string,keys:DeliveryKeys){
+ const rows=await pool.query(`SELECT v.*,r.state AS refund_state FROM issued_vouchers v LEFT JOIN cash_refunds r ON r.sale_id=v.sale_id WHERE v.sale_id=$1 ORDER BY (v.state IN ('valid','redeemed')) DESC,v.created_at DESC,v.id DESC LIMIT 1`,[saleId]);
+ if(!rows.rowCount)throw new VoucherError('delivery_unavailable');const row=rows.rows[0];
+ if(['approved','paying','paid'].includes(row.refund_state))return {id:row.id,code:'',state:row.refund_state==='paid'?'refunded':'voided_refund_due'};
+ if(row.state==='revoked')throw new VoucherError('delivery_unavailable');
+ return {id:row.id,code:format(decrypt(row,keys)),state:row.state};
+}

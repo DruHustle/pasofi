@@ -1,3 +1,5 @@
+import CashRefunds from './CashRefunds';
+import CashShifts from './CashShifts';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api';
 import NetworkReviews from './NetworkReviews';
@@ -9,7 +11,7 @@ type Stock = { agentId: string; siteId: string; siteName: string; bundleId: stri
 type SetupSection = 'people' | 'sites' | 'catalogue' | 'inventory';
 const sectionNames: Record<SetupSection, string> = { people: 'Staff records', sites: 'Sites', catalogue: 'Bundle catalogue', inventory: 'Inventory' };
 export default function AdminWorkspace({ staff, capabilities }: { staff: Staff; capabilities: Capabilities | null }) {
-  const [tab, setTab] = useState<'people' | 'inventory' | 'sites' | 'catalogue' | 'sales' | 'network' | 'audit'>('people');
+  const [tab, setTab] = useState<'people' | 'inventory' | 'sites' | 'catalogue' | 'sales' | 'cash' | 'network' | 'audit'>('people');
   const [users, setUsers] = useState<Staff[]>([]), [cursor, setCursor] = useState<string | null>(null);
   const [sites, setSites] = useState<Site[]>([]), [products, setProducts] = useState<(Product & { published: boolean })[]>([]), [stock, setStock] = useState<Stock[]>([]);
   const [events, setEvents] = useState<Audit[]>([]), [auditCursor, setAuditCursor] = useState<string | null>(null);
@@ -142,7 +144,8 @@ export default function AdminWorkspace({ staff, capabilities }: { staff: Staff; 
     finally { if (live.current) setBusy(false); }
   }
   return <div className="admin-workspace"><div className="workspace-section-head"><div><h3>Administration</h3><p>Approve staff, assign site access, and manage voucher stock with recorded reasons.</p></div><button className="secondary" disabled={busy} onClick={load}>Refresh administration</button></div>
-    <div className="workspace-tabs" aria-label="Administration sections">{(['people', 'inventory', 'sites', 'catalogue', 'sales', 'network', 'audit'] as const).map(value => <button key={value} className={tab === value ? 'selected' : ''} aria-pressed={tab === value} onClick={() => { setTab(value); setMessage(''); if (value === 'audit') void audit(); }}>{value === 'people' ? 'Staff approvals' : value === 'inventory' ? 'Inventory' : value === 'sites' ? 'Sites' : value === 'catalogue' ? 'Bundle catalogue' : value === 'sales' ? 'Sales and delivery' : value === 'network' ? 'Network reviews' : 'Audit history'}</button>)}</div>
+    <div className="workspace-tabs" aria-label="Administration sections">{(['people', 'inventory', 'sites', 'catalogue', 'sales', 'cash', 'network', 'audit'] as const).map(value => <button key={value} className={tab === value ? 'selected' : ''} aria-pressed={tab === value} onClick={() => { setTab(value); setMessage(''); if (value === 'audit') void audit(); }}>{value === 'people' ? 'Staff approvals' : value === 'inventory' ? 'Inventory' : value === 'sites' ? 'Sites' : value === 'catalogue' ? 'Bundle catalogue' : value === 'sales' ? 'Sales and delivery' : value === 'cash' ? 'Cash reconciliation' : value === 'network' ? 'Network reviews' : 'Audit history'}</button>)}</div>
+    {tab === 'cash' && <><CashShifts staff={staff} selling={!!capabilities?.staffSales} /><CashRefunds staff={staff} /></>}
     {message && <p className="feedback" role="status">{message}</p>}{!loaded && !message && <p role="status">Loading administration…</p>}
     {loaded && unavailableSections.length > 0 && <section className="notice" role="alert"><p>{unavailableSections.map(section => sectionNames[section]).join(', ')} could not be loaded. Other administration sections remain available.</p><button className="secondary" disabled={busy} onClick={load}>Retry unavailable sections</button></section>}
     {loaded && tab === 'people' && !sectionErrors.people && <><div className="table-scroll"><table><thead><tr><th>Team member</th><th>Access</th><th>Authenticator</th><th>Review</th></tr></thead><tbody>{users.map(user => <tr key={user.staffId}><td><strong>{user.displayName}</strong><small>{user.email}</small></td><td>{user.status} · {user.role ?? 'unassigned'}<small>{user.role === 'admin' ? 'All sites' : `${user.siteIds.length} assigned sites`}</small></td><td>{user.mfaEnrolled ? 'Configured' : 'Setup needed'}</td><td><button className="secondary" disabled={busy || user.staffId === staff.staffId} onClick={() => selectUser(user)}>{user.staffId === staff.staffId ? 'Your account' : 'Review access'}</button></td></tr>)}</tbody></table></div>{cursor && <button className="secondary" disabled={busy} onClick={moreUsers}>Load more staff</button>}

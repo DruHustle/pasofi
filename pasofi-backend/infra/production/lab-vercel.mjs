@@ -184,7 +184,8 @@ try {
   const agentCookie = cookie(response, '__Host-pamofi_staff_session'); check(JSON.parse(response.text).role, 'agent');
   check((await request('/api/admin/bundles', { cookie: agentCookie })).status, 403);
   response = await request('/api/admin/inventory/allocations', { method: 'POST', cookie: admin.cookie, retrySecret: randomUUID(), body: { agentId: applicant.staffId, siteId, bundleId, quantity: 2, reason: 'Disposable split-host agent stock' } }); check(response.status, 201);
-  response = await request('/api/receipt-pairings', { method: 'POST', cookie: customerCookie, body: {}, retrySecret: randomUUID() }); check(response.status, 201);
+  response = await request('/api/staff/cash-shifts', { method: 'POST', cookie: agentCookie, retrySecret: randomUUID(), body: {siteId,currency:'USD',openingMinor:0} }); check(response.status,201);
+  response = await request('/api/receipt-pairings', { method: 'POST', cookie: customerCookie, body: {bundleId,siteId}, retrySecret: randomUUID() }); check(response.status, 201);
   const pairing = JSON.parse(response.text).pairing, saleKey = randomUUID();
   const saleBody = { siteId, bundleId, delivery: 'receipt', pairingCode: pairing.code, payment: { method: 'cash', confirmed: true, amountMinor: 123, currency: 'USD' } };
   response = await request('/api/staff/sales', { method: 'POST', cookie: agentCookie, retrySecret: saleKey, body: saleBody }); check(response.status, 201); privateResponse(response);
@@ -199,6 +200,19 @@ try {
   response = await request('/api/usage?entitlementIds=' + entitlementId, { cookie: customerCookie }); check(response.status, 200); privateResponse(response);
   const usage = JSON.parse(response.text); check(usage.customerId, customerId); check(usage.totals.remainingBytes, '1000000000'); check(usage.totals.usedBytes, '0'); check(usage.queued.bundleCount, 1);
   check(usage.entitlementUpdates[0].id, entitlementId);
+
+  response = await request('/api/staff/cash-refunds', {method:'POST',cookie:agentCookie,retrySecret:randomUUID(),body:{saleId:sale.id,reason:'Unused access refund in isolated production lab'}}); check(response.status,201);
+  const refundId=JSON.parse(response.text).refund.id;
+  check((await request(`/api/admin/cash-refunds/${refundId}/decision`, {method:'POST',cookie:agentCookie,retrySecret:randomUUID(),body:{decision:'approved',note:'Agent cannot approve own refund'}})).status,403);
+  response=await request(`/api/admin/cash-refunds/${refundId}/decision`, {method:'POST',cookie:admin.cookie,retrySecret:randomUUID(),body:{decision:'approved',note:'Supervisor reviewed unused access in lab'}}); check(response.status,200);check(JSON.parse(response.text).refund.state,'approved');
+  response=await request(`/api/staff/cash-refunds/${refundId}/prepare-payout`, {method:'POST',cookie:agentCookie,retrySecret:randomUUID(),body:{}});check(response.status,200);check(JSON.parse(response.text).refund.state,'paying');
+  const payoutKey=randomUUID();
+  response=await request(`/api/staff/cash-refunds/${refundId}/payout`, {method:'POST',cookie:agentCookie,retrySecret:payoutKey,body:{confirmed:true}});check(response.status,200);check(JSON.parse(response.text).refund.state,'paid');check(JSON.parse(response.text).refund.events.length,4);
+  response=await request(`/api/staff/cash-refunds/${refundId}/payout`, {method:'POST',cookie:agentCookie,retrySecret:payoutKey,body:{confirmed:true}});check(response.status,200);check(JSON.parse(response.text).replayed,true);
+  check((await request('/api/vouchers/redeem',{method:'POST',cookie:customerCookie,body:{code:receipt.receipt.voucher.code}})).status,409);
+  response=await request('/api/staff/cash-shifts',{cookie:agentCookie});check(response.status,200);
+  const cashShift=JSON.parse(response.text).shifts[0];check(cashShift.expectedMinor,'0');check(cashShift.refundsMinor,'123');
+  response=await request(`/api/staff/cash-shifts/${cashShift.id}/close`,{method:'POST',cookie:agentCookie,retrySecret:randomUUID(),body:{countedMinor:0,note:'Counted zero after returning unused sale cash'}});check(response.status,200);check(JSON.parse(response.text).shift.differenceMinor,'0');
 
   for (const [path, session] of [['/api/staff/session', agentCookie], ['/api/staff/session', admin.cookie], ['/api/session', customerCookie]]) {
     response = await request(path, { method: 'DELETE', cookie: session }); check(response.status, 204); secureCookies(response);

@@ -153,8 +153,8 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     {step === 'workspace' && staff && <><div className="workspace-account"><div><strong>{staff.displayName}</strong><span>{staff.email}</span></div><span className={`status-pill status-${staff.status}`}>{staff.status} {staff.role ? `· ${staff.role}` : ''}</span><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={load}>Refresh staff access</button><button className="secondary" disabled={busy} onClick={logout}>Sign out of staff</button></div></div>
       {staff.status === 'pending' && <div className="empty"><h3>Waiting for administrator approval</h3><p>Your authenticator is ready. An administrator must review your application and assign a role and sites before you can work with customer sales.</p></div>}
       {(staff.status === 'disabled' || staff.status === 'rejected') && <div className="empty"><h3>Staff access is {staff.status}</h3><p>This account cannot perform staff actions. Contact your PasoFi administrator to resolve access.</p></div>}
-      {staff.status === 'approved' && staff.role === 'agent' && <AgentWorkspace staff={staff} capabilities={capabilities} />}
-      {staff.status === 'approved' && staff.role === 'admin' && <AdminWorkspace staff={staff} capabilities={capabilities} />}
+      {staff.status === 'approved' && staff.role === 'agent' && <AgentWorkspace key={`${staff.staffId}:${staff.version}`} staff={staff} capabilities={capabilities} />}
+      {staff.status === 'approved' && staff.role === 'admin' && <AdminWorkspace key={`${staff.staffId}:${staff.version}`} staff={staff} capabilities={capabilities} />}
       {staff.status === 'approved' && staff.role === 'support' && <SalesHistory staff={staff} deliveryEnabled={!!capabilities?.deliverySms} />}
     </>}
   </section>;
