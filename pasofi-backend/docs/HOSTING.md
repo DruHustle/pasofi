@@ -2,7 +2,7 @@
 
 ## Selected deployment
 
-The owner selected **Vercel for the web frontend, Oracle for the backend, and Starlink upstream of each MikroTik**. The owner originally selected the shared Onesa UG Backend for the PamoFi production backend. The website is https://pamofi.onesa.eu and the API is https://api.pamofi.onesa.eu. Actual deployment identities, image IDs and remaining acceptance work are recorded in the [Onesa deployment evidence](../local-tools/release-evidence/2026-11-02-onesa-production/README.md).
+The owner selected **Vercel for the web frontend, Oracle for the backend, and Starlink upstream of each MikroTik**. The shared Onesa UG Backend hosts PasoFi. The website is https://pasofi.onesa.eu and the API is https://api.pasofi.onesa.eu; the previous PamoFi addresses remain available during the transition. Earlier deployment identities and outstanding acceptance work are recorded in the [Onesa deployment evidence](../local-tools/release-evidence/2026-11-02-onesa-production/README.md).
 
 On 3 November 2026, Oracle inventory showed three distinct running instances: `Onesa UG Backend`, `PamoFi Backend`, and `Software Engineering Backend`. PamoFi’s production containers were observed on `Onesa UG Backend` in `onesa-portal-worker-vcn`. The separate `PamoFi Backend` instance was attached to `software-engineering-backend-vcn`; its existence alone does not mean production runs there. The owner confirmed that PamoFi should remain on `Onesa UG Backend` as an Onesa product. No migration was performed by this inventory. Oracle permits multiple instances in a VCN; a separate VCN can be chosen for isolation. The existing PamoFi instance has one supported VNIC, and its primary VNIC cannot be detached to change VCNs in place.
 

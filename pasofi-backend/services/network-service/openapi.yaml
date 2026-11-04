@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: PamoFi network service
+  title: PasoFi network service
   version: 0.2.0
   description: Private network service; the public customer contract belongs to prepaid-access. RADIUS is a separate mutual-TLS listener.
 paths:
