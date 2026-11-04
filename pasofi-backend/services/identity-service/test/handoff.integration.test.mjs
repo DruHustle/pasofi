@@ -6,7 +6,10 @@ import { buildApp } from '../dist/app.js';
 import { opaqueHash } from '../dist/staff-crypto.js';
 
 const url = process.env.PAMOFI_TEST_DATABASE_URL, origin = 'http://localhost:5173';
-async function fixture(run) {
+async function fixture(run, aliases) {
+  const oldAliases = process.env.PUBLIC_ORIGIN_ALIASES;
+  if (aliases === undefined) delete process.env.PUBLIC_ORIGIN_ALIASES;
+  else process.env.PUBLIC_ORIGIN_ALIASES = JSON.stringify(aliases);
   Object.assign(process.env, { DATABASE_URL: url, APP_ENV: 'demo', NODE_ENV: 'development', PUBLIC_ORIGIN: origin, SESSION_CREATION_SECRET: 'DEMO_ONLY_insecure_local_session_creation_secret_123456789' });
   const app = buildApp(), pool = new pg.Pool({ connectionString: url }), ids = [];
   const post = (route, payload = {}, cookie, suppliedOrigin = origin) => app.inject({ method: 'POST', url: route, payload, headers: { ...(suppliedOrigin ? { origin: suppliedOrigin } : {}), ...(cookie ? { cookie } : {}) } });
@@ -23,8 +26,18 @@ async function fixture(run) {
       await pool.query('DELETE FROM customers WHERE id=ANY($1::uuid[])', [ids]);
     }
     await pool.end(); await app.close();
+    if (oldAliases === undefined) delete process.env.PUBLIC_ORIGIN_ALIASES; else process.env.PUBLIC_ORIGIN_ALIASES = oldAliases;
   }
 }
+
+test('handoff uses the accepted migration origin and rejects other origins', { skip: !url }, async () => fixture(async ({ post, customer }) => {
+  const source = await customer();
+  const alias = 'https://pasofi.onesa.eu';
+  const created = await post('/v1/handoff', {}, source.cookie, alias);
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.json().continueUrl, `${alias}/handoff`);
+  assert.equal((await post('/v1/handoff', {}, source.cookie, 'https://other.onesa.eu')).statusCode, 403);
+}, ['https://pasofi.onesa.eu']));
 
 test('browser handoff transfers the current account exactly once under concurrent redemption without a credential URL', { skip: !url }, async () => fixture(async ({ app, pool, post, customer }) => {
   const source = await customer();

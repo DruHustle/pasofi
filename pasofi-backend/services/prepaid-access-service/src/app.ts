@@ -1,3 +1,4 @@
+import { publicOrigins } from './public-origins.js';
 import Fastify, { type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { randomUUID } from 'node:crypto';
@@ -60,7 +61,7 @@ export function buildApp() {
     if (typeof data !== 'object' || data === null || !('customerId' in data) || typeof data.customerId !== 'string' || !uuid.test(data.customerId)) throw new Error('invalid identity response');
     return data.customerId;
   }
-  function originAllowed(request: FastifyRequest) { return !!process.env.PUBLIC_ORIGIN && request.headers.origin === process.env.PUBLIC_ORIGIN; }
+  function originAllowed(request: FastifyRequest) { const origins = publicOrigins(process.env.PUBLIC_ORIGIN, process.env.PUBLIC_ORIGIN_ALIASES, demo); return typeof request.headers.origin === 'string' && origins?.has(request.headers.origin) === true; }
   app.get<{Querystring:{requestKey?:string}}>('/v1/orders', {
     schema:{querystring:{type:'object',additionalProperties:false,properties:{
       requestKey:{type:'string',minLength:16,maxLength:128,pattern:'^[A-Za-z0-9_-]{16,128}$'}

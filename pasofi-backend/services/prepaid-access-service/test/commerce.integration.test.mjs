@@ -4,6 +4,7 @@ import {randomUUID,randomBytes} from 'node:crypto';
 import {createServer} from 'node:http';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {fileURLToPath} from 'node:url';
 import {jwtVerify,SignJWT} from 'jose';
 import pg from 'pg';
 import {buildApp} from '../dist/app.js';
@@ -35,6 +36,14 @@ async function setup(options={}){
  async function cleanup(){await app.close();await new Promise(resolve=>server.close(resolve));await pool.query('DELETE FROM commerce_audit WHERE actor_id=ANY($1::uuid[])',[[admin,agent,otherAgent,support]]);await pool.query('DELETE FROM receipt_pairings WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM access_grants WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM payment_reviews WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM verified_charges WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_entitlements WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM provider_payment_attempts WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM event_outbox WHERE aggregate_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM agent_sale_deliveries WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM issued_vouchers WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM agent_sales WHERE agent_id=ANY($1::uuid[])',[[agent,otherAgent]]);await pool.query('DELETE FROM inventory_allocations WHERE actor_id=$1',[admin]);await pool.query('DELETE FROM agent_site_inventory WHERE site_id=ANY($1::uuid[])',[[site,otherSite]]);await pool.query('DELETE FROM sales_locations WHERE id=ANY($1::uuid[])',[[site,otherSite]]);await pool.end();for(const [k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
  await call('POST','/v1/admin/sites',{id:site,name:options.siteName??'Test site one'});await call('POST','/v1/admin/sites',{id:otherSite,name:'Test site two'});return {pool,app,call,cleanup,site,otherSite,customer,otherCustomer,admin,agent,otherAgent,support,staff,targetIdentity};
 }
+test('configured migration origin reaches the authenticated guard and foreign origins remain blocked',{skip:!url},async()=>{
+ const f=await setup({env:{PUBLIC_ORIGIN_ALIASES:JSON.stringify(['https://pasofi.onesa.eu'])}});
+ try{
+  const call=origin=>f.app.inject({method:'POST',url:'/v1/admin/bundles',headers:{origin,cookie:'staff=admin'},payload:{}});
+  assert.equal((await call('https://pasofi.onesa.eu')).statusCode,400);
+  assert.equal((await call('https://other.onesa.eu')).statusCode,403);
+ }finally{await f.cleanup();}
+});
 test('administrators can prepare sites and catalogue while commerce stays closed',{skip:!url},async()=>{
  const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false',PAMOFI_PAYMENTS_ENABLED:'false',VOUCHER_DELIVERY_KEYS_JSON:''}}),bundleId=`setup-${randomUUID().slice(0,8)}`;
  try{
@@ -263,7 +272,7 @@ test('cash sales require immutable exact agent attestation while historical comm
 });
 test('guarded browser usage fixture accounts the redeemed sale once and cleans only its synthetic grant',{skip:!url},async()=>{
  const f=await setup({siteName:`Browser fixture ${randomUUID()}`});
- const fixturePath=new URL('./fixtures/commerce.mjs',import.meta.url).pathname;
+ const fixturePath=fileURLToPath(new URL('./fixtures/commerce.mjs',import.meta.url));
  const command=(action,agent=f.agent)=>promisify(execFile)(process.execPath,[fixturePath,action,'--site',f.site,'--agent',agent,'--customer',f.customer],{env:{...process.env,PAMOFI_TEST_DATABASE_URL:url,PAMOFI_TEST_CONFIRM_ISOLATED:'1'},timeout:10000});
  try{
   await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:1,reason:'Browser synthetic usage fixture'});

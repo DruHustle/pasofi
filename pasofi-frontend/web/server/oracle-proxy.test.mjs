@@ -125,6 +125,28 @@ test('invalid deployment configuration and non-Vercel runtime make no outbound c
   });
 });
 
+test('a configured migration hostname requires its own exact request origin', async () => {
+  const alias = 'https://pasofi.example';
+  await withProxy({ env: { ...env, PASOFI_PUBLIC_ORIGIN_ALIASES: JSON.stringify([alias]) } }, async call => {
+    const accepted = await call('/api/session', { method: 'POST', headers: { host: 'pasofi.example', origin: alias } });
+    assert.equal(accepted.status, 200);
+    assert.equal(events.at(-1).headers.origin, alias);
+    const before = events.length;
+    for (const headers of [
+      { host: 'pasofi.example', origin: env.PAMOFI_PUBLIC_ORIGIN },
+      { host: 'web.pamofi.test', origin: alias },
+      { host: 'attacker.example', origin: alias },
+    ]) assert.equal((await call('/api/session', { method: 'POST', headers })).status, 403);
+    assert.equal(events.length, before);
+  });
+  for (const aliases of ['["https://pasofi.example/"]', '["http://pasofi.example"]', '"https://pasofi.example"', '["https://oracle.pamofi.test"]']) {
+    await withProxy({ env: { ...env, PASOFI_PUBLIC_ORIGIN_ALIASES: aliases } }, async call => {
+      assert.equal((await call('/api/capabilities')).status, 503);
+      assert.equal(events.length, 0);
+    });
+  }
+});
+
 test('wrong frontend host, foreign/missing mutation origin, invalid client identity and duplicate authority headers fail closed', async () => {
   await withProxy({}, async call => {
     for (const headers of [

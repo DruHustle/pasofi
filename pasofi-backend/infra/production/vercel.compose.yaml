@@ -4,9 +4,11 @@ services:
   identity:
     environment:
       PUBLIC_ORIGIN: ${PAMOFI_PUBLIC_ORIGIN:?Set the exact HTTPS Vercel browser origin}
+      PUBLIC_ORIGIN_ALIASES: ${PASOFI_PUBLIC_ORIGIN_ALIASES:-[]}
   prepaid-access:
     environment:
       PUBLIC_ORIGIN: ${PAMOFI_PUBLIC_ORIGIN:?Set the exact HTTPS Vercel browser origin}
+      PUBLIC_ORIGIN_ALIASES: ${PASOFI_PUBLIC_ORIGIN_ALIASES:-[]}
   network:
     environment:
       PUBLIC_ORIGIN: ${PAMOFI_PUBLIC_ORIGIN:?Set the exact HTTPS Vercel browser origin}

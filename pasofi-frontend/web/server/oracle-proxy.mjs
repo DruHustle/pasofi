@@ -54,8 +54,13 @@ function configuration(env) {
     throw new ProxyError(503, 'api_unconfigured');
   }
   const upstream = origin(env.PAMOFI_ORACLE_API_ORIGIN), frontend = origin(env.PAMOFI_PUBLIC_ORIGIN);
-  if (upstream.origin === frontend.origin) throw new ProxyError(503, 'api_unconfigured');
-  return { upstream, frontend, token: env.PAMOFI_VERCEL_PROXY_TOKEN };
+  let aliases;
+  try { aliases = env.PASOFI_PUBLIC_ORIGIN_ALIASES ? JSON.parse(env.PASOFI_PUBLIC_ORIGIN_ALIASES) : []; }
+  catch { throw new ProxyError(503, 'api_unconfigured'); }
+  if (!Array.isArray(aliases) || aliases.length > 3) throw new ProxyError(503, 'api_unconfigured');
+  const frontends = [frontend, ...aliases.map(origin)];
+  if (frontends.some(value => upstream.origin === value.origin)) throw new ProxyError(503, 'api_unconfigured');
+  return { upstream, frontends, token: env.PAMOFI_VERCEL_PROXY_TOKEN };
 }
 
 function header(req, name, limit = 8192) {
@@ -246,9 +251,10 @@ export function createProxyHandler({ env = process.env, request = httpsRequest, 
       const method = req.method || '';
       const route = publicRoute(req.url, method);
       const host = header(req, 'host', 253), sourceOrigin = header(req, 'origin', 253);
-      if (!host || host.toLowerCase() !== config.frontend.host) throw new ProxyError(403, 'origin_not_allowed');
-      if ((sourceOrigin !== undefined && sourceOrigin !== config.frontend.origin) ||
-          (!['GET', 'HEAD'].includes(method) && sourceOrigin !== config.frontend.origin)) throw new ProxyError(403, 'origin_not_allowed');
+      const frontend = host && config.frontends.find(value => value.host === host.toLowerCase());
+      if (!frontend) throw new ProxyError(403, 'origin_not_allowed');
+      if ((sourceOrigin !== undefined && sourceOrigin !== frontend.origin) ||
+          (!['GET', 'HEAD'].includes(method) && sourceOrigin !== frontend.origin)) throw new ProxyError(403, 'origin_not_allowed');
       const clientIp = canonicalClientIp(header(req, 'x-vercel-forwarded-for', 45));
       const body = await readBody(req, controller.signal, method);
       const headers = { accept: 'application/json', 'accept-encoding': 'identity', 'x-pamofi-proxy-token': config.token, 'x-pamofi-client-ip': clientIp };

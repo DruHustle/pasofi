@@ -27,8 +27,8 @@ export const publicStaff = (row: Record<string, any>) => ({
   version: row.version, mfaEnrolled: !!row.mfa_enrolled_at, createdAt: new Date(row.created_at).toISOString()
 });
 
-export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Pool | null; demo: boolean; origin?: string; validOrigin: boolean; resetDelivery?: StaffResetDelivery; resetJobs: Set<Promise<void>> }) {
-  const { pool, demo, origin, validOrigin } = options;
+export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Pool | null; demo: boolean; origin?: string; validOrigin: boolean; originAllowed: (value: string | undefined) => boolean; resetDelivery?: StaffResetDelivery; resetJobs: Set<Promise<void>> }) {
+  const { pool, demo, origin, validOrigin, originAllowed } = options;
   const key = mfaKey(demo);
   const resetDelivery = options.resetDelivery ?? configuredStaffResetDelivery(origin);
   const sessionCookie = demo ? 'pamofi_demo_staff_session' : '__Host-pamofi_staff_session';
@@ -38,7 +38,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   async function publicGuard(request: FastifyRequest, reply: FastifyReply) {
     reply.header('Cache-Control', 'no-store');
     if (!pool || !key || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
-    if (!['GET', 'HEAD'].includes(request.method) && request.headers.origin !== origin) return reply.code(403).send({ error: 'origin_rejected' });
+    if (!['GET', 'HEAD'].includes(request.method) && !originAllowed(request.headers.origin)) return reply.code(403).send({ error: 'origin_rejected' });
   }
   async function execute(reply: FastifyReply, run: () => Promise<unknown>) {
     try { return await run(); }

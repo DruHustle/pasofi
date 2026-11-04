@@ -2,13 +2,13 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { freshOpaque, isOpaque, opaqueHash } from './staff-crypto.js';
 
-export function registerHandoffRoutes(app: FastifyInstance, options: { pool: pg.Pool | null; demo: boolean; origin?: string; validOrigin: boolean }) {
-  const { pool, demo, origin, validOrigin } = options;
+export function registerHandoffRoutes(app: FastifyInstance, options: { pool: pg.Pool | null; demo: boolean; validOrigin: boolean; originAllowed: (value: string | undefined) => boolean }) {
+  const { pool, demo, validOrigin, originAllowed } = options;
   const cookieName = demo ? 'pamofi_demo_session' : '__Host-pamofi_session';
   async function guard(request: FastifyRequest, reply: FastifyReply) {
     reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer');
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
-    if (request.headers.origin !== origin) return reply.code(403).send({ error: 'origin_rejected' });
+    if (!originAllowed(request.headers.origin)) return reply.code(403).send({ error: 'origin_rejected' });
   }
 
   app.post('/v1/handoff', { preHandler: guard, config: { rateLimit: { max: 10, timeWindow: '1 minute' } }, schema: { body: { type: 'object', additionalProperties: false } } }, async (request, reply) => {
@@ -26,7 +26,7 @@ export function registerHandoffRoutes(app: FastifyInstance, options: { pool: pg.
       await client.query('COMMIT');
       // The credential is deliberately absent from URLs, logs and browser
       // history. The clean destination asks the user to paste and confirm it.
-      return reply.code(201).send({ handoffCode, expiresIn: 120, continueUrl: `${origin}/handoff` });
+      return reply.code(201).send({ handoffCode, expiresIn: 120, continueUrl: `${request.headers.origin}/handoff` });
     } catch { await client.query('ROLLBACK'); return reply.code(503).send({ error: 'identity_unavailable' }); }
     finally { client.release(); }
   });

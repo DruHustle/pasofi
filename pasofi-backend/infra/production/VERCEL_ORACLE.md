@@ -72,6 +72,16 @@ The project root is `pasofi-frontend/web`. Its committed `vercel.json` selects V
 
 In the intended Vercel production environment, configure `PAMOFI_PUBLIC_ORIGIN`, `PAMOFI_ORACLE_API_ORIGIN` and the protected server-only `PAMOFI_VERCEL_PROXY_TOKEN`. Their values must exactly match the Oracle configuration and token file, without the file's final newline. Keep `NODEJS_HELPERS=0` so the handler receives and bounds the actual request stream. Vercel supplies `VERCEL=1`; do not configure a client-side imitation of the platform.
 
+For a controlled hostname transition, `PASOFI_PUBLIC_ORIGIN_ALIASES` may be set
+on both Vercel and the Oracle Compose environment to the same JSON array of up
+to three exact HTTPS origins. The proxy binds each request's Origin to its own
+Host; identity and prepaid accept only the explicitly configured origins. An
+invalid list fails closed. The primary `PAMOFI_PUBLIC_ORIGIN` remains the
+canonical origin for staff-recovery emails until the operator changes it.
+Customer and staff cookies remain host-only, so moving to a new hostname does
+not transfer existing browser sessions. Verify account recovery, staff MFA,
+both origins and rollback before changing the canonical hostname.
+
 The function requires the request Host to equal the configured frontend host. Preview aliases therefore cannot use production API authority automatically. A separate preview/staging deployment needs its own browser origin, backend, secrets and database rather than reuse production cookies/authority.
 
 Vercel-to-Oracle requests verify the public certificate and use one fixed HTTPS destination; the function never follows redirects, chooses an upstream from a browser header or query, or retries a mutation automatically. Requests and responses are bounded. Configure public DNS and Oracle ingress so the API hostname reaches only this gateway's HTTPS listener. Certificate issuance/renewal and any HTTP redirect port policy remain explicit operator responsibilities.

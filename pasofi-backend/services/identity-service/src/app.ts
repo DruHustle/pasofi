@@ -8,6 +8,7 @@ import { registerStaffRoutes } from './staff.js';
 import type { StaffResetDelivery } from './staff-reset-mail.js';
 import { registerHandoffRoutes } from './handoff.js';
 import { trustedProxies } from './trusted-proxies.js';
+import { publicOrigins } from './public-origins.js';
 const { Pool } = pg;
 const tokenHash = (token: string) => createHash('sha256').update(token).digest();
 export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = {}) {
@@ -21,7 +22,9 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
   const staffResetJobs = new Set<Promise<void>>();
   const cookieName = demo ? 'pamofi_demo_session' : '__Host-pamofi_session';
   const origin = process.env.PUBLIC_ORIGIN;
-  const validOrigin = (() => { try { const u = new URL(origin!); return u.origin === origin && (u.protocol === 'https:' || (demo && u.protocol === 'http:' && ['localhost','127.0.0.1'].includes(u.hostname))); } catch { return false; } })();
+  const origins = publicOrigins(origin, process.env.PUBLIC_ORIGIN_ALIASES, demo);
+  const validOrigin = origins !== null;
+  const originAllowed = (value: string | undefined) => typeof value === 'string' && origins?.has(value) === true;
   app.register(cookie);
   app.register(rateLimit, { global: false });
   // Route-specific rate limits are attached by the plugin's onRoute hook. Wait
@@ -70,7 +73,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
   app.delete('/v1/session', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
-    if (request.headers.origin !== origin) return reply.code(403).send({ error: 'origin_rejected' });
+    if (!originAllowed(request.headers.origin)) return reply.code(403).send({ error: 'origin_rejected' });
     try {
       const token = request.cookies[cookieName];
       if (token && /^[A-Za-z0-9_-]{43}$/.test(token)) {
@@ -87,7 +90,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
   app.post('/v1/recovery/setup', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
     reply.header('Cache-Control','no-store');
     if (!pool || !validOrigin) return reply.code(503).send({error:'identity_unavailable'});
-    if (request.headers.origin!==origin) return reply.code(403).send({error:'origin_rejected'});
+    if (!originAllowed(request.headers.origin)) return reply.code(403).send({error:'origin_rejected'});
     try {
       const id=await current(request);if(!id)return reply.code(401).send({error:'not_authenticated'});
       const accountReference=randomBytes(10).toString('base64url'), recoveryKey=randomBytes(32).toString('base64url');
@@ -108,7 +111,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
   app.post<{Body:{expectedVersion:number}}>('/v1/recovery/rotate', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } }, schema:{body:{type:'object',required:['expectedVersion'],additionalProperties:false,properties:{expectedVersion:{type:'integer',minimum:1,maximum:2147483646}}}} }, async (request, reply) => {
     reply.header('Cache-Control','no-store');
     if (!pool || !validOrigin) return reply.code(503).send({error:'identity_unavailable'});
-    if (request.headers.origin!==origin) return reply.code(403).send({error:'origin_rejected'});
+    if (!originAllowed(request.headers.origin)) return reply.code(403).send({error:'origin_rejected'});
     try {
       const id=await current(request);if(!id)return reply.code(401).send({error:'not_authenticated'});
       const recoveryKey=randomBytes(32).toString('base64url');
@@ -123,7 +126,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
   }, async (request,reply) => {
     reply.header('Cache-Control','no-store');
     if (!pool || !validOrigin) return reply.code(503).send({error:'identity_unavailable'});
-    if (request.headers.origin!==origin) return reply.code(403).send({error:'origin_rejected'});
+    if (!originAllowed(request.headers.origin)) return reply.code(403).send({error:'origin_rejected'});
     try {
       const client=await pool.connect();
       try {
@@ -142,7 +145,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
   app.post('/v1/session', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply: FastifyReply) => {
     reply.header('Cache-Control','no-store');
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
-    if (request.headers.origin !== origin) return reply.code(403).send({ error: 'origin_rejected' });
+    if (!originAllowed(request.headers.origin)) return reply.code(403).send({ error: 'origin_rejected' });
     try {
       const existing = await current(request);
       if (existing) return { customerId: existing };
@@ -177,8 +180,8 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
       } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
-  registerStaffRoutes(app, { pool, demo, origin, validOrigin, resetDelivery: options.staffResetDelivery, resetJobs: staffResetJobs });
-  registerHandoffRoutes(app, { pool, demo, origin, validOrigin });
+  registerStaffRoutes(app, { pool, demo, origin, validOrigin, originAllowed, resetDelivery: options.staffResetDelivery, resetJobs: staffResetJobs });
+  registerHandoffRoutes(app, { pool, demo, validOrigin, originAllowed });
   });
   return app;
 }
