@@ -18,7 +18,7 @@ flock -w 15 9
 stamp="$state/$(printf '%s' "$unit" | sha256sum | cut -d' ' -f1)"
 now=$(date +%s)
 if [ -f "$stamp" ]; then last=$(cat "$stamp"); [[ "$last" =~ ^[0-9]+$ ]] && [ $((now-last)) -lt 21600 ] && { echo 'PamoFi alert rate-limited for this unit.'; exit 0; }; fi
-/usr/bin/docker run --rm --network host --read-only --tmpfs /tmp -e HOME=/tmp ghcr.io/oracle/oci-cli@sha256:daad6a840e60470dabc642ef2d18968bfa773bc8f5d2b0f488d061642f6d03b2 ons message publish --topic-id ocid1.onstopic.oc1.eu-frankfurt-1.amaaaaaadhe5tbaatkeivjjoln3pkph5hbnimgrfbrmb4sedreik6ysm7cpa --title 'PasoFi operational alert' --body "PasoFi service $unit failed on Onesa Backend. Inspect its systemd journal and verify backups and service availability." --auth instance_principal --region eu-frankfurt-1 --query 'data."message-id"' --raw-output >/dev/null
+/usr/bin/docker run --rm --network host --read-only --tmpfs /tmp -e HOME=/tmp ghcr.io/oracle/oci-cli@sha256:daad6a840e60470dabc642ef2d18968bfa773bc8f5d2b0f488d061642f6d03b2 ons message publish --topic-id ocid1.onstopic.oc1.eu-frankfurt-1.amaaaaaadhe5tbaac2xweh2jnr6udw3t5c2uysergwizs7nuz7hipsxxbuia --title 'PasoFi operational alert' --body "PasoFi service $unit failed on Onesa Backend. Inspect its systemd journal and verify backups and service availability." --auth instance_principal --region eu-frankfurt-1 --query 'data."message-id"' --raw-output >/dev/null
 printf '%s\n' "$now" > "$stamp"
 echo 'PasoFi operational alert accepted by Oracle Notifications.'
 EOF

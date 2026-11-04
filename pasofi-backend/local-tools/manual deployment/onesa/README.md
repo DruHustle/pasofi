@@ -24,7 +24,7 @@ The PamoFi deployment uses a Vercel frontend at `https://pamofi.onesa.eu` and an
 `install-alerts.sh` records the Onesa-specific health and notification setup. It uses an official pinned OCI CLI container with the instance identity, a dedicated PamoFi notification topic and a narrowly scoped Oracle policy that permits this instance to publish only within the PamoFi alerts compartment. It adds PamoFi-only systemd failure hooks and a recurring HTTPS/container/disk/certificate check, with per-unit notification rate limiting. The configured email subscription was confirmed and a test message reached the operator; verify delivery again if notification settings change. A separate Oracle Monitoring absence alarm reports when the shared host stops emitting compute metrics. The exact topic and IAM policy must be reviewed before using these scripts on any other account or host.
 
 The owner-selected destination for infrastructure failures, capacity/usage warnings
-and recovery notifications is `it-infrastructure@onesa.eu`. The existing Oracle
+and recovery notifications is `it-infrastructure@onesa.eu`. The `pasofi-operations` Oracle
 Notifications email subscription must be ACTIVE before mail delivery is considered
 configured; an accepted publish is not proof of mailbox delivery. The alert helper
 accepts both retained `pamofi-` and current `pasofi-` unit names. Every new
