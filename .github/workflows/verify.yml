@@ -78,7 +78,8 @@ jobs:
             pasofi-backend/infra/radius-production/*.test.mjs \
             pasofi-backend/infra/pilot-isolation/*.test.mjs \
             pasofi-backend/pasofi-routeros/site-01/*.test.mjs \
-            pasofi-backend/pasofi-routeros/site-02/*.test.mjs
+            pasofi-backend/pasofi-routeros/site-02/*.test.mjs \
+            pasofi-backend/pasofi-routeros/portal/welcome/*.test.mjs
           sh -n pasofi-backend/infra/backup-production/render-config.sh
           sh -n pasofi-backend/infra/backup-production/entrypoint.sh
           bash -n pasofi-backend/infra/backup-production/backup.sh
