@@ -59,6 +59,7 @@ services:
     pids_limit: 150
     shm_size: 64m
     stop_grace_period: 60s
+    entrypoint: [/bin/sh, /opt/pamofi/postgres-entrypoint.sh]
     command: [postgres, -c, shared_buffers=64MB, -c, max_connections=80, -c, password_encryption=scram-sha-256]
     environment:
       POSTGRES_USER: pamofi_bootstrap
@@ -89,11 +90,14 @@ services:
       - assistant_runtime_password
     volumes:
       - database:/var/lib/postgresql/data
-      - ./init.sh:/docker-entrypoint-initdb.d/10-pamofi.sh:ro
+      - ./postgres-entrypoint.sh:/opt/pamofi/postgres-entrypoint.sh:ro
+      - ./init.sh:/opt/pamofi/init.sh:ro
       - ./roles.sql:/opt/pamofi/roles.sql:ro
+      - ./postgres-ready.sh:/opt/pamofi/postgres-ready.sh:ro
+      - ./postgres-ready.sql:/opt/pamofi/postgres-ready.sql:ro
     networks: [database]
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U pamofi_bootstrap -d postgres"]
+      test: [CMD, /bin/sh, /opt/pamofi/postgres-ready.sh]
       interval: 5s
       timeout: 3s
       retries: 30
