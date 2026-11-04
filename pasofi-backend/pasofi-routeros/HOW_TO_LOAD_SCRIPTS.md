@@ -19,6 +19,17 @@ or shared secret to it.
 The [captive welcome handoff](portal/README.md) is prepared separately and has
 not yet been installed or tested on either router.
 
+The original isolated pilot omitted TCP port `64874`, which RouterOS uses for
+unauthenticated HTTP captive detection. The corrected pilot includes it. If
+that original pilot is still active in the same Safe Mode session, the small
+[guarded correction](site-01/pasofi-kuwadzana-captive-fix.rsc) updates only
+its scoped login rule after verifying the router, empty walled garden and
+IPv4/IPv6 forwarding drops. The correction has not yet been syntax-checked or
+run on the router. A configured walled-garden entry can allow the local proxy
+to reach destinations through the router, so do not add such entries during
+this isolated test. The correction does not fix certificates or install the
+PasoFi welcome page. See MikroTik's [HotSpot customization documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/87162881/Hotspot+customisation).
+
 The owner ran the short Kuwadzana check on 4 November. It identified the
 router, reported 8,007,680 bytes of free memory, an enabled tunnel, one each
 of the gateway, disabled DHCP, HotSpot and RADIUS entries, four isolation

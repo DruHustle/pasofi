@@ -15,7 +15,7 @@ test('isolated pilot identifies its router and installs IPv4 and IPv6 drops befo
     'PasoFi test: deny input', 'PasoFi test: deny output',
     '/radius enable', '/ip hotspot enable', '/ip dhcp-server enable',
   ]) assert.ok(script.indexOf(required) >= 0 && script.indexOf(required) < enable, required);
-  assert.match(script, /dst-port=64873,64875/);
+  assert.match(script, /dst-port=64873,64874,64875/);
   assert.doesNotMatch(script, /\/ip firewall nat add|\/ip hotspot walled-garden (?:add|set)|secret\s*=|private-key\s*=/i);
   assert.doesNotMatch(script, /\/ip firewall filter (?:remove|disable)|\/ipv6 firewall filter (?:remove|disable)/);
 });
