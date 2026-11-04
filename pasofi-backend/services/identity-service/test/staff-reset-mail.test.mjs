@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import nodemailer from 'nodemailer';
 import { configuredStaffResetDelivery } from '../dist/staff-reset-mail.js';
 import { renderStaffResetEmail } from '../dist/staff-reset-email-template.js';
+import { emailBrand } from '../dist/email-brand.js';
 
 const keys = ['STAFF_RESET_DELIVERY_ENABLED','STAFF_RESET_DELIVERY_QUALIFIED','STAFF_RESET_SMTP_HOST','STAFF_RESET_SMTP_PORT','STAFF_RESET_SMTP_USER','STAFF_RESET_SMTP_PASSWORD','STAFF_RESET_EMAIL_FROM'];
 test('staff SMTP delivery is disabled unless every qualification and strict transport input is present', async () => {
@@ -57,6 +58,9 @@ test('Onesa sender examples remain disabled and preserve the existing qualified 
       assert.ok(messages.at(-1).html.includes('Recover your staff account'));
       assert.ok(messages.at(-1).html.includes('href="https://pasofi.example.test/#staff"'));
       assert.ok(messages.at(-1).html.includes('Your existing authenticator is still required.'));
+      assert.equal(messages.at(-1).attachments[0].cid, emailBrand.cid);
+      assert.equal(messages.at(-1).attachments[0].contentDisposition, 'inline');
+      assert.deepEqual(messages.at(-1).attachments[0].content, Buffer.from(emailBrand.base64, 'base64'));
     }
     assert.equal(transports.length, 2);
     for (const options of transports) {
@@ -79,8 +83,8 @@ test('recovery HTML keeps the complete code out of URLs and preheader, and rejec
   assert.ok(!html.match(/href="[^"]*"/g).some(link => link.includes(code)));
   assert.ok(!html.slice(0, html.indexOf('<table')).includes(code));
   for (const origin of ['javascript:alert(1)', 'https://staff:secret@invalid.test', 'https://example.test/redirect?next=evil', 'http://external.test']) {
-    assert.equal(renderStaffResetEmail(origin, '<img src=x onerror=alert(1)>').includes('href='), false);
-    assert.equal(renderStaffResetEmail(origin, '<img src=x onerror=alert(1)>').includes('<img'), false);
+    assert.deepEqual(renderStaffResetEmail(origin, '<img src=x onerror=alert(1)>').match(/href="[^"]*"/g), ['href="mailto:info@onesa.eu"']);
+    assert.equal(renderStaffResetEmail(origin, '<img src=x onerror=alert(1)>').includes('<img src=x'), false);
   }
   assert.ok(renderStaffResetEmail('http://localhost:5173', code).includes('href="http://localhost:5173/#staff"'));
 });
