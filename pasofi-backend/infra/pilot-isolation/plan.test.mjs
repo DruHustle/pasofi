@@ -6,6 +6,7 @@ test('pilot scaffold remains disabled and guards both IP families before adding 
   const text=buildPlan();
   assert.ok(text.indexOf('/interface bridge port find where comment~"^PamoFi pilot:"') < text.indexOf('/interface bridge add'));
   assert.match(text,/bridge add name="pfi-pilot-br" disabled=yes/);
+  assert.match(text,/ssid="PasoFi Pilot"/);
   assert.match(text,/wireless add name="pfi-pilot-wifi".*default-forwarding=no wps-mode=disabled disabled=yes/);
   assert.ok(text.indexOf('Pilot radio already has bridge membership') > text.indexOf('/interface wireless add'));
   assert.ok(text.indexOf('Pilot radio already has bridge membership') < text.indexOf('/interface bridge port add'));

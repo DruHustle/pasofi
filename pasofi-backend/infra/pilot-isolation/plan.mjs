@@ -25,7 +25,7 @@ export function buildPlan() {
       guard(menu,'input','in'),guard(menu,'output','out'),guard(menu,'forward','in'),guard(menu,'forward','out'),
     ]),
     `/interface wireless security-profiles add name="${profile}" mode=none`,
-    `/interface wireless add name="${wifi}" master-interface=wlan1 mode=ap-bridge ssid="PamoFi Pilot" security-profile="${profile}" default-forwarding=no wps-mode=disabled disabled=yes comment="${tag} disabled test radio"`,
+    `/interface wireless add name="${wifi}" master-interface=wlan1 mode=ap-bridge ssid="PasoFi Pilot" security-profile="${profile}" default-forwarding=no wps-mode=disabled disabled=yes comment="${tag} disabled test radio"`,
     `:if ([:len [/interface bridge port find where interface="${wifi}"]] > 0) do={ :error "Pilot radio already has bridge membership; inspect and roll back" }`,
     `/interface bridge port add bridge="${bridge}" interface="${wifi}" comment="${tag} disabled test port"`,
     `:if ([:len [/interface bridge port find where interface="${wifi}" and bridge="${bridge}" and comment="${tag} disabled test port"]] != 1) do={ :error "Pilot bridge membership differs from plan" }`,

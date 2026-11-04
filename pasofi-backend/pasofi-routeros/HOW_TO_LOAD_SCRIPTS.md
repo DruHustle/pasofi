@@ -38,6 +38,7 @@ customers; investigate stability and qualify the device under expected load.
 
 On 4 November a temporary DHCP-only pilot was run in Safe Mode. A spare device
 associated with `PamoFi Pilot` and received a bound `10.77.10.10` lease.
+The disabled radio was subsequently renamed `PasoFi Pilot`; it remains off.
 IPv4 pilot forwarding drops recorded traffic. The temporary DHCP rules were
 undone afterward; the bridge, radio and pilot DHCP server were confirmed
 disabled, and Safe Mode was released. This check did not exercise DNS, captive
