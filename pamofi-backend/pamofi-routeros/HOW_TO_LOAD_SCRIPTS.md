@@ -14,6 +14,9 @@ or shared secret to it.
 | **Site 1: Kuwadzana** | [site-01/kuwadzana-prepare.rsc](site-01/kuwadzana-prepare.rsc) | For the previously inspected router only. Verifies its existing tunnel, disabled guest network, RADIUS client, certificate and isolation. If missing and the prerequisites match, it prepares the disabled HTTPS HotSpot and guest-only common torrent-port rules. It does not turn on guest Wi-Fi, DHCP, the HotSpot or the RADIUS client. |
 | **Site 2: Lawfield Farm** | [site-02/lawfield-prepare.rsc](site-02/lawfield-prepare.rsc) | First-stage preparation only. Prints non-secret network inventory and creates one disabled WireGuard interface with a new private key kept on that router. It does not configure the server peer, RADIUS, guest network, HotSpot or torrent policy. |
 
+The [captive welcome handoff](portal/README.md) is prepared separately and has
+not yet been installed or tested on either router.
+
 The Kuwadzana file is specific to the currently installed certificate and
 router public key. A renewed or replaced certificate requires a reviewed script
 update. On 4 November, the Kuwadzana router restarted during an attempted
