@@ -73,6 +73,35 @@ test('administrators can prepare sites and catalogue while commerce stays closed
   const after=(await f.app.inject({url:'/v1/capabilities'})).json();assert.equal(after.staffSales,false);assert.equal(after.vouchers,false);
  }finally{await f.pool.query('DELETE FROM bundle_versions WHERE id=$1',[bundleId]);await f.cleanup();}
 });
+test('operator-configured cash currency is enforced through sale and redemption',{skip:!url},async()=>{
+ const f=await setup({env:{PAMOFI_CASH_CURRENCIES:JSON.stringify(['USD','ZWG'])}}),bundleId=`cash-${randomUUID().slice(0,8)}`;
+ try{
+  assert.deepEqual((await f.call('GET','/v1/admin/bundles')).json().currencies,['USD','ZWG']);
+  const product={id:bundleId,priceMinor:250,currency:'ZWG',byteLimit:'1000000',validitySeconds:86400,published:true,reason:'Configured currency integration test'};
+  assert.equal((await f.call('POST','/v1/admin/bundles',{...product,currency:'EUR'})).statusCode,400);
+  assert.equal((await f.call('POST','/v1/admin/bundles',{...product,currency:'zwg'})).statusCode,400);
+  assert.equal((await f.call('POST','/v1/admin/bundles',product)).statusCode,201);
+  const allocation={agentId:f.agent,siteId:f.site,bundleId,quantity:1,reason:'Configured cash currency test stock'};
+  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',allocation)).statusCode,201);
+  const pair=(await f.call('POST','/v1/receipt-pairings',{},'customer')).json().pairing;
+  const sale={siteId:f.site,bundleId,delivery:'receipt',pairingCode:pair.code,payment:{method:'cash',confirmed:true,amountMinor:250,currency:'ZWG'}};
+  assert.equal((await f.call('POST','/v1/staff/sales',{...sale,payment:{...sale.payment,currency:'USD'}},'agent')).statusCode,409);
+  const sold=await f.call('POST','/v1/staff/sales',sale,'agent');assert.equal(sold.statusCode,201);assert.equal(sold.json().sale.currency,'ZWG');
+  const receipt=(await f.call('GET',`/v1/receipt-pairings/${pair.id}`,undefined,'customer')).json().receipt;
+  assert.equal((await f.call('POST','/v1/vouchers/redeem',{code:receipt.voucher.code},'customer')).statusCode,200);
+ } finally {
+  await f.cleanup();
+  const pool=new pg.Pool({connectionString:url});try{await pool.query('DELETE FROM bundle_versions WHERE id=$1',[bundleId]);}finally{await pool.end();}
+ }
+});
+test('invalid cash currency configuration fails closed for new bundles',{skip:!url},async()=>{
+ const f=await setup({env:{PAMOFI_CASH_CURRENCIES:JSON.stringify(['USD','JPY'])}});
+ try{
+  assert.deepEqual((await f.call('GET','/v1/admin/bundles')).json().currencies,[]);
+  const draft={id:`bad-${randomUUID().slice(0,8)}`,priceMinor:100,currency:'USD',byteLimit:'1000000',validitySeconds:86400,published:false,reason:'Malformed currency configuration test'};
+  assert.equal((await f.call('POST','/v1/admin/bundles',draft)).statusCode,400);
+ }finally{await f.cleanup();}
+});
 test('allocation replay survives target changes and new rejected allocations do not change inventory',{skip:!url},async()=>{
  const f=await setup();try{
   const body={agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:2,reason:'Stock for an isolated replay test'},key=randomUUID();

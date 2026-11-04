@@ -91,7 +91,13 @@ test('a lost agent sale response restores the exact intent and cannot debit stoc
   await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Retry saved sale safely' }).click();
   await expect(page.getByText('stock was not debited twice', { exact: false })).toBeVisible(); expect(keys).toHaveLength(2); expect(new Set(keys).size).toBe(1);
   await expect(page.getByText(`Sale reference: ${saleId}`)).toBeVisible();
-  await page.getByRole('button', { name: 'View private receipt' }).click(); await expect(page.getByLabel('Voucher code', { exact: true })).toHaveValue('PRIVATEVOUCHER234567'); await page.getByRole('button', { name: 'Hide receipt' }).click(); await expect(page.getByLabel('Voucher code', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'View private receipt' }).click(); await expect(page.getByLabel('Voucher code', { exact: true })).toHaveValue('PRIVATEVOUCHER234567');
+  await page.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (value: string) => { document.body.dataset.copiedVoucher = value; } } }); window.print = () => {}; });
+  await page.getByRole('button', { name: 'Copy voucher' }).click(); await expect(page.locator('body')).toHaveAttribute('data-copied-voucher', 'PRIVATEVOUCHER234567');
+  await page.getByRole('button', { name: 'Print receipt' }).click(); await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('.agent-print-receipt')).toContainText('PRIVATEVOUCHER234567'); await expect(page.locator('#root')).toBeHidden();
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint'))); await page.emulateMedia({ media: 'screen' }); await expect(page.locator('.agent-print-receipt')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Hide receipt' }).click(); await expect(page.getByLabel('Voucher code', { exact: true })).toHaveCount(0);
 });
 
 test('support sees scoped delivery evidence but cannot expose vouchers or resend SMS', async ({ page }) => {
@@ -194,7 +200,7 @@ test('network credentials are private and prepared access stays unconnected unti
 test('handoff requires explicit consent and refuses a mismatched or blocked resulting cookie', async ({ page }) => {
   const code = 'h'.repeat(43); let requests = 0;
   await mock(page, async (route, path) => { if (path === '/api/handoff/redeem') { requests++; expect(route.request().postDataJSON()).toEqual({ handoffCode: code }); await json(route, { customerId: agentId }); return true; } return false; });
-  await page.goto('/handoff'); await page.getByLabel('One-time handoff code').fill(code); await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled(); expect(requests).toBe(0); await page.getByRole('checkbox', { name: /my own PasoFi account/ }).check(); await page.getByRole('button', { name: 'Accept account handoff' }).click(); await expect(page.getByRole('alert')).toContainText('did not keep the transferred session'); expect(page.url()).not.toContain(code);
+  await page.goto('/handoff'); await page.getByLabel('One-time handoff code').fill(code); await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled(); expect(requests).toBe(0); await page.getByRole('checkbox', { name: /my own PamoFi account/ }).check(); await page.getByRole('button', { name: 'Accept account handoff' }).click(); await expect(page.getByRole('alert')).toContainText('did not keep the transferred session'); expect(page.url()).not.toContain(code);
 });
 
 for (const phase of ['initial session', 'MFA confirmation'] as const) {
@@ -322,15 +328,15 @@ test('paused commerce allows administrator draft setup while stock allocation re
     if (path === '/api/staff/inventory') { await json(route, { inventory: [] }); return true; }
     if (path === '/api/admin/bundles') {
       if (method === 'POST') { draft = route.request().postDataJSON(); await json(route, { product: { ...product, published: false } }, 201); }
-      else await json(route, { products: [{ ...product, published: true }] });
+      else await json(route, { products: [{ ...product, published: true }], currencies: ['USD', 'ZWG'] });
       return true;
     }
     return false;
   });
   await openStaff(page); await page.getByRole('button', { name: 'Bundle catalogue', exact: true }).click();
-  await page.getByLabel('Unique version ID').fill('review-draft'); await page.getByLabel('Price in USD').fill('1.50'); await page.getByLabel('Data allowance in GB').fill('3'); await page.getByLabel('Validity in days').fill('2'); await page.getByLabel('Reason', { exact: true }).fill('Prepare reviewed draft before launch');
+  await page.getByLabel('Unique version ID').fill('review-draft'); await page.getByRole('combobox', { name: 'Currency', exact: true }).selectOption('ZWG'); await page.getByLabel('Price', { exact: true }).fill('1.50'); await page.getByLabel('Data allowance in GB').fill('3'); await page.getByLabel('Validity in days').fill('2'); await page.getByLabel('Reason', { exact: true }).fill('Prepare reviewed draft before launch');
   await page.getByRole('button', { name: 'Save draft bundle' }).click(); await expect(page.getByText('A new draft bundle version is saved.', { exact: false })).toBeVisible();
-  expect(draft).toEqual({ id: 'review-draft', priceMinor: 150, currency: 'USD', byteLimit: '3000000000', validitySeconds: 172800, published: false, reason: 'Prepare reviewed draft before launch' });
+  expect(draft).toEqual({ id: 'review-draft', priceMinor: 150, currency: 'ZWG', byteLimit: '3000000000', validitySeconds: 172800, published: false, reason: 'Prepare reviewed draft before launch' });
   await page.getByRole('button', { name: 'Inventory', exact: true }).click();
   await expect(page.getByText('Sales and stock allocation are paused.', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Allocate inventory' })).toBeDisabled();

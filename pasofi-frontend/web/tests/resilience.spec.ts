@@ -33,7 +33,7 @@ test('malformed catalogue recovers with Retry and an unpublished catalogue has a
   await page.getByRole('button', { name: 'Retry bundles' }).click();
   await expect(page.getByRole('button', { name: 'Try flex demo bundle' })).toBeEnabled();
   empty = true; await page.reload();
-  await expect(page.getByText('No bundles are published yet. Check back when PasoFi launches.')).toBeVisible();
+  await expect(page.getByText('No bundles are published yet. Check back when PamoFi launches.')).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -150,7 +150,7 @@ test('access pagination keeps current bundles and loads additional history once'
   expect(offsets.filter(offset => offset === '1')).toHaveLength(1);
 });
 
-test('failed signout preserves the account view; successful signout clears only PasoFi secrets', async ({ page }) => {
+test('failed signout preserves the account view; successful signout clears only PamoFi secrets', async ({ page }) => {
   let fail = true;
   await mockApi(page, async (route, path) => {
     if (path !== '/api/session' || route.request().method() !== 'DELETE') return false;

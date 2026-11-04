@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">PasoFi</string>
-    <string name="title_activity_main">PasoFi</string>
+    <string name="app_name">PamoFi</string>
+    <string name="title_activity_main">PamoFi</string>
     <string name="package_name">com.onesa.pasofi</string>
     <string name="custom_url_scheme">com.onesa.pasofi</string>
 </resources>

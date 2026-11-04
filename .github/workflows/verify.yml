@@ -104,6 +104,8 @@ jobs:
           node pasofi-backend/infra/production/test-roles.mjs
       - name: Verify production PostgreSQL initialization readiness
         run: bash pasofi-backend/infra/production/test-postgres-readiness.sh
+      - name: Verify PostgreSQL startup preserves backup initialization
+        run: bash pasofi-backend/infra/production/test-postgres-backup-entrypoint.sh
       - name: Verify real FreeRADIUS packets in the isolated lab
         run: |
           bash pasofi-backend/pasofi-radius/lab/test-startup-readiness.sh

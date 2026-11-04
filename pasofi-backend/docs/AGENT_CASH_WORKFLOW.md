@@ -10,14 +10,14 @@ This is the primary customer workflow while direct provider and bank integration
 
 An administrator completes password and authenticator sign-in, approves the agent application, assigns the agent's site and allocates published bundle inventory. Pending, suspended or unassigned staff cannot issue sales for that site. The service resolves the current staff role and scope for each authorized action; the UI is not the authority.
 
-The published bundle defines the integer minor-unit cash price, currency, byte allowance, validity and start-by policy. The server snapshots these terms and the commission when the sale commits. An agent cannot submit an arbitrary price, commission or allowance. Stock is debited in the same database transaction that creates the sale, voucher, private receipt association and outbox event.
+The published bundle defines the integer minor-unit cash price, currency, byte allowance, validity and start-by policy. The operator configures the allowed cash currencies in `PAMOFI_CASH_CURRENCIES`; the current monetary representation supports currencies with two decimal minor units. Existing installations default to USD until this setting is explicitly changed. The server snapshots these terms and the commission when the sale commits. An agent cannot submit an arbitrary price, commission or allowance. Stock is debited in the same database transaction that creates the sale, voucher, private receipt association and outbox event.
 
 ## Customer and agent steps
 
 1. **Choose the bundle.** The customer opens a published bundle or the “Pay an agent” area. When online checkout is disabled, the bundle still leads to the cash receipt workflow. Confirm that the agent has the correct site and stock before taking cash.
 2. **Pair the customer's account.** The customer creates a short-lived private pairing code on their own device and shows it to the agent. The pairing belongs to the customer session. It is not an account password or a voucher.
-3. **Confirm cash and issue.** The agent selects the site and bundle, enters the pairing code and chooses private receipt delivery. The agent checks the confirmation for the exact displayed amount, then submits “Confirm cash and issue voucher.”
-4. **Read the receipt.** The customer's open receipt view checks automatically while the pairing is pending. The receipt shows the issued bundle, price, allowance, validity, start-by date, sale reference, private voucher and recorded cash confirmation. Check these before redeeming.
+3. **Confirm cash and issue.** The agent selects the site and bundle, enters the pairing code and chooses private receipt delivery. The customer’s pairing code does not bind a selected bundle: confirm the bundle and price with the customer before accepting cash. The agent checks the confirmation for the exact displayed amount, then submits “Confirm cash and issue voucher.”
+4. **Read the receipt.** The customer's open receipt view checks automatically while the pairing is pending. The receipt shows the issued bundle, price, allowance, validity, start-by date, sale reference, private voucher and recorded cash confirmation. Check these before redeeming. The agent can open the authorized private receipt to copy the voucher or print a receipt; keep either copy private and give it only to the customer.
 5. **Redeem once.** The customer explicitly redeems the receipt's voucher. The service binds the entitlement to that customer and handles duplicate redemption safely. The new allowance is queued; this does not prove a device is connected or start its validity timer.
 6. **Connect when the site is qualified.** The customer requests the temporary hotspot credentials and signs in at the selected site. Validity starts with verified router accounting Start. Both uploaded and downloaded data count against the allowance.
 
@@ -29,9 +29,9 @@ New agent inventory sales require a cash attestation containing the exact server
 
 This is evidence that the agent confirmed receiving cash. Software cannot independently observe physical banknotes. The administrator's operating process must still reconcile the agent's recorded sales, physical cash, commission and inventory. The application does not claim bank settlement or an automated physical cash refund.
 
-## Proposed end-of-shift reconciliation
+## End-of-shift reconciliation (manual)
 
-The owner should review this procedure and settle the cash handover arrangement before enabling live sales. It does not authorize a sale or establish that a deposit was made.
+The application does not yet implement shift opening/closing, cash counts, supervisor-approved adjustments or automated refunds. The owner must review this manual procedure and settle the cash handover arrangement before enabling live sales. It does not authorize a sale or establish that a deposit was made.
 
 1. Agree the agent, site, currency, shift start and end, and opening cash float. Keep a separate count for each currency; do not convert amounts or include the float as sales.
 2. Obtain an authorized transaction-level record of the site's committed sales for the agreed shift and agent. Record each sale reference once, its amount and its recorded commission. The updated administrator **Sales and delivery** view shows the agent identity, sale reference and recorded commission; the agent's recent-sales view also shows the sale reference. Until that update is deployed, the existing production administrator view does not show those fields. The paginated list is not a frozen shift report: make sure no sales are being added during the count, load every relevant page, and verify completeness before reconciling. Qualify the procedure before launch. Investigate ambiguous submissions using the original retry and receipt before including or excluding them; never issue a replacement merely to balance the count.

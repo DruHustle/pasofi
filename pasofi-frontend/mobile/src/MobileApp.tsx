@@ -24,7 +24,7 @@ const categories: { id: Category; label: string; matches: (days: number) => bool
   { id: 'monthly', label: 'Monthly', matches: days => days > 27 },
 ];
 const questions = [
-  { q: 'Can I buy a bundle in this app?', a: mobileApiConfigured ? 'This preview has example bundles only. My PasoFi checks which account and purchase features the configured service supports.' : 'Not yet. This is an offline preview. Payments and Wi-Fi connections are not available.' },
+  { q: 'Can I buy a bundle in this app?', a: mobileApiConfigured ? 'This preview has example bundles only. My PamoFi checks which account and purchase features the configured service supports.' : 'Not yet. This is an offline preview. Payments and Wi-Fi connections are not available.' },
   { q: 'When does bundle time start?', a: 'The planned service starts validity on the first successful connection. Final terms will be confirmed when the service launches.' },
   { q: 'Does my data include uploads?', a: 'The planned allowance includes both uploads and downloads.' },
   { q: 'How will I use a voucher?', a: 'When the service is available, you can enter your private voucher in your account. Redeeming adds a bundle; a hotspot must confirm your connection before you have internet access.' },
@@ -55,16 +55,16 @@ export default function MobileApp() {
   return <div className="mobile-app">
     <a className="mobile-skip" href="#mobile-content">Skip to content</a>
     <header className="mobile-header">
-      <button className="mobile-brand" aria-label="PasoFi home" onClick={() => choose('home')}><span className="mobile-brandmark"><Icon name="wifi" /></span><span>PasoFi<small>by Onesa</small></span></button>
-      <div className="mobile-header-actions">{mobileApiConfigured && <button className="mobile-account-button" onClick={() => openAccount()}>My PasoFi</button>}<button className="mobile-icon-button" aria-label="Help" onClick={() => choose('help')}><Icon name="help" /></button></div>
+      <button className="mobile-brand" aria-label="PamoFi home" onClick={() => choose('home')}><span className="mobile-brandmark"><Icon name="wifi" /></span><span>PamoFi<small>by Onesa</small></span></button>
+      <div className="mobile-header-actions">{mobileApiConfigured && <button className="mobile-account-button" onClick={() => openAccount()}>My PamoFi</button>}<button className="mobile-icon-button" aria-label="Help" onClick={() => choose('help')}><Icon name="help" /></button></div>
     </header>
     <main id="mobile-content" className="mobile-content" ref={content}>
-      <div className="mobile-notice"><Icon name="info" /><p><strong>Offline preview</strong><span>{mobileApiConfigured ? 'Example bundles only. My PasoFi checks the configured service.' : 'Explore the app. Purchases and Wi-Fi access are not available yet.'}</span></p></div>
+      <div className="mobile-notice"><Icon name="info" /><p><strong>Offline preview</strong><span>{mobileApiConfigured ? 'Example bundles only. My PamoFi checks the configured service.' : 'Explore the app. Purchases and Wi-Fi access are not available yet.'}</span></p></div>
 
       {tab === 'home' && <>
         <div className="mobile-page-heading"><p className="mobile-eyebrow">A LITTLE CONNECTION. MORE POSSIBILITY.</p><h1 tabIndex={-1}>Your internet.<br />Your way.</h1><p>Simple Wi-Fi for the moments that matter.</p></div>
         <section className="mobile-balance" aria-labelledby="preview-balance-title">
-          <div className="mobile-balance-top"><span id="preview-balance-title">Your PasoFi balance</span><span className="mobile-status"><span />Preview</span></div>
+          <div className="mobile-balance-top"><span id="preview-balance-title">Your PamoFi balance</span><span className="mobile-status"><span />Preview</span></div>
           <div className="mobile-balance-body"><div><p>Data remaining</p><strong>— <span>GB</span></strong><span className="mobile-balance-caption">Live balance unavailable</span></div><div className="mobile-wifi-orbit" aria-hidden="true"><Icon name="wifi" /></div></div>
           <div className="mobile-balance-meta"><span><Icon name="clock" />Time unavailable</span><span><Icon name="shield" />Connection unverified</span></div>
           <button className="mobile-primary mobile-primary-wide" onClick={() => choose('bundles')}>Explore bundles <Icon name="arrow" /></button>
@@ -104,16 +104,16 @@ export default function MobileApp() {
       </section>}
 
       {tab === 'account' && <section aria-labelledby="mobile-account">
-        <div className="mobile-page-heading"><p className="mobile-eyebrow">YOUR SPACE</p><h1 tabIndex={-1} id="mobile-account">My PasoFi.</h1><p>A simple home for your connection.</p></div>
-        <div className="mobile-profile-card"><span className="mobile-profile-avatar"><Icon name="account" /></span><div><h2>Welcome to PasoFi</h2><p>{mobileApiConfigured ? 'Check your configured account service.' : 'You’re exploring the offline preview.'}</p></div><span className="mobile-label">Preview</span></div>
-        {mobileApiConfigured ? <button className="mobile-primary mobile-primary-wide" onClick={() => openAccount()}>Open My PasoFi <Icon name="arrow" /></button> : <p className="mobile-account-explainer">Accounts, vouchers and devices become available when the service is ready. No account is created while you explore.</p>}
+        <div className="mobile-page-heading"><p className="mobile-eyebrow">YOUR SPACE</p><h1 tabIndex={-1} id="mobile-account">My PamoFi.</h1><p>A simple home for your connection.</p></div>
+        <div className="mobile-profile-card"><span className="mobile-profile-avatar"><Icon name="account" /></span><div><h2>Welcome to PamoFi</h2><p>{mobileApiConfigured ? 'Check your configured account service.' : 'You’re exploring the offline preview.'}</p></div><span className="mobile-label">Preview</span></div>
+        {mobileApiConfigured ? <button className="mobile-primary mobile-primary-wide" onClick={() => openAccount()}>Open My PamoFi <Icon name="arrow" /></button> : <p className="mobile-account-explainer">Accounts, vouchers and devices become available when the service is ready. No account is created while you explore.</p>}
         <div className="mobile-settings-list">
           <button onClick={() => mobileApiConfigured ? openAccount('wifi') : choose('help')}><span className="mobile-setting-icon"><Icon name="devices" /></span><span><strong>My WiFi & devices</strong><small>{mobileApiConfigured ? 'Check account availability' : 'Learn how connecting will work'}</small></span><Icon name="chevron" /></button>
           <button onClick={() => mobileApiConfigured ? openAccount('recovery') : choose('help')}><span className="mobile-setting-icon"><Icon name="shield" /></span><span><strong>Account & security</strong><small>{mobileApiConfigured ? 'Recovery and device access' : 'Account access is not available yet'}</small></span><Icon name="chevron" /></button>
           <div className="mobile-setting-row"><span className="mobile-setting-icon"><Icon name="globe" /></span><span><strong>Language</strong><small>English</small></span><span className="mobile-setting-value">EN</span></div>
           <button onClick={() => choose('help')}><span className="mobile-setting-icon"><Icon name="help" /></span><span><strong>Help & support</strong><small>Clear answers, whenever you need them</small></span><Icon name="chevron" /></button>
         </div>
-        <p className="mobile-brand-footnote"><Icon name="wifi" />PasoFi by Onesa<span>Wi-Fi for your everyday.</span></p>
+        <p className="mobile-brand-footnote"><Icon name="wifi" />PamoFi by Onesa<span>Wi-Fi for your everyday.</span></p>
       </section>}
 
       {tab === 'help' && <section aria-labelledby="mobile-help">

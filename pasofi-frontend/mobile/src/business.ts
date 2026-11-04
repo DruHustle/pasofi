@@ -26,7 +26,7 @@ export function messageFor(error: unknown, fallback = 'This request could not be
   if (error.status === 403) return 'This action is not available for your account or assigned site. Refresh your account permissions.';
   if (error.status === 429) return 'Too many attempts. Wait a minute before trying again.';
   const messages: Record<string, string> = {
-    cookie_not_kept: 'This browser did not keep the account cookie. Allow cookies for the configured PasoFi service, then retry. No voucher or payment was submitted.',
+    cookie_not_kept: 'This browser did not keep the account cookie. Allow cookies for the configured PamoFi service, then retry. No voucher or payment was submitted.',
     version_conflict: 'This record changed while you were reviewing it. Refresh and review the current details.',
     staff_changed: 'This staff record changed. Refresh and review the latest details.',
     insufficient_inventory: 'There is not enough stock for this sale. Refresh inventory or ask an administrator to allocate stock.',

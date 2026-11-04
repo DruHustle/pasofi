@@ -6,6 +6,10 @@ export type EcoCashSandboxConfig={
  environment:'sandbox';username:string;password:string;merchantCode:string;merchantPin:string;
  merchantNumber:string;terminalID:string;location:string;superMerchantName:string;merchantName:string;
 };
+export type PreparedEcoCashAdjustment=Readonly<{
+ environment:'sandbox';adjustmentId:string;clientCorrelator:string;referenceCode:string;
+ kind:'REF'|'REV';original:PreparedEcoCashPayment;originalEcocashReference:string;amountMinor:number;
+}>;
 export type PreparedEcoCashPayment=Readonly<{
  environment:'sandbox';attemptId:string;orderId:string;clientCorrelator:string;referenceCode:string;
  endUserId:string;amountMinor:number;currency:'USD';
@@ -26,6 +30,21 @@ export function prepareEcoCashPayment(input:{attemptId:string;orderId:string;cus
   clientCorrelator:input.attemptId,referenceCode:input.attemptId,endUserId:msisdn(input.customerMsisdn),amountMinor:input.amountMinor,currency:input.currency as 'USD'};
  validatePrepared(prepared);return Object.freeze(prepared);
 }
+// Sandbox request preparation only. The caller must persist the unique
+// adjustment and original payment before any POST; this module has no refund
+// ledger, cannot verify total prior refunds, and must not retry an ambiguous POST.
+export function prepareEcoCashAdjustment(input:{adjustmentId:string;kind:'REF'|'REV';original:PreparedEcoCashPayment;originalEcocashReference:string;amountMinor:number}):PreparedEcoCashAdjustment {
+ validatePrepared(input.original);
+ if(!uuid.test(input.adjustmentId)||input.adjustmentId===input.original.attemptId||!['REF','REV'].includes(input.kind)||
+   typeof input.originalEcocashReference!=='string'||!/^[A-Za-z0-9._-]{1,128}$/.test(input.originalEcocashReference)||
+   !Number.isSafeInteger(input.amountMinor)||input.amountMinor<1||input.amountMinor>input.original.amountMinor)throw Error('invalid_ecocash_adjustment');
+ return Object.freeze({environment:'sandbox',adjustmentId:input.adjustmentId,clientCorrelator:input.adjustmentId,referenceCode:input.adjustmentId,
+   kind:input.kind,original:Object.freeze({...input.original}),originalEcocashReference:input.originalEcocashReference,amountMinor:input.amountMinor});
+}
+function validateAdjustment(a:PreparedEcoCashAdjustment){
+ if(a.environment!=='sandbox'||a.clientCorrelator!==a.adjustmentId||a.referenceCode!==a.adjustmentId)throw Error('invalid_ecocash_adjustment');
+ prepareEcoCashAdjustment(a);
+}
 async function boundedJson(response:Response):Promise<Record<string,unknown>>{
  if(!response.body)throw Error('empty_ecocash_response');
  const reader=response.body.getReader(),chunks:Buffer[]=[];let length=0;
@@ -41,6 +60,7 @@ function matched(data:Record<string,unknown>,p:PreparedEcoCashPayment):data is R
 }
 export class EcoCashSandboxAdapter {
  readonly supportsAutomaticFulfillment=false;
+ readonly supportsAutomaticRefunds=false;
  #config:EcoCashSandboxConfig;
  #authorization:string;
  #fetcher:typeof fetch;
@@ -57,7 +77,7 @@ export class EcoCashSandboxAdapter {
   validatePrepared(p);
   const recover={state:'lookup_required' as const,clientCorrelator:p.clientCorrelator,referenceCode:p.referenceCode};
   const c=this.#config,body={clientCorrelator:p.clientCorrelator,referenceCode:p.referenceCode,tranType:'MER',endUserId:p.endUserId,
-   paymentAmount:{charginginformation:{amount:Number((p.amountMinor/100).toFixed(2)),currency:p.currency,description:`PasoFi order ${p.orderId}`},
+   paymentAmount:{charginginformation:{amount:Number((p.amountMinor/100).toFixed(2)),currency:p.currency,description:`PamoFi order ${p.orderId}`},
     chargeMetaData:{channel:'WEB',purchaseCategoryCode:'Online Payment',onBeHalfOf:c.superMerchantName}},
    merchantCode:c.merchantCode,merchantPin:c.merchantPin,merchantNumber:c.merchantNumber,countryCode:'ZW',terminalID:c.terminalID,
    location:c.location,superMerchantName:c.superMerchantName,merchantName:c.merchantName};
@@ -70,6 +90,26 @@ export class EcoCashSandboxAdapter {
    const data=await boundedJson(response);
    return matched(data,p)?{...recover,providerReference:data.ecocashReference}:recover;
   }catch{return recover;}
+ }
+ async adjust(a:PreparedEcoCashAdjustment):Promise<{state:'unknown'|'review_required';adjustmentId:string}> {
+  validateAdjustment(a);
+  const c=this.#config,p=a.original,unknown={state:'unknown' as const,adjustmentId:a.adjustmentId};
+  const body={clientCorrelator:a.clientCorrelator,referenceCode:a.referenceCode,tranType:a.kind,endUserId:p.endUserId,
+   originalEcocashReference:a.originalEcocashReference,
+   paymentAmount:{charginginformation:{amount:Number((a.amountMinor/100).toFixed(2)),currency:p.currency,description:`PamoFi order ${p.orderId}`},chargeMetaData:{channel:'WEB'}},
+   merchantCode:c.merchantCode,merchantPin:c.merchantPin,merchantNumber:c.merchantNumber,countryCode:'ZW',terminalID:c.terminalID,
+   location:c.location,superMerchantName:c.superMerchantName,merchantName:c.merchantName};
+  try{
+   const response=await this.#fetcher(`${sandboxBase}transactions/refund/`,{method:'POST',headers:{authorization:this.#authorization,'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(8000),redirect:'error'});
+   if(!response.ok)return unknown;
+   const data=await boundedJson(response);
+   if(data.clientCorrelator!==a.clientCorrelator||data.originalEcocashReference!==a.originalEcocashReference||
+      typeof data.ecocashReference!=='string'||!/^[A-Za-z0-9._-]{1,128}$/.test(data.ecocashReference)||
+      data.responseCode!=='00'||a.kind!=='REF'||data.transactionOperationStatus!=='Refunded')return unknown;
+   // Response examples do not independently prove amount, currency or
+   // merchant. Never mark a real ledger entry refunded from this observation.
+   return {state:'review_required',adjustmentId:a.adjustmentId};
+  }catch{return unknown;}
  }
  async lookup(p:PreparedEcoCashPayment):Promise<LookupResult>{
   validatePrepared(p);

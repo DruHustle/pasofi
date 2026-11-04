@@ -22,7 +22,7 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
   const [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false), [loaded, setLoaded] = useState(false), [message, setMessage] = useState('');
   const [receipt, setReceipt] = useState<Receipt | null>(null), [pending, setPending] = useState(false);
   const [deliverySale, setDeliverySale] = useState<Sale | null>(null);
-  const live = useRef(false), savedPayload = useRef<SalePayload | null>(null), owner = `staff:${staff.staffId}`;
+  const live = useRef(false), savedPayload = useRef<SalePayload | null>(null), printCleanup = useRef<(() => void) | null>(null), owner = `staff:${staff.staffId}`;
   async function verify() { try { const current = await api<Staff>('/api/staff/session'); if (current.staffId !== staff.staffId || current.version !== staff.version || current.status !== 'approved' || current.role !== 'agent') throw new ApiError(401, 'staff_changed'); } catch (error) { if (error instanceof ApiError && [401, 403].includes(error.status)) { setLoaded(false); setSales([]); setStock([]); setReceipt(null); setDeliverySale(null); setPairingCode(''); setPhone(''); } throw error; } }
   async function load() {
     setBusy(true); setMessage('');
@@ -45,7 +45,7 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
     } catch (error) { if (live.current) setMessage(messageFor(error)); }
     finally { if (live.current) setBusy(false); }
   }
-  useEffect(() => { live.current = true; void load(); return () => { live.current = false; }; }, [staff.staffId, staff.version]);
+  useEffect(() => { live.current = true; void load(); return () => { live.current = false; printCleanup.current?.(); }; }, [staff.staffId, staff.version]);
   const product = products.find(item => item.id === bundleId), available = stock.find(item => item.siteId === siteId && item.bundleId === bundleId)?.quantity ?? 0;
   async function sell(event: React.FormEvent) {
     event.preventDefault(); if (busy || !confirmed || !capabilities?.staffSales || (!pending && !product)) return;
@@ -81,6 +81,33 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
     catch (error) { if (live.current) setMessage(messageFor(error)); }
     finally { if (live.current) setBusy(false); }
   }
+  async function copyVoucher() {
+    if (!receipt) return;
+    try { await navigator.clipboard.writeText(receipt.voucher.code); setMessage('Voucher copied. Give it only to the customer for this sale.'); }
+    catch { setMessage('Copy is unavailable. Select the voucher code to copy it manually.'); }
+  }
+  function printReceipt() {
+    if (!receipt || document.body.classList.contains('printing-agent-receipt')) return;
+    const printable = document.createElement('section');
+    printable.className = 'agent-print-receipt';
+    const lines = [
+      'PamoFi private receipt',
+      `Sale reference: ${receipt.sale.id}`,
+      `${receipt.sale.siteName} · ${localDate(receipt.sale.soldAt)}`,
+      `${receipt.sale.bundleId.toUpperCase()} · ${money(receipt.sale.priceMinor, receipt.sale.currency)}`,
+      `${Number(receipt.sale.byteLimit) / 1e9} GB · ${receipt.sale.validitySeconds / 86400} days · Start by ${localDate(receipt.sale.startBy)}`,
+      cashDescription(receipt.sale.payment, receipt.sale.simulation),
+      `Voucher: ${receipt.voucher.code}`,
+      `Voucher state: ${receipt.voucher.state}`,
+    ];
+    for (const line of lines) { const paragraph = document.createElement('p'); paragraph.textContent = line; printable.append(paragraph); }
+    document.body.append(printable);
+    document.body.classList.add('printing-agent-receipt');
+    const cleanup = () => { printable.remove(); document.body.classList.remove('printing-agent-receipt'); window.removeEventListener('afterprint', cleanup); if (printCleanup.current === cleanup) printCleanup.current = null; };
+    printCleanup.current = cleanup;
+    window.addEventListener('afterprint', cleanup, { once: true });
+    try { window.print(); } catch { cleanup(); setMessage('Printing is unavailable. Copy the voucher or use the customer receipt.'); }
+  }
   async function more() {
     if (busy || nextOffset === null) return; setBusy(true);
     try {
@@ -104,7 +131,7 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
         <button className="primary" disabled={busy || !confirmed || !capabilities?.staffSales || (!pending && (!product || available < 1))}>{pending ? 'Retry saved sale safely' : capabilities?.demo ? 'Confirm demo sale' : 'Confirm cash and issue voucher'}</button>
       </form>
     </section><section className="workspace-card"><h3>Available inventory</h3>{stock.length === 0 ? <p>No stock is assigned. Ask an administrator to allocate bundles for your site.</p> : <ul className="inventory-list">{stock.map(item => <li key={`${item.siteId}:${item.bundleId}`}><div><strong>{item.siteName}</strong><span>{item.bundleId.toUpperCase()}</span></div><strong>{item.quantity}</strong></li>)}</ul>}</section></div>}
-    {receipt && <section className="private-receipt"><div className="workspace-section-head"><h3>Private customer receipt</h3><button className="secondary" onClick={() => setReceipt(null)}>Hide receipt</button></div><p>{receipt.sale.siteName} · {localDate(receipt.sale.soldAt)}</p><strong>{receipt.sale.bundleId.toUpperCase()} · {money(receipt.sale.priceMinor, receipt.sale.currency)}</strong><p>{Number(receipt.sale.byteLimit) / 1e9} GB · {receipt.sale.validitySeconds / 86400} days · Start by {localDate(receipt.sale.startBy)}</p><p className="cash-evidence">{cashDescription(receipt.sale.payment, receipt.sale.simulation)}</p><label>Voucher code<input readOnly value={receipt.voucher.code} autoComplete="off" /></label><p>State: {receipt.voucher.state}. Give this only to the customer for this sale.</p><small>Sale reference: {receipt.sale.id}</small></section>}
+    {receipt && <section className="private-receipt"><div className="workspace-section-head"><h3>Private customer receipt</h3><button className="secondary" onClick={() => setReceipt(null)}>Hide receipt</button></div><p>{receipt.sale.siteName} · {localDate(receipt.sale.soldAt)}</p><strong>{receipt.sale.bundleId.toUpperCase()} · {money(receipt.sale.priceMinor, receipt.sale.currency)}</strong><p>{Number(receipt.sale.byteLimit) / 1e9} GB · {receipt.sale.validitySeconds / 86400} days · Start by {localDate(receipt.sale.startBy)}</p><p className="cash-evidence">{cashDescription(receipt.sale.payment, receipt.sale.simulation)}</p><label>Voucher code<input readOnly value={receipt.voucher.code} autoComplete="off" onFocus={event => event.target.select()} /></label><div className="purchase-actions"><button className="secondary" onClick={copyVoucher}>Copy voucher</button><button className="secondary" onClick={printReceipt}>Print receipt</button></div><p>State: {receipt.voucher.state}. Give this only to the customer for this sale.</p><small>Sale reference: {receipt.sale.id}</small></section>}
     <section className="workspace-card"><h3>Recent sales</h3>{sales.length === 0 ? <p>No sales recorded for your account yet.</p> : <div className="table-scroll"><table><thead><tr><th>Sale</th><th>Site</th><th>Amount</th><th>Commission</th><th>Delivery</th><th>Receipt</th></tr></thead><tbody>{sales.map(sale => <tr key={sale.id}><td><strong>{sale.bundleId.toUpperCase()}</strong><small>{localDate(sale.soldAt)}{sale.simulation ? ' · Demo' : ''}</small><small>Sale reference: {sale.id}</small></td><td>{sale.siteName}</td><td>{money(sale.priceMinor, sale.currency)}<small>{cashDescription(sale.payment, sale.simulation)}</small></td><td>{money(sale.commissionMinor, sale.currency)}</td><td>{sale.delivery}<button className="secondary" disabled={busy} onClick={() => setDeliverySale(sale)}>Delivery status</button></td><td><button className="secondary" disabled={busy} onClick={() => reveal(sale)}>View private receipt</button></td></tr>)}</tbody></table></div>}{nextOffset !== null && <button className="secondary" disabled={busy} onClick={more}>Load more sales</button>}</section>
     {deliverySale && <DeliveryStatus key={deliverySale.id} staff={staff} sale={deliverySale} enabled={!!capabilities?.deliverySms} close={() => setDeliverySale(null)} />}
   </div>;

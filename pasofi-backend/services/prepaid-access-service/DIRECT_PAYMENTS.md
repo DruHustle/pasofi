@@ -1,6 +1,6 @@
 # Direct payment preparation
 
-Reviewed on 2026-11-02. Cash sales remain the application purchase path. External digital checkout is unavailable; environment flags cannot activate Pesepay, EcoCash or a bank. Local demo simulation remains available independently.
+Provider contract rechecked on 2026-11-04; earlier comparison was reviewed on 2026-11-02. Cash sales remain the application purchase path. External digital checkout is unavailable; environment flags cannot activate Pesepay, EcoCash or a bank. Local demo simulation remains available independently.
 
 ## Bank and Zimswitch selection
 
@@ -36,6 +36,8 @@ The [Go Live page](https://developers.ecocash.co.zw/docs/go-live) requires merch
 Initiation always returns `lookup_required`, including transport errors and reported success. Lookup verifies the echoed correlation, reference and customer, checks the provider reference shape and requires the documented status/code combination. A matching result returns `review_required` with `settlement_terms_unverified`. It never infers monetary proof from the request or accepts unqualified extra response fields as a new settlement contract. It cannot create an entitlement or mark a charge verified.
 
 Responses are bounded to 64 KiB; requests have finite timeouts and disallow redirects. Callback URLs are omitted because the reviewed public pages do not specify an authenticated callback and replay-protection contract. Customer PINs are never requested. The merchant sandbox PIN belongs only in private adapter configuration. Credentials use JavaScript private fields and are not returned with observations.
+
+The standalone adapter can also prepare a sandbox-only `REF` or `REV` request against the documented refund endpoint, using a fresh adjustment identifier and an original EcoCash reference. The request amount is capped at the original request amount. A documented, matching `Refunded` response still returns `review_required`; a reversal response or ambiguous result stays `unknown`. The module does not track cumulative refunds, retry a POST, change the ledger, or enable a provider. The future caller must persist adjustment context, prove the original settlement and enforce cumulative refund limits before any provider call. These sandbox helpers are not a production refund system.
 
 Contract tests use fake HTTP responses only. They cover the documented request/authentication, loss of the initiation response, repeated lookup without another POST, reference/customer mismatch, status/code mismatch, oversized/malformed/error replies, rejection of production configuration and the absence of automatic fulfillment.
 

@@ -143,6 +143,7 @@ services:
       NETWORK_URL: https://network.internal
       OUTBOX_DISPATCH_ENABLED: 'true'
       PAMOFI_COMMERCE_ENABLED: ${PAMOFI_COMMERCE_ENABLED:?Choose whether to enable staff commerce}
+      PAMOFI_CASH_CURRENCIES: '${PAMOFI_CASH_CURRENCIES-["USD"]}'
       PAMOFI_AGENT_COMMISSION_BPS: ${PAMOFI_AGENT_COMMISSION_BPS:?Set the reviewed commission in basis points}
       VOUCHER_DELIVERY_ACTIVE_KEY_ID: ${VOUCHER_DELIVERY_ACTIVE_KEY_ID:?Set the current voucher encryption key ID}
       PAMOFI_PAYMENTS_ENABLED: 'false'
