@@ -22,3 +22,13 @@ The PamoFi deployment uses a Vercel frontend at `https://pamofi.onesa.eu` and an
 `issue-certificate.sh` records the historical initial, root-run, one-time certificate issuance procedure. `issue-api-certificate.sh` records the subsequent API-only certificate issuance; use the API-only lineage for renewals because the website hostname points to Vercel. It refuses existing certificate files and requires the DNS record and Oracle security group to be configured first. `install-https-operations.sh` installs the PamoFi firewall rule and daily renewal timer, refusing to overwrite existing units. Its renewal procedure checks the exact hostname and certificate/key match and recreates only the PamoFi gateway when the certificate changes. The operator must separately verify public DNS, certificate trust, authenticated-proxy denial, and a staging renewal before go-live. The certificate, ACME account key, and app secrets belong in an encrypted independent recovery copy; never include the one-time administrator password.
 
 `install-alerts.sh` records the Onesa-specific health and notification setup. It uses an official pinned OCI CLI container with the instance identity, a dedicated PamoFi notification topic and a narrowly scoped Oracle policy that permits this instance to publish only within the PamoFi alerts compartment. It adds PamoFi-only systemd failure hooks and a recurring HTTPS/container/disk/certificate check, with per-unit notification rate limiting. The configured email subscription was confirmed and a test message reached the operator; verify delivery again if notification settings change. A separate Oracle Monitoring absence alarm reports when the shared host stops emitting compute metrics. The exact topic and IAM policy must be reviewed before using these scripts on any other account or host.
+
+The owner-selected destination for infrastructure failures, capacity/usage warnings
+and recovery notifications is `it-infrastructure@onesa.eu`. The `pasofi-operations` Oracle
+Notifications email subscription must be ACTIVE before mail delivery is considered
+configured; an accepted publish is not proof of mailbox delivery. The alert helper
+accepts both retained `pamofi-` and current `pasofi-` unit names. Every new
+operational job, including one-time backup verification, needs an explicit
+`OnFailure=pamofi-alert@%n.service` hook. Keep provider spending limits unchanged
+when changing notification routing. Customer receipts and recovery messages keep
+their intended customer/staff recipients.
