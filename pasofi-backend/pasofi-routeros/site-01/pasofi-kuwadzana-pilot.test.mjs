@@ -6,7 +6,7 @@ test('isolated pilot identifies its router and installs IPv4 and IPv6 drops befo
   const script = await readFile(new URL('./pasofi-kuwadzana-pilot.rsc', import.meta.url), 'utf8');
   const enable = script.indexOf('/interface wireless enable');
   for (const required of [
-    'Wrong router', 'Pilot must not belong to a trusted interface list',
+    'HotSpot is disabled by device mode', 'Wrong router', 'Pilot must not belong to a trusted interface list',
     'Review MAC management access', 'Review existing walled-garden entries',
     '/ip firewall filter add chain=forward action=drop in-interface="pfi-pilot-br"',
     '/ip firewall filter add chain=forward action=drop out-interface="pfi-pilot-br"',

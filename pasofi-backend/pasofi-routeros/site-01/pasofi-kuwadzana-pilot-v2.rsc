@@ -2,6 +2,7 @@
 # Temporary isolated PasoFi pilot. Import only in Safe Mode on the identified
 # Kuwadzana router. Internet forwarding and cash sales remain unavailable.
 # Stop and roll back on an error; never retry after a disconnect without review.
+:if ([/system device-mode get hotspot] != true) do={ :error "HotSpot is disabled by device mode; enable the hotspot feature and confirm physically" }
 :if ([:len [/interface wireguard find where name="pamofi-service" and disabled=no]] != 1) do={ :error "Expected active Kuwadzana tunnel" }
 :if ([/interface wireguard get [find where name="pamofi-service"] public-key] != "AMJXVTVrpj0512Eoj5A6DWNAnjySBPF3VmzODGeN/FE=") do={ :error "Wrong router" }
 :if ([:len [/interface bridge find where name="pfi-pilot-br" and disabled=yes]] != 1 || [:len [/interface wireless find where name="pfi-pilot-wifi" and disabled=yes]] != 1) do={ :error "Pilot bridge and radio must be disabled" }

@@ -46,6 +46,14 @@ and Mac copies. The helper is pinned to the reviewed certificate; review and
 update the fingerprint when the certificate is renewed. The pilot script has
 not been syntax-checked or run on the router, and service remains disabled.
 
+During the first live pilot, RouterOS reported the HotSpot as invalid because
+`/system/device-mode` was set to home with `hotspot: no`, even though the
+HotSpot entry was not administratively disabled. Pilot scripts now fail early
+when the device-mode feature is disabled. A per-feature update of `hotspot`
+requires physical confirmation and reboots the device; it should be performed
+after rolling back the temporary pilot. RouterOS Safe Mode does not replace the
+independent backup. See MikroTik's [device-mode documentation](https://manual.mikrotik.com/docs/system-information-and-utilities/device-mode/).
+
 The owner ran the short Kuwadzana check on 4 November. It identified the
 router, reported 8,007,680 bytes of free memory, an enabled tunnel, one each
 of the gateway, disabled DHCP, HotSpot and RADIUS entries, four isolation
