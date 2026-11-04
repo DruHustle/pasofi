@@ -81,7 +81,7 @@ export default function Recovery({ close, recovered }: { close: () => void; reco
       if (mounted.current) { setKey(''); recovered(); }
     } catch (reason) {
       if (!mounted.current) return;
-      if (reason instanceof Error && reason.message === 'cookie_not_confirmed') setError('Your recovery details were verified, but this browser did not keep the recovered session. Allow cookies for PamoFi, then try again.');
+      if (reason instanceof Error && reason.message === 'cookie_not_confirmed') setError('Your recovery details were verified, but this browser did not keep the recovered session. Allow cookies for PasoFi, then try again.');
       else if (reason instanceof ApiError && reason.status === 429) setError('Too many recovery attempts. Wait a minute before trying again.');
       else if (reason instanceof ApiError && [400, 401].includes(reason.status)) setError('The reference and key could not be verified. Check both and try again.');
       else setError('The recovery service is temporarily unavailable. Your saved details have not been changed. Please try again.');

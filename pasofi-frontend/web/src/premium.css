@@ -1,4 +1,4 @@
-/* Independent PamoFi web design system. All storefront selectors are scoped. */
+/* Independent PasoFi web design system. All storefront selectors are scoped. */
 :root{--pf-forest:#102b29;--pf-mint:#00b894;--pf-canvas:#f5f8f7;--pf-ink:#172b4d;--pf-amber:#ffb547;--pf-muted:#5b706b;--pf-line:#dce6e2;--pf-radius:22px;--pf-shadow:0 8px 28px #102b2906;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-synthesis:none;color:var(--pf-forest);background:var(--pf-canvas);line-height:1.5;-webkit-font-smoothing:antialiased}
 html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,textarea,summary{touch-action:manipulation}button{transition:background .15s,border-color .15s}button:disabled{opacity:.55;cursor:not-allowed}a{color:inherit}img{max-width:100%}.pf-icon{display:block;width:22px;height:22px;flex-shrink:0}.pf-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.pf-app{min-height:100dvh}.pf-app h1,.pf-app h2,.pf-app h3{color:var(--pf-forest);font-family:inherit}.pf-app h1:focus,.pf-app h2:focus{outline:none}
 .pf-header{height:82px;padding:16px 20px;display:flex;align-items:center;gap:16px;background:var(--pf-canvas);max-width:1500px;margin:auto}.pf-brand{display:inline-flex;align-items:center;gap:9px;text-decoration:none;font-size:26px;font-weight:800;line-height:1;letter-spacing:-1px}.pf-brand-mark{width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:var(--pf-forest);color:var(--pf-mint)}.pf-brand-mark .pf-icon{width:26px;height:26px}.pf-brand small{display:block;font-size:9px;letter-spacing:.4px;font-weight:500;margin-top:5px;color:var(--pf-muted)}.pf-header-tagline{display:none}.pf-header-actions{margin-left:auto;display:flex;align-items:center;gap:8px}.pf-icon-button,.pf-avatar-button{display:flex;align-items:center;justify-content:center;gap:8px;border:0;min-width:44px;min-height:44px;background:transparent;color:var(--pf-forest);border-radius:50%;font-size:13px;font-weight:600}.pf-icon-button span{display:none}.pf-avatar-button{background:#e3eee9;border:1px solid #d4e2dc}
@@ -22,7 +22,7 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
 @media(min-width:1600px){.pf-main{margin-left:calc(236px + (100% - 1516px)/2)}}
 @media(prefers-reduced-motion:reduce){.pf-app *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
-/* Brighter PamoFi surfaces keep forest text readable on every brand accent. */
+/* Brighter PasoFi surfaces keep forest text readable on every brand accent. */
 :root {
   --pf-emerald: #30e1b9;
   --pf-lime: #c6ef46;

@@ -39,7 +39,7 @@ async function mock(page: Page, handle?: (route: Route, path: string, method: st
     return reply({ error: 'unexpected_request' }, 500);
   });
 }
-async function open(page: Page, origin: string) { await page.goto(origin); await page.getByRole('button', { name: 'My PamoFi', exact: true }).click(); }
+async function open(page: Page, origin: string) { await page.goto(origin); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click(); }
 
 test('a configured HTTPS gateway still fails closed until native cookie access is qualified', async ({ page, configuredBaseURL }) => {
   const requested: string[] = [];

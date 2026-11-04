@@ -40,7 +40,7 @@ The application does not yet implement shift opening/closing, cash counts, super
 5. Reconcile opening inventory plus authorized allocations and adjustments, less committed sales, to closing inventory by bundle. Review unexplained differences against the inventory records and sale references rather than creating fictitious transactions.
 6. Record the shift, counts, sales and commission totals, exceptions, handover amount, and responsible agent and reviewer in a securely held operating record. Confirm receipt of the physical handover separately. Escalate unresolved discrepancies before the next allocation.
 
-PamoFi's current sale attestation records the agent's cash confirmation; it does not prove a cash count, commission payout, handover or bank deposit.
+PasoFi's current sale attestation records the agent's cash confirmation; it does not prove a cash count, commission payout, handover or bank deposit.
 
 Historical committed sales that predate tender evidence remain recoverable with an explicit **unrecorded** method. The application never invents a past cash confirmation to make a legacy receipt look complete.
 

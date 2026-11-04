@@ -8,7 +8,7 @@ const disabledCapabilities: Capabilities = {
 };
 const cashCapabilities: Capabilities = { ...disabledCapabilities, vouchers: true, receiptPairing: true, staffSales: true };
 const flex: Product = { id: 'flex', price_minor: 100, currency: 'USD', byte_limit: '5000000000', validity_seconds: 604800 };
-const emptyMessage = 'No bundles are published yet. Check back when PamoFi launches.';
+const emptyMessage = 'No bundles are published yet. Check back when PasoFi launches.';
 const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
 /** Production-shaped guest responses, isolated from all real accounts and services. */
@@ -52,7 +52,7 @@ async function expectEmptyBundles(page: Page) {
   await expect(navigation(page).getByRole('button', { name: 'Bundles', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(navigation(page).locator('[aria-current="page"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Connect to PamoFi', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Connect to PasoFi', exact: true })).toHaveCount(0);
   await expect(page.locator('.pf-connection-card, .customer-workspace')).toHaveCount(0);
   await expect(catalogueHeading(page)).toBeFocused();
   await expect(catalogueHeading(page)).toBeInViewport({ ratio: 1 });
@@ -103,14 +103,14 @@ for (const width of [320, 390]) {
       await expect(page).toHaveURL(/\/connect$/);
       await expect(catalogueHeading(page)).toBeFocused();
       await expect(catalogueHeading(page)).toBeInViewport({ ratio: 1 });
-      await expect(page.getByRole('heading', { name: 'Connect to PamoFi', exact: true })).toHaveCount(1);
+      await expect(page.getByRole('heading', { name: 'Connect to PasoFi', exact: true })).toHaveCount(1);
       await expect.poll(() => state.reads).toEqual({ capabilities: before.capabilities + 1, bundles: before.bundles + 1 });
       await expect(page.getByText(emptyMessage, { exact: true })).toBeVisible();
     });
     for (const entry of ['Bundles', 'Buy data']) {
       await test.step(`Captive ${entry} opens the standalone catalogue`, async () => {
         await page.goto('/connect');
-        await expect(page.getByRole('heading', { name: 'Connect to PamoFi', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Connect to PasoFi', exact: true })).toBeVisible();
         await expect(page.getByText(emptyMessage, { exact: true })).toBeVisible();
         const button = entry === 'Bundles' ? navigation(page).getByRole('button', { name: entry, exact: true }) : page.getByRole('button', { name: entry, exact: true });
         await button.click(); await expectEmptyBundles(page);
@@ -143,7 +143,7 @@ test('refresh availability and returning to Bundles fetch both published offers 
   state.products = [flex]; state.capabilities = { ...cashCapabilities };
   await page.getByRole('button', { name: 'Refresh availability', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Buy flex from an agent', exact: true })).toBeEnabled();
-  await expect(page.getByText('PAMOFI CUSTOMER SERVICE', { exact: true })).toBeVisible();
+  await expect(page.getByText('PASOFI CUSTOMER SERVICE', { exact: true })).toBeVisible();
   await expect(catalogueHeading(page)).toBeFocused();
   expect(state.reads).toEqual({ capabilities: initialReads.capabilities + 1, bundles: initialReads.bundles + 1 });
   await expect(page.getByText(emptyMessage, { exact: true })).toHaveCount(0);
@@ -207,7 +207,7 @@ test('late older availability responses cannot replace a newer published catalog
   try {
     await navigation(page).getByRole('button', { name: 'Bundles', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Buy flex from an agent', exact: true })).toBeEnabled();
-    await expect(page.getByText('PAMOFI CUSTOMER SERVICE', { exact: true })).toBeVisible();
+    await expect(page.getByText('PASOFI CUSTOMER SERVICE', { exact: true })).toBeVisible();
     const released = state.held.splice(0);
     await Promise.all(released.map(async ({ route, body }) => {
       await json(route, body);
@@ -217,7 +217,7 @@ test('late older availability responses cannot replace a newer published catalog
     // Two rendering opportunities let all delivered response microtasks commit.
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expect(page.getByRole('button', { name: 'Buy flex from an agent', exact: true })).toBeEnabled();
-    await expect(page.getByText('PAMOFI CUSTOMER SERVICE', { exact: true })).toBeVisible();
+    await expect(page.getByText('PASOFI CUSTOMER SERVICE', { exact: true })).toBeVisible();
     await expect(page.getByText(emptyMessage, { exact: true })).toHaveCount(0);
     await expect(catalogueHeading(page)).toBeFocused();
     expect(state.mutations).toEqual([]); expect(state.unexpected).toEqual([]);

@@ -15,7 +15,7 @@ test('direct EcoCash sandbox preparation uses the official Online Payments reque
   assert.equal(request.headers.authorization,`Basic ${Buffer.from('synthetic-user:synthetic-password').toString('base64')}`);
   assert.equal(request.redirect,'error');assert.ok(request.signal instanceof AbortSignal);
   const body=JSON.parse(request.body);assert.equal(body.clientCorrelator,p.attemptId);assert.equal(body.referenceCode,p.attemptId);assert.equal(body.endUserId,'773047653');assert.equal(body.tranType,'MER');
-  assert.deepEqual(body.paymentAmount.charginginformation,{amount:1.25,currency:'USD',description:`PamoFi order ${p.orderId}`});
+  assert.deepEqual(body.paymentAmount.charginginformation,{amount:1.25,currency:'USD',description:`PasoFi order ${p.orderId}`});
   assert.equal(body.merchantPin,config.merchantPin);assert.equal(body.merchantNumber,'788732685');assert.equal(body.terminalID,config.terminalID);
   assert.equal(body.notifyUrl,undefined);assert.equal(body.pin,undefined);assert.equal(request.headers['X-Client-Id'],undefined);assert.equal(body.serviceType,undefined);
   return json(success(p));

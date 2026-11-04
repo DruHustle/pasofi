@@ -200,7 +200,7 @@ test('network credentials are private and prepared access stays unconnected unti
 test('handoff requires explicit consent and refuses a mismatched or blocked resulting cookie', async ({ page }) => {
   const code = 'h'.repeat(43); let requests = 0;
   await mock(page, async (route, path) => { if (path === '/api/handoff/redeem') { requests++; expect(route.request().postDataJSON()).toEqual({ handoffCode: code }); await json(route, { customerId: agentId }); return true; } return false; });
-  await page.goto('/handoff'); await page.getByLabel('One-time handoff code').fill(code); await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled(); expect(requests).toBe(0); await page.getByRole('checkbox', { name: /my own PamoFi account/ }).check(); await page.getByRole('button', { name: 'Accept account handoff' }).click(); await expect(page.getByRole('alert')).toContainText('did not keep the transferred session'); expect(page.url()).not.toContain(code);
+  await page.goto('/handoff'); await page.getByLabel('One-time handoff code').fill(code); await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled(); expect(requests).toBe(0); await page.getByRole('checkbox', { name: /my own PasoFi account/ }).check(); await page.getByRole('button', { name: 'Accept account handoff' }).click(); await expect(page.getByRole('alert')).toContainText('did not keep the transferred session'); expect(page.url()).not.toContain(code);
 });
 
 for (const phase of ['initial session', 'MFA confirmation'] as const) {

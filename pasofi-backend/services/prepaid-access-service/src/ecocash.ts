@@ -77,7 +77,7 @@ export class EcoCashSandboxAdapter {
   validatePrepared(p);
   const recover={state:'lookup_required' as const,clientCorrelator:p.clientCorrelator,referenceCode:p.referenceCode};
   const c=this.#config,body={clientCorrelator:p.clientCorrelator,referenceCode:p.referenceCode,tranType:'MER',endUserId:p.endUserId,
-   paymentAmount:{charginginformation:{amount:Number((p.amountMinor/100).toFixed(2)),currency:p.currency,description:`PamoFi order ${p.orderId}`},
+   paymentAmount:{charginginformation:{amount:Number((p.amountMinor/100).toFixed(2)),currency:p.currency,description:`PasoFi order ${p.orderId}`},
     chargeMetaData:{channel:'WEB',purchaseCategoryCode:'Online Payment',onBeHalfOf:c.superMerchantName}},
    merchantCode:c.merchantCode,merchantPin:c.merchantPin,merchantNumber:c.merchantNumber,countryCode:'ZW',terminalID:c.terminalID,
    location:c.location,superMerchantName:c.superMerchantName,merchantName:c.merchantName};
@@ -96,7 +96,7 @@ export class EcoCashSandboxAdapter {
   const c=this.#config,p=a.original,unknown={state:'unknown' as const,adjustmentId:a.adjustmentId};
   const body={clientCorrelator:a.clientCorrelator,referenceCode:a.referenceCode,tranType:a.kind,endUserId:p.endUserId,
    originalEcocashReference:a.originalEcocashReference,
-   paymentAmount:{charginginformation:{amount:Number((a.amountMinor/100).toFixed(2)),currency:p.currency,description:`PamoFi order ${p.orderId}`},chargeMetaData:{channel:'WEB'}},
+   paymentAmount:{charginginformation:{amount:Number((a.amountMinor/100).toFixed(2)),currency:p.currency,description:`PasoFi order ${p.orderId}`},chargeMetaData:{channel:'WEB'}},
    merchantCode:c.merchantCode,merchantPin:c.merchantPin,merchantNumber:c.merchantNumber,countryCode:'ZW',terminalID:c.terminalID,
    location:c.location,superMerchantName:c.superMerchantName,merchantName:c.merchantName};
   try{

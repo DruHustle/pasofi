@@ -290,7 +290,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   </section>;
   const connectionPanel = owner && <NetworkAccess customerId={owner} capabilities={capabilities} usage={usage.snapshot} fresh={usage.fresh} refreshing={usage.refreshing} refresh={usage.refresh} />;
   return <section className="workspace customer-workspace" aria-labelledby="customer-heading" aria-busy={busy} data-screen={tab}>
-    <div className="purchase-head customer-page-heading"><div><div className="eyebrow">YOUR PAMOFI</div><h2 id="customer-heading" tabIndex={-1} ref={heading}>{titles[tab]}</h2><p>{subtitles[tab]}</p></div><button className="close-button" onClick={close} aria-label="Close customer workspace">×</button></div>
+    <div className="purchase-head customer-page-heading"><div><div className="eyebrow">YOUR PASOFI</div><h2 id="customer-heading" tabIndex={-1} ref={heading}>{titles[tab]}</h2><p>{subtitles[tab]}</p></div><button className="close-button" onClick={close} aria-label="Close customer workspace">×</button></div>
     {capabilities.demo && <p className="notice customer-demo-notice">Demonstration environment. These flows do not establish real customer payment, SMS delivery, or internet connectivity.</p>}
     {tab !== 'access' && sectionNavigation}
     {loading && <div className="customer-loading" role="status"><span className="customer-loading-dot" />Checking your account…</div>}
@@ -327,7 +327,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     </>}
 
     {tab === 'voucher' && <section className="workspace-card customer-voucher-card">
-      <div className="customer-voucher-art" aria-hidden="true"><CustomerGlyph name="voucher" /><span>PAMOFI</span><i /><span>YOUR NEXT CONNECTION</span></div>
+      <div className="customer-voucher-art" aria-hidden="true"><CustomerGlyph name="voucher" /><span>PASOFI</span><i /><span>YOUR NEXT CONNECTION</span></div>
       <div className="customer-voucher-content"><div className="eyebrow">GOOD THINGS COME IN SMALL CODES</div><h3>Use your voucher</h3><p>Enter the code from your agent or private receipt. Uploads and downloads count toward the allowance. Redeeming queues the bundle; it does not start its validity or connect you.</p>
       {!capabilities.vouchers ? <p className="notice">Voucher redemption is not enabled here yet.</p> : <form className="form-grid" onSubmit={redeem}><label>Voucher code<input className="customer-voucher-input" required maxLength={40} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Enter your voucher code" value={voucherCode} onChange={event => setVoucherCode(event.target.value.toUpperCase())} /></label><button className="primary" disabled={busy}>Redeem voucher<CustomerGlyph name="arrow" /></button></form>}
       <div className="customer-private-note"><CustomerGlyph name="shield" /><span>Your voucher is private. Share it only when redeeming.</span></div></div>
@@ -360,7 +360,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     </section>}
 
     {tab === 'recovery' && <>
-      <section className="customer-profile-card"><span className="customer-profile-avatar"><CustomerGlyph name="user" /></span><div><span className="eyebrow">YOUR EVERYDAY CONNECTION</span><h3>{owner ? 'Your PamoFi account' : 'Welcome to PamoFi'}</h3><p>{owner ? 'Your account is available in this browser.' : 'Start with a bundle, or bring back your saved account.'}</p></div><span className="customer-profile-language">English</span></section>
+      <section className="customer-profile-card"><span className="customer-profile-avatar"><CustomerGlyph name="user" /></span><div><span className="eyebrow">YOUR EVERYDAY CONNECTION</span><h3>{owner ? 'Your PasoFi account' : 'Welcome to PasoFi'}</h3><p>{owner ? 'Your account is available in this browser.' : 'Start with a bundle, or bring back your saved account.'}</p></div><span className="customer-profile-language">English</span></section>
       {owner ? <><div className="customer-account-grid"><RecoverySetup /><CreateHandoff customerId={owner} /></div><section className="workspace-card customer-signout-card"><h3>Sign out of this browser</h3>{signout ? <><p>Save your recovery details before you leave. Signing out does not end an active hotspot session; use the connection controls for that.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of customer account</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></> : <button className="secondary" onClick={() => setSignout(true)}>Prepare to sign out</button>}</section></> : <section className="workspace-card"><h3>Save or restore access</h3><p>Use your saved reference and recovery key to restore an existing account. Start a new account only if you do not need to recover one.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button><button className="secondary" disabled={busy} onClick={startAccount}>Start a new customer account</button></div></section>}
     </>}
   </section>;

@@ -38,7 +38,7 @@ for (const platform of ['small-phone', 'large-phone', 'wide-phone'] as const) {
     await expect(page.getByRole('heading', { name: 'Your history.' })).toBeFocused();
     await expect(page.getByText('This offline preview has no purchase or usage records.', { exact: false })).toBeVisible();
     await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Account', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'My PamoFi.' })).toBeFocused();
+    await expect(page.getByRole('heading', { name: 'My PasoFi.' })).toBeFocused();
     await expect(page.getByText('No account is created while you explore.', { exact: false })).toBeVisible();
     const navTargets = await page.locator('.mobile-nav button').evaluateAll(buttons => buttons.map(button => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })));
     expect(navTargets.every(target => target.width >= 44 && target.height >= 44)).toBe(true);

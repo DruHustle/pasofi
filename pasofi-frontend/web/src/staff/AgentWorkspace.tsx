@@ -91,7 +91,7 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
     const printable = document.createElement('section');
     printable.className = 'agent-print-receipt';
     const lines = [
-      'PamoFi private receipt',
+      'PasoFi private receipt',
       `Sale reference: ${receipt.sale.id}`,
       `${receipt.sale.siteName} · ${localDate(receipt.sale.soldAt)}`,
       `${receipt.sale.bundleId.toUpperCase()} · ${money(receipt.sale.priceMinor, receipt.sale.currency)}`,
