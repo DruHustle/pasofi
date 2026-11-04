@@ -19,7 +19,7 @@ cat > "$tmp/pamofi-cert-renew" <<'EOF'
 set -euo pipefail
 umask 077
 root=/home/ubuntu/pamofi/production
-release=/home/ubuntu/pamofi/releases/f202fabde8275ad7887c1f30d1426f8d5b1b4733-arm64/source/pasofi-backend/infra/production
+release=/home/ubuntu/pamofi/releases/f202fabde8275ad7887c1f30d1426f8d5b1b4733-arm64/source/pamofi-backend/infra/production
 host=api.pamofi.onesa.eu
 cert_name=pamofi-api-onesaeu
 image=pamofi-certbot:5.9.0-arm64

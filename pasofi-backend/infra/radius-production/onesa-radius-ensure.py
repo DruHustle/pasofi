@@ -14,7 +14,7 @@ PORTS={'1812/udp':[{'HostIp':'10.77.254.1','HostPort':'1812'}],'1813/udp':[{'Hos
 NETWORKS={RADIUS:{'pamofi-production_radius_ingress','pamofi-production_radius_transport'},AUTHORITY:{'pamofi-production_database','pamofi-production_radius_transport','pamofi-production_services'}}
 CERT_DIR=Path('/home/ubuntu/pamofi/production/radius-preparation-20261103/site01')
 SECRET_DIR=Path('/home/ubuntu/pamofi/production/secrets')
-SOURCE=Path('/home/ubuntu/pamofi/releases/f202fabde8275ad7887c1f30d1426f8d5b1b4733-arm64/source/pasofi-backend/infra/radius-production')
+SOURCE=Path('/home/ubuntu/pamofi/releases/f202fabde8275ad7887c1f30d1426f8d5b1b4733-arm64/source/pamofi-backend/infra/radius-production')
 MOUNTS={
     RADIUS:{'/opt/pamofi-radius/entrypoint.sh':SOURCE/'entrypoint.sh','/opt/etc/raddb/sites-enabled/default':SOURCE/'default.conf','/opt/etc/raddb/mods-enabled/rest':SOURCE/'rest.conf','/opt/etc/raddb/clients.conf':CERT_DIR/'clients.conf',**{'/run/secrets/'+x:CERT_DIR/x for x in ('radius_ca','radius_client_cert','radius_client_key','radius_bind_ip')}},
     AUTHORITY:{'/opt/pamofi-radius/start-authority.mjs':SOURCE/'start-authority.mjs',**{'/run/secrets/'+x:CERT_DIR/x for x in ('radius_ca','radius_server_cert','radius_server_key','radius_client_fingerprint')},**{'/run/secrets/'+x:SECRET_DIR/x for x in ('network_runtime_url','internal_network_secret','internal_ca')}},
