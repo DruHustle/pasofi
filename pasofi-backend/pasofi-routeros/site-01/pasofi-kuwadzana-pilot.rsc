@@ -36,7 +36,7 @@
 /ip firewall filter add chain=input action=accept in-interface="pfi-pilot-br" protocol=udp src-port=68 dst-port=67 comment="PasoFi test: DHCP request" place-before=([/ip firewall filter find where chain=input]->0)
 /ip firewall filter add chain=input action=accept in-interface="pfi-pilot-br" src-address=10.77.10.0/24 dst-address=10.77.10.1 protocol=udp dst-port=64872 comment="PasoFi test: DNS UDP" place-before=([/ip firewall filter find where chain=input]->0)
 /ip firewall filter add chain=input action=accept in-interface="pfi-pilot-br" src-address=10.77.10.0/24 dst-address=10.77.10.1 protocol=tcp dst-port=64872 comment="PasoFi test: DNS TCP" place-before=([/ip firewall filter find where chain=input]->0)
-/ip firewall filter add chain=input action=accept in-interface="pfi-pilot-br" src-address=10.77.10.0/24 dst-address=10.77.10.1 protocol=tcp dst-port=64873,64875 comment="PasoFi test: local login" place-before=([/ip firewall filter find where chain=input]->0)
+/ip firewall filter add chain=input action=accept in-interface="pfi-pilot-br" src-address=10.77.10.0/24 dst-address=10.77.10.1 protocol=tcp dst-port=64873,64874,64875 comment="PasoFi test: local login" place-before=([/ip firewall filter find where chain=input]->0)
 /ip firewall filter add chain=output action=accept out-interface="pfi-pilot-br" protocol=udp src-port=67 dst-port=68 comment="PasoFi test: DHCP reply" place-before=([/ip firewall filter find where chain=output]->0)
 /ip firewall filter add chain=output action=accept out-interface="pfi-pilot-br" dst-address=10.77.10.0/24 connection-state=established,related comment="PasoFi test: local replies" place-before=([/ip firewall filter find where chain=output]->0)
 # Activate the isolated pilot last. Keep Safe Mode open while testing.
