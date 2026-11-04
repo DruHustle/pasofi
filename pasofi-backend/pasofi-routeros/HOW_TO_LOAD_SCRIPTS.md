@@ -36,9 +36,15 @@ pilot bridge, Wi-Fi, DHCP, HotSpot and RADIUS client were disabled. Do not run
 the incremental captive-detection correction against this state. The prepared
 [PasoFi hostname pilot](site-01/pasofi-kuwadzana-pilot-v2.rsc) requires the
 reviewed transition certificate and private key to be imported on the router
-first. Secure transfer and import of that certificate remain outstanding. The
-script has not been syntax-checked or run on the router, and service remains
-disabled.
+first. On the owner's Mac, `python3 pasofi-backend/pasofi-routeros/site-01/prepare-pasofi-certificate.py`
+creates a password-encrypted bundle in a private temporary directory using the
+existing Oracle SSH connection. The password is entered privately and sent to
+OpenSSL over standard input; the helper verifies the certificate fingerprint,
+hostname, validity and chain. Import the bundle in WinBox with that password,
+verify the certificate and private-key counts, then remove its temporary router
+and Mac copies. The helper is pinned to the reviewed certificate; review and
+update the fingerprint when the certificate is renewed. The pilot script has
+not been syntax-checked or run on the router, and service remains disabled.
 
 The owner ran the short Kuwadzana check on 4 November. It identified the
 router, reported 8,007,680 bytes of free memory, an enabled tunnel, one each
