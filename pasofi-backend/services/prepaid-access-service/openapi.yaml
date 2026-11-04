@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: PamoFi prepaid-access service
+  title: PasoFi prepaid-access service
   version: 0.1.0
 paths:
   /health/live:
