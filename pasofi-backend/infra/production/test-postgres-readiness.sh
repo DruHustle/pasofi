@@ -33,6 +33,12 @@ for suffix in identity prepaid_access network notification assistant; do
     -c "REVOKE ALL ON DATABASE pamofi_${suffix} FROM PUBLIC" \
     -c "GRANT CONNECT ON DATABASE pamofi_${suffix} TO pamofi_${suffix}_migrate, pamofi_${suffix}_runtime"
 done
+# The final production initialization step revokes PUBLIC on maintenance DBs.
+# An interrupted initializer must not become healthy before that step.
+if docker exec "$container_id" sh /opt/pamofi/postgres-ready.sh; then
+  echo 'Database with incomplete final privileges incorrectly reported ready' >&2; exit 1
+fi
+docker exec "$container_id" psql -Xq -v ON_ERROR_STOP=1 -U pamofi_bootstrap -d postgres -c 'REVOKE ALL ON DATABASE postgres FROM PUBLIC' -c 'REVOKE ALL ON DATABASE template1 FROM PUBLIC'
 docker exec "$container_id" sh /opt/pamofi/postgres-ready.sh
 # Even a single missing role or wrongly configured login must fail the gate.
 docker exec "$container_id" psql -Xq -v ON_ERROR_STOP=1 -U pamofi_bootstrap -d postgres -c 'REVOKE CONNECT ON DATABASE pamofi_network FROM pamofi_network_runtime' -c 'DROP ROLE pamofi_network_runtime'

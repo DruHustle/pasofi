@@ -16,4 +16,12 @@ SELECT CASE WHEN NOT EXISTS (
      OR NOT COALESCE(pg_has_role(migration_role.oid, owner_role.oid, 'MEMBER'), false)
      OR NOT COALESCE(has_database_privilege(migration_role.oid, db.oid, 'CONNECT'), false)
      OR NOT COALESCE(has_database_privilege(runtime_role.oid, db.oid, 'CONNECT'), false)
+) AND NOT EXISTS (
+  -- The last init step removes PUBLIC privileges on these maintenance
+  -- databases. Service databases must also retain their private grants.
+  SELECT 1 FROM pg_database db
+  CROSS JOIN LATERAL aclexplode(COALESCE(db.datacl, acldefault('d', db.datdba))) permission
+  WHERE (db.datname IN ('postgres', 'template1')
+         OR db.datname IN (SELECT 'pamofi_' || suffix FROM services))
+    AND permission.grantee = 0
 ) THEN 'ready' ELSE 'incomplete' END;
