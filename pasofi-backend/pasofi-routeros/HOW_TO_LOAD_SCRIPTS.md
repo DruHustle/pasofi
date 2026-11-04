@@ -1,4 +1,4 @@
-# Load the PamoFi router scripts with WinBox
+# Load the PasoFi router scripts with WinBox
 
 These files prepare and inspect the two routers. **They do not enable prepaid
 Wi-Fi or complete a sale.** Customer access must stay disabled until the actual
@@ -11,11 +11,36 @@ or shared secret to it.
 
 | Router | File | What it does |
 | --- | --- | --- |
+| **Site 1: Kuwadzana** | [site-01/pasofi-kuwadzana-check.rsc](site-01/pasofi-kuwadzana-check.rsc) | Identifies the inspected router and reports the isolated pilot's status without changing settings or printing credentials. Use this short check first following the interrupted import. |
+| **Site 1: Kuwadzana** | [site-01/pasofi-kuwadzana-pilot.rsc](site-01/pasofi-kuwadzana-pilot.rsc) | Prepares a temporary isolated test of DHCP, local HotSpot login and the private RADIUS client. It blocks guest forwarding in IPv4 and IPv6. It has not been run or syntax-checked on the router; it is not a working commercial service. |
 | **Site 1: Kuwadzana** | [site-01/kuwadzana-prepare.rsc](site-01/kuwadzana-prepare.rsc) | For the previously inspected router only. Verifies its existing tunnel, disabled guest network, RADIUS client, certificate and isolation. If missing and the prerequisites match, it prepares the disabled HTTPS HotSpot and guest-only common torrent-port rules. It does not turn on guest Wi-Fi, DHCP, the HotSpot or the RADIUS client. |
 | **Site 2: Lawfield Farm** | [site-02/lawfield-prepare.rsc](site-02/lawfield-prepare.rsc) | First-stage preparation only. Prints non-secret network inventory and creates one disabled WireGuard interface with a new private key kept on that router. It does not configure the server peer, RADIUS, guest network, HotSpot or torrent policy. |
 
 The [captive welcome handoff](portal/README.md) is prepared separately and has
 not yet been installed or tested on either router.
+
+The owner ran the short Kuwadzana check on 4 November. It identified the
+router, reported 8,007,680 bytes of free memory, an enabled tunnel, one each
+of the gateway, disabled DHCP, HotSpot and RADIUS entries, four isolation
+rules per IP family, enabled router DNS and the `PasoFi Pilot` SSID. Those
+counts do not prove rule order, authentication or usage enforcement.
+
+For the isolated pilot file, keep an independent management connection and
+the off-router backup available. Upload it, run
+`import file-name=pasofi-kuwadzana-pilot.rsc verbose=yes dry-run`, then enter
+Safe Mode with Ctrl+X and run `import file-name=pasofi-kuwadzana-pilot.rsc`.
+Keep the same Safe Mode session open while testing a spare device. The script
+enables an open pilot SSID, DHCP, local HTTPS HotSpot and the existing RADIUS
+client; it installs new IPv4 and IPv6 guest forwarding drops ahead of
+FastTrack. It does not open guest internet, publish vouchers, or enable cash
+sales; pilot DNS queries can still be resolved through the router. The HotSpot
+still uses the previously installed `pamofi` certificate and
+hostname; replacing them requires installing the transition certificate and
+requalifying the client flow. The PasoFi welcome handoff is not installed.
+Press Ctrl+D in the same Safe Mode terminal after the test to roll it back. On
+error, press Ctrl+D; if the terminal disconnects or stops responding, do not
+retry before inspecting the router. A dry run validates syntax only, and the
+test itself does not prove metering or access enforcement.
 
 The Kuwadzana file is specific to the currently installed certificate and
 router public key. A renewed or replaced certificate requires a reviewed script
@@ -64,7 +89,7 @@ but does not change or repair them.
    state. The Kuwadzana file expects its existing PamoFi tunnel, disabled
    pilot bridge and radio, gateway, disabled DHCP and RADIUS client, and the
    reviewed certificate. It fails rather than create missing prerequisites.
-   The Lawfield file refuses an existing `pamofi-service` interface or a
+   The Lawfield file refuses either an existing `pamofi-service` or `pasofi-service` interface, or a
    WireGuard listen-port collision. Inspect and resolve conflicts; do not
    remove unrelated settings.
 
@@ -74,6 +99,12 @@ but does not change or repair them.
    **Command + Shift + G**, paste the full path to the appropriate `.rsc`
    file from the repository, press Return and click **Open**.
 2. Open **New Terminal**. Run the matching read-only checksum command:
+
+   For the short Kuwadzana check:
+
+   ```routeros
+   :put [:convert [/file get "pasofi-kuwadzana-check.rsc" contents] transform=sha512 to=hex]
+   ```
 
    ```routeros
    :put [:convert [/file get "kuwadzana-prepare.rsc" contents] transform=sha512 to=hex]
@@ -89,6 +120,10 @@ but does not change or repair them.
    `shasum -a 512` and the full local path. Stop if the values differ. Check
    the current repository copy rather than an old download or temporary file.
 3. Check syntax, using the matching filename:
+
+   ```routeros
+   import file-name=pasofi-kuwadzana-check.rsc verbose=yes dry-run
+   ```
 
    ```routeros
    import file-name=kuwadzana-prepare.rsc verbose=yes dry-run
@@ -108,6 +143,10 @@ but does not change or repair them.
 2. Run **only the matching command**, without `dry-run`:
 
    ```routeros
+   import file-name=pasofi-kuwadzana-check.rsc
+   ```
+
+   ```routeros
    import file-name=kuwadzana-prepare.rsc
    ```
 
@@ -115,7 +154,9 @@ but does not change or repair them.
    import file-name=lawfield-prepare.rsc
    ```
 
-3. Read the final output. On Kuwadzana, the HotSpot, Wi-Fi, DHCP and RADIUS
+3. Read the final output. The short check changes nothing and reports the
+   disabled pilot, tunnel, DHCP, HotSpot, RADIUS and isolation-rule counts;
+   it does not enable or validate service. On Kuwadzana, the HotSpot, Wi-Fi, DHCP and RADIUS
    client must report disabled, with two torrent-port rules. On Lawfield, the
    service interface must report disabled; record its **public** key and the
    non-secret inventory for the site-specific server plan. Never send a
