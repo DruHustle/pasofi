@@ -22,7 +22,7 @@ without a certificate error. Do not bypass such errors.
 ## Isolated Kuwadzana pilot
 
 `pilot-login.html` is a self-contained offline login page for the current
-Kuwadzana test. `site-01/pasofi-kuwadzana-branded-login.rsc` copies the
+Kuwadzana test. `site-01/pasofi-kuwadzana-branded-login-v2.rsc` copies the
 router's existing complete HotSpot directory, replaces only the copy's login
 page and points the pilot profile to the copy. It checks the router identity,
 certificate, HTTPS and isolation before changing the profile. It does not

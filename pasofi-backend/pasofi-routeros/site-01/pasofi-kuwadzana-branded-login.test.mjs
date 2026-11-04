@@ -13,11 +13,13 @@ test('offline captive page uses HTTPS for credentials and has no external assets
 });
 
 test('router installer preserves original files and requires isolation and HTTPS', async () => {
-  const script = await readFile(new URL('./pasofi-kuwadzana-branded-login.rsc', import.meta.url), 'utf8');
+  const script = await readFile(new URL('./pasofi-kuwadzana-branded-login-v2.rsc', import.meta.url), 'utf8');
   const bind = script.indexOf('html-directory=$target');
-  for (const required of ['Wrong router', 'Expected secure PasoFi profile', 'Expected trusted PasoFi certificate', 'IPv4 pilot isolation missing', 'IPv6 pilot isolation missing', 'Cannot find the current HotSpot HTML folder', 'PasoFi portal folder already exists', '/file copy $source name=$target', 'Login file verification failed']) {
+  for (const required of ['Wrong router', 'Expected secure PasoFi profile', 'Expected trusted PasoFi certificate', 'IPv4 pilot isolation missing', 'IPv6 pilot isolation missing', 'Pilot forward deny rule is disabled or invalid', 'Cannot find the current HotSpot HTML folder', 'PasoFi portal folder already exists', '/file copy $source name=$target', 'Login file verification failed']) {
     assert.ok(script.indexOf(required) >= 0 && script.indexOf(required) < bind, required);
   }
+  assert.match(script, /firewall filter get \$pfiRule disabled/);
+  assert.match(script, /firewall filter get \$pfiRule invalid/);
   assert.match(script, /method=\\"post\\"/);
   assert.doesNotMatch(script, /\/ip firewall (?:nat|filter) (?:add|set|remove)|\/ip hotspot walled-garden (?:add|set)|\/file remove|private-key\s*=|secret\s*=/i);
 });
