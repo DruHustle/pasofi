@@ -83,6 +83,8 @@ jobs:
           sh -n pasofi-backend/infra/backup-production/entrypoint.sh
           bash -n pasofi-backend/infra/backup-production/backup.sh
           sh -n pasofi-backend/infra/production/gateway/vercel-entrypoint.sh
+          sh -n pasofi-backend/infra/production/postgres-entrypoint.sh
+          sh -n pasofi-backend/infra/production/postgres-ready.sh
           sh -n pasofi-backend/infra/radius-production/entrypoint.sh
           bash 'pasofi-backend/local-tools/manual deployment/test-production-volume-preflight.sh'
       - name: Validate the site firewall in an isolated network namespace
@@ -100,6 +102,8 @@ jobs:
             sudo apt-get install --no-install-recommends -y postgresql-client
           fi
           node pasofi-backend/infra/production/test-roles.mjs
+      - name: Verify production PostgreSQL initialization readiness
+        run: bash pasofi-backend/infra/production/test-postgres-readiness.sh
       - name: Verify real FreeRADIUS packets in the isolated lab
         run: |
           bash pasofi-backend/pasofi-radius/lab/test-startup-readiness.sh

@@ -22,7 +22,9 @@ services:
     entrypoint: [sh, /opt/pamofi/vercel-entrypoint.sh]
     command: []
     read_only: true
-    tmpfs: [/tmp]
+    # Docker Desktop bind mounts can expose file modes differently from Linux.
+    # Restrict directory traversal even if an individual secret appears readable.
+    tmpfs: [/tmp, "/run/secrets:mode=0700"]
     healthcheck:
       test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/health/live"]
       interval: 5s
