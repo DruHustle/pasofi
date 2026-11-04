@@ -33,7 +33,8 @@ Keep the same Safe Mode session open while testing a spare device. The script
 enables an open pilot SSID, DHCP, local HTTPS HotSpot and the existing RADIUS
 client; it installs new IPv4 and IPv6 guest forwarding drops ahead of
 FastTrack. It does not open guest internet, publish vouchers, or enable cash
-sales. The HotSpot still uses the previously installed `pamofi` certificate and
+sales; pilot DNS queries can still be resolved through the router. The HotSpot
+still uses the previously installed `pamofi` certificate and
 hostname; replacing them requires installing the transition certificate and
 requalifying the client flow. The PasoFi welcome handoff is not installed.
 Press Ctrl+D in the same Safe Mode terminal after the test to roll it back. On
