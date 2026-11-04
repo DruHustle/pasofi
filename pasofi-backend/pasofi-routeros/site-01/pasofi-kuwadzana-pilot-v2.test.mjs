@@ -6,7 +6,7 @@ test('PasoFi pilot requires the reviewed certificate and isolates guests before 
   const script = await readFile(new URL('./pasofi-kuwadzana-pilot-v2.rsc', import.meta.url), 'utf8');
   const bind = script.indexOf('/ip hotspot profile set');
   const enable = script.indexOf('/interface wireless enable');
-  for (const guard of ['Wrong router', 'Import the reviewed PasoFi certificate', 'Review existing PasoFi hotspot DNS entry', 'Review existing walled-garden entries', 'Pilot must not belong to a trusted interface list', 'PasoFi test: deny forward in', 'PasoFi test: deny forward out']) {
+  for (const guard of ['HotSpot is disabled by device mode', 'Wrong router', 'Import the reviewed PasoFi certificate', 'Review existing PasoFi hotspot DNS entry', 'Review existing walled-garden entries', 'Pilot must not belong to a trusted interface list', 'PasoFi test: deny forward in', 'PasoFi test: deny forward out']) {
     assert.ok(script.indexOf(guard) >= 0 && script.indexOf(guard) < bind, guard);
   }
   assert.ok(bind > 0 && bind < enable);

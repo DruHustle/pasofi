@@ -8,6 +8,7 @@
 :if ([:len [/interface wireguard find where listen-port=51821]] != 0) do={ :error "UDP port 51821 is already used by another WireGuard interface" }
 :put ("Lawfield model: " . [/system resource get board-name])
 :put ("RouterOS version: " . [/system resource get version])
+:put ("Device mode allows HotSpot: " . [/system device-mode get hotspot])
 :put "Lawfield installed packages:"
 /system package print
 :if ([:len [/system package find where name="hotspot"]] != 1) do={ :error "Install the matching official HotSpot package before continuing" }
