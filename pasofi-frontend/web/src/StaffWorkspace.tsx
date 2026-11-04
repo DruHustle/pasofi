@@ -28,7 +28,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     catch (error) {
       if (!isCurrent(requestGeneration)) return;
       setStaff(null);
-      if (error instanceof ApiError && error.status === 401) setStep('login');
+      if (error instanceof ApiError && error.status === 401) setStep(new URLSearchParams(location.hash.split('?')[1] ?? '').get('apply') === '1' ? 'register' : 'login');
       else { setStep('unavailable'); setMessage(messageFor(error)); }
     } finally { if (isCurrent(requestGeneration)) setBusy(false); }
   }
