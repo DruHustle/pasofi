@@ -1,4 +1,4 @@
-name: Verify PamoFi
+name: Verify PasoFi
 
 on:
   pull_request:
@@ -50,77 +50,77 @@ jobs:
           node-version: 24.22.1
           cache: npm
           cache-dependency-path: |
-            pamofi-backend/services/*/package-lock.json
-            pamofi-frontend/web/package-lock.json
-            pamofi-frontend/mobile/package-lock.json
+            pasofi-backend/services/*/package-lock.json
+            pasofi-frontend/web/package-lock.json
+            pasofi-frontend/mobile/package-lock.json
       - name: Initialize the five disposable databases
-        run: docker exec -i '${{ job.services.postgres.id }}' psql -v ON_ERROR_STOP=1 -U pamofi_test_bootstrap -d postgres < pamofi-backend/infra/postgres/init.sql
+        run: docker exec -i '${{ job.services.postgres.id }}' psql -v ON_ERROR_STOP=1 -U pamofi_test_bootstrap -d postgres < pasofi-backend/infra/postgres/init.sql
       - name: Install independent locked dependencies
         run: |
-          for project in pamofi-backend/services/*-service pamofi-frontend/web pamofi-frontend/mobile; do
+          for project in pasofi-backend/services/*-service pasofi-frontend/web pasofi-frontend/mobile; do
             (cd "$project" && npm ci --no-audit --no-fund)
           done
       - name: Install Chromium and its runtime dependencies
-        working-directory: pamofi-frontend/web
+        working-directory: pasofi-frontend/web
         run: npx --no-install playwright install --with-deps chromium
       - name: Build and verify all services, web, and mobile
-        run: node pamofi-backend/local-tools/verify.mjs --integration --browser
+        run: node pasofi-backend/local-tools/verify.mjs --integration --browser
       - name: Verify the Vercel server proxy with real HTTP and TLS
-        run: npm --prefix pamofi-frontend/web run test:proxy
+        run: npm --prefix pasofi-frontend/web run test:proxy
       - name: Verify protected infrastructure configuration and operations diagnostics
         run: |
-          node --test pamofi-backend/infra/backup-production/config.test.mjs \
-            pamofi-backend/infra/remote-access/*.test.mjs \
-            pamofi-backend/infra/operations/check.test.mjs \
-            pamofi-backend/infra/production/vercel-config.test.mjs \
-            pamofi-backend/infra/production/router-control-config.test.mjs \
-            pamofi-backend/infra/site-link/*.test.mjs \
-            pamofi-backend/infra/radius-production/*.test.mjs \
-            pamofi-backend/infra/pilot-isolation/*.test.mjs \
-            pamofi-backend/pamofi-routeros/site-01/*.test.mjs \
-            pamofi-backend/pamofi-routeros/site-02/*.test.mjs
-          sh -n pamofi-backend/infra/backup-production/render-config.sh
-          sh -n pamofi-backend/infra/backup-production/entrypoint.sh
-          bash -n pamofi-backend/infra/backup-production/backup.sh
-          sh -n pamofi-backend/infra/production/gateway/vercel-entrypoint.sh
-          sh -n pamofi-backend/infra/radius-production/entrypoint.sh
-          bash 'pamofi-backend/local-tools/manual deployment/test-production-volume-preflight.sh'
+          node --test pasofi-backend/infra/backup-production/config.test.mjs \
+            pasofi-backend/infra/remote-access/*.test.mjs \
+            pasofi-backend/infra/operations/check.test.mjs \
+            pasofi-backend/infra/production/vercel-config.test.mjs \
+            pasofi-backend/infra/production/router-control-config.test.mjs \
+            pasofi-backend/infra/site-link/*.test.mjs \
+            pasofi-backend/infra/radius-production/*.test.mjs \
+            pasofi-backend/infra/pilot-isolation/*.test.mjs \
+            pasofi-backend/pasofi-routeros/site-01/*.test.mjs \
+            pasofi-backend/pasofi-routeros/site-02/*.test.mjs
+          sh -n pasofi-backend/infra/backup-production/render-config.sh
+          sh -n pasofi-backend/infra/backup-production/entrypoint.sh
+          bash -n pasofi-backend/infra/backup-production/backup.sh
+          sh -n pasofi-backend/infra/production/gateway/vercel-entrypoint.sh
+          sh -n pasofi-backend/infra/radius-production/entrypoint.sh
+          bash 'pasofi-backend/local-tools/manual deployment/test-production-volume-preflight.sh'
       - name: Validate the site firewall in an isolated network namespace
         run: |
           if ! command -v nft >/dev/null || ! command -v unshare >/dev/null; then
             sudo apt-get update
             sudo apt-get install --no-install-recommends -y nftables util-linux
           fi
-          sh pamofi-backend/infra/site-link/check-nft.sh
-          sudo env "PATH=$PATH" bash pamofi-backend/infra/site-link/test-site01-firewall.sh
+          sh pasofi-backend/infra/site-link/check-nft.sh
+          sudo env "PATH=$PATH" bash pasofi-backend/infra/site-link/test-site01-firewall.sh
       - name: Verify production migration and runtime privilege separation
         run: |
           if ! command -v psql >/dev/null; then
             sudo apt-get update
             sudo apt-get install --no-install-recommends -y postgresql-client
           fi
-          node pamofi-backend/infra/production/test-roles.mjs
+          node pasofi-backend/infra/production/test-roles.mjs
       - name: Verify real FreeRADIUS packets in the isolated lab
         run: |
-          bash pamofi-backend/pamofi-radius/lab/test-startup-readiness.sh
-          bash pamofi-backend/pamofi-radius/lab/run-lab.sh
+          bash pasofi-backend/pasofi-radius/lab/test-startup-readiness.sh
+          bash pasofi-backend/pasofi-radius/lab/run-lab.sh
       - name: Verify the production RADIUS transport and mutual TLS boundaries
-        run: node pamofi-backend/infra/radius-production/run-lab.mjs
+        run: node pasofi-backend/infra/radius-production/run-lab.mjs
       - name: Verify encrypted physical backup and restore
-        run: bash pamofi-backend/infra/backup-lab/run-lab.sh
+        run: bash pasofi-backend/infra/backup-lab/run-lab.sh
       - name: Verify private staging images and database isolation
-        run: bash pamofi-backend/infra/oracle-staging/test-local.sh
+        run: bash pasofi-backend/infra/oracle-staging/test-local.sh
       - name: Verify production TLS, file secrets, runtime workflows and volume protection
-        run: node pamofi-backend/infra/production/run-lab.mjs
+        run: node pasofi-backend/infra/production/run-lab.mjs
       - name: Verify the split Vercel and Oracle production path
-        run: node pamofi-backend/infra/production/run-vercel-lab.mjs
+        run: node pasofi-backend/infra/production/run-vercel-lab.mjs
       - name: Retain isolated UI review evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pamofi-ui-evidence-${{ github.sha }}
           path: |
-            pamofi-frontend/web/test-results/
-            pamofi-frontend/mobile/test-results/
+            pasofi-frontend/web/test-results/
+            pasofi-frontend/mobile/test-results/
           if-no-files-found: warn
           retention-days: 3
