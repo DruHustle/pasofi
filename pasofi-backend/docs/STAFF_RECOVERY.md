@@ -14,4 +14,42 @@ Security references: [OWASP Forgot Password guidance](https://cheatsheetseries.o
 
 ## Resend qualification, 2026-11-03
 
-The account lists `mail.onesa.eu` as a verified sending domain. A read-only TLS SMTP capability probe to `smtp.resend.com:465` did not advertise the `REQUIRETLS` extension. The current transport therefore cannot qualify this provider and must stay disabled. Resend documents a domain-level enforced TLS policy, but that setting applies to the existing shared sending domain and has not been changed or independently verified for this service. A separate, appropriately verified sending domain and a separately reviewed fail-closed integration may be considered; no one should weaken the existing requirement merely to make a test pass. No new provider key was created and no recovery email was sent.
+At this historical observation, the account listed `mail.onesa.eu` as a verified sending domain. A read-only TLS SMTP capability probe to `smtp.resend.com:465` did not advertise the `REQUIRETLS` extension. The current transport therefore could not qualify this provider and remained disabled. Resend documents a domain-level enforced TLS policy, but that policy was not independently qualified for this service. This source update does not repeat the probe or resolve that blocker. Do not weaken the existing REQUIRETLS requirement merely to make a test pass. No new provider key was created and no recovery email was sent.
+
+## Shared root-domain sender candidate — 2026-11-04
+
+The selected visible sender is `notifications-pasofi@onesa.eu`, using the single
+shared `onesa.eu` sending domain. Root-domain verification in Resend does not prove
+SMTP extension support, recipient delivery or this service's recovery qualification.
+Both enablement and qualification flags remain `false` in the examples.
+
+The existing production overlay maps the following inputs into the identity service:
+
+| Production Compose input | Identity-service variable | Selected example |
+| --- | --- | --- |
+| `PAMOFI_STAFF_RESET_ENABLED` | `STAFF_RESET_DELIVERY_ENABLED` | `false` |
+| `PAMOFI_STAFF_RESET_QUALIFIED` | `STAFF_RESET_DELIVERY_QUALIFIED` | `false` |
+| `PAMOFI_STAFF_RESET_SMTP_HOST` | `STAFF_RESET_SMTP_HOST` | `smtp.resend.com` |
+| `PAMOFI_STAFF_RESET_SMTP_PORT` | `STAFF_RESET_SMTP_PORT` | `465` |
+| `PAMOFI_STAFF_RESET_SMTP_USER` | `STAFF_RESET_SMTP_USER` | `resend` |
+| `PAMOFI_STAFF_RESET_EMAIL_FROM` | `STAFF_RESET_EMAIL_FROM` | `notifications-pasofi@onesa.eu` |
+
+The sender must be a bare address; this transport does not accept a display name
+in that field. Resend's documented SMTP password is an API key. Keep an independently
+approved key authorized for the root domain in the existing protected
+`staff_reset_smtp_password` file, loaded through `STAFF_RESET_SMTP_PASSWORD_FILE`.
+The source examples contain no credential, and no sender or credential is issued
+automatically. Existing explicitly configured runtime values remain unchanged.
+
+The candidate [production inputs](../infra/production/staff-reset-mail.env.example)
+and [local service example](../services/identity-service/.env.example) describe
+the existing transport only. Preserve certificate validation, encrypted SMTP,
+the message's REQUIRETLS request and the restricted egress boundary. Before any
+sender or credential cutover, reconcile in-flight staff reset attempts and their
+current tokens without replaying them or resetting the account throttle. The
+existing queue is bounded and non-durable; an example change does not migrate it.
+
+Resend [SMTP settings](https://resend.com/docs/send-with-smtp) document the connection
+parameters. They do not establish the REQUIRETLS or mailbox acceptance required
+above. Keep delivery disabled until those existing requirements are independently
+qualified; no alternate provider or policy-bypassing transport is added here.
