@@ -322,12 +322,13 @@ test('staff approvals remain available when unrelated commerce reads fail', asyn
   await expect(page.getByRole('button', { name: 'Save draft bundle' })).toHaveCount(0);
 });
 
-test('paused commerce allows administrator draft setup while stock allocation remains disabled', async ({ page }) => {
-  let draft: unknown;
+test('paused commerce allows administrator onboarding and stock preparation without collecting cash', async ({ page }) => {
+  let draft: unknown, allocated: unknown;
   await mock(page, async (route, path, method) => {
-    if (path === '/api/capabilities') { await json(route, { ...capabilities, staffSales: false, vouchers: false, receiptPairing: false, paymentCheckout: false }); return true; }
+    if (path === '/api/capabilities') { await json(route, { ...capabilities, staffSales: false, inventoryAllocation: true, vouchers: false, receiptPairing: false, paymentCheckout: false }); return true; }
     if (path === '/api/staff/session') { await json(route, staff('admin')); return true; }
     if (path === '/api/staff/users') { await json(route, { users: [staff('admin'), staff('agent', 'approved', agentId)], nextCursor: null }); return true; }
+    if (path === '/api/admin/inventory/allocations') { allocated = route.request().postDataJSON(); await json(route, { allocationId: saleId, replayed: false }, 201); return true; }
     if (path === '/api/staff/inventory') { await json(route, { inventory: [] }); return true; }
     if (path === '/api/admin/bundles') {
       if (method === 'POST') { draft = route.request().postDataJSON(); await json(route, { product: { ...product, published: false } }, 201); }
@@ -336,13 +337,20 @@ test('paused commerce allows administrator draft setup while stock allocation re
     }
     return false;
   });
-  await openStaff(page); await page.getByRole('button', { name: 'Bundle catalogue', exact: true }).click();
+  await openStaff(page);
+  await expect(page.getByRole('heading', { name: 'Onboard your agents' })).toBeVisible();
+  await expect(page.getByLabel('Agent application link')).toHaveValue(new URL('/#staff?apply=1', page.url()).href);
+  await page.getByRole('button', { name: 'Bundle catalogue', exact: true }).click();
   await page.getByLabel('Unique version ID').fill('review-draft'); await page.getByRole('combobox', { name: 'Currency', exact: true }).selectOption('ZWG'); await page.getByLabel('Price', { exact: true }).fill('1.50'); await page.getByLabel('Data allowance in GB').fill('3'); await page.getByLabel('Validity in days').fill('2'); await page.getByLabel('Reason', { exact: true }).fill('Prepare reviewed draft before launch');
   await page.getByRole('button', { name: 'Save draft bundle' }).click(); await expect(page.getByText('A new draft bundle version is saved.', { exact: false })).toBeVisible();
   expect(draft).toEqual({ id: 'review-draft', priceMinor: 150, currency: 'ZWG', byteLimit: '3000000000', validitySeconds: 172800, published: false, reason: 'Prepare reviewed draft before launch' });
   await page.getByRole('button', { name: 'Inventory', exact: true }).click();
-  await expect(page.getByText('Sales and stock allocation are paused.', { exact: false })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Allocate inventory' })).toBeDisabled();
+  await expect(page.getByText('Customer sales are paused.', { exact: false })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Agent', exact: true }).selectOption(agentId); await page.getByRole('combobox', { name: 'Site', exact: true }).selectOption(siteId); await page.getByRole('combobox', { name: 'Bundle', exact: true }).selectOption('flex');
+  await page.getByLabel('Quantity', { exact: true }).fill('5'); await page.getByLabel('Reason', { exact: true }).fill('Prepare chosen agent before launch');
+  await page.getByRole('button', { name: 'Allocate inventory', exact: true }).click();
+  await expect(page.getByText('Inventory allocation confirmed.', { exact: false })).toBeVisible();
+  expect(allocated).toEqual({ agentId, siteId, bundleId: 'flex', quantity: 5, reason: 'Prepare chosen agent before launch' });
 });
 
 for (const delivery of ['receipt', 'sms'] as const) {
@@ -513,4 +521,38 @@ test('a lost shift-close response restores the original count and key after relo
  await openStaff(page);await page.getByRole('button',{name:'Count and close'}).click();await page.getByLabel('Counted cash').fill('1.90');await page.getByLabel('Reconciliation note').fill('Ten cents short after count');await page.getByRole('checkbox',{name:'I have counted the cash and confirm this amount.'}).check();await page.getByRole('button',{name:'Confirm counted cash and close'}).click();
  await expect(page.getByRole('button',{name:'Retry saved shift request'})).toBeEnabled();await page.reload();await page.getByRole('button',{name:'Staff',exact:true}).click();
  await page.getByRole('checkbox',{name:'I am retrying the saved request without changing the cash count.'}).check();await page.getByRole('button',{name:'Retry saved shift request'}).click();await expect(page.getByText('Cash shift saved.',{exact:false})).toBeVisible();await expect(page.getByText('Difference: USD -0.10')).toBeVisible();expect(requests).toHaveLength(2);expect(requests[1]).toEqual(requests[0]);
+});
+
+
+test('agent application link opens registration but preserves an authenticated staff session', async ({ page }) => {
+  let authenticated = false;
+  await mock(page, async (route, path) => {
+    if (path === '/api/staff/session') { await json(route, authenticated ? staff('agent', 'pending') : { error: 'not_authenticated' }, authenticated ? 200 : 401); return true; }
+    return false;
+  });
+  await page.goto('/#staff?apply=1');
+  await expect(page.getByRole('heading', { name: 'Apply for staff access' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Submit staff application' })).toBeVisible();
+  await page.reload(); await expect(page.getByRole('heading', { name: 'Apply for staff access' })).toBeVisible();
+  authenticated = true; await page.reload();
+  await expect(page.getByRole('heading', { name: 'Waiting for administrator approval' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Submit staff application' })).toHaveCount(0);
+});
+
+test('an approved agent can inspect assigned stock before sales are enabled', async ({ page }) => {
+  const writes: string[] = [];
+  await mock(page, async (route, path, method) => {
+    if (method !== 'GET') writes.push(path);
+    if (path === '/api/capabilities') { await json(route, { ...capabilities, demo: false, staffSales: false, vouchers: false, receiptPairing: false, paymentCheckout: false }); return true; }
+    if (path === '/api/staff/session') { await json(route, staff()); return true; }
+    if (path === '/api/staff/inventory') { await json(route, { inventory: [{ agentId: staffId, siteId, siteName: site.name, bundleId: 'flex', quantity: 5 }] }); return true; }
+    if (path === '/api/staff/sales') { await json(route, { sales: [], hasMore: false, nextOffset: null }); return true; }
+    return false;
+  });
+  await openStaff(page);
+  await expect(page.getByText('Voucher sales are not enabled in this environment.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Confirm cash and issue voucher', exact: true })).toBeDisabled();
+  await expect(page.getByRole('combobox', { name: 'Sale site', exact: true })).toHaveValue(siteId);
+  await expect(page.getByRole('heading', { name: 'Available inventory' }).locator('..')).toContainText('5');
+  expect(writes).toEqual([]);
 });

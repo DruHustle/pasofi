@@ -44,7 +44,7 @@ test('configured migration origin reaches the authenticated guard and foreign or
   assert.equal((await call('https://other.onesa.eu')).statusCode,403);
  }finally{await f.cleanup();}
 });
-test('administrators can prepare sites and catalogue while commerce stays closed',{skip:!url},async()=>{
+test('administrators can onboard agents and allocate scoped stock while commerce stays closed',{skip:!url},async()=>{
  const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false',PAMOFI_PAYMENTS_ENABLED:'false',VOUCHER_DELIVERY_KEYS_JSON:''}}),bundleId=`setup-${randomUUID().slice(0,8)}`;
  try{
   const capabilities=(await f.app.inject({url:'/v1/capabilities'})).json();
@@ -55,7 +55,12 @@ test('administrators can prepare sites and catalogue while commerce stays closed
   assert.equal((await f.app.inject({url:'/v1/admin/bundles'})).statusCode,401);
   assert.equal((await f.call('GET','/v1/admin/bundles',undefined,'pending')).statusCode,403);
   assert.equal((await f.call('GET','/v1/admin/bundles',undefined,'agent')).statusCode,403);
-  assert.equal((await f.call('GET','/v1/staff/inventory',undefined,'support')).statusCode,403);
+  assert.equal((await f.call('GET','/v1/staff/inventory',undefined,'support')).statusCode,200);
+  assert.equal((await f.call('GET','/v1/staff/sales',undefined,'agent')).statusCode,200);
+  assert.deepEqual((await f.call('GET','/v1/staff/sites',undefined,'agent')).json().sites.map(s=>s.id),[f.site]);
+  await f.pool.query('UPDATE sales_locations SET enabled=false WHERE id=$1',[f.otherSite]);
+  assert.equal((await f.call('GET','/v1/staff/sites')).json().sites.find(s=>s.id===f.otherSite).enabled,false);
+  assert.equal((await f.call('GET','/v1/staff/sites',undefined,'other')).json().sites.some(s=>s.id===f.otherSite),false);
   f.staff.admin.mfaVerified=false;
   assert.equal((await f.call('GET','/v1/admin/bundles')).statusCode,503);
   f.staff.admin.mfaVerified=true;
@@ -66,7 +71,19 @@ test('administrators can prepare sites and catalogue while commerce stays closed
   assert.equal((await f.app.inject({url:'/v1/bundles'})).json().products.some(item=>item.id===bundleId),false);
   assert.equal((await f.call('PATCH',`/v1/admin/bundles/${bundleId}`,{published:true,reason:'Reviewed publication for setup test'})).statusCode,200);
   assert.equal((await f.app.inject({url:'/v1/bundles'})).json().products.some(item=>item.id===bundleId),true);
-  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId,quantity:1,reason:'Stock must remain disabled'})).statusCode,404);
+  assert.equal(capabilities.inventoryAllocation,true);
+  const allocation={agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:1,reason:'Prepare approved agent before launch'},key=randomUUID();
+  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',allocation,'missing')).statusCode,401);
+  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',allocation,'pending')).statusCode,403);
+  for(const who of ['agent','support'])assert.equal((await f.call('POST','/v1/admin/inventory/allocations',allocation,who)).statusCode,403);
+  assert.equal((await f.app.inject({method:'POST',url:'/v1/admin/inventory/allocations',headers:{origin:'https://foreign.example',cookie:'staff=admin','idempotency-key':key},payload:allocation})).statusCode,403);
+  f.staff.admin.mfaVerified=false;assert.equal((await f.call('POST','/v1/admin/inventory/allocations',allocation)).statusCode,503);f.staff.admin.mfaVerified=true;
+  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',allocation,'admin',key)).statusCode,201);
+  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',allocation,'admin',key)).json().replayed,true);
+  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',{...allocation,siteId:f.otherSite})).statusCode,409);
+  assert.equal((await f.call('GET','/v1/staff/inventory',undefined,'agent')).json().inventory.find(i=>i.bundleId==='mini').quantity,1);
+  assert.equal((await f.call('GET','/v1/staff/inventory',undefined,'other')).json().inventory.length,0);
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM issued_vouchers v JOIN agent_sales s ON s.id=v.sale_id WHERE s.site_id=$1',[f.site])).rows[0].n,0);
   assert.equal((await f.call('POST','/v1/staff/sales',{},'agent')).statusCode,404);
   assert.equal((await f.call('POST','/v1/receipt-pairings',{bundleId:'mini',siteId:f.site},'customer')).statusCode,404);
   assert.equal((await f.call('POST','/v1/vouchers/redeem',{code:'ABCD-EFGH-JKLM-2345'},'customer')).statusCode,404);

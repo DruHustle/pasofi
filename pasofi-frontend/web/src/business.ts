@@ -3,10 +3,10 @@ import { ApiError } from './api';
 export type Capabilities = {
   demo: boolean; paymentMode: 'disabled' | 'mock' | 'sandbox' | 'production';
   paymentCheckout: boolean; vouchers: boolean; receiptPairing: boolean;
-  staffSales: boolean; deliverySms: boolean; networkAccess: boolean; mobileCookies: boolean;
+  staffSales: boolean; inventoryAllocation?: boolean; deliverySms: boolean; networkAccess: boolean; mobileCookies: boolean;
 };
 export type Product = { id: string; price_minor: number; currency: string; byte_limit: string; validity_seconds: number };
-export type Site = { id: string; name: string };
+export type Site = { id: string; name: string; enabled?: boolean };
 export type CashEvidence = { method: 'cash' | 'unrecorded'; evidence: 'agent_attestation' | 'unrecorded'; receivedMinor: number | null; currency: string | null; confirmedAt: string | null; confirmedBy: string | null };
 export function cashDescription(payment: CashEvidence | undefined, simulation: boolean) {
   return payment?.method === 'cash' && payment.evidence === 'agent_attestation' && payment.receivedMinor !== null && payment.currency

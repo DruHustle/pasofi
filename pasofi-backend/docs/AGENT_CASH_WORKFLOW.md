@@ -12,6 +12,14 @@ An administrator completes password and authenticator sign-in, approves the agen
 
 The published bundle defines the integer minor-unit cash price, currency, byte allowance, validity and start-by policy. The operator configures the allowed cash currencies in `PAMOFI_CASH_CURRENCIES`; the current monetary representation supports currencies with two decimal minor units. Existing installations default to USD until this setting is explicitly changed. The server snapshots these terms and the commission when the sale commits. An agent cannot submit an arbitrary price, commission or allowance. Stock is debited in the same database transaction that creates the sale, voucher, private receipt association and outbox event.
 
+## Onboard chosen agents before launch
+
+The owner can prepare staff and stock while customer sales are paused. Open **Staff → Staff approvals → Onboard your agents** and copy the application link (`https://pasofi.onesa.eu/#staff?apply=1`). Share it directly with the people you have selected. Each person creates their own password and enrolls their authenticator; the link itself grants no access and the application does not send an invitation email.
+
+Refresh staff records, verify the applicant, choose **Review access**, select the **Agent** role, assign the appropriate sites, enter the approval reason and save. An applicant without an enrolled authenticator cannot be approved. A paused location can be assigned in advance; it remains unavailable for inventory allocation and sales until the location is enabled and commissioned. Never ask an agent for their password or authenticator code.
+
+Under **Inventory**, choose the approved agent, an active assigned location, a published bundle, quantity and reason. Allocation requires an administrator with MFA and is safe to retry with the saved request. It authorizes stock only: it creates no payment, voucher or customer Internet access. The agent signs in again after approval and can inspect their own assigned stock while sales remain paused. Check the first real sale only after the site passes commissioning and sales are enabled.
+
 ## Customer and agent steps
 
 1. **Choose the bundle.** The customer opens a published bundle or the “Pay an agent” area. When online checkout is disabled, the bundle still leads to the cash receipt workflow. Confirm that the agent has the correct site and stock before taking cash.
