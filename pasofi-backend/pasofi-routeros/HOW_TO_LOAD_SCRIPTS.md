@@ -12,11 +12,34 @@ or shared secret to it.
 | Router | File | What it does |
 | --- | --- | --- |
 | **Site 1: Kuwadzana** | [site-01/pasofi-kuwadzana-check.rsc](site-01/pasofi-kuwadzana-check.rsc) | Identifies the inspected router and reports the isolated pilot's status without changing settings or printing credentials. Use this short check first following the interrupted import. |
+| **Site 1: Kuwadzana** | [site-01/pasofi-kuwadzana-pilot.rsc](site-01/pasofi-kuwadzana-pilot.rsc) | Prepares a temporary isolated test of DHCP, local HotSpot login and the private RADIUS client. It blocks guest forwarding in IPv4 and IPv6. It has not been run or syntax-checked on the router; it is not a working commercial service. |
 | **Site 1: Kuwadzana** | [site-01/kuwadzana-prepare.rsc](site-01/kuwadzana-prepare.rsc) | For the previously inspected router only. Verifies its existing tunnel, disabled guest network, RADIUS client, certificate and isolation. If missing and the prerequisites match, it prepares the disabled HTTPS HotSpot and guest-only common torrent-port rules. It does not turn on guest Wi-Fi, DHCP, the HotSpot or the RADIUS client. |
 | **Site 2: Lawfield Farm** | [site-02/lawfield-prepare.rsc](site-02/lawfield-prepare.rsc) | First-stage preparation only. Prints non-secret network inventory and creates one disabled WireGuard interface with a new private key kept on that router. It does not configure the server peer, RADIUS, guest network, HotSpot or torrent policy. |
 
 The [captive welcome handoff](portal/README.md) is prepared separately and has
 not yet been installed or tested on either router.
+
+The owner ran the short Kuwadzana check on 4 November. It identified the
+router, reported 8,007,680 bytes of free memory, an enabled tunnel, one each
+of the gateway, disabled DHCP, HotSpot and RADIUS entries, four isolation
+rules per IP family, enabled router DNS and the `PasoFi Pilot` SSID. Those
+counts do not prove rule order, authentication or usage enforcement.
+
+For the isolated pilot file, keep an independent management connection and
+the off-router backup available. Upload it, run
+`import file-name=pasofi-kuwadzana-pilot.rsc verbose=yes dry-run`, then enter
+Safe Mode with Ctrl+X and run `import file-name=pasofi-kuwadzana-pilot.rsc`.
+Keep the same Safe Mode session open while testing a spare device. The script
+enables an open pilot SSID, DHCP, local HTTPS HotSpot and the existing RADIUS
+client; it installs new IPv4 and IPv6 guest forwarding drops ahead of
+FastTrack. It does not open guest internet, publish vouchers, or enable cash
+sales. The HotSpot still uses the previously installed `pamofi` certificate and
+hostname; replacing them requires installing the transition certificate and
+requalifying the client flow. The PasoFi welcome handoff is not installed.
+Press Ctrl+D in the same Safe Mode terminal after the test to roll it back. On
+error, press Ctrl+D; if the terminal disconnects or stops responding, do not
+retry before inspecting the router. A dry run validates syntax only, and the
+test itself does not prove metering or access enforcement.
 
 The Kuwadzana file is specific to the currently installed certificate and
 router public key. A renewed or replaced certificate requires a reviewed script
