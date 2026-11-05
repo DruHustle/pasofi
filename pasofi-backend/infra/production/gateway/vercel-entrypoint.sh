@@ -8,6 +8,16 @@ test ! -L /run/secrets/vercel_proxy_token || fail
 test -f /run/secrets/public_tls_cert || fail
 test -f /run/secrets/public_tls_key || fail
 test -n "${PAMOFI_PUBLIC_HOST:-}" || fail
+case "${PASOFI_HOTSPOT_PORTAL:-false}" in
+  false) ;;
+  true)
+    test -f /opt/pasofi/hotspot-portal.conf || fail
+    test -f /opt/pasofi/hotspot-web/index.html || fail
+    test -f /opt/pasofi/hotspot-web/hotspot-build.json || fail
+    grep -qx '{"apiPrefix":"/portal-api"}' /opt/pasofi/hotspot-web/hotspot-build.json || fail
+    ;;
+  *) fail ;;
+esac
 private=/tmp/pamofi-gateway
 test ! -e "$private" || fail
 mkdir -m 700 "$private"
@@ -39,6 +49,8 @@ BEGIN {
 {
   gsub(/__PAMOFI_PUBLIC_HOST__/, host)
   gsub(/__PAMOFI_PROXY_TOKEN__/, token)
+  portal = ENVIRON["PASOFI_HOTSPOT_PORTAL"] == "true" ? "include /opt/pasofi/hotspot-portal.conf;" : ""
+  gsub(/__PASOFI_HOTSPOT_PORTAL_INCLUDE__/, portal)
   print
 }
 ' /etc/nginx/templates/default.conf.template > "$private/public.conf" || fail

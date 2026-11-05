@@ -43,7 +43,9 @@ server {
   add_header Referrer-Policy no-referrer always;
   add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
   add_header Cache-Control no-store always;
+  add_header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://hotspot.pasofi.onesa.eu https://hotspot.pamofi.onesa.eu" always;
   default_type application/json;
+  __PASOFI_HOTSPOT_PORTAL_INCLUDE__
   location = /health/live { return 200 '{"status":"ok","service":"gateway"}'; }
   location /api/ {
     if ($pamofi_proxy_authorized = 0) { return 403 '{"error":"proxy_authentication_required"}'; }
