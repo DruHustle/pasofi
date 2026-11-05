@@ -5,6 +5,7 @@ import { type Capabilities, type Product, type Site, type CashEvidence, cashDesc
 import { RecoverySetup } from './Recovery';
 import { CreateHandoff } from './Handoff';
 import NetworkAccess from './NetworkAccess';
+import { PolicyNotice } from './Policies';
 import LiveUsage, { dataAmount, useLiveUsage, type UsageSnapshot } from './LiveUsage';
 import './customer-premium.css';
 
@@ -332,6 +333,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     <div className="purchase-head customer-page-heading"><div><div className="eyebrow">YOUR PASOFI</div><h2 id="customer-heading" tabIndex={-1} ref={heading}>{titles[tab]}</h2><p>{subtitles[tab]}</p></div><button className="close-button" onClick={close} aria-label="Close customer workspace">×</button></div>
     {capabilities.demo && <p className="notice customer-demo-notice">Demonstration environment. These flows do not establish real customer payment, SMS delivery, or internet connectivity.</p>}
     {tab !== 'access' && sectionNavigation}
+    <PolicyNotice/>
     {loading && <div className="customer-loading" role="status"><span className="customer-loading-dot" />Checking your account…</div>}
     {message && <p className="feedback" role="status">{message}</p>}
     {!loading && !owner && <p className="notice customer-session-notice">No account is active in this browser. Buying, redeeming a voucher, or creating a private receipt starts a customer account. <button className="text-button" onClick={recovered}>Recover an existing account</button></p>}

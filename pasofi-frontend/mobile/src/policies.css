@@ -1,0 +1,24 @@
+.pasofi-policy { color: #142c53; font-size: 14px; line-height: 1.65; }
+.pasofi-policy-page { max-width: 860px; margin: 20px 0; }
+.pasofi-policy-page header h1 { font-size: clamp(27px, 5vw, 36px); line-height: 1.15; letter-spacing: -.8px; margin: 7px 0 10px; }
+.pasofi-policy-page header p { margin: 0 0 16px; color: #465b78; }
+.pasofi-policy-eyebrow { font-size: 10px; font-weight: 750; letter-spacing: 1.2px; color: #175ec7; }
+.pasofi-policy-operator { display: flex; flex-direction: column; gap: 3px; padding: 12px 15px; border-left: 3px solid #1862e9; background: #edf4ff; border-radius: 0 10px 10px 0; }
+.pasofi-policy-operator small { color: #465b78; font-size: 12px; }
+.pasofi-policy a { color: #1457be; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.pasofi-policy-summary { padding-left: 22px; margin: 15px 0; }
+.pasofi-policy-summary li { padding-left: 2px; margin: 4px 0; }
+.pasofi-policy-sections { border: 1px solid #cbd9ec; border-radius: 12px; background: #fff; overflow: hidden; }
+.pasofi-policy-sections > details + details { border-top: 1px solid #dbe4ef; }
+.pasofi-policy summary { min-height: 44px; padding: 12px 14px; cursor: pointer; font-size: 14px; font-weight: 700; line-height: 1.45; }
+.pasofi-policy summary::marker { color: #175ec7; }
+.pasofi-policy summary:focus-visible, .pasofi-policy a:focus-visible { outline: 3px solid #175ec7; outline-offset: 3px; }
+.pasofi-policy-sections > details > div { padding: 0 15px 12px; }
+.pasofi-policy p { margin: 0 0 12px; }
+.pasofi-policy p:last-child { margin-bottom: 0; }
+.pasofi-policy-external { display: grid; gap: 9px; }
+.pasofi-policy-notice { margin: 12px 0; background: #fff; border: 1px solid #cbd9ec; border-radius: 10px; }
+.pasofi-policy-notice > div { padding: 0 14px 14px; }
+.pasofi-policy-document { margin-top: 10px; }
+.pasofi-policy-document > summary { padding-left: 0; }
+@media (max-width: 420px) { .pasofi-policy { font-size: 13px; } .pasofi-policy-operator { padding: 10px 12px; } }
