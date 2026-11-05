@@ -5,6 +5,7 @@ export type Capabilities = {
   paymentCheckout: boolean; vouchers: boolean; receiptPairing: boolean;
   invoices?: boolean; invoiceEmail?: boolean; invoiceSms?: boolean;
   staffSales: boolean; inventoryAllocation?: boolean; deliverySms: boolean; networkAccess: boolean; mobileCookies: boolean;
+  routerFleet?: boolean; routerFleetWrite?: boolean;
 };
 export type Product = { id: string; price_minor: number; currency: string; byte_limit: string; validity_seconds: number };
 export type Site = { id: string; name: string; enabled?: boolean };

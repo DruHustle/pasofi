@@ -164,6 +164,8 @@ paths:
                   staffSales: {type: boolean}
                   deliverySms: {type: boolean}
                   networkAccess: {type: boolean}
+                  routerFleet: {type: boolean, description: Central administration reads configured independently of customer access.}
+                  routerFleetWrite: {type: boolean, description: Global fleet write gate; each router additionally requires its own write qualification.}
                   mobileCookies: {const: false}
                   invoices: {type: boolean, description: Authenticated invoice storage is configured independently of selling gates.}
                   invoiceEmail: {type: boolean, description: Outbox and secrets are configured and notification advertises a qualified matching email mode.}
@@ -689,6 +691,133 @@ paths:
         '403': {description: Origin rejected}
         '404': {description: Invalid or expired link}
         '429': {description: Retry-After applies}
+  /v1/admin/routers:
+    get:
+      security: [{StaffSession: []}]
+      summary: List the registered router fleet for an approved MFA-verified administrator
+      description: Independent of customer commerce and network launch gates. Credentials, management URLs and private service tokens are never returned. No query parameters are accepted.
+      responses:
+        '200': {description: routers array with NAS/site identity, configuration and per-device write readiness}
+        '401': {description: Staff session required}
+        '403': {description: Administrator role required}
+        '404': {description: Fleet reads disabled}
+        '503': {description: Identity or network service unavailable}
+  /v1/admin/routers/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+    get:
+      security: [{StaffSession: []}]
+      summary: Inspect the selected router and its explicitly managed targets
+      responses:
+        '200': {description: Router, verified device identity, targets with values/field metadata/revisions, and observation timestamp}
+        '409': {description: Unconfigured or mismatched device or unavailable target}
+        '503': {description: Device or private service unavailable}
+  /v1/admin/routers/{id}/changes:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+    get:
+      security: [{StaffSession: []}]
+      summary: Read the latest 50 durable configuration changes
+      responses:
+        '200': {description: changes array, newest first; actorVersion is an exact decimal string}
+    post:
+      security: [{StaffSession: []}]
+      summary: Save one reviewed configuration preview without writing to the router
+      description: Requires the configured browser origin and global/per-device write gates. The server derives the administrator identity and version. A UUID Idempotency-Key binds the operation. Preview expires after ten minutes.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [targetKey, expectedRevision, values, reason]
+              properties:
+                targetKey: {type: string, pattern: '^[a-z][a-z0-9_-]{0,47}$'}
+                expectedRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
+                values:
+                  type: object
+                  minProperties: 1
+                  maxProperties: 8
+                  description: Only fields advertised for the enrolled target; strings or booleans. No URLs, menu paths or credentials.
+                  additionalProperties:
+                    oneOf:
+                      - {type: string, maxLength: 160}
+                      - {type: boolean}
+                reason: {$ref: '#/components/schemas/Reason'}
+      responses:
+        '200': {description: Saved change with before/after values and revisions}
+        '400': {description: Invalid field, value, reason or idempotency key}
+        '403': {description: Per-device write qualification denied}
+        '409': {description: Revision conflict, router busy, idempotency conflict or writes disabled}
+  /v1/admin/routers/{id}/changes/{changeId}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+      - {in: path, name: changeId, required: true, schema: {type: string, format: uuid}}
+    get:
+      security: [{StaffSession: []}]
+      summary: Read the durable outcome after a response timeout or interruption
+      responses:
+        '200': {description: 'change; status is prepared, applying, applied, unchanged, diverged, uncertain, expired or failed; reconcileAfter is the earliest safe reconciliation time'}
+  /v1/admin/routers/{id}/changes/{changeId}/apply:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+      - {in: path, name: changeId, required: true, schema: {type: string, format: uuid}}
+    post:
+      security: [{StaffSession: []}]
+      summary: Apply the saved preview once as its original administrator and authorization version
+      description: Requires configured browser origin and empty JSON object. Revalidates serial, policy, expiry and revision; records applying before hardware mutation. A transport failure must be resolved through status/reconcile, never a new blind write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses:
+        '200': {description: Durable change state; repeated apply returns state without another device write}
+        '403': {description: Actor mismatch or device writes disabled}
+        '409': {description: Another change holds the router or global writes disabled}
+        '503': {description: Outcome unavailable; retrieve the saved change ID}
+  /v1/admin/routers/{id}/changes/{changeId}/reconcile:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+      - {in: path, name: changeId, required: true, schema: {type: string, format: uuid}}
+    post:
+      security: [{StaffSession: []}]
+      summary: Observe an ambiguous change after its settlement period without writing to the device
+      description: Requires configured browser origin and empty JSON object. Remains available with writes disabled; any current approved administrator may reconcile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses:
+        '200': {description: Updated observed change state}
+        '409': {description: Reconciliation is too early; retain the existing outcome and reconcileAfter}
+  /v1/admin/routers/{id}/changes/{changeId}/rollback:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+      - {in: path, name: changeId, required: true, schema: {type: string, format: uuid}}
+    post:
+      security: [{StaffSession: []}]
+      summary: Prepare a new inverse preview while the current router still matches an applied change
+      description: This operation does not apply the rollback. Review and apply the newly returned change ID through the ordinary flow.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: {$ref: '#/components/schemas/Reason'}
+      responses:
+        '200': {description: New inverse change preview, linked to the original change}
+        '409': {description: Parent not applied, current values changed, router busy or idempotency conflict}
 components:
   securitySchemes:
     CustomerSession:

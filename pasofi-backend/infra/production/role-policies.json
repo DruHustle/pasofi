@@ -47,7 +47,9 @@
   "network": {
     "radius_nas": ["SELECT", "UPDATE (id)"],
     "radius_credentials": ["SELECT", "INSERT", "UPDATE"],
-    "router_reconciliation_status": ["SELECT", "INSERT", "UPDATE"]
+    "router_reconciliation_status": ["SELECT", "INSERT", "UPDATE"],
+    "router_fleet_changes": ["SELECT", "INSERT", "UPDATE"],
+    "router_fleet_events": ["SELECT", "INSERT"]
   },
   "notification": {
     "event_inbox": ["SELECT", "INSERT"],

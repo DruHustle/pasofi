@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: PasoFi network service
-  version: 0.2.0
+  version: 0.3.0
   description: Private network service; the public customer contract belongs to prepaid-access. RADIUS is a separate mutual-TLS listener.
 paths:
   /health/live:
@@ -51,6 +51,137 @@ paths:
         '404': {description: Network capability disabled}
         '409': {description: Site, credential retry, expiry or issuance limit conflict}
         '503': {description: Database, service key or encryption key unavailable}
+  /internal/v1/router-fleet/routers:
+    get:
+      security: [{serviceToken: []}]
+      description: Requires router-fleet:read plus signed actorId UUID and actorVersion decimal string. Independent of customer/RADIUS gates. Registration alone does not establish online status.
+      responses:
+        '200':
+          description: Registered routers; no endpoint or credential material
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [routers]
+                properties:
+                  routers:
+                    type: array
+                    maxItems: 500
+                    items: {$ref: '#/components/schemas/FleetRouter'}
+        default: {$ref: '#/components/responses/FleetError'}
+  /internal/v1/router-fleet/routers/{id}:
+    parameters: [{$ref: '#/components/parameters/RouterId'}]
+    get:
+      security: [{serviceToken: []}]
+      description: Requires router-fleet:read. Reads only enrolled nonsecret targets and verifies the hardware serial over trusted HTTPS.
+      responses:
+        '200':
+          description: Fresh device and target observations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [router, device, targets, observedAt]
+                properties:
+                  router: {$ref: '#/components/schemas/FleetRouter'}
+                  device:
+                    type: object
+                    required: [identity, model, version, serial]
+                    properties:
+                      identity: {type: string}
+                      model: {type: string}
+                      version: {type: string}
+                      serial: {type: string}
+                  targets:
+                    type: array
+                    maxItems: 16
+                    items: {$ref: '#/components/schemas/FleetTarget'}
+                  observedAt: {type: string, format: date-time}
+        default: {$ref: '#/components/responses/FleetError'}
+  /internal/v1/router-fleet/routers/{id}/changes:
+    parameters: [{$ref: '#/components/parameters/RouterId'}]
+    get:
+      security: [{serviceToken: []}]
+      description: Requires router-fleet:read. Most recent 50 changes, newest first.
+      responses:
+        '200':
+          description: Durable change history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [changes]
+                properties:
+                  changes:
+                    type: array
+                    maxItems: 50
+                    items: {$ref: '#/components/schemas/FleetChange'}
+        default: {$ref: '#/components/responses/FleetError'}
+    post:
+      security: [{serviceToken: []}]
+      description: Requires router-fleet:write and global/per-router write qualification. Prepares one allowlisted target without writing. An identical actor/requestKey retry returns the saved immutable plan, without extending its ten-minute expiry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [targetKey, expectedRevision, values, reason, requestKey]
+              properties:
+                targetKey: {type: string, pattern: '^[a-z][a-z0-9_-]{0,47}$'}
+                expectedRevision: {type: string, pattern: '^[a-f0-9]{64}$'}
+                values: {$ref: '#/components/schemas/FleetValues'}
+                reason: {type: string, minLength: 1, maxLength: 500}
+                requestKey: {type: string, format: uuid}
+      responses:
+        '200': {$ref: '#/components/responses/FleetChange'}
+        default: {$ref: '#/components/responses/FleetError'}
+  /internal/v1/router-fleet/routers/{id}/changes/{changeId}:
+    parameters: [{$ref: '#/components/parameters/RouterId'}, {$ref: '#/components/parameters/ChangeId'}]
+    get:
+      security: [{serviceToken: []}]
+      description: Requires router-fleet:read. Returns saved status and atomically expires elapsed still-prepared plans with an audit event; does not contact hardware.
+      responses:
+        '200': {$ref: '#/components/responses/FleetChange'}
+        default: {$ref: '#/components/responses/FleetError'}
+  /internal/v1/router-fleet/routers/{id}/changes/{changeId}/apply:
+    parameters: [{$ref: '#/components/parameters/RouterId'}, {$ref: '#/components/parameters/ChangeId'}]
+    post:
+      security: [{serviceToken: []}]
+      description: Requires router-fleet:write, a fresh authorized original actor, both write gates, matching device serial and live revision. Commits applying before hardware I/O. Repeated apply never resends a started write. Ambiguous transport remains uncertain until a settled read.
+      requestBody: {$ref: '#/components/requestBodies/FleetEmpty'}
+      responses:
+        '200': {$ref: '#/components/responses/FleetChange'}
+        default: {$ref: '#/components/responses/FleetError'}
+  /internal/v1/router-fleet/routers/{id}/changes/{changeId}/reconcile:
+    parameters: [{$ref: '#/components/parameters/RouterId'}, {$ref: '#/components/parameters/ChangeId'}]
+    post:
+      security: [{serviceToken: []}]
+      description: Requires router-fleet:write but remains available with hardware writes disabled. Once reconcileAfter has passed, observes an applying/uncertain change without mutating the router. A matching after state becomes applied; matching before becomes unchanged; conflicting state becomes diverged; unavailable or mismatched hardware remains uncertain.
+      requestBody: {$ref: '#/components/requestBodies/FleetEmpty'}
+      responses:
+        '200': {$ref: '#/components/responses/FleetChange'}
+        default: {$ref: '#/components/responses/FleetError'}
+  /internal/v1/router-fleet/routers/{id}/changes/{changeId}/rollback:
+    parameters: [{$ref: '#/components/parameters/RouterId'}, {$ref: '#/components/parameters/ChangeId'}]
+    post:
+      security: [{serviceToken: []}]
+      description: Requires router-fleet:write and both write gates. Only a still-matching applied state can create a NEW prepared inverse plan. The new plan requires review and a separate apply by its original actor; no automatic hardware restore occurs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason, requestKey]
+              properties:
+                reason: {type: string, minLength: 1, maxLength: 500}
+                requestKey: {type: string, format: uuid}
+      responses:
+        '200': {$ref: '#/components/responses/FleetChange'}
+        default: {$ref: '#/components/responses/FleetError'}
   /radius/authorize:
     post:
       security: [{radiusMutualTls: []}]
@@ -68,6 +199,105 @@ paths:
         '401': {description: Invalid or mismatched accounting evidence}
         '503': {description: Ledger or database unavailable}
 components:
+  parameters:
+    RouterId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ChangeId:
+      name: changeId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  requestBodies:
+    FleetEmpty:
+      required: true
+      content:
+        application/json:
+          schema: {type: object, additionalProperties: false, maxProperties: 0}
+  responses:
+    FleetError:
+      description: Safe error code only. 400 invalid payload/values; 401 invalid token/actor; 403 wrong scope/actor or writes disabled; 404 disabled feature/unknown registered entity; 409 device, target, revision, idempotency, active-write or reconciliation conflict; 503 unavailable configuration/database/router. Raw router errors and credentials are never returned.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error: {type: string}
+    FleetChange:
+      description: Durable change result; inspect status and errorCode before claiming hardware success
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [change]
+            properties:
+              change: {$ref: '#/components/schemas/FleetChange'}
+  schemas:
+    FleetValues:
+      type: object
+      minProperties: 1
+      maxProperties: 3
+      description: Only keys advertised by the enrolled target are accepted. Text limits count UTF-8 bytes. Preview may supply a subset; saved before/after snapshots include all supported fields.
+      additionalProperties:
+        oneOf: [{type: string}, {type: boolean}]
+    FleetRouter:
+      type: object
+      required: [id, siteId, siteName, clientName, customerNetworkEnabled, configured, writesEnabled]
+      properties:
+        id: {type: string, format: uuid}
+        siteId: {type: string, format: uuid}
+        siteName: {type: string}
+        clientName: {type: string}
+        customerNetworkEnabled: {type: boolean}
+        configured: {type: boolean}
+        writesEnabled: {type: boolean}
+    FleetTarget:
+      type: object
+      required: [key, kind, values, revision, fields]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9_-]{0,47}$'}
+        kind: {type: string, enum: [identity, interface, wireless, wifi, hotspot-profile]}
+        name: {type: string}
+        values: {$ref: '#/components/schemas/FleetValues'}
+        revision: {type: string, pattern: '^[a-f0-9]{64}$'}
+        fields:
+          type: array
+          items:
+            type: object
+            required: [key, label, type]
+            properties:
+              key: {type: string}
+              label: {type: string}
+              type: {type: string, enum: [text, boolean]}
+              maxLength: {type: integer, description: Maximum UTF-8 bytes for a text field}
+              help: {type: string}
+    FleetChange:
+      type: object
+      required: [id, nasId, actorId, actorVersion, targetKey, targetKind, before, after, beforeRevision, afterRevision, status, reason, createdAt, updatedAt, expiresAt, appliedAt, reconcileAfter, parentChangeId, errorCode]
+      properties:
+        id: {type: string, format: uuid}
+        nasId: {type: string, format: uuid}
+        actorId: {type: string, format: uuid}
+        actorVersion: {type: string, pattern: '^[1-9][0-9]{0,18}$'}
+        targetKey: {type: string}
+        targetKind: {type: string, enum: [identity, interface, wireless, wifi, hotspot-profile]}
+        targetName: {type: string}
+        before: {$ref: '#/components/schemas/FleetValues'}
+        after: {$ref: '#/components/schemas/FleetValues'}
+        beforeRevision: {type: string, pattern: '^[a-f0-9]{64}$'}
+        afterRevision: {type: string, pattern: '^[a-f0-9]{64}$'}
+        status: {type: string, enum: [prepared, applying, applied, unchanged, diverged, uncertain, expired, failed]}
+        reason: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        appliedAt: {type: [string, 'null'], format: date-time}
+        reconcileAfter: {type: [string, 'null'], format: date-time}
+        parentChangeId: {type: [string, 'null'], format: uuid}
+        errorCode: {type: [string, 'null']}
   securitySchemes:
     serviceToken:
       type: http

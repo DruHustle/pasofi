@@ -74,6 +74,7 @@ jobs:
             pasofi-backend/infra/operations/check.test.mjs \
             pasofi-backend/infra/production/vercel-config.test.mjs \
             pasofi-backend/infra/production/router-control-config.test.mjs \
+            pasofi-backend/infra/production/router-fleet-config.test.mjs \
             pasofi-backend/infra/site-link/*.test.mjs \
             pasofi-backend/infra/radius-production/*.test.mjs \
             pasofi-backend/infra/pilot-isolation/*.test.mjs \
@@ -88,7 +89,7 @@ jobs:
           sh -n pasofi-backend/infra/production/postgres-ready.sh
           sh -n pasofi-backend/infra/radius-production/entrypoint.sh
           bash 'pasofi-backend/local-tools/manual deployment/test-production-volume-preflight.sh'
-          python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_release_deploy.py' -v
+          python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_release_deploy*.py' -v
       - name: Validate the site firewall in an isolated network namespace
         run: |
           if ! command -v nft >/dev/null || ! command -v unshare >/dev/null; then
