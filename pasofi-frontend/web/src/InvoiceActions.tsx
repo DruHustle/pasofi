@@ -25,7 +25,7 @@ export function InvoiceDeliveryFields({ value, onChange, disabled = false, email
       value={value.recipient ?? ''} placeholder={value.channel === 'email' ? 'you@example.com' : '+263…'}
       onChange={event => onChange({ ...value, recipient: event.target.value })}
     /></label>}
-    <small>{value.channel === 'download' ? 'The paid PDF will be available with your receipt.' : value.channel === 'email' ? 'Email delivery is requested after payment; the PDF also stays available here.' : 'A private invoice link is requested after payment. The link lasts 7 days.'}</small>
+    <small>{value.channel === 'download' ? 'The paid PDF will be available with your receipt.' : value.channel === 'email' ? 'Email PDF requested after payment. A copy stays with your receipt.' : 'Private SMS link requested after payment; valid for 7 days.'}</small>
   </div>;
 }
 

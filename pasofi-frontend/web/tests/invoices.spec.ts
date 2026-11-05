@@ -90,10 +90,10 @@ test('cash invoice delivery remains exact across a lost response and a paused em
   await expect(page.getByText('Reference verified.', { exact: false })).toBeVisible();
   for (const width of [320, 390, 1280]) {
     await page.setViewportSize({ width, height: 844 });
-    expect((await page.locator('.invoice-preference').boundingBox())!.height).toBeLessThan(205);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.locator('.invoice-preference').screenshot({ path: testInfo.outputPath(`invoice-preference-${width}.png`) });
     await page.screenshot({ path: testInfo.outputPath(`invoice-sale-page-${width}.png`), fullPage: true });
+    expect((await page.locator('.invoice-preference').boundingBox())!.height).toBeLessThan(205);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await page.setViewportSize({ width: 320, height: 844 });
   await page.getByRole('checkbox', { name: /simulated sale/ }).check();
