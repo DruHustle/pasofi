@@ -1,4 +1,6 @@
 import nodemailer from 'nodemailer';
+import { renderStaffResetEmail } from './staff-reset-email-template.js';
+import { emailBrand } from './email-brand.js';
 
 // Mail is unavailable unless an operator has explicitly qualified a real SMTP
 // service, its sender and the protected credentials. No mock transport is used
@@ -19,6 +21,8 @@ export function configuredStaffResetDelivery(origin: string | undefined): StaffR
     if (!mailbox.test(email) || email.length > 254 || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw Error('invalid_delivery');
     const result = await transport.sendMail({ from, to: email, subject: 'PasoFi staff password recovery',
       text: `A staff password reset was requested. If this was you, open ${origin} and use the staff password recovery form.\n\nYour single-use code is: ${token}\n\nThe code expires after 15 minutes. Your existing authenticator is still required. Never share this code. If you did not request it, ignore this message.`,
+      html: renderStaffResetEmail(origin, token),
+      attachments: [{ filename: emailBrand.filename, content: Buffer.from(emailBrand.base64, 'base64'), contentType: 'image/png', cid: emailBrand.cid, contentDisposition: 'inline' }],
       requireTLSExtensionEnabled: true, disableFileAccess: true, disableUrlAccess: true });
     if (!Array.isArray(result.accepted) || result.accepted.length !== 1 || result.rejected.length) throw Error('delivery_unconfirmed');
   } };
