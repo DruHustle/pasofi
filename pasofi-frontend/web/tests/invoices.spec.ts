@@ -85,7 +85,7 @@ test('cash invoice delivery remains exact across a lost response and a paused em
   await page.getByRole('button', { name: 'Staff', exact: true }).click();
   await page.getByLabel('Customer pairing code').fill('ABCD234567');
   await page.getByRole('button', { name: 'Look up cash reference' }).click();
-  await expect(page.getByLabel('Invoice copy', { exact: true })).toHaveValue('email');
+  await expect(page.getByRole('combobox', { name: 'Invoice copy', exact: true })).toHaveValue('email');
   await page.getByLabel('Invoice email', { exact: true }).fill('buyer@EXAMPLE.COM');
   await expect(page.getByText('Reference verified.', { exact: false })).toBeVisible();
   for (const width of [320, 390, 1280]) {
@@ -102,7 +102,7 @@ test('cash invoice delivery remains exact across a lost response and a paused em
   await expect(page.getByLabel('Invoice email', { exact: true })).toBeDisabled();
   await page.reload(); await page.getByRole('button', { name: 'Staff', exact: true }).click();
   await expect(page.getByLabel('Invoice email', { exact: true })).toHaveValue('buyer@example.com');
-  await expect(page.getByLabel('Invoice copy', { exact: true })).toBeDisabled();
+  await expect(page.getByRole('combobox', { name: 'Invoice copy', exact: true })).toBeDisabled();
   await page.getByRole('checkbox', { name: /saved sale|simulated sale/ }).check();
   await page.getByRole('button', { name: 'Retry saved sale safely' }).click();
   await expect(page.getByText('The original receipt was recovered', { exact: false })).toBeVisible();
@@ -127,14 +127,14 @@ test('checkout preserves the chosen invoice recipient through an unresolved orde
     return false;
   });
   await customer(page, 'Online payment');
-  await page.getByLabel('Invoice copy', { exact: true }).selectOption('sms');
+  await page.getByRole('combobox', { name: 'Invoice copy', exact: true }).selectOption('sms');
   await page.getByLabel('Invoice mobile number', { exact: true }).fill('+263 77 123 4567');
   await page.getByRole('checkbox', { name: /I have reviewed the price/ }).check();
   await page.getByRole('button', { name: 'Prepare checkout', exact: true }).click();
   await expect(page.getByText('Checkout could not be confirmed.', { exact: false })).toBeVisible();
   await page.reload();
   await expect(page.getByLabel('Invoice mobile number', { exact: true })).toHaveValue('263771234567');
-  await expect(page.getByLabel('Invoice copy', { exact: true })).toBeDisabled();
+  await expect(page.getByRole('combobox', { name: 'Invoice copy', exact: true })).toBeDisabled();
   await page.getByRole('checkbox', { name: /I have reviewed the price/ }).check();
   await page.getByRole('button', { name: 'Retry this checkout safely' }).click();
   await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible();
@@ -179,7 +179,7 @@ test('older deployments hide invoice preferences and missing invoice routes degr
     if (path === '/api/customer/invoices') { await json(route, { error: 'not_found' }, 404); return true; }
     return false;
   });
-  await customer(page, 'Online payment'); await expect(page.getByLabel('Invoice copy', { exact: true })).toHaveCount(0);
+  await customer(page, 'Online payment'); await expect(page.getByRole('combobox', { name: 'Invoice copy', exact: true })).toHaveCount(0);
   supported = true; await customer(page, 'History');
   await page.locator('.invoice-history > summary').click();
   await expect(page.getByText('Invoice PDFs are not available here yet.', { exact: true })).toBeVisible();
