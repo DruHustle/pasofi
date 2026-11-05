@@ -31,10 +31,14 @@ for (const width of [320, 390, 768, 1280]) test(`photo-led Home stays compact, r
     const box = await button.boundingBox(); expect(box!.height).toBeGreaterThanOrEqual(44); expect(box!.width).toBeGreaterThanOrEqual(44);
   }
   const heroBox = await page.locator('.pasofi-home-hero').boundingBox(); expect(heroBox!.height).toBeLessThan(width < 600 ? 360 : 380);
+  await expect(page.locator('#home-study-heading')).toHaveText('A little data. So many possibilities.');
   if (width < 600) {
     const imageBox = await hero.boundingBox();
     expect(imageBox!.width).toBeGreaterThan(width - 60);
     expect(imageBox!.height).toBeGreaterThanOrEqual(160);
+    const studyImageBox = await page.locator('.pasofi-home-story > img').boundingBox();
+    expect(studyImageBox!.width).toBeGreaterThan(width - 60);
+    expect(studyImageBox!.height).toBe(180);
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(state.locationReads).toBe(0); expect(state.mutations).toEqual([]);

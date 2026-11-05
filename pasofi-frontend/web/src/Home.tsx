@@ -57,7 +57,7 @@ export default function Home({ capabilities, children, onInteract, browse, accou
 
     <div className="pasofi-home-more">
       <section className="pasofi-home-story" aria-labelledby="home-study-heading"><img src="/images/pasofi-study-together.webp" alt="Two adults working together on a laptop at a shared table" width={1536} height={1024} loading="lazy" decoding="async"/>
-        <div><span className="pasofi-home-kicker">MAKE ROOM FOR YOUR NEXT IDEA</span><h2 id="home-study-heading">A little data.<br/>So many possibilities.</h2><p>Study together, keep work moving, or catch up with someone you love. Choose the bundle that fits your day.</p><button className="pf-text-link" onClick={event => browse(event.currentTarget)}>Compare bundles <Icon name="arrow"/></button></div>
+        <div><span className="pasofi-home-kicker">MAKE ROOM FOR YOUR NEXT IDEA</span><h2 id="home-study-heading">A little data. <br/>So many possibilities.</h2><p>Study together, keep work moving, or catch up with someone you love. Choose the bundle that fits your day.</p><button className="pf-text-link" onClick={event => browse(event.currentTarget)}>Compare bundles <Icon name="arrow"/></button></div>
       </section>
       <section className="pasofi-home-account" aria-labelledby="home-account-heading"><span className="pasofi-home-account-icon"><Icon name="shield"/></span><span className="pasofi-home-kicker">ALREADY WITH PASOFI?</span><h2 id="home-account-heading">Your connection.<br/>In your hands.</h2><p>Use a voucher, check your Wi-Fi or recover your existing account.</p><div>
         <button disabled={!capabilities} onClick={event => account('voucher', event.currentTarget)}><Icon name="ticket"/><span>Redeem voucher</span><Icon name="chevron"/></button>

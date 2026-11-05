@@ -21,8 +21,8 @@
 .pf-home .pasofi-home-actions > button strong { font-size: 11px; font-weight: 650; line-height: 1.25; color: var(--home-navy); }
 .pf-home .pasofi-home-actions > button:hover:not(:disabled) { border-color: var(--home-blue); background: #edf4ff; }
 .pasofi-home-more { display: grid; gap: 12px; margin: 24px 0 16px; }
-.pasofi-home-story { display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.15fr); background: #e7efff; overflow: hidden; border: 1px solid #d0def8; border-radius: 15px; }
-.pasofi-home-story > img { width: 100%; height: 100%; min-height: 232px; object-fit: cover; object-position: 46% center; }
+.pasofi-home-story { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: 180px auto; background: #e7efff; overflow: hidden; border: 1px solid #d0def8; border-radius: 15px; }
+.pasofi-home-story > img { width: 100%; height: 180px; min-height: 0; object-fit: cover; object-position: center top; }
 .pasofi-home-story > div { min-width: 0; padding: 17px 13px; align-self: center; }
 .pasofi-home-story .pasofi-home-kicker { font-size: 8px; letter-spacing: .5px; color: #355b95; }
 .pasofi-home-content .pasofi-home-story h2 { font-size: 20px; line-height: 1.15; letter-spacing: -.5px; margin: 8px 0; font-weight: 780; color: var(--home-navy); }
@@ -83,7 +83,7 @@
   .pf-home .pasofi-home-actions > button strong { font-size: 12px; }
   .pasofi-home-more { grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); }
   .pasofi-home-story { grid-template-columns: minmax(0,1fr); grid-template-rows: 150px auto; }
-  .pasofi-home-story > img { height: 150px; min-height: 0; object-position: center 43%; }
+  .pasofi-home-story > img { height: 150px; min-height: 0; object-position: center top; }
   .pasofi-home-story > div { padding: 18px; }
   .pasofi-home-story h2 br { display: none; }
   .pasofi-home-story .pasofi-home-kicker { font-size: 9px; }
@@ -117,7 +117,6 @@
   .pasofi-home-hero-copy > .pf-button .pf-icon { width: 12px; }
   .pasofi-home-hero-photo { min-height: 160px; height: 160px; }
   .pf-home .pasofi-home-actions > button strong { font-size: 10px; }
-  .pasofi-home-story { grid-template-columns: minmax(0,.8fr) minmax(0,1.2fr); }
   .pasofi-home-story > div { padding: 14px 10px; }
   .pasofi-home-content .pasofi-home-story h2 { font-size: 18px; }
 }
