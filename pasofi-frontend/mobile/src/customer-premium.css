@@ -369,3 +369,61 @@
 .customer-workspace .primary { background: #075cf5; border-color: #075cf5; color: #fff; }
 .customer-workspace .primary:hover:not(:disabled) { background: #0647c7; border-color: #0647c7; color: #fff; }
 .customer-workspace .premium-usage .primary { background: #e5ff52; border-color: #e5ff52; color: #092451; }
+
+/* Blue surfaces need their own accessible text palette, including small metadata. */
+.customer-workspace{--customer-muted:#425d7a;--customer-line:#cfdef5;--customer-wash:#f2f7ff}
+.customer-workspace .premium-usage::before{border-color:#ffffff20}
+.customer-workspace .premium-usage h3,
+.customer-workspace .usage-card-top .eyebrow,
+.customer-workspace .usage-loading-amount small,
+.customer-workspace .premium-usage .usage-freshness,
+.customer-workspace .usage-ring strong small,
+.customer-workspace .usage-ring span,
+.customer-workspace .premium-usage .usage-meter-label,
+.customer-workspace .premium-usage .usage-breakdown dt,
+.customer-workspace .premium-usage .usage-breakdown small,
+.customer-workspace .premium-usage .usage-validity dt,
+.customer-workspace .premium-usage .usage-validity small,
+.customer-workspace .premium-usage .usage-timestamps p,
+.customer-workspace .premium-usage .usage-note,
+.customer-workspace .usage-explanation summary,
+.customer-workspace .usage-refresh{color:#eef5ff}
+.customer-workspace .usage-ring span{font-size:10px;letter-spacing:.2px}
+.customer-workspace .usage-connection-pill,
+.customer-workspace .usage-connection-pill.is-connected{color:#fff;background:#0647c7;border-color:#b5d0ff}
+.customer-workspace .usage-connection-pill i{background:#fff}
+.customer-workspace .usage-connection-pill.is-connected i{background:#e5ff52}
+.customer-workspace .premium-usage .usage-freshness.offline,
+.customer-workspace .premium-usage .usage-freshness.stale{color:#fff1c2}
+.customer-workspace .premium-usage .notice{color:#624715;background:#fff1d5;border-color:#e6ce9c}
+.customer-workspace .usage-ring-track{stroke:#0647c7}
+.customer-workspace .premium-usage progress::-webkit-progress-bar{background:#0647c7}
+.customer-workspace .customer-quick-actions{gap:8px;margin:14px 0 20px}
+.customer-workspace .customer-quick-actions button:nth-child(n){min-height:76px;padding:9px 4px;gap:6px;border:1px solid #cfdef5;border-radius:12px;background:#fff;color:#092451;font-size:12px}
+.customer-workspace .customer-quick-actions button:nth-child(n)>span{width:24px;height:24px;border:0;border-radius:0;background:transparent;color:#075cf5}
+.customer-workspace .customer-quick-actions button:first-child{background:#e5ff52;border-color:#d2ed39}
+.customer-workspace .customer-quick-actions button:first-child>span{color:#092451}
+.customer-workspace .customer-quick-actions button:nth-child(n):hover:not(:disabled){background:#e8f0ff;border-color:#075cf5}
+.customer-workspace .customer-quick-actions button:first-child:hover:not(:disabled){background:#d6f143}
+.customer-workspace .customer-section-tabs button.selected{background:#075cf5;color:#fff;border-color:#075cf5}
+.customer-workspace .customer-wifi-intro,
+.customer-workspace .customer-profile-card,
+.customer-workspace .customer-voucher-art,
+.customer-workspace .customer-order-summary{background:#fff;border-color:#cfdef5;color:#092451}
+.customer-workspace .customer-soft-banner{background:#e8f0ff;border:1px solid #cfdef5}
+.customer-workspace .customer-record-icon,
+.customer-workspace .customer-profile-avatar{background:#e8f0ff;color:#075cf5}
+.customer-workspace .customer-voucher-art{border:1px dashed #91add7}
+.customer-workspace .customer-voucher-art>span:last-child{color:#425d7a;font-size:12px}
+.customer-workspace .customer-voucher-art>i{border-top-color:#91add7}
+.customer-workspace .customer-welcome-card{background:#075cf5}
+.customer-workspace .customer-welcome-card p,
+.customer-workspace .customer-welcome-card .eyebrow,
+.customer-workspace .customer-welcome-card>small{color:#eef5ff}
+.customer-workspace .text-button{color:#0647c7}
+.customer-workspace .customer-muted,
+.customer-workspace .customer-private-note,
+.customer-workspace .customer-bundle-row span,
+.customer-workspace .customer-bundle-list small{color:#425d7a}
+@media(min-width:700px){.customer-workspace .customer-quick-actions button:nth-child(n){min-height:48px;flex-direction:row;justify-content:center;gap:8px}}
+@media(max-width:359px){.customer-workspace .customer-quick-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.customer-workspace .customer-quick-actions button:nth-child(n){min-height:48px;flex-direction:row;justify-content:center}}

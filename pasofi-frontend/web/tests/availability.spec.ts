@@ -94,12 +94,12 @@ for (const width of [320, 390]) {
         await expectEmptyBundles(page);
       });
     }
-    await test.step('Captive Explore bundles refreshes and focuses the catalogue in place', async () => {
+    await test.step('Captive empty-state refresh updates availability and focuses the catalogue in place', async () => {
       await page.goto('/connect');
       await expect(page.getByText(emptyMessage, { exact: true })).toBeVisible();
       await expect(page.getByText('SERVICE IN PREPARATION', { exact: true })).toBeVisible();
       const before = { ...state.reads };
-      await page.getByRole('button', { name: 'Explore bundles', exact: true }).click();
+      await page.getByRole('button', { name: 'Refresh availability', exact: true }).click();
       await expect(page).toHaveURL(/\/connect$/);
       await expect(catalogueHeading(page)).toBeFocused();
       await expect(catalogueHeading(page)).toBeInViewport({ ratio: 1 });

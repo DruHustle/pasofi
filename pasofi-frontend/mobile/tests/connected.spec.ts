@@ -49,15 +49,23 @@ test('a configured HTTPS gateway still fails closed until native cookie access i
 
 test('qualified mobile API session and voucher redemption use credentialed HTTPS and remain disconnected', async ({ page, configuredBaseURL }, testInfo) => {
   let hasSession = false, redeemed = false;
+  const networkRequests: string[] = [];
   await page.addInitScript(() => { const original = window.fetch; (window as any).apiTransport = []; window.fetch = (input, init) => { if (String(input).startsWith('https://api.pamofi.test')) (window as any).apiTransport.push({ credentials: init?.credentials, mode: init?.mode, redirect: init?.redirect }); return original(input, init); }; });
   await mock(page, async (route, path, method, reply) => {
+    if (path.startsWith('/api/network/')) networkRequests.push(`${method} ${path}`);
     if (path === '/api/session') { if (method === 'POST') { expect(route.request().headers()['idempotency-key']).toMatch(/^[A-Za-z0-9_-]{43}$/); hasSession = true; } await reply(hasSession ? { customerId } : { error: 'not_authenticated' }, hasSession ? 200 : 401); return true; }
     if (path === '/api/vouchers/redeem') { expect(route.request().postDataJSON()).toEqual({ code: 'DEMOVOUCHER234567' }); redeemed = true; await reply({ entitlementId, replayed: false }); return true; }
     if (path === '/api/usage') { await reply(usageSnapshot('0', { allowanceBytes: redeemed ? '5000000000' : '0', queuedBytes: redeemed ? '5000000000' : '0', entitlementId })); return true; }
     if (path === '/api/access') { await reply({ entitlements: redeemed ? [{ id: entitlementId, bundle_id: 'flex', byte_limit: '5000000000', consumed_bytes: '0', validity_seconds: 604800, activated_at: null, revoked_at: null, start_by: new Date(Date.now() + 86400000).toISOString() }] : [], hasMore: false, nextOffset: null }); return true; }
     return false;
   });
-  await page.setViewportSize({ width: 360, height: 850 }); await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Use a voucher', exact: true }).click(); await page.getByLabel('Voucher code', { exact: true }).fill('DEMO-VOUCHER-234567'); await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click(); await expect(page.getByText('Queued · not connected', { exact: true })).toBeVisible(); await expect(page.getByText('Hotspot sign-in is not enabled', { exact: false })).toBeVisible();
+  await page.setViewportSize({ width: 360, height: 850 }); await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Use a voucher', exact: true }).click(); await page.getByLabel('Voucher code', { exact: true }).fill('DEMO-VOUCHER-234567'); await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click(); await expect(page.getByText('Queued · not connected', { exact: true })).toBeVisible();
+  await expect(page.getByText('New hotspot connections are paused.', { exact: false })).toContainText('Ask your PasoFi agent when service is available.');
+  await expect(page.getByText('No active hotspot session', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Check connection', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: /^(Connect to Wi-Fi|Connect now →|Retry connection)$/ })).toHaveCount(0);
+  await expect(page.getByLabel(/^Hotspot (username|password)$/)).toHaveCount(0);
+  expect(networkRequests).toEqual([]);
   await expect(page.getByTestId('usage-remaining')).toHaveText('5.000 GB'); await expect(page.getByTestId('usage-queued')).toHaveText('5.000 GB');
   const transports = await page.evaluate(() => (window as any).apiTransport); expect(transports.length).toBeGreaterThan(4); expect(transports.every((request: { credentials: string; mode: string; redirect: string }) => request.credentials === 'include' && request.mode === 'cors' && request.redirect === 'error')).toBe(true); expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('DEMOVOUCHER'); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); await page.screenshot({ path: testInfo.outputPath('mobile-api-queued-360.png'), fullPage: true });
 });

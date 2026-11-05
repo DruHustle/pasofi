@@ -212,20 +212,20 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
 .pf-catalogue-toolbar{align-items:center;gap:8px;margin-bottom:12px;flex-wrap:nowrap}.pf-catalogue-caption{gap:2px;font-size:12px}.pf-result-count{font-size:12px}
 .pf-sort{min-width:0;width:auto;flex:0 1 190px;gap:3px}.pf-sort select{font-size:13px;min-height:44px;padding:8px 24px 8px 9px}
 .pf-bundle-terms{margin:14px 0;padding:12px}.pf-bundle-terms p{line-height:1.6}
-.pf-home .pf-service-status{margin-bottom:14px;padding:8px 12px}.pf-home .pf-page-intro{margin:14px 0}.pf-home .pf-page-intro h1{font-size:26px;line-height:1.2;margin:5px 0}.pf-home .pf-page-intro p{font-size:13px;margin:5px 0}
-.pf-home .pf-quick-actions{margin:12px 0 18px;gap:7px}.pf-home .pf-quick-actions>button{min-height:64px;padding:8px 3px;gap:5px;border-radius:12px}
-.pf-home .pf-quick-actions>button>span,.pf-home .pf-quick-actions>button:nth-child(n)>span{width:24px;height:24px;background:transparent;border-radius:0}.pf-home .pf-quick-actions>button .pf-icon{width:22px;height:22px}.pf-home .pf-quick-actions>button strong{font-size:11px}
-@media(min-width:700px){.pf-bundle-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.pf-home .pf-quick-actions>button{flex-direction:row;justify-content:center;min-height:48px;gap:8px}.pf-home .pf-quick-actions>button strong{font-size:13px}}
-@media(min-width:1000px){.pf-home .pf-page-intro{margin-top:8px}.pf-home .pf-page-intro h1{font-size:30px}.pf-home .pf-quick-actions{margin:14px 0 20px}.pf-bundle-card{padding:14px}.pf-home .pf-service-status{margin-bottom:14px}}
+:is(.pf-home,.pf-captive) .pf-service-status{margin-bottom:14px;padding:8px 12px}:is(.pf-home,.pf-captive) .pf-page-intro{margin:14px 0}:is(.pf-home,.pf-captive) .pf-page-intro h1{font-size:26px;line-height:1.2;margin:5px 0}:is(.pf-home,.pf-captive) .pf-page-intro p{font-size:13px;margin:5px 0}
+:is(.pf-home,.pf-captive) .pf-quick-actions{margin:12px 0 18px;gap:7px}:is(.pf-home,.pf-captive) .pf-quick-actions>button{min-height:64px;padding:8px 3px;gap:5px;border-radius:12px}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button>span,:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n)>span{width:24px;height:24px;background:transparent;border-radius:0}:is(.pf-home,.pf-captive) .pf-quick-actions>button .pf-icon{width:22px;height:22px}:is(.pf-home,.pf-captive) .pf-quick-actions>button strong{font-size:11px}
+@media(min-width:700px){.pf-bundle-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}:is(.pf-home,.pf-captive) .pf-quick-actions>button{flex-direction:row;justify-content:center;min-height:48px;gap:8px}:is(.pf-home,.pf-captive) .pf-quick-actions>button strong{font-size:13px}}
+@media(min-width:1000px){:is(.pf-home,.pf-captive) .pf-page-intro{margin-top:8px}:is(.pf-home,.pf-captive) .pf-page-intro h1{font-size:30px}:is(.pf-home,.pf-captive) .pf-quick-actions{margin:14px 0 20px}.pf-bundle-card{padding:14px}:is(.pf-home,.pf-captive) .pf-service-status{margin-bottom:14px}}
 @media(min-width:1400px){.pf-bundle-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:359px){.pf-bundle-card{column-gap:8px;padding:10px;grid-template-columns:minmax(0,1fr) 68px 62px}.pf-bundle-price strong{font-size:20px}.pf-sort{flex-basis:152px}.pf-home .pf-quick-actions>button strong{font-size:10px}.pf-home .pf-page-intro h1{font-size:24px}}
+@media(max-width:359px){.pf-bundle-card{column-gap:8px;padding:10px;grid-template-columns:minmax(0,1fr) 68px 62px}.pf-bundle-price strong{font-size:20px}.pf-sort{flex-basis:152px}:is(.pf-home,.pf-captive) .pf-quick-actions>button strong{font-size:10px}:is(.pf-home,.pf-captive) .pf-page-intro h1{font-size:24px}}
 
 /* Match the local Wi-Fi welcome: blue, white, navy and one lime accent. */
 .pf-bundle-card:nth-child(n){background:#fff;border-color:#cfdef5;border-left-color:#075cf5}
-.pf-home .pf-quick-actions>button:nth-child(n){background:#fff;color:#092451;border-color:#cfdef5}
-.pf-home .pf-quick-actions>button:nth-child(n)>span{color:#075cf5}
-.pf-home .pf-quick-actions>button:first-child{background:#e5ff52;border-color:#d2ed39}
-.pf-home .pf-quick-actions>button:first-child>span{color:#092451}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n){background:#fff;color:#092451;border-color:#cfdef5}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n)>span{color:#075cf5}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button:first-child{background:#e5ff52;border-color:#d2ed39}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button:first-child>span{color:#092451}
 .pf-bundle-terms{background:#fff;border-color:#cfdef5}.pf-bundle-terms p{color:#425d7a}
 
 .pf-catalogue-options{margin:0 0 10px;border:1px solid #cfdef5;border-radius:10px;background:#fff;padding:0 12px}
@@ -235,3 +235,10 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
 .pf-text-link{color:#0647c7}.pf-bundle-card h3 span,.pf-navigation>button{color:#425d7a}
 .pf-navigation>button[aria-current=page] .pf-nav-icon{background:#075cf5;color:#fff}
 @media(min-width:1000px){.pf-navigation>button[aria-current=page]{background:#075cf5;color:#fff}.pf-navigation>button[aria-current=page] .pf-nav-icon{background:transparent}.pf-nav-dot{background:#e5ff52}}
+
+/* The app continues the compact welcome palette; colour has a clear purpose. */
+.pf-avatar-button{background:#fff;border-color:#cfdef5;color:#092451}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button strong{font-size:12px}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n):hover:not(:disabled){background:#e8f0ff;border-color:#075cf5;color:#092451}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button:first-child:hover:not(:disabled){background:#d6f143;border-color:#aac821}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n):hover:not(:disabled)>span{color:#075cf5;background:transparent}

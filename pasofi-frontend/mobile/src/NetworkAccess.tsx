@@ -19,6 +19,7 @@ const formOrigins = (() => {
 type Credential = { username: string; password: string; expiresAt: string; loginUrl: string };
 export default function NetworkAccess({ customerId, capabilities, usage, fresh, refreshing, refresh }: { customerId: string; capabilities: Capabilities; usage: UsageSnapshot | null; fresh: boolean; refreshing: boolean; refresh: () => Promise<void> }) {
   const [sites, setSites] = useState<NetworkSite[]>([]), [siteId, setSiteId] = useState('');
+  const [sitesLoading, setSitesLoading] = useState(true), [sitesError, setSitesError] = useState(false), [sitesAttempt, setSitesAttempt] = useState(0);
   const [credentials, setCredentials] = useState<Credential | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
@@ -30,17 +31,29 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
   const isCurrent = (revision: number) => live.current && generation.current === revision && validity.current.customerId === customerId;
   async function verifyOwner() { if (await currentSession() !== customerId) throw new ApiError(401, 'session_changed'); }
   useEffect(() => {
-    live.current = true; const revision = ++generation.current, controller = new AbortController();
-    setCredentials(null); request.current = null;
-    if (capabilities.networkAccess) {
-      api<{ sites: NetworkSite[] }>('/api/network/sites', { signal: controller.signal }).then(result => { if (isCurrent(revision)) { setSites(result.sites); setSiteId(result.sites[0]?.id ?? ''); } }).catch(error => { if (isCurrent(revision)) setMessage(messageFor(error)); });
-    }
+    live.current = true; ++generation.current;
+    setCredentials(null); setShowPassword(false); setBusy(false); setMessage(''); request.current = null; setSites([]); setSiteId('');
     const timer = setInterval(() => setNow(Date.now()), 1_000);
-    return () => { live.current = false; ++generation.current; controller.abort(); clearInterval(timer); };
+    return () => { live.current = false; ++generation.current; clearInterval(timer); };
   }, [customerId, capabilities.networkAccess]);
+  useEffect(() => {
+    const revision = generation.current, controller = new AbortController();
+    const current = () => !controller.signal.aborted && isCurrent(revision);
+    setSitesError(false); setSitesLoading(capabilities.networkAccess);
+    if (capabilities.networkAccess) {
+      api<{ sites: NetworkSite[] }>('/api/network/sites', { signal: controller.signal }).then(result => {
+        if (!Array.isArray(result.sites) || !result.sites.every(site => {
+          if (!site || typeof site.id !== 'string' || !site.id || typeof site.name !== 'string' || !site.name || typeof site.loginUrl !== 'string') return false;
+          const url = new URL(site.loginUrl); return url.protocol === 'https:' && !url.username && !url.password && !url.hash;
+        })) throw Error('invalid_hotspot_locations');
+        if (current()) { setSites(result.sites); setSiteId(value => result.sites.some(site => site.id === value) ? value : result.sites[0]?.id ?? ''); }
+      }).catch(() => { if (current()) setSitesError(true); }).finally(() => { if (current()) setSitesLoading(false); });
+    }
+    return () => controller.abort();
+  }, [customerId, capabilities.networkAccess, sitesAttempt]);
   useEffect(() => { if (credentials && Date.parse(credentials.expiresAt) <= now) { setCredentials(null); request.current = null; } }, [now, credentials]);
   async function prepare(event: React.FormEvent) {
-    event.preventDefault(); if (busy || !siteId || !capabilities.networkAccess || !fresh || usage?.hold.active) return;
+    event.preventDefault(); if (busy || sitesLoading || sitesError || !siteId || !capabilities.networkAccess || !fresh || usage?.hold.active) return;
     const revision = generation.current, verifiedRevision = validity.current.revision;
     setBusy(true); setMessage(''); setCredentials(null); setShowPassword(false);
     try {
@@ -65,18 +78,21 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error)); }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
-  if (!capabilities.networkAccess) return <section className="workspace-card"><h3>Hotspot connection</h3><p>Hotspot sign-in is not enabled at this deployment yet. A purchased or redeemed bundle alone does not connect your device.</p></section>;
   const retryPending = !!request.current && !credentials && session?.state === 'pending' && session.siteId === request.current.siteId && !session.disconnectRequested;
   const connected = fresh && session?.connected === true && session.state === 'active';
   return <section className="workspace-card"><div className="workspace-section-head"><h3>Hotspot connection</h3><button className="secondary" disabled={busy || refreshing} onClick={refresh}>Check connection</button></div>
-    <p className={`connection-state ${connected ? 'connected' : ''}`} role="status">{!fresh ? 'Connection status not verified' : usage?.hold.active ? 'Connection needs review' : !session ? 'No active hotspot session' : session.disconnectRequested ? 'Disconnect awaiting confirmation' : connected ? 'Connected · recent router report' : session.state === 'uncertain' ? 'Connection needs reconciliation' : usage?.connectivity === 'stale' ? 'Router report delayed · connection not verified' : 'Sign-in pending · not confirmed connected'}</p>
-    {session && <p>Usage recorded for this connection: {dataAmount(session.chargedBytes)} · Grant deadline {localDate(session.deadline)}. Connection status and remaining data use the same verified account snapshot above.</p>}
+    <p className={`connection-state ${connected ? 'connected' : ''}`} role="status">{!fresh ? 'Connection status not verified' : usage?.hold.active ? 'Connection needs review' : !session ? 'No active hotspot session' : session.disconnectRequested ? 'Disconnect awaiting confirmation' : connected ? 'Connected · recent router report' : session.state === 'uncertain' ? 'Checking an interrupted connection' : usage?.connectivity === 'stale' ? 'Router report delayed · connection not verified' : 'Sign-in pending · not confirmed connected'}</p>
+    {session && <p>Usage recorded for this connection: {dataAmount(session.chargedBytes)} · This connection is scheduled to end by {localDate(session.deadline)}. Check the balance above for your remaining data.</p>}
     {message && <p className="feedback" role="status">{message}</p>}
-    {!credentials && <form className="form-grid" onSubmit={prepare}>
+    {!capabilities.networkAccess && <p className="notice">New hotspot connections are paused.{session ? " You can still check or disconnect your current session." : " Ask your PasoFi agent when service is available."}</p>}
+    {capabilities.networkAccess && !credentials && sitesLoading && <p role="status">Loading hotspot locations…</p>}
+    {capabilities.networkAccess && !credentials && sitesError && <div className="notice"><p role="alert">Hotspot locations could not be loaded. Try again to choose where to connect.</p><button className="secondary" disabled={busy || sitesLoading} onClick={() => setSitesAttempt(value => value + 1)}>Retry locations</button></div>}
+    {capabilities.networkAccess && !credentials && !sitesLoading && !sitesError && sites.length === 0 && <div className="notice"><p role="status">No hotspot locations are available yet. Ask your PasoFi agent for help or check again.</p><button className="secondary" disabled={busy} onClick={() => setSitesAttempt(value => value + 1)}>Refresh locations</button></div>}
+    {capabilities.networkAccess && !credentials && !sitesLoading && !sitesError && sites.length > 0 && <form className="form-grid" onSubmit={prepare}>
       {sites.length === 1 ? <p>Connecting at <strong>{sites[0].name}</strong>. No Wi-Fi name to enter.</p> : <label>Choose your PasoFi location<select required value={siteId} onChange={event => { setSiteId(event.target.value); setCredentials(null); }} disabled={busy || !!session}><option value="">Select a location</option>{sites.map(site => <option value={site.id} key={site.id}>{site.name}</option>)}</select></label>}
       <button className="primary" disabled={busy || !fresh || !!usage?.hold.active || !siteId || (!!session && !retryPending)}>{busy ? 'Getting your connection ready…' : retryPending ? 'Retry connection' : 'Connect to Wi-Fi'}</button>
     </form>}
-    {credentials && fresh && <div className="private-value">
+    {capabilities.networkAccess && credentials && fresh && <div className="private-value">
       <h4>One more tap and you’re on your way</h4>
       {formOrigins.includes(new URL(credentials.loginUrl).origin) ? <>
         <p>Connect securely to your PasoFi hotspot. Your connection details are filled in for you.</p>
