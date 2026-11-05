@@ -28,6 +28,7 @@ const rules = [
   [new RegExp(`^/api/(customer|staff)/invoices(?:/${UUID}(?:/pdf)?)?$`), ['GET']],
   [/^\/api\/invoice-downloads$/, ['POST']],
   [/^\/api\/admin\/(sites|inventory\/allocations)$/, ['POST']],
+  [new RegExp(`^/api/admin/sites/${UUID}$`), ['PATCH']],
   [/^\/api\/admin\/network\/reviews$/, ['GET']],
   [new RegExp(`^/api/admin/network/reviews/${UUID}/resolve$`), ['POST']],
   [/^\/api\/admin\/routers$/, ['GET']],

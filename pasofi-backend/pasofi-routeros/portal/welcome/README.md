@@ -27,6 +27,43 @@ node build-install.mjs EXISTING_DIRECTORY NEW_DIRECTORY HTTPS_PROFILE OUTPUT.rsc
 node --test welcome.test.mjs
 ```
 
+### Select the site and verified portal origins
+
+The command above preserves the existing defaults: `Kuwadzana`,
+`https://hotspot.pasofi.onesa.eu` for the router's HTTPS HotSpot and
+`https://pasofi.onesa.eu` for the customer app. Those defaults are historical
+template values, not evidence that either site is ready or that the public app
+is reachable before authentication.
+
+For another site or the [dedicated captive customer app](../../../infra/production/HOTSPOT_PORTAL.md),
+copy `site-config.example.json` to a local configuration file and replace its
+placeholders with the inspected values. Only these three fields are accepted:
+
+| Field | Required value |
+| --- | --- |
+| `siteLabel` | The actual display name, such as `Lawfield Farm`; 1–80 printable characters. HTML and RouterOS template characters are escaped. |
+| `hotspotOrigin` | The verified HTTPS DNS origin served by that router's trusted HotSpot certificate. Its hostname must match the existing HotSpot profile. |
+| `appOrigin` | The separately qualified HTTPS customer-app origin. For post-welcome access, use the dedicated gateway portal and its reviewed exact-IP policy. |
+
+Use canonical lower-case DNS origins, with an optional final `/`. Credentials,
+explicit ports, path prefixes, queries, fragments, IP literals and matching
+HotSpot/app origins are refused. The generator appends the existing `/login`,
+`/status`, `/logout` and `/connect` paths itself. It does not verify DNS ownership,
+TLS service reachability or installed certificates. No secrets belong in this
+configuration file.
+
+```sh
+node build-install.mjs EXISTING_DIRECTORY NEW_DIRECTORY HTTPS_PROFILE OUTPUT.rsc \
+  /protected/site-welcome.json
+```
+
+The generated pages consistently use the selected site, HotSpot origin and
+customer-app origin, including trial POSTs, the expiry redirect, voucher links
+and successful-login/logout pages. The installer checks the selected HotSpot
+profile's actual DNS name before copying files. Source and destination router
+directories must be distinct and non-overlapping, without path traversal. The
+local output is a new mode-0600 file; an existing file is not overwritten.
+
 The installer copies the complete current portal folder, verifies each write,
 then changes only the supplied profile's HTML directory. It refuses an existing
 target. Preserve the original folder for rollback. It does not enable trial,

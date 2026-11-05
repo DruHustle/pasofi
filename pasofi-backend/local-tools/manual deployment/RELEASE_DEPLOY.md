@@ -4,7 +4,7 @@ This tool upgrades the existing Docker Compose installation from a qualified, pi
 
 ## Prerequisites
 
-- A release bundle containing `release.json`, `source.tar.gz`, and these three entry points: `release-deploy.py`, `release-deploy.cmd`, `release-deploy.sh`. Use the bundle prepared after the release checks pass; do not substitute a branch archive or edit its manifest.
+- A release bundle containing `release.json`, `source.tar.gz`, `release-deploy.py`, and the launcher for your platform. The Mac package includes `release-deploy.command` and `release-deploy.sh`; a Windows package uses `release-deploy.cmd`. Keep the supplied launcher and Python engine together. Use the bundle prepared after the release checks pass; do not substitute a branch archive or edit its manifest.
 - Python **3.9 or newer** on the workstation and Linux server. Windows needs the Python launcher (`py`) or `python` on PATH. Windows, Mac and Linux need OpenSSH (`ssh`, `scp`).
 - An existing SSH configuration alias for the server. The normal OpenSSH host-key check remains enabled. The SSH account must already have Docker access and read access to the installation's protected configuration files. No automatic `sudo` is used.
 - First run an ordinary interactive `ssh YOUR_SSH_ALIAS`, verify the server fingerprint through your existing trusted record, confirm access, and exit. Load an encrypted key into your SSH agent. The deployment uses `BatchMode=yes` and a 15-second connection timeout: unknown hosts or unavailable keys fail promptly instead of waiting for hidden prompts. It never accepts a host key automatically.

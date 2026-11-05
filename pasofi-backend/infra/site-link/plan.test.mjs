@@ -17,7 +17,31 @@ test('outbound site plan confines routes and preserves RADIUS responses behind N
   assert.doesNotMatch(router,/dst-port=(?:80,|8291|22)|dst-address=0\.0\.0\.0\/0|masquerade|service set|radius add/);
   assert.equal((router.match(/\/ip route add /g)||[]).length,1);
   assert.match(files['oracle-wireguard.conf.review'],/AllowedIPs = 10\.77\.254\.2\/32/);
-  const report=JSON.parse(files['review.json']);assert.equal(report.status,'prepared-only');assert.equal(report.customerDefaultRouteIncluded,false);
+  const report=JSON.parse(files['review.json']);assert.equal(report.status,'prepared-only');assert.equal(report.customerDefaultRouteIncluded,false);assert.equal(report.routerInterface,'pamofi-service');assert.equal(report.routerListenPort,p.port);
+});
+test('the selected PasoFi interface is used consistently for the second site',()=>{
+  const files=buildPlan({...fixture(),routerInterface:'pasofi-service'}),router=files['router-service.rsc.review'];
+  assert.equal(JSON.parse(files['review.json']).routerInterface,'pasofi-service');
+  assert.match(router,/wireguard find where name="pasofi-service"/);
+  assert.match(router,/\/ip address add address=10\.77\.254\.2\/32 interface="pasofi-service"/);
+  assert.match(router,/\/interface wireguard peers add interface="pasofi-service"/);
+  assert.match(router,/\/ip route add dst-address=10\.77\.254\.1\/32 gateway="pasofi-service"/);
+  assert.doesNotMatch(router,/(?:in-interface|out-interface|interface|gateway)="pamofi-service"/);
+  assert.ok(router.indexOf('Multiple service interfaces exist')<router.indexOf('/ip firewall filter add'));
+  assert.match(router,/\/interface find where name="pamofi-service" or name="pasofi-service"/);
+  assert.equal(files['oracle-firewall.nft.review'],buildPlan(fixture())['oracle-firewall.nft.review']);
+});
+test('an independent Oracle listener preserves the router bootstrap local port',()=>{
+  const p={...fixture(),port:51822,routerListenPort:51821,routerInterface:'pasofi-service',serverInterface:'pfi-site02'},files=buildPlan(p),router=files['router-service.rsc.review'];
+  assert.match(router,/wireguard get \[\/interface wireguard find where name="pasofi-service"\] listen-port\] != 51821/);
+  assert.match(router,/wireguard find where listen-port=51821/);
+  assert.doesNotMatch(router,/wireguard find where listen-port=51822/);
+  assert.match(router,/endpoint-address="1\.1\.1\.1" endpoint-port=51822/);
+  assert.match(files['oracle-wireguard.conf.review'],/^ListenPort = 51822$/m);
+  assert.match(files['oracle-firewall.nft.review'],/Permit outer UDP 51822 separately/);
+  assert.doesNotMatch(files['oracle-firewall.nft.review'],/51821/);
+  assert.equal(files['oracle-firewall.nft.review'],buildPlan({...p,routerListenPort:51822})['oracle-firewall.nft.review']);
+  const report=JSON.parse(files['review.json']);assert.equal(report.wireguardPort,51822);assert.equal(report.routerListenPort,51821);
 });
 test('fresh interface preflight and final enablement precede no unguarded forwarding',()=>{
   const text=buildPlan(fixture())['router-service.rsc.review'];
@@ -51,6 +75,8 @@ test('unsafe keys endpoints networks and injection are rejected before output',(
     {serverTunnelIp:'10.77.254.2'},{routerTunnelIp:'192.168.88.2'},{serverNetworks:['10.0.0.0/8']},
     {routerNetworks:[]},{serverNetworks:[]},{serverInterface:'eth0'},{serverInterface:'pfi-x;reboot'},
     {serverInterface:'pfi-name-too-long-12'},{port:443},{port:65536},
+    ...['bridge','ether1','pasofi-service"; /system reboot','pasofi-service\n','',null,23].map(routerInterface=>({routerInterface})),
+    ...[0,443,65536,51821.5,'51821',null,'51821; /system reboot'].map(routerListenPort=>({routerListenPort})),
   ])assert.throws(()=>validatePlan({...fixture(),...update}),JSON.stringify(update));
 });
 test('CLI writes private exclusive outputs and refuses overwriting',async()=>{

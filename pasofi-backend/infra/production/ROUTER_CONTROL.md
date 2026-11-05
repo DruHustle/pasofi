@@ -1,5 +1,7 @@
 # Optional private RouterOS reconciler
 
+For customer service commissioning, follow the [cash hotspot launch runbook](../../docs/CASH_HOTSPOT_LAUNCH.md). This overlay is optional in the source stack, but the managed paid-session workflow needs its qualified reconciler to prove Stop → independent absence → closed → reconnect. The separate central Routers administration workspace does not establish that this worker is active.
+
 `router-control.compose.yaml` wires the existing network service's RouterOS reconciler into the production stack. The base and RADIUS overlay still leave `NETWORK_RECONCILER_ENABLED=false`. This optional file supplies the missing credential/CA mounts and activation input; it creates no router account, certificate, tunnel or new authentication mechanism.
 
 ## Prepared material

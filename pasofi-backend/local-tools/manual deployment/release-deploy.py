@@ -456,6 +456,7 @@ def deploy(args):
         planned = json.loads(run(base + ["-f", str(overlay_path), "config", "--format", "json"]))
         verify_delta(model, planned, overlay)
     print("Preflight passed: release " + manifest["commit"] + ".", flush=True)
+    print("Existing Compose project: " + project + ".", flush=True)
     print("Existing ordered Compose overlays, protected secrets and external database volume verified.", flush=True)
     print("Update: " + ", ".join(manifest["services"]) + "; gateways; owned migrations: "
           + ", ".join(manifest["migrations"]) + ("; existing captive portal assets." if hotspot else "."), flush=True)

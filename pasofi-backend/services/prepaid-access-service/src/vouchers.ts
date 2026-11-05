@@ -44,6 +44,16 @@ export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bund
     if(!voucher.rowCount) throw new VoucherError('delivery_unavailable');
     return {saleId:sale.id,voucherId:voucher.rows[0].id,code:format(decrypt(voucher.rows[0],deliveryKey)),replayed:true};
   }
+  // Serialize a new sale with a location pause. The boundary's earlier read
+  // cannot prevent a concurrent status change. Holding a shared row lock until
+  // commit means a confirmed pause blocks subsequent sales, while replay above
+  // still recovers already-paid receipts, including after a location is paused.
+  let siteName=options.siteName??'';
+  if(options.siteInventory){
+   const location=(await client.query<{name:string;enabled:boolean}>('SELECT name,enabled FROM sales_locations WHERE id=$1 FOR SHARE',[siteId])).rows[0];
+   if(!location?.enabled)throw new VoucherError('site_unavailable');
+   siteName=location.name;
+  }
   // The authenticated agent attests receipt of cash; this is not evidence from
   // a payment provider. Validate only after replay so older committed requests
   // remain recoverable without inventing cash evidence for historical sales.
@@ -73,7 +83,7 @@ export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bund
   if(options.siteInventory&&delivery!=='receipt'&&(!options.phone||!/^263[0-9]{9}$/.test(options.phone)))throw new VoucherError('invalid_phone');
   const item=product.rows[0], saleId=randomUUID();
   await client.query(`INSERT INTO agent_sales (id,agent_id,site_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,start_by,site_name,commission_bps,commission_minor,delivery,simulation,request_hash,payment_method,cash_received_minor,cash_confirmed_at,shift_id)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+interval '30 days',$10,$11,$12,$13,$14,$15,$16,$17,CASE WHEN $16='cash' THEN now() ELSE NULL END,$18)`,[saleId,agentId,siteId,requestKey,bundleId,item.price_minor,item.currency,item.byte_limit,item.validity_seconds,options.siteName??'',commissionBps,Math.floor(item.price_minor*commissionBps/10000),delivery,options.simulation??true,options.siteInventory?fingerprint:legacyFingerprint,options.siteInventory?'cash':null,options.siteInventory?item.price_minor:null,shiftId]);
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+interval '30 days',$10,$11,$12,$13,$14,$15,$16,$17,CASE WHEN $16='cash' THEN now() ELSE NULL END,$18)`,[saleId,agentId,siteId,requestKey,bundleId,item.price_minor,item.currency,item.byte_limit,item.validity_seconds,siteName,commissionBps,Math.floor(item.price_minor*commissionBps/10000),delivery,options.simulation??true,options.siteInventory?fingerprint:legacyFingerprint,options.siteInventory?'cash':null,options.siteInventory?item.price_minor:null,shiftId]);
   if(options.siteInventory)await client.query('UPDATE agent_site_inventory SET quantity=quantity-1 WHERE agent_id=$1 AND site_id=$2 AND bundle_id=$3',[agentId,siteId,bundleId]);
   else await client.query('UPDATE agent_inventory SET quantity=quantity-1 WHERE agent_id=$1 AND bundle_id=$2',[agentId,bundleId]);
   if(options.siteInventory){

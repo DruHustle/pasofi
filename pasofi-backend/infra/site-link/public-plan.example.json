@@ -6,6 +6,8 @@
   "serverTunnelIp": "10.77.254.1",
   "routerTunnelIp": "10.77.254.2",
   "serverInterface": "pfi-site01",
+  "routerInterface": "pamofi-service",
+  "routerListenPort": 51821,
   "routerNetworks": ["192.168.0.0/24", "192.168.88.0/24"],
   "serverNetworks": ["REPLACE_WITH_INSPECTED_ORACLE_AND_DOCKER_NETWORKS"]
 }

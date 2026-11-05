@@ -85,6 +85,15 @@ node pasofi-backend/infra/radius-production/router-plan.mjs \
 node --test pasofi-backend/infra/radius-production/router-plan.test.mjs
 ```
 
+The default service interface is `pamofi-service`, preserving the existing
+site-01 workflow. If the inspected router uses the Lawfield bootstrap's
+`pasofi-service`, append `pasofi-service` after the output filename. Use the
+same interface selected in the site-link plan. The generator accepts only
+these two dedicated interface names, and the generated router preflight
+refuses ambiguous state containing both names. It does not rename interfaces
+or adopt a different tunnel silently. Each site's addresses and secret remain
+independent.
+
 Inspect the exact router and RADIUS state, check the public-only review file in
 RouterOS using `verbose=yes dry-run`, and use Safe Mode for any actual import.
 The client remains disabled. Never print the secret or run a verbose import

@@ -4,6 +4,8 @@ Use the qualified release ZIP prepared for this deployment. Its launcher upgrade
 
 The Mac launcher reuses `release-deploy.sh` and the Python deployment engine. You do not need Git, Node.js or Docker on your Mac. The existing Linux server needs Python 3.9 or newer, Docker and Docker Compose, with the PasoFi installation already running.
 
+If the current installation references are not at hand, first run **`hotspot-readiness.command`** from the same Mac package. It needs only your existing SSH alias, with an optional project selection, and gathers a private read-only report. It can check recorded configuration paths and the retained database identity without exposing environment values or changing production. Missing records remain unresolved; it does not replace deployment preflight or physical acceptance. See [HOTSPOT_READINESS.md](HOTSPOT_READINESS.md).
+
 ## 1. Extract and keep the release files together
 
 In Finder, double-click the release ZIP to extract it. Open the extracted folder and keep these files beside one another:
@@ -110,6 +112,8 @@ Apply builds the selected application images on the server, runs their owned pen
 The deployment prints the private server release-record location. Keep the original image IDs, source/configuration paths and rollback record until acceptance is complete. These records can contain resolved configuration and must remain private. If apply stops partway through, some builds, migrations or application replacements may already have completed; inspect the private record before retrying. The saved application rollback restores application images and configuration binds, not an older database over later transactions.
 
 Follow the supplied release guide to check the public API, authenticated staff/customer flows, catalogue, invoices and the dedicated captive portal. Container health alone does not prove real email/SMS receipt or physical hotspot operation.
+
+For the complete cash launch order, follow [CASH_HOTSPOT_LAUNCH.md](../../docs/CASH_HOTSPOT_LAUNCH.md): backend and RADIUS upgrade, verified private router control, isolated hotspot setup, controlled cash/redemption/paid-session checks, Stop/absence/closure/reconnect, quota and cross-site acceptance, then the reviewed launch or pause decision. The same document is included by filename in the extracted Mac package.
 
 For **central router management**, follow `ROUTER_FLEET.md` for the required overlay, protected configuration and router enrollment procedure. The general deployment launcher preserves existing overlays; it does not enroll routers or infer a new router-fleet overlay. After the documented setup, qualify the authorized staff access and router configuration flows, then perform the physical hotspot tests with the actual routers.
 

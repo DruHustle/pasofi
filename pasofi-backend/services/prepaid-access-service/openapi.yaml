@@ -162,6 +162,7 @@ paths:
                   vouchers: {type: boolean}
                   receiptPairing: {type: boolean}
                   staffSales: {type: boolean}
+                  salesLocationStatus: {type: boolean, description: Supports versioned admin sales-location enable/pause decisions. This capability does not enable commerce or customer Wi-Fi. Clients must require true before showing the new action.}
                   deliverySms: {type: boolean}
                   networkAccess: {type: boolean}
                   routerFleet: {type: boolean, description: Central administration reads configured independently of customer access.}
@@ -281,9 +282,10 @@ paths:
   /v1/staff/sites:
     get:
       security: [{StaffSession: []}]
-      summary: List active locations in the current approved staff scope
+      summary: List sales locations in the current approved staff scope
+      description: Administrators see enabled and paused sales locations. Other approved staff see their enabled assigned locations. Available independently of the global commerce switch; changing sales location status does not change NAS trust or network access.
       responses:
-        '200': {description: sites array of id/name}
+        '200': {description: 'sites array of id, name, enabled and version (decimal string). A status write must use this reviewed version.'}
         '403': {description: Staff not approved or MFA not completed}
   /v1/staff/inventory:
     get:
@@ -312,6 +314,37 @@ paths:
         '201': {description: site created}
         '200': {description: Same site recovered}
         '409': {description: Idempotency conflict}
+  /v1/admin/sites/{id}:
+    patch:
+      security: [{StaffSession: []}]
+      summary: Enable or pause new sales at an existing sales location
+      description: Requires an approved MFA-verified administrator and exact trusted Origin, even while commerce is disabled. Clients must require capabilities.salesLocationStatus=true. The row version prevents stale changes; an exact retry returns its original audited result without reapplying a later-overridden status. Refresh the site list after success or replay. Pausing serializes against new cash sales and preserves prior-sale retries, receipts, stock history and existing allowances. This does not change global commerce, NAS registration, network credentials or router configuration.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled, expectedVersion, reason]
+              properties:
+                enabled: {type: boolean}
+                expectedVersion: {type: string, pattern: '^[1-9][0-9]{0,18}$', description: Reviewed version no greater than PostgreSQL bigint maximum}
+                reason: {type: string, minLength: 10, maxLength: 500, description: Trimmed audit reason of at least 10 characters}
+      responses:
+        '200': {description: 'site (id, name, enabled, version), changed and replayed. The append-only site.status audit event retains actor, reason, before/after and the request identity.'}
+        '400': {description: Invalid UUID, idempotency key, version, boolean, reason or unknown fields}
+        '401': {description: No current staff session}
+        '403': {description: Origin rejected or staff not approved as an administrator}
+        '404': {description: Sales location not found}
+        '409': {description: Reviewed version is stale or the idempotency key belongs to different request details}
+        '503': {description: Authoritative identity or database is unavailable}
   /v1/admin/bundles:
     get:
       security: [{StaffSession: []}]

@@ -17,7 +17,19 @@ test('router RADIUS plan is disabled, source-bound and contains no secret',()=>{
   assert.match(plan,/secret=\$radiusSecret disabled=yes/);
   assert.ok(plan.indexOf('RADIUS secret checksum mismatch')<plan.indexOf('/radius add'));
   assert.doesNotMatch(plan,/\/ip hotspot add|disabled=no comment=/);
-  for(const bad of [{site:'../escape'},{serverIp:'8.8.8.8'},{routerIp:'10.77.254.1'},{secretHash:'bad'}])assert.throws(()=>buildRouterPlan({site:'site01',serverIp:'10.77.254.1',routerIp:'10.77.254.2',secretHash,...bad}));
+  assert.match(plan,/wireguard find where name="pamofi-service" and disabled=no/);
+  for(const bad of [{site:'../escape'},{serverIp:'8.8.8.8'},{routerIp:'10.77.254.1'},{secretHash:'bad'},
+    ...['bridge','ether1','pasofi-service"; /system reboot','pasofi-service\n','',null,23].map(routerInterface=>({routerInterface}))])assert.throws(()=>buildRouterPlan({site:'site01',serverIp:'10.77.254.1',routerIp:'10.77.254.2',secretHash,...bad}));
+});
+
+test('the site-two RADIUS client uses the explicitly selected service interface',()=>{
+  const plan=buildRouterPlan({site:'site02',serverIp:'10.77.254.5',routerIp:'10.77.254.6',secretHash:'a'.repeat(128),routerInterface:'pasofi-service'});
+  assert.match(plan,/wireguard find where name="pasofi-service" and disabled=no/);
+  assert.match(plan,/\/ip address find where interface="pasofi-service" and address="10\.77\.254\.6\/32"/);
+  assert.match(plan,/pfi-radius-site02\.secret/);
+  assert.match(plan,/address=10\.77\.254\.5 src-address=10\.77\.254\.6/);
+  assert.ok(plan.indexOf('Multiple service interfaces exist')<plan.indexOf('/radius add'));
+  assert.doesNotMatch(plan,/(?:interface|gateway)="pamofi-service"/);
 });
 
 test('CLI handles a single newline without exposing or overwriting the secret',async()=>{
@@ -35,6 +47,11 @@ test('CLI handles a single newline without exposing or overwriting the secret',a
     assert.ok(text.includes(createHash('sha512').update(secret).digest('hex')));
     assert.notEqual(spawnSync(process.execPath,args,{encoding:'utf8'}).status,0);
     assert.equal(await readFile(out,'utf8'),text);
+    const siteTwoOut=join(dir,'site-two.rsc');
+    const siteTwo=spawnSync(process.execPath,[script,'site02','10.77.254.5','10.77.254.6',file,siteTwoOut,'pasofi-service'],{encoding:'utf8'});
+    assert.equal(siteTwo.status,0,siteTwo.stderr);
+    assert.match(await readFile(siteTwoOut,'utf8'),/wireguard find where name="pasofi-service" and disabled=no/);
+    assert.notEqual(spawnSync(process.execPath,[script,'site02','10.77.254.5','10.77.254.6',file,join(dir,'unsafe.rsc'),'bridge'],{encoding:'utf8'}).status,0);
     const nonAscii=Buffer.alloc(64,0x62);nonAscii[0]=0xe2;
     await writeFile(file,nonAscii,{mode:0o600});
     assert.notEqual(spawnSync(process.execPath,[script,'site01','10.77.254.1','10.77.254.2',file,join(dir,'invalid.rsc')],{encoding:'utf8'}).status,0);
