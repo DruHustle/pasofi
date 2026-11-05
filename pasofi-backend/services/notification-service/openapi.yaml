@@ -18,8 +18,8 @@ paths:
   /internal/v1/events:
     post:
       security: [{ServiceBearer: []}]
-      summary: Atomically receive one prepaid sale event and delivery reference
-      description: Requires prepaid-access issuer/subject, notification audience, event:deliver scope and INTERNAL_EVENTS_SECRET. Matching duplicates succeed; changed immutable content conflicts. No phone or voucher belongs in the event.
+      summary: Atomically receive one prepaid sale or requested invoice delivery event
+      description: Requires prepaid-access issuer/subject, notification audience, event:deliver scope and INTERNAL_EVENTS_SECRET. Matching duplicates succeed; changed immutable content conflicts. agent.sale.created requires deliveryReference; invoice.issued requires invoiceId. Either reference must equal aggregateId. No recipient, PDF, voucher or download token belongs in the event.
       requestBody:
         required: true
         content:
@@ -30,7 +30,7 @@ paths:
               required: [id, type, version, producer, aggregateId, aggregateVersion, occurredAt, correlationId, payload]
               properties:
                 id: {type: string, format: uuid}
-                type: {const: agent.sale.created}
+                type: {type: string, enum: [agent.sale.created, invoice.issued]}
                 version: {const: 1}
                 producer: {const: prepaid-access}
                 aggregateId: {type: string, format: uuid}
@@ -38,16 +38,68 @@ paths:
                 occurredAt: {type: string, format: date-time}
                 correlationId: {type: string, format: uuid}
                 payload:
-                  type: object
-                  additionalProperties: false
-                  required: [deliveryReference]
-                  properties:
-                    deliveryReference: {type: string, format: uuid}
+                  oneOf:
+                    - type: object
+                      additionalProperties: false
+                      required: [deliveryReference]
+                      properties:
+                        deliveryReference: {type: string, format: uuid}
+                    - type: object
+                      additionalProperties: false
+                      required: [invoiceId]
+                      properties:
+                        invoiceId: {type: string, format: uuid}
       responses:
         '200': {description: accepted true after durable commit or verified duplicate}
         '401': {description: Missing or invalid service authority}
         '403': {description: Incorrect scope}
         '409': {description: Event content conflicts}
+  /internal/v1/invoice-delivery/capabilities:
+    get:
+      security: [{ServiceBearer: []}]
+      summary: Report explicitly qualified invoice channels
+      description: Requires INTERNAL_DELIVERY_SECRET and invoice:status scope. Demo mocks never advertise live capability.
+      responses:
+        '200':
+          description: Configured invoice channels and simulation flag
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [email, sms, simulation]
+                properties:
+                  email: {type: boolean}
+                  sms: {type: boolean}
+                  simulation: {type: boolean}
+        '401': {description: Missing or invalid service authority}
+        '403': {description: Incorrect scope}
+        '503': {description: Missing configuration or database}
+  /internal/v1/invoices/{id}/status:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{ServiceBearer: []}]
+      summary: Read an invoice delivery status without private delivery content
+      description: Requires INTERNAL_DELIVERY_SECRET and invoice:status scope. Missing inbox job returns queued. Submitted means provider acceptance only. Unknown jobs are never automatically resent. Provider IDs are private and stripped at the prepaid public boundary.
+      responses:
+        '200':
+          description: Private invoice delivery state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state, channel, simulation]
+                properties:
+                  state: {type: string, enum: [queued, submitting, submitted, delivered, failed, unknown, canceled]}
+                  channel: {type: [string, 'null'], enum: [email, sms, null]}
+                  providerId: {type: [string, 'null']}
+                  lastError: {type: [string, 'null']}
+                  attemptedAt: {type: [string, 'null'], format: date-time}
+                  deliveredAt: {type: [string, 'null'], format: date-time}
+                  simulation: {type: boolean}
+        '401': {description: Missing or invalid service authority}
+        '403': {description: Incorrect scope}
+        '503': {description: Missing configuration or database}
   /internal/v1/delivery/capabilities:
     get:
       security: [{ServiceBearer: []}]

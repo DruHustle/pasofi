@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { mobileApiConfigured } from './api';
 import Icon, { type IconName } from './Icon';
 import type { CustomerTab } from './CustomerAccess';
+import { PolicyNotice } from './Policies';
+import { policyHelpArticles } from './PolicyHelp';
 const MobileCustomer = lazy(() => import('./MobileCustomer'));
 import './mobile.css';
 
@@ -24,9 +26,9 @@ const categories: { id: Category; label: string; matches: (days: number) => bool
   { id: 'monthly', label: 'Monthly', matches: days => days > 27 },
 ];
 const questions = [
+  ...policyHelpArticles.map(article => ({ q: article.question, a: article.answer })),
   { q: 'Can I buy a bundle in this app?', a: mobileApiConfigured ? 'This preview has example bundles only. My PasoFi checks which account and purchase features the configured service supports.' : 'Not yet. This is an offline preview. Payments and Wi-Fi connections are not available.' },
-  { q: 'When does bundle time start?', a: 'The planned service starts validity on the first successful connection. Final terms will be confirmed when the service launches.' },
-  { q: 'Does my data include uploads?', a: 'The planned allowance includes both uploads and downloads.' },
+  { q: 'Does my data include uploads?', a: 'Both uploads and downloads count toward the published allowance, including background updates.' },
   { q: 'How will I use a voucher?', a: 'When the service is available, you can enter your private voucher in your account. Redeeming adds a bundle; a hotspot must confirm your connection before you have internet access.' },
   { q: 'Can I use more than one device?', a: 'The service is designed for one active device per customer. Supported device access depends on the configured service.' },
 ];
@@ -123,6 +125,7 @@ export default function MobileApp() {
         <div className="mobile-faq">{shownQuestions.length ? shownQuestions.map(item => <details key={item.q}><summary>{item.q}<Icon name="chevron" /></summary><p>{item.a}</p></details>) : <p className="mobile-no-results" role="status">No matching answer. Try a shorter phrase or clear your search.</p>}</div>
         <div className="mobile-terms-note"><Icon name="info" /><p>This is an offline preview. Available account features depend on the configured service.</p></div>
       </section>}
+      <PolicyNotice/>
     </main>
     <nav className="mobile-nav" aria-label="Main navigation">{navigation.map(item => <button key={item.id} aria-current={tab === item.id ? 'page' : undefined} onClick={() => choose(item.id)}><span className="mobile-nav-icon"><Icon name={item.icon} /></span>{item.label}</button>)}</nav>
   </div>;

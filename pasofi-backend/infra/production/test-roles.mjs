@@ -115,6 +115,12 @@ async function main() {
         query(runtimeEnv, 'DELETE FROM cash_refund_events', true);
         query(runtimeEnv, 'DELETE FROM cash_refunds', true);
         query(runtimeEnv, 'DELETE FROM cash_shifts', true);
+        query(runtimeEnv, "UPDATE paid_invoices SET number='forbidden'", true);
+        query(runtimeEnv, 'DELETE FROM paid_invoices', true);
+        query(runtimeEnv, 'DELETE FROM invoice_delivery_intents', true);
+        query(runtimeEnv, 'DELETE FROM invoice_deliveries', true);
+        assert.match(query(runtimeEnv, "SELECT nextval('paid_invoice_number_seq')"), /^[0-9]+$/);
+        query(runtimeEnv, "SELECT setval('paid_invoice_number_seq',1)", true);
       }
       if (service === 'network') {
         const nas = randomUUID(), site = randomUUID();

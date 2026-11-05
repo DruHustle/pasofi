@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -22,7 +23,7 @@ test('a pending grant without Accounting-Start enters reconciliation after the s
     const row=(await pool.query('SELECT state,last_accounting_at,reserved_bytes::text,deadline>now() AS current FROM access_grants WHERE id=$1',[grant.id])).rows[0];
     assert.equal(row.state,'pending');assert.equal(row.last_accounting_at,null);assert.equal(row.reserved_bytes,'5000');assert.equal(row.current,true);
   } finally {
-    await app.close();await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);await pool.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
+    await app.close();await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);await pool.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
     for(const [key,value]of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}
   }
 });

@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -12,7 +13,7 @@ async function fixture(){
  await pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at,purchase_mode) VALUES($1,$2,$3,'flex',100,'USD',5000000000,604800,'awaiting_payment',now()+interval '15 minutes','checkout')",[order,customer,randomUUID()]);
  return {pool,order,customer,site,applicationName,cleanup:async()=>{
   await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);
-  await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);
+  await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);
   await pool.end();
  }};
 }

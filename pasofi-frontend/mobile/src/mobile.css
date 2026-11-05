@@ -229,3 +229,67 @@ button:disabled { cursor: not-allowed; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Match the vivid PasoFi web and hotspot palette. */
+:root { --mobile-forest: #092451; --mobile-mint: #00e39a; background: #f2f7ff; }
+.mobile-header { border-bottom: 3px solid #075cf5; }
+.mobile-brandmark { background: #075cf5; color: #fff; }
+.mobile-balance { background: #075cf5; background-image: none; }
+.mobile-primary { background: #075cf5; color: #fff; }
+.mobile-primary:hover:not(:disabled) { background: #0647c7; }
+.mobile-quick-actions button > span { background: #00e39a; color: #073b31; border-color: #00e39a; }
+.mobile-quick-actions button:nth-child(2) > span { background: #e5ff52; color: #073b31; border-color: #e5ff52; }
+.mobile-quick-actions button:nth-child(3) > span { background: #7434e8; color: #fff; border-color: #7434e8; }
+.mobile-quick-actions button:nth-child(4) > span { background: #ffb927; color: #073b31; border-color: #ffb927; }
+.mobile-nav button[aria-current='page'] .mobile-nav-icon { background: #00e39a; color: #073b31; }
+.mobile-card { border-top: 5px solid #00c987; }
+.mobile-card:nth-child(3n+2) { border-top-color: #7434e8; }
+.mobile-card:nth-child(3n) { border-top-color: #ffad00; }
+.private-value summary { min-height: 44px; padding: 12px 0; cursor: pointer; font-size: 14px; font-weight: 700; }
+
+/* Keep the native preview in the same compact blue, white and lime system. */
+:root{--mobile-muted:#425d7a;--mobile-line:#cfdef5}
+.mobile-app{background:#f2f7ff;color:#092451}
+.mobile-account-button{background:#fff;border:1px solid #cfdef5;color:#092451}
+.mobile-notice{background:#fff1d5;border-color:#e6ce9c;color:#624715;font-size:12px;margin-bottom:18px}
+.mobile-page-heading h1{color:#092451;font-size:30px;line-height:1.2;letter-spacing:-1px}
+.mobile-page-heading{margin-bottom:18px}
+.mobile-balance-body p,.mobile-balance-caption,.mobile-balance-meta{color:#eef5ff;font-size:12px}
+.mobile-status{background:#0647c7;color:#fff;border-color:#b5d0ff;font-size:12px}
+.mobile-balance .mobile-primary{background:#e5ff52;color:#092451}
+.mobile-balance .mobile-primary:hover{background:#d6f143}
+.mobile-wifi-orbit{background:#0647c7;border-color:#b5d0ff;box-shadow:0 0 0 8px #ffffff20}
+.mobile-wifi-orbit:before{border-color:#ffffff66}
+.mobile-wifi-orbit .mobile-icon{color:#e5ff52}
+.mobile-quick-actions{gap:8px;margin:16px 0 22px}
+.mobile-quick-actions button:nth-child(n){min-height:70px;padding:10px 3px;border:1px solid #cfdef5;border-radius:12px;background:#fff;color:#092451;font-size:12px;gap:6px}
+.mobile-quick-actions button:nth-child(n)>span{width:24px;height:24px;border:0;border-radius:0;background:transparent;color:#075cf5;box-shadow:none}
+.mobile-quick-actions button:first-child{background:#e5ff52;border-color:#d2ed39}
+.mobile-quick-actions button:first-child>span{color:#092451}
+.mobile-nav button[aria-current='page'] .mobile-nav-icon{background:#075cf5;color:#fff}
+.mobile-bundles{gap:8px}
+.mobile-card:nth-child(n){display:grid;grid-template-columns:minmax(0,1fr) minmax(118px,.85fr);gap:8px 12px;padding:12px;border:1px solid #cfdef5;border-left:4px solid #075cf5;border-radius:14px;background:#fff;box-shadow:none}
+.mobile-card-top{grid-column:1;grid-row:1;gap:0}
+.mobile-card-top h2{color:#092451;font-size:13px}
+.mobile-card-top>div>span{color:#425d7a;font-size:12px}
+.mobile-plan-icon,.mobile-card .mobile-pick,.mobile-card>p{display:none}
+.mobile-plan-allowance{grid-column:1;grid-row:2;display:grid;gap:5px;margin:0}
+.mobile-plan-allowance strong{color:#092451;font-size:29px;letter-spacing:-1px}
+.mobile-plan-allowance strong span{font-size:13px;margin-left:4px}
+.mobile-plan-allowance>span{color:#425d7a;font-size:12px}
+.mobile-card-bottom{grid-column:2;grid-row:1/3;display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:7px;border:0;padding:0}
+.mobile-card-bottom>strong{color:#092451;font-size:22px;text-align:right}
+.mobile-card-bottom>strong>small{color:#425d7a;font-size:12px}
+.mobile-card-bottom button,.mobile-card-featured .mobile-card-bottom button{min-height:44px;padding:9px 7px;background:#075cf5;border-color:#075cf5;color:#fff;font-size:12px}
+.mobile-card-detail{grid-column:1/-1;margin:0;padding-top:8px}
+.mobile-card-detail p,.mobile-terms-note,.mobile-example-disclosure{color:#425d7a;font-size:12px}
+.mobile-category-tabs{gap:6px;margin-bottom:14px}
+.mobile-category-tabs button{font-size:12px;color:#425d7a;border-color:#cfdef5}
+.mobile-category-tabs button[aria-pressed='true']{background:#075cf5;border-color:#075cf5;color:#fff}
+.mobile-featured-example,.mobile-support-card{background:#fff;border:1px solid #cfdef5}
+.mobile-profile-avatar,.mobile-support-card>span,.mobile-help-icon{background:#e8f0ff;color:#075cf5}
+.mobile-text-button{color:#0647c7;font-size:12px}
+.mobile-app :is(h1,h2,h3),.mobile-example-price strong,.mobile-help-link,.mobile-brand-footnote{color:#092451}
+.mobile-featured-example p,.mobile-example-price span,.mobile-help-link small,.mobile-profile-card p,.mobile-settings-list small,.mobile-setting-value,.mobile-help-search small,.mobile-brand-footnote span{font-size:12px;color:#425d7a}
+.mobile-nav button{color:#425d7a}
+.mobile-nav button[aria-current='page']{color:#092451}

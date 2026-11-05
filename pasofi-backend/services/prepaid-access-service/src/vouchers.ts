@@ -1,6 +1,7 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import {seal,unseal,type DeliveryKeys} from './delivery-crypto.js';
+import {issueCashInvoice,normalizeInvoiceDelivery} from './invoices.js';
 const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export class VoucherError extends Error { constructor(public readonly code:string){ super(code); } }
 async function tx<T>(pool:Pool, fn:(client:PoolClient)=>Promise<T>):Promise<T> {
@@ -23,14 +24,15 @@ async function makeVoucher(client:PoolClient,saleId:string,parentId:string|null,
 }
 // These domain functions are called only after the commerce boundary resolves
 // the current MFA-verified staff role and enforces its approved site scope.
-export type SaleOptions={siteInventory?:boolean;commissionBps?:number;siteName?:string;delivery?:'receipt'|'sms'|'both';pairingCode?:string;phone?:string;simulation?:boolean;payment?:unknown};
+export type SaleOptions={siteInventory?:boolean;commissionBps?:number;siteName?:string;delivery?:'receipt'|'sms'|'both';pairingCode?:string;phone?:string;simulation?:boolean;payment?:unknown;invoiceDelivery?:unknown};
 export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bundleId:string, requestKey:string, deliveryKey:DeliveryKeys,options:SaleOptions={}) {
  const commissionBps=options.commissionBps??0,delivery=options.delivery??'receipt';
  if(!Number.isInteger(commissionBps)||commissionBps<0||commissionBps>10000)throw new VoucherError('invalid_commission');
  const payment=options.payment&&typeof options.payment==='object'&&!Array.isArray(options.payment)?options.payment as Record<string,unknown>:null;
  const intent={siteId,bundleId,delivery,pairingCode:options.pairingCode??null,phone:options.phone??null};
  const legacyFingerprint=digest(JSON.stringify(intent));
- const fingerprint=digest(JSON.stringify({...intent,payment:payment?{method:payment.method,confirmed:payment.confirmed,amountMinor:payment.amountMinor,currency:payment.currency}:null}));
+ const invoiceDelivery=normalizeInvoiceDelivery(options.invoiceDelivery);
+ const fingerprint=digest(JSON.stringify({...intent,payment:payment?{method:payment.method,confirmed:payment.confirmed,amountMinor:payment.amountMinor,currency:payment.currency}:null,...(invoiceDelivery.channel==='download'?{}:{invoiceDelivery})}));
  return tx(pool,async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`${agentId}:${requestKey}`]);
   const previous=await client.query('SELECT * FROM agent_sales WHERE agent_id=$1 AND idempotency_key=$2',[agentId,requestKey]);
@@ -80,6 +82,7 @@ export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bund
    if(pairingId)await client.query('UPDATE receipt_pairings SET sale_id=$2 WHERE id=$1',[pairingId,saleId]);
   }
   const voucher=await makeVoucher(client,saleId,null,deliveryKey);
+  if(options.siteInventory)await issueCashInvoice(client,saleId,invoiceDelivery,deliveryKey);
   await client.query("INSERT INTO event_outbox (id,event_type,event_version,aggregate_id,aggregate_version,correlation_id,payload) VALUES ($1,'agent.sale.created',1,$2,1,$3,$4)",[randomUUID(),saleId,randomUUID(),JSON.stringify({deliveryReference:saleId})]);
   return {saleId,voucherId:voucher.id,code:voucher.code,replayed:false};
  });

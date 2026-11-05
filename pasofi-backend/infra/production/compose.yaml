@@ -210,6 +210,11 @@ services:
       NOTIFICATION_DELIVERY_MODE: disabled
       SENDAI_LIVE_ENABLED: 'false'
       SENDAI_QUALIFIED: 'false'
+      INVOICE_DELIVERY_WORKER_ENABLED: 'false'
+      INVOICE_EMAIL_MODE: disabled
+      INVOICE_EMAIL_QUALIFIED: 'false'
+      INVOICE_SMS_MODE: disabled
+      INVOICE_SMS_QUALIFIED: 'false'
     secrets:
       - notification_runtime_url
       - internal_ca

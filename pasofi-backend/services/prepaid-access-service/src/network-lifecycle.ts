@@ -24,7 +24,9 @@ export function registerCustomerNetwork(app:FastifyInstance,pool:Pool|null,demo:
     catch{return reply.code(503).send({error:'network_unavailable'});}
   });
   app.get('/v1/network/session',async(request,reply)=>{
-    if(!customerNetworkEnabled(demo)||!pool)return reply.code(404).send({error:'network_disabled'});
+    // Pausing new connections must not hide an existing customer's session.
+    // This read needs only the ledger and the customer's authenticated identity.
+    if(!pool)return reply.code(503).send({error:'network_unavailable'});
     try {
       const customerId=await customer(request);if(!customerId)return reply.code(401).send({error:'unauthorized'});
       const rows=await pool.query(`SELECT id,site_id AS "siteId",state,last_accounting_at AS "accountedAt",deadline,charged_bytes::text AS "chargedBytes",
@@ -47,7 +49,10 @@ export function registerCustomerNetwork(app:FastifyInstance,pool:Pool|null,demo:
     }catch{return reply.code(503).send({error:'network_unavailable'});}
   });
   app.post<{Body:{grantId:string}}>('/v1/network/disconnect',{schema:{body:{type:'object',additionalProperties:false,required:['grantId'],properties:{grantId:uuid}}}},async(request,reply)=>{
-    if(!customerNetworkEnabled(demo)||!pool)return reply.code(404).send({error:'network_disabled'});
+    // Always allow an authenticated customer to request termination of their
+    // own grant, including while issuance is paused or its upstream is down.
+    // The response remains pending until independent router reconciliation.
+    if(!pool)return reply.code(503).send({error:'network_unavailable'});
     if(!originAllowed(request))return reply.code(403).send({error:'origin_forbidden'});
     try {
       const customerId=await customer(request);if(!customerId)return reply.code(401).send({error:'unauthorized'});

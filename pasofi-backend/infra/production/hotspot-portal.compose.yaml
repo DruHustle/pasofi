@@ -1,0 +1,10 @@
+# Add after vercel.compose.yaml only on a gateway with a dedicated public IP.
+# Build the matching assets with VITE_PASOFI_HOTSPOT_PORTAL=1. Add the exact
+# gateway HTTPS origin to PASOFI_PUBLIC_ORIGIN_ALIASES before enabling this.
+services:
+  gateway:
+    environment:
+      PASOFI_HOTSPOT_PORTAL: "true"
+    volumes:
+      - ./gateway/hotspot-portal.conf:/opt/pasofi/hotspot-portal.conf:ro
+      - ${PASOFI_HOTSPOT_WEB_DIR:?Set the absolute qualified hotspot build directory}:/opt/pasofi/hotspot-web:ro

@@ -10,6 +10,7 @@ import {registerCheckout,paymentConfiguration} from './checkout.js';
 import {registerCustomerNetwork} from './network-lifecycle.js';
 import {trustedProxyCidrs} from './proxy.js';
 import {registerUsage} from './usage.js';
+import {InvoiceError,invoiceDeliverySchema,normalizeInvoiceDelivery,saveOrderInvoiceIntent,assertOrderInvoiceIntent} from './invoices.js';
 const { Pool } = pg;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function buildApp() {
@@ -105,7 +106,7 @@ export function buildApp() {
       return { customerId:id,entitlements:rows.rows.slice(0,limit),hasMore,nextOffset:hasMore?offset+limit:null };
     } catch { return reply.code(503).send({error:'unavailable'}); }
   });
-  app.post<{Body:{bundleId:string;mode?:'demo'|'checkout'}}>('/v1/orders', { config:{rateLimit:{max:30,timeWindow:'1 minute'}}, schema:{body:{type:'object',required:['bundleId'],additionalProperties:false,properties:{bundleId:{type:'string',minLength:1,maxLength:40,pattern:'^[a-z][a-z0-9-]{0,39}$'},mode:{type:'string',enum:['demo','checkout'],default:'demo'}}}} }, async (request, reply) => {
+  app.post<{Body:{bundleId:string;mode?:'demo'|'checkout';invoiceDelivery?:unknown}}>('/v1/orders', { config:{rateLimit:{max:30,timeWindow:'1 minute'}}, schema:{body:{type:'object',required:['bundleId'],additionalProperties:false,properties:{bundleId:{type:'string',minLength:1,maxLength:40,pattern:'^[a-z][a-z0-9-]{0,39}$'},mode:{type:'string',enum:['demo','checkout'],default:'demo'},invoiceDelivery:invoiceDeliverySchema}}} }, async (request, reply) => {
     if ((!demo&&request.body.mode!=='checkout')||(request.body.mode==='checkout'&&!checkout.enabled)) return reply.code(404).send({error:'not_found'});
     if (!pool) return reply.code(503).send({error:'unavailable'});
     if (!originAllowed(request)) return reply.code(403).send({error:'origin_rejected'});
@@ -113,16 +114,22 @@ export function buildApp() {
     if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(key)) return reply.code(400).send({error:'invalid_idempotency_key'});
     try {
       const id = await customer(request); if (!id) return reply.code(401).send({error:'not_authenticated'});
-      const existing = await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode FROM purchase_orders WHERE customer_id=$1 AND idempotency_key=$2',[id,key]);
-      if (existing.rowCount) return existing.rows[0].bundle_id === request.body.bundleId && existing.rows[0].purchase_mode===(request.body.mode??'demo') ? { order:existing.rows[0] } : reply.code(409).send({error:'idempotency_conflict'});
-      const created = await pool.query(`INSERT INTO purchase_orders (id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at,purchase_mode)
-        SELECT $1,$2,$3,id,price_minor,currency,byte_limit,validity_seconds,'awaiting_payment',now()+interval '15 minutes',$5 FROM bundle_versions WHERE id=$4 AND published=true
-        ON CONFLICT (customer_id,idempotency_key) DO NOTHING RETURNING id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode`,[randomUUID(),id,key,request.body.bundleId,request.body.mode??'demo']);
-      if (created.rowCount) return reply.code(201).send({order:created.rows[0]});
-      const retry = await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode FROM purchase_orders WHERE customer_id=$1 AND idempotency_key=$2',[id,key]);
-      if (!retry.rowCount) return reply.code(404).send({error:'bundle_unavailable'});
-      return retry.rows[0].bundle_id === request.body.bundleId && retry.rows[0].purchase_mode===(request.body.mode??'demo') ? {order:retry.rows[0]} : reply.code(409).send({error:'idempotency_conflict'});
-    } catch { return reply.code(503).send({error:'unavailable'}); }
+      const invoiceDelivery=normalizeInvoiceDelivery(request.body.invoiceDelivery),client=await pool.connect();
+      try{
+       await client.query('BEGIN');
+       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`order:${id}:${key}`]);
+       const existing = await client.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode FROM purchase_orders WHERE customer_id=$1 AND idempotency_key=$2',[id,key]);
+       if(existing.rowCount){
+        if(existing.rows[0].bundle_id!==request.body.bundleId||existing.rows[0].purchase_mode!==(request.body.mode??'demo'))throw new InvoiceError('idempotency_conflict');
+        await assertOrderInvoiceIntent(client,existing.rows[0].id,invoiceDelivery);await client.query('COMMIT');return {order:existing.rows[0]};
+       }
+       const created = await client.query(`INSERT INTO purchase_orders (id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at,purchase_mode)
+         SELECT $1,$2,$3,id,price_minor,currency,byte_limit,validity_seconds,'awaiting_payment',now()+interval '15 minutes',$5 FROM bundle_versions WHERE id=$4 AND published=true
+         RETURNING id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode`,[randomUUID(),id,key,request.body.bundleId,request.body.mode??'demo']);
+       if(!created.rowCount){await client.query('ROLLBACK');return reply.code(404).send({error:'bundle_unavailable'});}
+       await saveOrderInvoiceIntent(client,created.rows[0].id,invoiceDelivery);await client.query('COMMIT');return reply.code(201).send({order:created.rows[0]});
+      }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+    } catch(error) { return reply.code(error instanceof InvoiceError?(error.code==='invalid_invoice_delivery'?400:error.code==='idempotency_conflict'?409:503):503).send({error:error instanceof InvoiceError?error.code:'unavailable'}); }
   });
   app.post<{Params:{id:string}}>('/v1/orders/:id/demo-confirm', {config:{rateLimit:{max:30,timeWindow:'1 minute'}}}, async (request, reply) => {
     if (!demo) return reply.code(404).send({error:'not_found'});

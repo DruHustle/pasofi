@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { lstat, open, realpath } from 'node:fs/promises';
+import { lstat, open, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isIP } from 'node:net';
@@ -69,10 +69,30 @@ export async function inspectVercelConfiguration(environment = process.env) {
       Date.parse(certificate.validFrom) > now || Date.parse(certificate.validTo) <= now) {
     throw Error('The public certificate/key must match the exact Oracle hostname and be within its validity period.');
   }
+  let hotspotPortal;
+  if (environment.PASOFI_HOTSPOT_PORTAL !== undefined && environment.PASOFI_HOTSPOT_PORTAL !== 'false') {
+    if (environment.PASOFI_HOTSPOT_PORTAL !== 'true') throw Error('Invalid hotspot portal activation flag.');
+    const value = environment.PASOFI_HOTSPOT_PUBLIC_ORIGIN;
+    const portal = new URL(value);
+    const aliases = JSON.parse(environment.PASOFI_PUBLIC_ORIGIN_ALIASES || '[]');
+    if (portal.protocol !== 'https:' || portal.origin !== value || portal.port || !allowedHostname(portal.hostname) ||
+        !Array.isArray(aliases) || aliases.length > 3 || !aliases.includes(value) ||
+        !certificate.checkHost(portal.hostname, { wildcards: false })) throw Error('Qualify the exact portal origin, aliases and certificate.');
+    for (const alias of aliases) {
+      const url = new URL(alias);
+      if (url.protocol !== 'https:' || url.origin !== alias) throw Error('Invalid public origin alias.');
+    }
+    const assets = environment.PASOFI_HOTSPOT_WEB_DIR;
+    if (!assets || !isAbsolute(assets) || !(await lstat(assets)).isDirectory()) throw Error('Use the absolute qualified hotspot build directory.');
+    if (await readFile(join(assets, 'hotspot-build.json'), 'utf8') !== '{"apiPrefix":"/portal-api"}\n' ||
+        !(await readFile(join(assets, 'index.html'), 'utf8')).includes('/assets/')) throw Error('Build the matching hotspot frontend.');
+    hotspotPortal = { origin: value, apiPrefix: '/portal-api', status: 'prepared-only' };
+  }
   return {
     status: 'prepared-only', browserOrigin: origins.browserOrigin, oracleOrigin: origins.oracleOrigin,
     certificateExpires: new Date(certificate.validTo).toISOString(),
     checks: ['separate-https-origins', 'private-secret-directory', 'proxy-token-format', 'matching-current-certificate-and-key'],
     remaining: ['public-dns-and-certificate-chain', 'vercel-protected-environment', 'live-proxy-cookie-origin-and-client-ip-acceptance'],
+    ...(hotspotPortal ? { hotspotPortal } : {}),
   };
 }

@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const suffixes = { identity: 'identity', 'prepaid-access': 'prepaid_access', network: 'network', notification: 'notification', assistant: 'assistant' };
-const secrets = ['INTERNAL_IDENTITY_SECRET', 'SESSION_CREATION_SECRET', 'STAFF_MFA_ENCRYPTION_KEY', 'STAFF_RESET_SMTP_PASSWORD', 'INTERNAL_EVENTS_SECRET', 'INTERNAL_NETWORK_SECRET', 'INTERNAL_DELIVERY_SECRET', 'VOUCHER_DELIVERY_KEYS_JSON', 'RADIUS_CREDENTIAL_KEYS', 'SENDAI_API_KEY'];
+const secrets = ['INTERNAL_IDENTITY_SECRET', 'SESSION_CREATION_SECRET', 'STAFF_MFA_ENCRYPTION_KEY', 'STAFF_RESET_SMTP_PASSWORD', 'INTERNAL_EVENTS_SECRET', 'INTERNAL_NETWORK_SECRET', 'INTERNAL_DELIVERY_SECRET', 'VOUCHER_DELIVERY_KEYS_JSON', 'RADIUS_CREDENTIAL_KEYS', 'SENDAI_API_KEY', 'RESEND_API_KEY'];
 async function secretFile(name) {
   const path = process.env[`${name}_FILE`];
   if (!path || process.env[name]) throw Error('Each credential requires only its explicit secret file.');

@@ -89,7 +89,10 @@ export const queueQueries={
  notification:`SELECT
   (SELECT count(*)::int FROM delivery_jobs WHERE state='unknown') AS sms_ambiguous,
   (SELECT count(*)::int FROM delivery_jobs WHERE state='failed') AS sms_failed,
-  (SELECT count(*)::int FROM delivery_jobs WHERE state IN ('awaiting_delivery_details','ready','submitted') AND next_at<now()-interval '5 minutes') AS sms_delayed`,
+  (SELECT count(*)::int FROM delivery_jobs WHERE state IN ('awaiting_delivery_details','ready','submitted') AND next_at<now()-interval '5 minutes') AS sms_delayed,
+  (SELECT count(*)::int FROM invoice_jobs WHERE state='unknown') AS invoice_ambiguous,
+  (SELECT count(*)::int FROM invoice_jobs WHERE state='failed') AS invoice_failed,
+  (SELECT count(*)::int FROM invoice_jobs WHERE state IN ('queued','submitting','submitted') AND created_at<now()-interval '15 minutes') AS invoice_delayed`,
  network:`SELECT
   (SELECT count(*)::int FROM router_reconciliation_status WHERE result='unavailable') AS router_unavailable,
   (SELECT count(*)::int FROM router_reconciliation_status WHERE result='present') AS router_absence_unconfirmed`

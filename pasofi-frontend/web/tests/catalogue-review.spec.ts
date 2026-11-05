@@ -179,14 +179,11 @@ test('desktop tagline and navigation title meet normal-text contrast on their ac
   }
 });
 
-test('home actions and connection card retain readable contrast', async ({ page }) => {
+test('home actions and heading retain readable contrast', async ({ page }) => {
   await fixture(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.' })).toBeVisible();
   for (const [foreground, background] of [
-    ['.pf-connection-copy h2', '.pf-connection-card'],
-    ['.pf-connection-copy h2 span', '.pf-connection-card'],
-    ['.pf-connection-copy p', '.pf-connection-card'],
-    ['.pf-connection-actions .pf-button-primary', '.pf-connection-actions .pf-button-primary'],
+    ['.pf-page-intro h1', 'html'],
     ...[1, 2, 3, 4].map(n => [`.pf-quick-actions button:nth-child(${n}) strong`, `.pf-quick-actions button:nth-child(${n})`]),
   ]) {
     const colors = await page.evaluate(([fg, bg]) => [getComputedStyle(document.querySelector(fg)!).color, getComputedStyle(document.querySelector(bg)!).backgroundColor], [foreground, background]);
@@ -197,14 +194,35 @@ test('home actions and connection card retain readable contrast', async ({ page 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
-test('support and draft service information remain reachable directly and from the footer', async ({ page }) => {
+test('support and published service policies remain reachable directly and from the footer', async ({ page }) => {
   await fixture(page); await page.goto('/#help');
   await expect(page.getByRole('link', { name: '+263 715 092 221' })).toHaveAttribute('href', 'tel:+263715092221');
   await page.getByRole('link', { name: 'Service terms' }).click();
   await expect(page.getByRole('heading', { name: 'Service terms', exact: true })).toBeVisible();
-  await expect(page.getByText('These details are being finalized before service launch.')).toBeVisible();
+  await expect(page.getByText('Operated by Onesa', { exact: true })).toBeVisible();
+  await expect(page.getByText('3964 98th Crescent Kuwadzana 5', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Privacy', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Privacy information' })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Privacy information' })).toBeVisible();
 });
+
+for (const width of [320, 390, 1280]) {
+  test(`all five offers are easy to compare with a compact homepage at ${width}px`, async ({ page }, testInfo) => {
+    await fixture(page, [product('mini',50,'5000000000',3), product('flex',100,'10000000000',7), product('week',300,'30000000000',7), product('fortnight',500,'50000000000',14), product('month',1000,'100000000000',30)]);
+    await page.setViewportSize({width,height:844}); await page.goto('/');
+    await expect(names(page)).toHaveCount(5);
+    const cards = page.locator('.pf-bundle-card');
+    const first = await cards.first().boundingBox(), last = await cards.last().boundingBox();
+    expect(first!.y, 'first offer should appear in the first phone viewport').toBeLessThan(600);
+    expect(last!.y + last!.height, 'all five offers should need at most one short scroll').toBeLessThan(width >= 1000 ? 844 : 1100);
+    for (const card of await cards.all()) {
+      const box = await card.boundingBox(); expect(box!.height).toBeLessThan(125);
+      const button = await card.getByRole('button').boundingBox(); expect(button!.height).toBeGreaterThanOrEqual(44); expect(button!.width).toBeGreaterThanOrEqual(44);
+    }
+    await expect(cards.last().locator('h3')).toHaveText('100GB');
+    await expect(cards.last().locator('.pf-bundle-price strong')).toHaveText('$10.00');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({path:testInfo.outputPath(`compact-home-${width}.png`),fullPage:true});
+  });
+}

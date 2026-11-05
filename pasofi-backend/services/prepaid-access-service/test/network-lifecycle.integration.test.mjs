@@ -1,8 +1,11 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import pg from 'pg';
+import Fastify from 'fastify';
 import {issueGrant,recordAccounting,reconcileGrant,markNasRestart} from '../dist/grants.js';
+import {registerCustomerNetwork} from '../dist/network-lifecycle.js';
 const url=process.env.PAMOFI_TEST_DATABASE_URL;
 async function fixture(work){
  const pool=new pg.Pool({connectionString:url,max:8}),customer=randomUUID(),order=randomUUID(),entitlement=randomUUID(),site=randomUUID(),nas=randomUUID();
@@ -18,7 +21,7 @@ async function fixture(work){
   await pool.query('DELETE FROM network_account_holds WHERE customer_id=$1',[customer]);
   await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);
   await pool.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);
-  await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
+  await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
  }
 }
 test('verified final Stop plus independently fenced router absence releases exactly the remaining allowance',{skip:!url},async()=>fixture(async({pool,customer,event,evidence,grant})=>{
@@ -61,3 +64,30 @@ test('contradictory traffic after closure fences a newer grant and blocks furthe
  assert.equal((await pool.query('SELECT count(*)::int n FROM network_account_holds WHERE customer_id=$1',[customer])).rows[0].n,1);
  await assert.rejects(issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'another'),{code:'accounting_review_required'});
 }));
+
+test('paused network issuance still permits only the owning customer to inspect and request session termination',{skip:!url},async()=>fixture(async own=>fixture(async other=>{
+ const saved=process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED;
+ process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED='false';
+ const app=Fastify(),origin='https://pasofi.example.test';
+ registerCustomerNetwork(app,own.pool,false,async request=>request.headers.authorization==='owner'?own.customer:null,request=>request.headers.origin===origin);
+ const send=(method,path,payload,auth='owner',requestOrigin=origin)=>app.inject({method,url:path,payload,headers:{authorization:auth,origin:requestOrigin}});
+ try{
+  await recordAccounting(own.pool,own.event);await recordAccounting(other.pool,other.event);
+  const status=await send('GET','/v1/network/session');
+  assert.equal(status.statusCode,200);assert.equal(status.json().session.id,own.grant.id);assert.equal(status.json().session.connected,true);
+  assert.equal((await send('POST','/v1/network/disconnect',{grantId:own.grant.id},'unknown')).statusCode,401);
+  assert.equal((await send('POST','/v1/network/disconnect',{grantId:own.grant.id},'owner','https://untrusted.example.test')).statusCode,403);
+  assert.equal((await send('POST','/v1/network/disconnect',{grantId:other.grant.id})).statusCode,404);
+  const untouched=(await other.pool.query('SELECT state,disconnect_requested_at FROM access_grants WHERE id=$1',[other.grant.id])).rows[0];
+  assert.deepEqual(untouched,{state:'active',disconnect_requested_at:null});
+  const pending=await send('POST','/v1/network/disconnect',{grantId:own.grant.id});
+  assert.equal(pending.statusCode,202);assert.equal(pending.json().state,'disconnect_pending');
+  const stopped=(await own.pool.query('SELECT state,disconnect_requested_at FROM access_grants WHERE id=$1',[own.grant.id])).rows[0];
+  assert.equal(stopped.state,'uncertain');assert.ok(stopped.disconnect_requested_at);
+  assert.equal((await send('GET','/v1/network/session')).json().session.connected,false);
+  const issued=await send('POST','/v1/network/credentials',{siteId:own.site,requestKey:randomUUID()});
+  assert.equal(issued.statusCode,404);assert.equal(issued.json().error,'network_disabled');
+ }finally{
+  await app.close();if(saved===undefined)delete process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED;else process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED=saved;
+ }
+})));

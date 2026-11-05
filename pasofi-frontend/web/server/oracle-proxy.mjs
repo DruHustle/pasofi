@@ -25,6 +25,8 @@ const rules = [
   [/^\/api\/staff\/sales$/, ['GET', 'POST']],
   [new RegExp(`^/api/staff/sales/${UUID}/(receipt|delivery)$`), ['GET']],
   [new RegExp(`^/api/staff/sales/${UUID}/resend$`), ['POST']],
+  [new RegExp(`^/api/(customer|staff)/invoices(?:/${UUID}(?:/pdf)?)?$`), ['GET']],
+  [/^\/api\/invoice-downloads$/, ['POST']],
   [/^\/api\/admin\/(sites|inventory\/allocations)$/, ['POST']],
   [/^\/api\/admin\/network\/reviews$/, ['GET']],
   [new RegExp(`^/api/admin/network/reviews/${UUID}/resolve$`), ['POST']],
@@ -201,7 +203,7 @@ function validateCookies(cookies) {
   return cookies;
 }
 
-function oracleRequest(request, url, options, body, signal) {
+function oracleRequest(request, url, options, body, signal, allowPdf = false) {
   return new Promise((resolve, reject) => {
     let upstream, incoming, settled = false;
     const cleanup = () => signal.removeEventListener('abort', abort);
@@ -219,7 +221,10 @@ function oracleRequest(request, url, options, body, signal) {
         const status = response.statusCode;
         if (!Number.isInteger(status) || status < 200 || status > 599 || (status >= 300 && status < 400)) return fail(new ProxyError(502, 'upstream_unavailable'));
         const type = response.headers['content-type'];
-        if (status !== 204 && (typeof type !== 'string' || !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(type))) return fail(new ProxyError(502, 'upstream_unavailable'));
+        const pdf = allowPdf && status === 200 && type === 'application/pdf';
+        if (status !== 204 && !pdf && (typeof type !== 'string' || !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(type))) return fail(new ProxyError(502, 'upstream_unavailable'));
+        const disposition = pdf ? response.headers['content-disposition'] : undefined;
+        if (pdf && (typeof disposition !== 'string' || !/^attachment; filename="[A-Za-z0-9-]{1,80}\.pdf"$/.test(disposition))) return fail(new ProxyError(502, 'upstream_unavailable'));
         if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') return fail(new ProxyError(502, 'upstream_unavailable'));
         let cookies;
         try { cookies = validateCookies(response.headers['set-cookie'] || []); } catch (error) { return fail(error); }
@@ -233,8 +238,10 @@ function oracleRequest(request, url, options, body, signal) {
         response.once('aborted', () => fail(new ProxyError(502, 'upstream_unavailable')));
         response.once('end', () => {
           if (settled) return;
+          const bytes = Buffer.concat(chunks);
+          if (pdf && options.method !== 'HEAD' && bytes.subarray(0, 5).toString() !== '%PDF-') return fail(new ProxyError(502, 'upstream_unavailable'));
           settled = true; cleanup();
-          resolve({ status, type, cookies, retryAfter: response.headers['retry-after'], body: Buffer.concat(chunks) });
+          resolve({ status, type, disposition, cookies, retryAfter: response.headers['retry-after'], body: bytes });
         });
       });
       upstream.once('error', fail);
@@ -264,7 +271,8 @@ export function createProxyHandler({ env = process.env, request = httpsRequest, 
           (!['GET', 'HEAD'].includes(method) && sourceOrigin !== frontend.origin)) throw new ProxyError(403, 'origin_not_allowed');
       const clientIp = canonicalClientIp(header(req, 'x-vercel-forwarded-for', 45));
       const body = await readBody(req, controller.signal, method);
-      const headers = { accept: 'application/json', 'accept-encoding': 'identity', 'x-pamofi-proxy-token': config.token, 'x-pamofi-client-ip': clientIp };
+      const allowPdf = route.path === '/api/invoice-downloads' || new RegExp(`^/api/(customer|staff)/invoices/${UUID}/pdf$`).test(route.path);
+      const headers = { accept: allowPdf ? 'application/pdf, application/json' : 'application/json', 'accept-encoding': 'identity', 'x-pamofi-proxy-token': config.token, 'x-pamofi-client-ip': clientIp };
       for (const name of ['content-type', 'idempotency-key']) {
         const value = header(req, name);
         if (value !== undefined) headers[name] = value;
@@ -273,11 +281,15 @@ export function createProxyHandler({ env = process.env, request = httpsRequest, 
       if (cookies !== undefined) headers.cookie = cookies;
       if (sourceOrigin !== undefined) headers.origin = sourceOrigin;
       if (body.length || ['POST', 'PATCH', 'DELETE'].includes(method)) headers['content-length'] = String(body.length);
-      const response = await oracleRequest(request, new URL(route.target, config.upstream), { method, headers }, body, controller.signal);
+      const response = await oracleRequest(request, new URL(route.target, config.upstream), { method, headers }, body, controller.signal, allowPdf);
       if (response.body.includes(Buffer.from(config.token)) || response.cookies.some(cookie => cookie.includes(config.token)) ||
           (typeof response.retryAfter === 'string' && response.retryAfter.includes(config.token))) throw new ProxyError(502, 'upstream_unavailable');
       res.statusCode = response.status;
       if (response.type) res.setHeader('Content-Type', response.type);
+      if (response.disposition) {
+        res.setHeader('Content-Disposition', response.disposition);
+        res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      }
       if (response.cookies.length) res.setHeader('Set-Cookie', response.cookies);
       if (typeof response.retryAfter === 'string' && response.retryAfter.length <= 64 && !/[\r\n\0]/.test(response.retryAfter)) res.setHeader('Retry-After', response.retryAfter);
       res.end(method === 'HEAD' || response.status === 204 ? undefined : response.body);

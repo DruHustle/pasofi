@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react';
 const rewrite = (path: string) => path.replace(/^\/api\//, '/v1/');
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', 'PAMOFI_');
+  const portal = { ...loadEnv(mode, '.', 'VITE_'), ...process.env }.VITE_PASOFI_HOTSPOT_PORTAL;
+  if (portal !== undefined && portal !== '' && portal !== '0' && portal !== '1') throw Error('Invalid hotspot portal build flag');
   const identity = env.PAMOFI_IDENTITY_URL || 'http://localhost:18081';
   const prepaid = env.PAMOFI_PREPAID_URL || 'http://localhost:18082';
   const assistant = env.PAMOFI_ASSISTANT_URL || 'http://localhost:18085';
@@ -13,6 +15,8 @@ export default defineConfig(({ mode }) => {
     '^/api/help(?:\\?|$)': { target: assistant, rewrite },
     '^/api/session(?:\\?|$)': { target: identity, rewrite },
     '^/api/orders(?:/[0-9a-fA-F-]+/(?:demo-confirm|checkout|status|mock-payment|expire-unused))?(?:\\?|$)': { target: prepaid, rewrite },
+    '^/api/(?:customer|staff)/invoices(?:/[0-9a-fA-F-]+(?:/pdf)?)?(?:\\?|$)': { target: prepaid, rewrite },
+    '^/api/invoice-downloads(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/recovery(?:/(?:status|setup|rotate))?(?:\\?|$)': { target: identity, rewrite },
     '^/api/handoff(?:/redeem)?(?:\\?|$)': { target: identity, rewrite },
     '^/api/staff/(?:register|login|session|mfa/(?:setup|confirm|verify)|password-reset/(?:availability|request|confirm)|users(?:/[0-9a-fA-F-]+/(?:decision|revoke-sessions|recover-mfa))?|audit)(?:\\?|$)': { target: identity, rewrite },
@@ -26,6 +30,11 @@ export default defineConfig(({ mode }) => {
   const allowed = Object.keys(routes).map(pattern => new RegExp(pattern));
   return {
     plugins: [react(), {
+      name: 'pasofi-hotspot-build-marker',
+      generateBundle() {
+        if (portal === '1') this.emitFile({ type: 'asset', fileName: 'hotspot-build.json', source: '{"apiPrefix":"/portal-api"}\n' });
+      },
+    }, {
       name: 'pamofi-public-api-boundary',
       configureServer(server) {
         server.middlewares.use((request, response, next) => {

@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes} from 'node:crypto';
@@ -33,7 +34,7 @@ async function setup(options={}){
  const env={DATABASE_URL:url,APP_ENV:'demo',NODE_ENV:'development',IDENTITY_URL:`http://127.0.0.1:${server.address().port}`,INTERNAL_IDENTITY_SECRET:identitySecret,INTERNAL_DELIVERY_SECRET:deliverySecret,PUBLIC_ORIGIN:origin,PAMOFI_COMMERCE_ENABLED:'true',VOUCHER_DELIVERY_ACTIVE_KEY_ID:'v1',VOUCHER_DELIVERY_KEYS_JSON:JSON.stringify({v1:randomBytes(32).toString('base64')}),PAMOFI_AGENT_COMMISSION_BPS:'1000',PAMOFI_PAYMENTS_ENABLED:'true',PAMOFI_PAYMENT_MODE:'mock',PAYMENT_RECONCILIATION_WORKER_ENABLED:'false',PAMOFI_SMS_DELIVERY_ENABLED:'false',...(options.env??{})};
  const saved=Object.fromEntries(Object.keys(env).map(k=>[k,process.env[k]]));Object.assign(process.env,env);const app=buildApp();
  const call=(method,path,body,who='admin',key=randomUUID())=>app.inject({method,url:path,headers:{origin,cookie:who.startsWith('customer')?`customer=${who==='customer2'?'other':'main'}`:`staff=${who}`,'idempotency-key':key},...(body===undefined?{}:{payload:body})});
- async function cleanup(){await app.close();await new Promise(resolve=>server.close(resolve));await pool.query('DELETE FROM commerce_audit WHERE actor_id=ANY($1::uuid[])',[[admin,agent,otherAgent,support]]);await pool.query('DELETE FROM receipt_pairings WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM access_grants WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM payment_reviews WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM verified_charges WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_entitlements WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM provider_payment_attempts WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM event_outbox WHERE aggregate_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM agent_sale_deliveries WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM cash_refund_events WHERE refund_id IN (SELECT r.id FROM cash_refunds r JOIN agent_sales s ON s.id=r.sale_id WHERE s.agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM cash_refunds WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM issued_vouchers WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM agent_sales WHERE agent_id=ANY($1::uuid[])',[[agent,otherAgent]]);await pool.query('DELETE FROM inventory_allocations WHERE actor_id=$1',[admin]);await pool.query('DELETE FROM agent_site_inventory WHERE site_id=ANY($1::uuid[])',[[site,otherSite]]);await pool.query('DELETE FROM cash_shifts WHERE agent_id=ANY($1::uuid[])',[[agent,otherAgent]]);await pool.query('DELETE FROM sales_locations WHERE id=ANY($1::uuid[])',[[site,otherSite]]);await pool.end();for(const [k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
+ async function cleanup(){await app.close();await new Promise(resolve=>server.close(resolve));await pool.query('DELETE FROM commerce_audit WHERE actor_id=ANY($1::uuid[])',[[admin,agent,otherAgent,support]]);await pool.query('DELETE FROM receipt_pairings WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM access_grants WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM payment_reviews WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM verified_charges WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_entitlements WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM provider_payment_attempts WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await cleanupInvoiceEvidence(pool,{customerIds:[customer,otherCustomer]});await pool.query('DELETE FROM mock_payment_records WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM event_outbox WHERE aggregate_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM agent_sale_deliveries WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM cash_refund_events WHERE refund_id IN (SELECT r.id FROM cash_refunds r JOIN agent_sales s ON s.id=r.sale_id WHERE s.agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM cash_refunds WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM issued_vouchers WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await cleanupInvoiceEvidence(pool,{agentIds:[agent,otherAgent]});await pool.query('DELETE FROM agent_sales WHERE agent_id=ANY($1::uuid[])',[[agent,otherAgent]]);await pool.query('DELETE FROM inventory_allocations WHERE actor_id=$1',[admin]);await pool.query('DELETE FROM agent_site_inventory WHERE site_id=ANY($1::uuid[])',[[site,otherSite]]);await pool.query('DELETE FROM cash_shifts WHERE agent_id=ANY($1::uuid[])',[[agent,otherAgent]]);await pool.query('DELETE FROM sales_locations WHERE id=ANY($1::uuid[])',[[site,otherSite]]);await pool.end();for(const [k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
  await call('POST','/v1/admin/sites',{id:site,name:options.siteName??'Test site one'});await call('POST','/v1/admin/sites',{id:otherSite,name:'Test site two'});if(options.shifts!==false&&env.PAMOFI_COMMERCE_ENABLED==='true'){for(const who of ['agent','other'])for(const siteId of staff[who].siteIds){const opened=await call('POST','/v1/staff/cash-shifts',{siteId,currency:'USD',openingMinor:0},who);assert.equal(opened.statusCode,201);}}return {pool,app,call,cleanup,site,otherSite,customer,otherCustomer,admin,agent,otherAgent,support,staff,targetIdentity};
 }
 test('configured migration origin reaches the authenticated guard and foreign origins remain blocked',{skip:!url},async()=>{
@@ -89,6 +90,75 @@ test('administrators can onboard agents and allocate scoped stock while commerce
   assert.equal((await f.call('POST','/v1/vouchers/redeem',{code:'ABCD-EFGH-JKLM-2345'},'customer')).statusCode,404);
   const after=(await f.app.inject({url:'/v1/capabilities'})).json();assert.equal(after.staffSales,false);assert.equal(after.vouchers,false);
  }finally{await f.pool.query('DELETE FROM bundle_versions WHERE id=$1',[bundleId]);await f.cleanup();}
+});
+test('guarded publication validates prerequisites and records only a committed withdrawal',{skip:!url},async()=>{
+ const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false'}}),prefix=`guard-${randomUUID().slice(0,8)}`,target=`${prefix}-old`,first=`${prefix}-a`,second=`${prefix}-b`,ids=[target,first,second];
+ const reason='Reviewed isolated guarded catalogue withdrawal';
+ try{
+  await f.pool.query("INSERT INTO bundle_versions(id,price_minor,currency,byte_limit,validity_seconds,published) SELECT id,100,'USD',1000000000,86400,true FROM unnest($1::text[]) AS id",[ids]);
+  assert.equal((await f.call('GET','/v1/admin/bundles')).json().publicationGuardVersion,1);
+  const path=`/v1/admin/bundles/${target}`;
+  for(const requiredPublishedBundleIds of [null,[],[first,first],[target],['INVALID'],Array.from({length:21},(_,index)=>`${prefix}-extra-${index}`)]){
+   const response=await f.call('PATCH',path,{published:false,reason,requiredPublishedBundleIds});
+   assert.equal(response.statusCode,400);assert.equal(response.json().error,'invalid_publication_guard');
+  }
+  assert.equal((await f.call('PATCH',path,{published:true,reason,requiredPublishedBundleIds:[first]})).statusCode,400);
+  assert.equal((await f.call('PATCH',path,{published:false,reason,requiredPublishedBundleIds:[first]},'agent')).statusCode,403);
+  const foreign=await f.app.inject({method:'PATCH',url:path,headers:{origin:'https://foreign.example',cookie:'staff=admin'},payload:{published:false,reason,requiredPublishedBundleIds:[first]}});assert.equal(foreign.statusCode,403);
+  await f.pool.query('UPDATE bundle_versions SET published=false WHERE id=$1',[second]);
+  for(const requiredPublishedBundleIds of [[first,second],[`${prefix}-missing`]]){
+   const response=await f.call('PATCH',path,{published:false,reason,requiredPublishedBundleIds});
+   assert.equal(response.statusCode,409);assert.equal(response.json().error,'required_bundles_not_published');
+  }
+  assert.equal((await f.pool.query('SELECT published FROM bundle_versions WHERE id=$1',[target])).rows[0].published,true);
+  assert.equal((await f.pool.query("SELECT count(*)::int AS n FROM commerce_audit WHERE actor_id=$1 AND action='bundle.publish'",[f.admin])).rows[0].n,0);
+  await f.pool.query('UPDATE bundle_versions SET published=true WHERE id=$1',[second]);
+  const response=await f.call('PATCH',path,{published:false,reason,requiredPublishedBundleIds:[second,first]});assert.equal(response.statusCode,200);
+  assert.equal((await f.pool.query('SELECT published FROM bundle_versions WHERE id=$1',[target])).rows[0].published,false);
+  const audit=(await f.pool.query("SELECT details FROM commerce_audit WHERE actor_id=$1 AND action='bundle.publish'",[f.admin])).rows;
+  assert.equal(audit.length,1);assert.deepEqual(audit[0].details,{bundleId:target,published:false,requiredPublishedBundleIds:[first,second]});
+ }finally{await f.pool.query('DELETE FROM bundle_versions WHERE id=ANY($1::text[])',[ids]);await f.cleanup();}
+});
+test('guarded withdrawal waits for a replacement transaction and rejects its committed unpublication',{skip:!url,timeout:15000},async()=>{
+ const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false'}}),prefix=`race-${randomUUID().slice(0,8)}`,target=`${prefix}-old`,replacement=`${prefix}-replacement`,ids=[target,replacement],blocker=await f.pool.connect();
+ let pending;
+ try{
+  await f.pool.query("INSERT INTO bundle_versions(id,price_minor,currency,byte_limit,validity_seconds,published) SELECT id,100,'USD',1000000000,86400,true FROM unnest($1::text[]) AS id",[ids]);
+  const before=(await f.call('GET','/v1/admin/bundles')).json();assert.equal(before.products.find(product=>product.id===replacement).published,true);
+  await blocker.query('BEGIN');await blocker.query('UPDATE bundle_versions SET published=false WHERE id=$1',[replacement]);
+  const blockerPid=(await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+  pending=f.call('PATCH',`/v1/admin/bundles/${target}`,{published:false,reason:'Stale frontend snapshot must not retire its older offer',requiredPublishedBundleIds:[replacement]}).then(response=>response);
+  let observed=false;const deadline=Date.now()+5000;
+  while(Date.now()<deadline){
+   const waiting=await f.pool.query('SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database() AND $1::int=ANY(pg_blocking_pids(pid))',[blockerPid]);
+   if(waiting.rows[0].n>0){observed=true;break;}
+   await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.equal(observed,true,'the guarded PATCH must wait on the replacement row lock');
+  await blocker.query('COMMIT');
+  const response=await pending;pending=null;
+  assert.equal(response.statusCode,409);assert.equal(response.json().error,'required_bundles_not_published');
+  assert.equal((await f.pool.query('SELECT published FROM bundle_versions WHERE id=$1',[target])).rows[0].published,true);
+  assert.equal((await f.pool.query("SELECT count(*)::int AS n FROM commerce_audit WHERE actor_id=$1 AND action='bundle.publish'",[f.admin])).rows[0].n,0);
+ }finally{
+  await blocker.query('ROLLBACK');blocker.release();if(pending)await Promise.allSettled([pending]);
+  await f.pool.query('DELETE FROM bundle_versions WHERE id=ANY($1::text[])',[ids]);await f.cleanup();
+ }
+});
+test('reciprocal guarded withdrawals serialize without deadlock and retain one published offer',{skip:!url,timeout:15000},async()=>{
+ const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false'}}),prefix=`pair-${randomUUID().slice(0,8)}`,first=`${prefix}-a`,second=`${prefix}-b`,ids=[first,second];
+ try{
+  await f.pool.query("INSERT INTO bundle_versions(id,price_minor,currency,byte_limit,validity_seconds,published) SELECT id,100,'USD',1000000000,86400,true FROM unnest($1::text[]) AS id",[ids]);
+  const responses=await Promise.all([
+   f.call('PATCH',`/v1/admin/bundles/${first}`,{published:false,reason:'Concurrent guarded first offer withdrawal',requiredPublishedBundleIds:[second]}),
+   f.call('PATCH',`/v1/admin/bundles/${second}`,{published:false,reason:'Concurrent guarded second offer withdrawal',requiredPublishedBundleIds:[first]}),
+  ]);
+  assert.deepEqual(responses.map(response=>response.statusCode).sort(),[200,409]);
+  assert.equal(responses.find(response=>response.statusCode===409).json().error,'required_bundles_not_published');
+  const states=(await f.pool.query('SELECT published FROM bundle_versions WHERE id=ANY($1::text[])',[ids])).rows;
+  assert.equal(states.filter(row=>row.published).length,1);
+  assert.equal((await f.pool.query("SELECT count(*)::int AS n FROM commerce_audit WHERE actor_id=$1 AND action='bundle.publish'",[f.admin])).rows[0].n,1);
+ }finally{await f.pool.query('DELETE FROM bundle_versions WHERE id=ANY($1::text[])',[ids]);await f.cleanup();}
 });
 test('operator-configured cash currency is enforced through sale and redemption',{skip:!url},async()=>{
  const f=await setup({env:{PAMOFI_CASH_CURRENCIES:JSON.stringify(['USD','ZWG'])}}),bundleId=`cash-${randomUUID().slice(0,8)}`;
@@ -198,7 +268,7 @@ test('saved order lookup is exact, owner-scoped and read-only while checkout and
   assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[f.customer,f.otherCustomer]])).rows[0].n,3);
   assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM provider_payment_attempts WHERE customer_id=ANY($1::uuid[])',[[f.customer,f.otherCustomer]])).rows[0].n,0);
  }finally{
-  await f.pool.query('DELETE FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[f.customer,f.otherCustomer]]);
+  await cleanupInvoiceEvidence(f.pool,{customerIds:[f.customer,f.otherCustomer]});await f.pool.query('DELETE FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[f.customer,f.otherCustomer]]);
   await f.pool.query('DELETE FROM bundle_versions WHERE id=$1',[bundleId]);await f.cleanup();
  }
 });
@@ -259,6 +329,86 @@ test('mock hosted checkout verifies ownership, quote mode and idempotency before
   const reversed=(await f.call('GET',`/v1/orders/${order.id}/status`,undefined,'customer')).json();assert.equal(reversed.fulfillmentState,'reversed');assert.equal(reversed.entitlementId,null);assert.ok(reversed.entitlementRevokedAt);
   assert.equal((await f.call('POST',`/v1/orders/${order.id}/mock-payment`,{outcome:'success'},'customer')).statusCode,409);
   assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM purchase_entitlements WHERE order_id=$1',[order.id])).rows[0].n,1);
+ }finally{await f.cleanup();}
+});
+test('recorded cash issues one immutable private invoice and encrypted delivery intent under retries',{skip:!url},async()=>{
+ const f=await setup();
+ try{
+  await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:1,reason:'Isolated invoice acceptance stock'});
+  const pair=(await f.call('POST','/v1/receipt-pairings',{bundleId:'mini',siteId:f.site},'customer')).json().pairing;
+  const payload={siteId:f.site,bundleId:'mini',delivery:'receipt',pairingCode:pair.code,payment:{method:'cash',confirmed:true,amountMinor:50,currency:'USD'},invoiceDelivery:{channel:'email',recipient:'invoice@example.invalid'}},key=randomUUID();
+  assert.equal((await f.call('POST','/v1/staff/sales',{...payload,invoiceDelivery:{channel:'email',recipient:'invalid'}},'agent')).statusCode,400);
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM paid_invoices WHERE agent_id=$1',[f.agent])).rows[0].n,0);
+  const responses=await Promise.all(Array.from({length:4},()=>f.call('POST','/v1/staff/sales',payload,'agent',key)));
+  assert.ok(responses.every(response=>[200,201].includes(response.statusCode)));
+  const {sale,invoice}=responses[0].json();assert.ok(invoice.id);assert.match(invoice.number,/^PFI-[0-9]+$/);assert.equal(new Set(responses.map(response=>response.json().invoice.id)).size,1);
+  assert.equal((await f.call('POST','/v1/staff/sales',{...payload,invoiceDelivery:{channel:'email',recipient:'different@example.invalid'}},'agent',key)).statusCode,409);
+  const rows=(await f.pool.query('SELECT * FROM paid_invoices WHERE sale_id=$1',[sale.id])).rows;assert.equal(rows.length,1);const saved=rows[0];
+  assert.equal(saved.snapshot.totalMinor,50);assert.equal(saved.snapshot.line.byteLimit,'2000000000');assert.equal(saved.snapshot.operator.address,'3964 98th Crescent Kuwadzana 5');assert.equal(saved.snapshot.payment.evidence,'agent_attestation');
+  assert.equal(JSON.stringify(saved.snapshot).includes('invoice@example.invalid'),false);
+  const intent=(await f.pool.query('SELECT * FROM invoice_deliveries WHERE invoice_id=$1',[invoice.id])).rows[0];assert.equal(intent.channel,'email');assert.equal(intent.payload_cipher.toString().includes('invoice@example.invalid'),false);
+  const events=(await f.pool.query("SELECT payload FROM event_outbox WHERE event_type='invoice.issued' AND aggregate_id=$1",[invoice.id])).rows;assert.deepEqual(events,[{payload:{invoiceId:invoice.id}}]);
+  const customerPath=`/v1/customer/invoices/${invoice.id}`,staffPath=`/v1/staff/invoices/${invoice.id}`;
+  assert.equal((await f.app.inject({url:customerPath})).statusCode,401);
+  assert.equal((await f.call('GET',customerPath,undefined,'customer2')).statusCode,404);
+  assert.equal((await f.call('GET',staffPath,undefined,'other')).statusCode,404);
+  assert.equal((await f.call('GET',staffPath,undefined,'support')).statusCode,403);
+  for(const who of ['admin','agent'])assert.equal((await f.call('GET',staffPath,undefined,who)).json().invoice.number,invoice.number);
+  const owned=(await f.call('GET',`/v1/customer/invoices?saleId=${sale.id}`,undefined,'customer')).json();assert.equal(owned.invoices.length,1);assert.equal(owned.invoices[0].requestedChannel,'email');assert.equal(JSON.stringify(owned).includes('invoice@example.invalid'),false);
+  const pdf=await f.call('GET',`${customerPath}/pdf`,undefined,'customer');assert.equal(pdf.statusCode,200);assert.match(pdf.headers['content-type'],/^application\/pdf/);assert.equal(pdf.headers['cache-control'],'no-store');assert.deepEqual(pdf.rawPayload,saved.pdf_bytes);
+  await assert.rejects(f.pool.query('UPDATE paid_invoices SET total_minor=1 WHERE id=$1',[invoice.id]),/immutable/);
+  await f.pool.query('UPDATE sales_locations SET name=$2 WHERE id=$1',[f.site,'Renamed location after payment']);
+  assert.deepEqual((await f.call('GET',`${staffPath}/pdf`,undefined,'admin')).rawPayload,saved.pdf_bytes);
+  // Reads are independent of the public selling gate, including the staff path.
+  process.env.PAMOFI_COMMERCE_ENABLED='false';const paused=buildApp();
+  try{assert.equal((await paused.inject({url:customerPath,headers:{cookie:'customer=main'}})).statusCode,200);assert.equal((await paused.inject({url:staffPath,headers:{cookie:'staff=agent'}})).statusCode,200);}finally{await paused.close();}
+ }finally{await f.cleanup();}
+});
+test('SMS invoice token is invoice-only, encrypted, origin-checked and expiring',{skip:!url},async()=>{
+ const f=await setup();
+ try{
+  await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:1,reason:'Isolated SMS invoice acceptance stock'});
+  const pair=(await f.call('POST','/v1/receipt-pairings',{bundleId:'mini',siteId:f.site},'customer')).json().pairing;
+  const sold=await f.call('POST','/v1/staff/sales',{siteId:f.site,bundleId:'mini',delivery:'receipt',pairingCode:pair.code,payment:{method:'cash',confirmed:true,amountMinor:50,currency:'USD'},invoiceDelivery:{channel:'sms',recipient:'+263 715 092 221'}},'agent');assert.equal(sold.statusCode,201);
+  const invoice=sold.json().invoice,path=`/internal/v1/invoices/${invoice.id}`;
+  assert.equal((await f.app.inject({url:path})).statusCode,401);
+  const tokenFor=scope=>new SignJWT({scope}).setProtectedHeader({alg:'HS256'}).setIssuer('notification').setSubject('notification').setAudience('prepaid-access').setIssuedAt().setExpirationTime('15s').sign(new TextEncoder().encode(deliverySecret));
+  assert.equal((await f.app.inject({url:path,headers:{authorization:`Bearer ${await tokenFor('delivery:read')}`}})).statusCode,403);
+  const details=(await f.app.inject({url:path,headers:{authorization:`Bearer ${await tokenFor('invoice:read')}`}})).json();assert.equal(details.channel,'sms');assert.equal(details.to,'263715092221');
+  const link=new URL(details.link),token=link.hash.slice('#invoice='.length);assert.equal(link.origin,origin);assert.match(token,/^[A-Za-z0-9_-]{43}$/);
+  const saved=(await f.pool.query('SELECT * FROM invoice_deliveries WHERE invoice_id=$1',[invoice.id])).rows[0];assert.equal(saved.download_token_hash.length,32);assert.equal(saved.payload_cipher.toString().includes(token),false);assert.equal(details.expiresAt,saved.token_expires_at.toISOString());
+  const download=await f.app.inject({method:'POST',url:'/v1/invoice-downloads',headers:{origin},payload:{token}});assert.equal(download.statusCode,200);assert.equal(download.headers['cache-control'],'no-store');assert.equal(download.rawPayload.subarray(0,5).toString(),'%PDF-');
+  assert.equal((await f.app.inject({method:'POST',url:'/v1/invoice-downloads',headers:{origin:'https://foreign.example'},payload:{token}})).statusCode,403);
+  assert.equal((await f.app.inject({method:'POST',url:'/v1/invoice-downloads',headers:{origin},payload:{token:randomBytes(32).toString('base64url')}})).statusCode,404);
+  assert.equal((await f.app.inject({url:`/v1/customer/invoices/${invoice.id}`})).statusCode,401);
+  await f.pool.query("UPDATE invoice_deliveries SET token_expires_at=now()-interval '1 second' WHERE invoice_id=$1",[invoice.id]);
+  assert.equal((await f.app.inject({method:'POST',url:'/v1/invoice-downloads',headers:{origin},payload:{token}})).statusCode,404);
+  assert.equal((await f.app.inject({url:path,headers:{authorization:`Bearer ${await tokenFor('invoice:read')}`}})).statusCode,410);
+  assert.equal((await f.call('GET',`/v1/customer/invoices/${invoice.id}/pdf`,undefined,'customer')).statusCode,200);
+ }finally{await f.cleanup();}
+});
+test('digital invoice is issued only on verified fulfillment and survives reversal unchanged',{skip:!url},async()=>{
+ const f=await setup();
+ try{
+  const payload={bundleId:'flex',mode:'checkout',invoiceDelivery:{channel:'email',recipient:'paid@example.invalid'}},key=randomUUID();
+  const quote=await f.call('POST','/v1/orders',payload,'customer',key);assert.equal(quote.statusCode,201);const order=quote.json().order;
+  assert.equal((await f.call('POST','/v1/orders',payload,'customer',key)).json().order.id,order.id);
+  assert.equal((await f.call('POST','/v1/orders',{...payload,invoiceDelivery:{channel:'email',recipient:'changed@example.invalid'}},'customer',key)).statusCode,409);
+  const intent=(await f.pool.query('SELECT * FROM invoice_delivery_intents WHERE order_id=$1',[order.id])).rows[0];assert.equal(intent.payload_cipher.toString().includes('paid@example.invalid'),false);
+  assert.equal((await f.call('GET',`/v1/customer/invoices?orderId=${order.id}`,undefined,'customer')).json().invoices.length,0);
+  assert.equal((await f.call('POST',`/v1/orders/${order.id}/checkout`,{siteId:f.site,methodCode:'MOCKPAY'},'customer')).statusCode,200);
+  await f.call('GET',`/v1/orders/${order.id}/status`,undefined,'customer');
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM paid_invoices WHERE order_id=$1',[order.id])).rows[0].n,0);
+  const paid=await Promise.all(Array.from({length:4},()=>f.call('POST',`/v1/orders/${order.id}/mock-payment`,{outcome:'success'},'customer')));assert.ok(paid.every(response=>response.statusCode===200));
+  const invoices=(await f.pool.query('SELECT * FROM paid_invoices WHERE order_id=$1',[order.id])).rows;assert.equal(invoices.length,1);const invoice=invoices[0];assert.equal(invoice.source_type,'digital');assert.equal(invoice.simulation,true);assert.equal(invoice.snapshot.payment.evidence,'provider_verified');assert.equal(invoice.total_minor,100);
+  assert.equal((await f.pool.query("SELECT count(*)::int AS n FROM event_outbox WHERE event_type='invoice.issued' AND aggregate_id=$1",[invoice.id])).rows[0].n,1);
+  assert.equal((await f.call('GET',`/v1/customer/invoices/${invoice.id}/pdf`,undefined,'customer2')).statusCode,404);assert.equal((await f.call('GET',`/v1/staff/invoices/${invoice.id}/pdf`,undefined,'agent')).statusCode,404);
+  assert.equal((await f.call('GET',`/v1/staff/invoices/${invoice.id}/pdf`,undefined,'admin')).statusCode,200);
+  assert.equal((await f.call('POST',`/v1/orders/${order.id}/mock-payment`,{outcome:'reversed'},'customer')).json().state,'reversed');
+  assert.deepEqual((await f.call('GET',`/v1/customer/invoices/${invoice.id}/pdf`,undefined,'customer')).rawPayload,invoice.pdf_bytes);
+  const demo=(await f.call('POST','/v1/orders',{bundleId:'mini',mode:'demo'},'customer')).json().order;
+  assert.equal((await f.call('POST',`/v1/orders/${demo.id}/demo-confirm`,{},'customer')).statusCode,200);
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM paid_invoices WHERE order_id=$1',[demo.id])).rows[0].n,0);
  }finally{await f.cleanup();}
 });
 test('customer quote recovery requires owned, origin-checked closure before advertising safe requote',{skip:!url},async()=>{
@@ -456,6 +606,7 @@ test('cash refund approval voids access but only an attested payout changes cash
  const f=await setup();
  try{
   const {sale,pair,receipt,salePayload,saleKey}=await refundableSale(f);
+  const paidInvoice=(await f.pool.query('SELECT id,number,snapshot,pdf_bytes FROM paid_invoices WHERE sale_id=$1',[sale.id])).rows[0];assert.ok(paidInvoice);
   const body={saleId:sale.id,reason:'Customer requested cancellation before use'},key=randomUUID();
   assert.equal((await f.call('POST','/v1/staff/cash-refunds',body,'customer')).statusCode,401);
   assert.equal((await f.call('POST','/v1/staff/cash-refunds',body,'other')).json().error,'refund_sale_unavailable');
@@ -478,6 +629,7 @@ test('cash refund approval voids access but only an attested payout changes cash
   assert.equal((await f.call('POST',payout,{confirmed:true},'agent',payoutKey)).json().replayed,true);
   assert.equal((await f.call('POST',payout,{confirmed:true},'agent')).json().error,'refund_already_paid');
   const after=(await f.call('GET','/v1/staff/cash-shifts',undefined,'agent')).json().shifts[0];assert.equal(after.expectedMinor,'0');assert.equal(after.refundsMinor,'50');assert.equal(after.commissionReversedMinor,'5');
+  assert.deepEqual((await f.pool.query('SELECT id,number,snapshot,pdf_bytes FROM paid_invoices WHERE sale_id=$1',[sale.id])).rows,[paidInvoice]);
   assert.equal((await f.call('POST','/v1/staff/sales',salePayload,'agent',saleKey)).json().sale.id,sale.id);
   assert.equal((await f.call('GET',`/v1/receipt-pairings/${pair.id}`,undefined,'customer')).json().receipt.voucher.state,'refunded');
   await assert.rejects(f.pool.query("UPDATE cash_refunds SET state='requested' WHERE id=$1",[refund.id]),/immutable/);
