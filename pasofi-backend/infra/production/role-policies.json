@@ -23,6 +23,9 @@
     "cash_refund_events": ["SELECT", "INSERT"],
     "cash_shifts": ["SELECT", "INSERT", "UPDATE"],
     "agent_sales": ["SELECT", "INSERT", "UPDATE (id)"],
+    "paid_invoices": ["SELECT", "INSERT"],
+    "invoice_delivery_intents": ["SELECT", "INSERT"],
+    "invoice_deliveries": ["SELECT", "INSERT"],
     "issued_vouchers": ["SELECT", "INSERT", "UPDATE"],
     "event_outbox": ["SELECT", "INSERT", "UPDATE"],
     "outbox_replay_audit": ["SELECT", "INSERT"],
@@ -51,7 +54,9 @@
     "delivery_jobs": ["SELECT", "INSERT", "UPDATE"],
     "delivery_attempts": ["SELECT", "INSERT", "UPDATE"],
     "delivery_resend_requests": ["SELECT", "INSERT"],
-    "mock_sms_sink": []
+    "mock_sms_sink": [],
+    "invoice_jobs": ["SELECT", "INSERT", "UPDATE"],
+    "mock_invoice_sink": []
   },
   "assistant": {}
 }

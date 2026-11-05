@@ -15,6 +15,8 @@ export default defineConfig(({ mode }) => {
     '^/api/help(?:\\?|$)': { target: assistant, rewrite },
     '^/api/session(?:\\?|$)': { target: identity, rewrite },
     '^/api/orders(?:/[0-9a-fA-F-]+/(?:demo-confirm|checkout|status|mock-payment|expire-unused))?(?:\\?|$)': { target: prepaid, rewrite },
+    '^/api/(?:customer|staff)/invoices(?:/[0-9a-fA-F-]+(?:/pdf)?)?(?:\\?|$)': { target: prepaid, rewrite },
+    '^/api/invoice-downloads(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/recovery(?:/(?:status|setup|rotate))?(?:\\?|$)': { target: identity, rewrite },
     '^/api/handoff(?:/redeem)?(?:\\?|$)': { target: identity, rewrite },
     '^/api/staff/(?:register|login|session|mfa/(?:setup|confirm|verify)|password-reset/(?:availability|request|confirm)|users(?:/[0-9a-fA-F-]+/(?:decision|revoke-sessions|recover-mfa))?|audit)(?:\\?|$)': { target: identity, rewrite },

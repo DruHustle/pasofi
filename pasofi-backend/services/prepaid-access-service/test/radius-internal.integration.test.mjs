@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -37,7 +38,7 @@ test('lab authority requires a scoped network token and durably binds accounting
   assert.equal((await pool.query('SELECT consumed_bytes::text FROM purchase_entitlements WHERE id=$1',[entitlement])).rows[0].consumed_bytes,'4294967306');
   process.env.APP_ENV='production';const production=buildApp();try{assert.equal((await production.inject({method:'POST',url:'/internal/v1/radius/grants',payload:grantBody,headers:{authorization:`Bearer ${grantToken}`}})).statusCode,404);}finally{await production.close();}
  }finally{
-  await app.close();await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);await pool.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
+  await app.close();await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);await pool.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
   for(const key of ['DATABASE_URL','APP_ENV','NODE_ENV','INTERNAL_RADIUS_ENABLED','INTERNAL_NETWORK_SECRET']) {if(env[key]===undefined) delete process.env[key];else process.env[key]=env[key];}
  }
 });

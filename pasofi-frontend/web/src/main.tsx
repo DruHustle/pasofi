@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { InvoiceLink } from './InvoiceActions';
 import type { Capabilities, Product } from './business';
 import type { CustomerTab } from './CustomerAccess';
 import { api } from './api';
@@ -194,4 +195,4 @@ function App() {
     </main>
   </div>;
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode><InvoiceLink/><App/></React.StrictMode>);

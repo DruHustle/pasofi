@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID, randomBytes } from 'node:crypto';
@@ -50,7 +51,7 @@ test('agent stock, issuance, redemption and replacement races preserve value', {
   assert.equal(entitlements.rows[0].start_by.getTime(),sold.rows[0].start_by.getTime());
  } finally {
   await pool.query('DELETE FROM purchase_entitlements WHERE customer_id IN ($1,$2)',[customer,other]);
-  for(const id of [saleId,extraSaleId].filter(Boolean)){await pool.query('DELETE FROM event_outbox WHERE aggregate_id=$1',[id]);await pool.query('UPDATE issued_vouchers SET parent_id=NULL WHERE sale_id=$1',[id]);await pool.query('DELETE FROM issued_vouchers WHERE sale_id=$1',[id]);await pool.query('DELETE FROM agent_sales WHERE id=$1',[id]);}
+  for(const id of [saleId,extraSaleId].filter(Boolean)){await pool.query('DELETE FROM event_outbox WHERE aggregate_id=$1',[id]);await pool.query('UPDATE issued_vouchers SET parent_id=NULL WHERE sale_id=$1',[id]);await pool.query('DELETE FROM issued_vouchers WHERE sale_id=$1',[id]);await cleanupInvoiceEvidence(pool,{saleIds:[id]});await pool.query('DELETE FROM agent_sales WHERE id=$1',[id]);}
   await pool.query('DELETE FROM agent_inventory WHERE agent_id=$1',[agent]);
   await pool.end();
  }

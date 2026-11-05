@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import {eligibleMethod,type PaymentAdapter as Adapter,type MethodEligibility as Eligibility} from './payment-provider.js';
+import {issueDigitalInvoice} from './invoices.js';
 export class PaymentError extends Error {constructor(public readonly code:string){super(code);}}
 async function tx<T>(pool:Pool,fn:(client:PoolClient)=>Promise<T>):Promise<T>{const client=await pool.connect();try{await client.query('BEGIN');const r=await fn(client);await client.query('COMMIT');return r;}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}
 // The checkout boundary authenticates ownership and supplies the server's
@@ -136,6 +137,7 @@ export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapte
   await client.query('UPDATE verified_charges SET fulfilled_entitlement_id=$2 WHERE id=$1',[chargeId,entitlementId]);
   await client.query("UPDATE purchase_orders SET status='payment_confirmed' WHERE id=$1",[a.order_id]);
   await client.query("UPDATE provider_payment_attempts SET state='succeeded',updated_at=now() WHERE id=$1",[attemptId]);
+  await issueDigitalInvoice(client,chargeId);
   return {state:'fulfilled'};
  });
 }

@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -20,7 +21,7 @@ async function fixture(work){
   await pool.query('DELETE FROM network_account_holds WHERE customer_id=$1',[customer]);
   await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);
   await pool.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);
-  await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
+  await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
  }
 }
 test('verified final Stop plus independently fenced router absence releases exactly the remaining allowance',{skip:!url},async()=>fixture(async({pool,customer,event,evidence,grant})=>{

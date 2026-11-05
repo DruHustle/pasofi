@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -50,7 +51,7 @@ test('access pagination shows active access and the FIFO queue ahead of old hist
   if(app)await app.close();
   for(const [key,value] of Object.entries(saved)) {if(value===undefined)delete process.env[key];else process.env[key]=value;}
   await pool.query('DELETE FROM purchase_entitlements WHERE id=ANY($1::uuid[])',[ids]);
-  await pool.query('DELETE FROM purchase_orders WHERE id=ANY($1::uuid[])',[ids]);
+  await cleanupInvoiceEvidence(pool,{orderIds:ids});await pool.query('DELETE FROM purchase_orders WHERE id=ANY($1::uuid[])',[ids]);
   await pool.end();
  }
 });

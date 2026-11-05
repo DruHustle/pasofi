@@ -427,3 +427,22 @@
 .customer-workspace .customer-bundle-list small{color:#425d7a}
 @media(min-width:700px){.customer-workspace .customer-quick-actions button:nth-child(n){min-height:48px;flex-direction:row;justify-content:center;gap:8px}}
 @media(max-width:359px){.customer-workspace .customer-quick-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.customer-workspace .customer-quick-actions button:nth-child(n){min-height:48px;flex-direction:row;justify-content:center}}
+
+/* History uses compact rows, including when the account has no bundles yet. */
+.customer-workspace .customer-history-summary.customer-history-compact{margin:0 0 8px}
+.customer-workspace[data-screen="history"] .customer-bundles-panel{padding:12px 14px;margin:8px 0;border-radius:12px}
+.customer-workspace[data-screen="history"] .customer-bundles-panel .workspace-section-head{margin:0 0 6px;gap:8px}
+.customer-workspace[data-screen="history"] .customer-bundles-panel .workspace-section-head .eyebrow{display:none}
+.customer-workspace[data-screen="history"] .customer-bundles-panel .workspace-section-head h3{margin:0;font-size:16px}
+.customer-workspace[data-screen="history"] .customer-empty-state{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:3px 10px;align-items:center;text-align:left;padding:6px 0}
+.customer-workspace[data-screen="history"] .customer-empty-icon{grid-column:1;grid-row:1/3;width:32px;height:32px;border-radius:10px}
+.customer-workspace[data-screen="history"] .customer-empty-icon svg{width:20px;height:20px}
+.customer-workspace[data-screen="history"] .customer-empty-state h4{grid-column:2;grid-row:1;margin:0;font-size:15px}
+.customer-workspace[data-screen="history"] .customer-empty-state p{grid-column:2;grid-row:2;max-width:none;margin:0;font-size:13px;line-height:1.5}
+.customer-workspace[data-screen="history"] .customer-empty-state>.primary{grid-column:3;grid-row:1/3;min-height:44px;padding:8px 12px;font-size:13px}
+.customer-workspace .customer-history-usage{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 16px;padding:12px 14px;margin:8px 0;border-radius:12px;background:#edf4ff}
+.customer-workspace .customer-history-usage>div{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
+.customer-workspace .customer-history-usage .eyebrow{font-size:11px;letter-spacing:.6px}
+.customer-workspace .customer-history-usage h3{font-size:18px;line-height:1.3;margin:0}
+.customer-workspace .customer-history-usage p{flex:1 1 240px;max-width:none;font-size:13px;line-height:1.5;margin:0}
+@media(max-width:600px){.customer-workspace[data-screen="history"] .customer-empty-state{grid-template-columns:32px minmax(0,1fr)}.customer-workspace[data-screen="history"] .customer-empty-state>.primary{grid-column:2;grid-row:3;justify-self:start;max-width:100%;margin-top:5px}}
