@@ -209,6 +209,10 @@ gosu postgres pgbackrest version
       }
       const invalidHost = await compose(['run', '--rm', '--no-deps', '-e', 'PAMOFI_PUBLIC_HOST=127.0.0.1', 'gateway'], { timeout: 15000, failureAllowed: true });
       assert.notEqual(invalidHost.status, 0); assert.match(invalidHost.stderr + invalidHost.stdout, /Vercel gateway startup refused/);
+      for (const flag of ['invalid', 'true']) {
+        const missingPortal = await compose(['run', '--rm', '--no-deps', '-e', `PASOFI_HOTSPOT_PORTAL=${flag}`, 'gateway'], { timeout: 15000, failureAllowed: true });
+        assert.notEqual(missingPortal.status, 0, 'Portal activation must reject an invalid flag or missing qualified build');
+      }
       console.log('Split gateway startup rejects malformed credentials and non-DNS hostnames without logging credentials.');
     }
     console.log('Production lab: initializing independent owner/migration/runtime roles.');
@@ -235,6 +239,31 @@ gosu postgres pgbackrest version
       assert.equal(probe.status, 0);
     }
     const publicResult = await run(process.execPath, [join(here, vercel ? 'lab-vercel.mjs' : 'lab-public.mjs'), httpsAddress.split(':')[1], httpAddress.split(':')[1], secrets], { timeout: 90000 }); console.log(publicResult.stdout.trim());
+    if (vercel) {
+      // Qualify the explicit captive-browser entry after the unchanged split
+      // deployment passes. All accounts and credentials remain in this lab.
+      const portalAssets = join(directory, 'hotspot-web');
+      await run(process.execPath, [join(repository, 'pasofi-frontend/web/node_modules/vite/bin/vite.js'), 'build', '--outDir', portalAssets], {
+        cwd: join(repository, 'pasofi-frontend/web'), env: { ...process.env, VITE_PASOFI_HOTSPOT_PORTAL: '1' }, timeout: 120000,
+      });
+      const portalEnv = { ...env, PASOFI_HOTSPOT_PORTAL: 'true', PASOFI_HOTSPOT_PUBLIC_ORIGIN: 'https://api.pamofi.test', PASOFI_PUBLIC_ORIGIN_ALIASES: '["https://api.pamofi.test"]', PASOFI_HOTSPOT_WEB_DIR: portalAssets };
+      await run(process.execPath, [join(here, 'preflight-vercel.mjs')], { env: portalEnv });
+      const portalConfig = JSON.parse((await docker([...configArgs, '-f', join(here, 'hotspot-portal.compose.yaml'), 'config', '--format', 'json'], { env: portalEnv })).stdout);
+      noUnexpectedPorts(portalConfig);
+      assert.equal(portalConfig.services.gateway.environment.PASOFI_HOTSPOT_PORTAL, 'true');
+      assert.equal(portalConfig.services.gateway.volumes.find(item => item.target === '/opt/pasofi/hotspot-web').read_only, true);
+      config.services.gateway.environment.PASOFI_HOTSPOT_PORTAL = 'true';
+      config.services.gateway.volumes.push(
+        { type: 'bind', source: join(here, 'gateway/hotspot-portal.conf'), target: '/opt/pasofi/hotspot-portal.conf', read_only: true },
+        { type: 'bind', source: portalAssets, target: '/opt/pasofi/hotspot-web', read_only: true },
+      );
+      for (const service of ['identity', 'prepaid-access']) config.services[service].environment.PUBLIC_ORIGIN_ALIASES = '["https://api.pamofi.test"]';
+      await writeFile(rendered, JSON.stringify(config), { mode: 0o600 });
+      await compose(['up', '-d', '--no-deps', '--wait', '--wait-timeout', '120', 'identity', 'prepaid-access', 'gateway'], { timeout: 150000 });
+      const portalAddress = (await compose(['port', 'gateway', '443'])).stdout.trim();
+      const portalResult = await run(process.execPath, [join(here, 'lab-hotspot-portal.mjs'), portalAddress.split(':')[1], secrets], { timeout: 60000 });
+      console.log(portalResult.stdout.trim());
+    }
     const internalScript = await readFile(join(here, 'lab-internal.mjs'), 'utf8');
     for (const service of serviceNames) { const result = await compose(['exec', '-T', service, 'node', '--input-type=module'], { input: internalScript, timeout: 30000 }); console.log(result.stdout.trim()); }
     if (!vercel) {

@@ -12,7 +12,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   else source?.addEventListener('abort', forwardAbort, { once: true });
   const timer = setTimeout(forwardAbort, 10_000);
   try {
-    const response = await fetch(path, { ...init, credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+    // The dedicated hotspot build stays on the gateway's own HTTPS origin.
+    // No browser credential or arbitrary upstream is added to this public path.
+    const endpoint = import.meta.env.VITE_PASOFI_HOTSPOT_PORTAL === '1' && path.startsWith('/api/')
+      ? '/portal-api/' + path.slice(5) : path;
+    const response = await fetch(endpoint, { ...init, credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       const retryAfter = response.headers.get('Retry-After');
