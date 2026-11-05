@@ -1,0 +1,31 @@
+# Optional central administration. Both gates are explicit and independent of
+# customer access, selling, and the existing disconnect reconciler.
+services:
+  prepaid-access:
+    environment:
+      PAMOFI_ROUTER_FLEET_ENABLED: ${PAMOFI_ROUTER_FLEET_ENABLED:?Set fleet reads to true or false}
+      PAMOFI_ROUTER_FLEET_WRITE_ENABLED: ${PAMOFI_ROUTER_FLEET_WRITE_ENABLED:?Set fleet writes to true or false}
+  network:
+    environment:
+      ROUTER_FLEET_ENABLED: ${PAMOFI_ROUTER_FLEET_ENABLED:?Set fleet reads to true or false}
+      ROUTER_FLEET_WRITES_ENABLED: ${PAMOFI_ROUTER_FLEET_WRITE_ENABLED:?Set fleet writes to true or false}
+      ROUTEROS_FLEET_FILE: /run/secrets/routeros_fleet
+    secrets:
+      - routeros_fleet
+    volumes:
+      - type: bind
+        source: ${PAMOFI_ROUTER_FLEET_DIR:?Set the protected fleet material directory}/ca
+        target: /run/pamofi/router-fleet-ca
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [services, database, router_control]
+networks:
+  router_control:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: nat
+      com.docker.network.bridge.enable_ip_masquerade: 'true'
+secrets:
+  routeros_fleet:
+    file: ${PAMOFI_ROUTER_FLEET_DIR:?Set the protected fleet material directory}/routers.json

@@ -263,6 +263,10 @@ test('cash workflow, recovery, staff and network routes are available through or
     ['GET','/api/staff/cash-refunds'], ['POST','/api/staff/cash-refunds'], ['POST',`/api/staff/cash-refunds/${id}/payout`], ['POST',`/api/staff/cash-refunds/${id}/prepare-payout`], ['POST',`/api/admin/cash-refunds/${id}/decision`], ['GET', '/api/staff/cash-shifts'], ['POST', '/api/staff/cash-shifts'], ['POST', `/api/staff/cash-shifts/${id}/close`], ['POST', '/api/staff/cash-references/lookup'], ['POST', `/api/receipt-pairings/${id}/cancel`], ['POST', '/api/receipt-pairings'], ['GET', `/api/receipt-pairings/${id}`], ['POST', '/api/vouchers/redeem'],
     ['POST', '/api/recovery/rotate'], ['POST', '/api/handoff/redeem'], ['POST', '/api/network/credentials'],
     ['POST', '/api/network/disconnect'], ['PATCH', '/api/admin/bundles/day-1'], ['POST', `/api/admin/network/reviews/${id}/resolve`],
+    ['GET', '/api/admin/routers'], ['GET', `/api/admin/routers/${id}`],
+    ['GET', `/api/admin/routers/${id}/changes`], ['POST', `/api/admin/routers/${id}/changes`],
+    ['GET', `/api/admin/routers/${id}/changes/${id}`], ['POST', `/api/admin/routers/${id}/changes/${id}/apply`],
+    ['POST', `/api/admin/routers/${id}/changes/${id}/reconcile`], ['POST', `/api/admin/routers/${id}/changes/${id}/rollback`],
   ];
   await withProxy({}, async call => {
     for (const [method, path] of paths) {
@@ -272,6 +276,15 @@ test('cash workflow, recovery, staff and network routes are available through or
     const response = await call('/api/usage?__pamofi_path=usage&opaque=x%2Fy'); assert.equal(response.status, 200); assert.equal(events.at(-1).url, '/api/usage?opaque=x%2Fy');
     const head = await call('/api/capabilities', { method: 'HEAD' }); assert.equal(head.status, 200); assert.equal(head.body, ''); privateResponse(head);
   });
+});
+
+test('router management exposes only the explicit fleet contract', () => {
+  for (const path of ['/api/admin/routers/commands', `/api/admin/routers/${id}/rest/system/reboot`, `/api/admin/routers/${id}/config`, `/api/internal/v1/router-fleet/routers`, `/api/admin/routers/${id}/changes/${id}/delete`]) {
+    assert.throws(() => publicRoute(path, 'POST'), error => error.status === 404);
+  }
+  for (const [path, method] of [['/api/admin/routers', 'POST'], [`/api/admin/routers/${id}`, 'PATCH'], [`/api/admin/routers/${id}/changes/${id}/apply`, 'GET'], [`/api/admin/routers/${id}/changes/${id}`, 'DELETE']]) {
+    assert.throws(() => publicRoute(path, method), error => error.status === 405);
+  }
 });
 
 test('invoice-only PDF routes preserve exact bytes and attachment names without caching or leaking a bearer into the URL', async () => {

@@ -6,6 +6,8 @@ For a **Vercel frontend with an Oracle backend**, use the explicit [Vercel/Oracl
 
 The [optional private RouterOS overlay](ROUTER_CONTROL.md) supplies the existing reconciler's protected JSON/CA mounts and controlled activation input. The base and RADIUS defaults remain disabled; device credentials, tunnel/certificate qualification and physical activation are separate deployment inputs.
 
+The [central router administration overlay](ROUTER_FLEET.md) adds one administrator login for the registered router fleet, reviewed configuration changes, audit history and guarded rollback. It uses separate per-router accounts and managed-target allowlists; reads and writes default off and are independent of customer launch gates.
+
 ## Independent database roles
 
 Each of the five databases has three distinct roles. The database names remain `pamofi_identity`, `pamofi_prepaid_access`, `pamofi_network`, `pamofi_notification`, and `pamofi_assistant`.

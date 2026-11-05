@@ -10,6 +10,7 @@ import {loadDeliveryKeys,unseal} from './delivery-crypto.js';
 import {paymentConfiguration} from './checkout.js';
 import {customerNetworkEnabled} from './network-lifecycle.js';
 import {registerNetworkAdmin} from './network-admin.js';
+import {registerRouterFleet,routerFleetCapabilities} from './router-fleet.js';
 import {InvoiceError,normalizeInvoiceDelivery} from './invoices.js';
 import {registerInvoices,invoiceDeliveryCapabilities} from './invoice-routes.js';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -59,9 +60,10 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
  registerCashRefunds(app,pool,(request,reply,roles)=>staff(request,reply,roles,false));
  registerCashShifts(app,pool,(request,reply,roles)=>staff(request,reply,roles,false),enabled,cashCurrencies);
  registerNetworkAdmin(app,pool,(request,reply,roles)=>staff(request,reply,roles,false));
+ registerRouterFleet(app,demo,(request,reply,roles)=>staff(request,reply,roles,false));
  registerInvoices(app,pool,demo,customer,(request,reply)=>staff(request,reply,['admin','agent'],false),originAllowed);
  const errors=(reply:FastifyReply,error:unknown)=>reply.code(error instanceof VoucherError?409:error instanceof InvoiceError?(error.code==='invalid_invoice_delivery'?400:error.code==='idempotency_conflict'?409:503):503).send({error:error instanceof VoucherError||error instanceof InvoiceError?error.code:'unavailable'});
- app.get('/v1/capabilities',async request=>{const p=paymentConfiguration(demo);const invoiceCaps=pool?invoiceDeliveryCapabilities(demo):Promise.resolve({invoiceEmail:false,invoiceSms:false});let smsAvailable=false;if(deliverySms){try{const capability=await notification(request,'/internal/v1/delivery/capabilities');smsAvailable=capability.status===200&&capability.data.enabled===true&&capability.data.simulation===demo;}catch{/* unavailable delivery never advertises an actionable SMS option */}}return {demo,paymentMode:p.mode,paymentCheckout:p.enabled,vouchers:enabled,receiptPairing:enabled,staffSales:enabled,inventoryAllocation:!!pool,cashShifts:true,deliverySms:smsAvailable,networkAccess:customerNetworkEnabled(demo),mobileCookies:false,invoices:!!pool,...await invoiceCaps};});
+ app.get('/v1/capabilities',async request=>{const p=paymentConfiguration(demo);const invoiceCaps=pool?invoiceDeliveryCapabilities(demo):Promise.resolve({invoiceEmail:false,invoiceSms:false});let smsAvailable=false;if(deliverySms){try{const capability=await notification(request,'/internal/v1/delivery/capabilities');smsAvailable=capability.status===200&&capability.data.enabled===true&&capability.data.simulation===demo;}catch{/* unavailable delivery never advertises an actionable SMS option */}}return {demo,paymentMode:p.mode,paymentCheckout:p.enabled,vouchers:enabled,receiptPairing:enabled,staffSales:enabled,inventoryAllocation:!!pool,cashShifts:true,deliverySms:smsAvailable,networkAccess:customerNetworkEnabled(demo),mobileCookies:false,invoices:!!pool,...routerFleetCapabilities(demo,!!pool),...await invoiceCaps};});
  app.get('/v1/sites',async(_request,reply)=>{if(!pool)return reply.code(503).send({error:'unavailable'});try{return {sites:(await pool.query('SELECT id,name FROM sales_locations WHERE enabled ORDER BY name,id')).rows};}catch{return reply.code(503).send({error:'unavailable'});}});
  // Administrators must be able to prepare the service while customer commerce
  // is paused. This bypasses only the selling switch, never staff/MFA/origin checks.

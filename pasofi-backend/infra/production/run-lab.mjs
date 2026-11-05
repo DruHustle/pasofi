@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectRouterControl } from './router-control-config.mjs';
+import { inspectRouterFleet } from './router-fleet-config.mjs';
 import { prepare as prepareRadius } from '../radius-production/prepare.mjs';
 
 const vercel = process.argv.length === 3 && process.argv[2] === '--vercel';
@@ -143,6 +144,28 @@ gosu postgres pgbackrest version
       for (const [service, value] of Object.entries(control.services)) if (service !== 'network') assert.equal((value.secrets || []).some(item => item.source === 'routeros_routers'), false);
     }
     assert.equal(config.services.network.environment.NETWORK_RECONCILER_ENABLED, 'false');
+    const fleetDirectory = join(directory, 'router-fleet');
+    await mkdir(fleetDirectory, { mode: 0o700 }); await mkdir(join(fleetDirectory, 'ca'), { mode: 0o755 });
+    await copyFile(join(secrets, 'internal_ca'), join(fleetDirectory, 'ca', nasId + '.pem'));
+    await chmod(join(fleetDirectory, 'ca', nasId + '.pem'), 0o444);
+    await writeFile(join(fleetDirectory, 'routers.json'), JSON.stringify([{ nasId, url: 'https://10.77.254.2/rest/', username: 'disposable-fleet', password: randomBytes(24).toString('base64url'), caFile: '/run/pamofi/router-fleet-ca/' + nasId + '.pem', expectedSerial: 'DISPOSABLE-LAB', allowWrites: false, targets: [{ key: 'identity', kind: 'identity' }] }]), { mode: 0o444 });
+    for (const [read, write] of [['false', 'false'], ['true', 'false'], ['true', 'true']]) {
+      const fleetEnv = { ...env, PAMOFI_ROUTER_FLEET_DIR: fleetDirectory, PAMOFI_ROUTER_FLEET_ENABLED: read, PAMOFI_ROUTER_FLEET_WRITE_ENABLED: write, PAMOFI_ROUTER_CONTROL_DIR: controlDirectory, PAMOFI_ROUTER_CONTROL_QUALIFIED: 'false' };
+      const prepared = await inspectRouterFleet(fleetEnv); assert.equal(prepared.readsRequested, read === 'true'); assert.equal(prepared.writesRequested, write === 'true');
+      const fleet = JSON.parse((await docker([...configArgs, '-f', join(here, 'router-control.compose.yaml'), '-f', join(here, 'router-fleet.compose.yaml'), 'config', '--format', 'json'], { env: fleetEnv })).stdout);
+      noUnexpectedPorts(fleet);
+      assert.equal(fleet.services.network.environment.ROUTER_FLEET_ENABLED, read);
+      assert.equal(fleet.services.network.environment.ROUTER_FLEET_WRITES_ENABLED, write);
+      assert.equal(fleet.services['prepaid-access'].environment.PAMOFI_ROUTER_FLEET_ENABLED, read);
+      assert.equal(fleet.services['prepaid-access'].environment.PAMOFI_ROUTER_FLEET_WRITE_ENABLED, write);
+      assert.equal(fleet.services.network.environment.NETWORK_RECONCILER_ENABLED, 'false');
+      assert.equal(fleet.services.network.environment.ROUTEROS_FLEET_FILE, '/run/secrets/routeros_fleet');
+      assert.equal(fleet.secrets.routeros_fleet.file, join(fleetDirectory, 'routers.json'));
+      assert.ok(Object.hasOwn(fleet.services.network.networks, 'router_control'));
+      const caMount = fleet.services.network.volumes.find(item => item.target === '/run/pamofi/router-fleet-ca');
+      assert.equal(caMount.source, join(fleetDirectory, 'ca')); assert.equal(caMount.read_only, true); assert.notEqual(caMount.bind?.create_host_path, true);
+      for (const [service, value] of Object.entries(fleet.services)) if (service !== 'network') assert.equal((value.secrets || []).some(item => item.source === 'routeros_fleet'), false);
+    }
     if (vercel) {
       for (const service of serviceNames) assert.equal(config.services[service].environment.PUBLIC_ORIGIN, env.PAMOFI_PUBLIC_ORIGIN);
       assert.equal(config.services.gateway.environment.PAMOFI_PUBLIC_HOST, env.PAMOFI_PUBLIC_HOST);

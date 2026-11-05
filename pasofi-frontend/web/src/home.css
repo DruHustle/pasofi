@@ -1,0 +1,122 @@
+.pasofi-home-content { --home-blue: #075cf5; --home-navy: #092451; --home-lime: #e5ff52; --home-muted: #425d7a; min-width: 0; color: var(--home-navy); }
+.pasofi-home-content *, .pasofi-home-content *::before, .pasofi-home-content *::after { box-sizing: border-box; }
+.pasofi-home-content :is(button,input,summary):focus-visible { outline: 3px solid #075cf5; outline-offset: 4px; }
+.pasofi-home-content button:disabled { opacity: .55; cursor: not-allowed; }
+.pasofi-home-kicker { display: block; font-size: 10px; font-weight: 750; letter-spacing: .7px; line-height: 1.5; }
+.pasofi-home-hero { display: grid; grid-template-columns: minmax(0,1fr); overflow: hidden; isolation: isolate; border-radius: 17px; background: var(--home-blue); }
+.pasofi-home-hero-copy { padding: 17px 12px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; position: relative; z-index: 1; color: #fff; }
+.pasofi-home-hero-copy .pasofi-home-kicker { color: #fff; font-size: 8px; letter-spacing: .5px; margin-bottom: 8px; }
+.pasofi-home-hero h1 { font-size: clamp(25px,6.3vw,38px); line-height: 1.04; letter-spacing: -1px; margin: 0 0 12px; font-weight: 820; color: #fff; }
+.pasofi-home-hero h1 em { font-style: normal; color: var(--home-lime); }
+.pasofi-home-hero-copy > p { display: none; }
+.pasofi-home-hero-copy > .pf-button { min-height: 44px; padding: 9px 9px; gap: 6px; max-width: 100%; background: var(--home-lime); border: 1px solid var(--home-lime); color: var(--home-navy); font-size: 11px; line-height: 1.4; border-radius: 8px; white-space: normal; text-align: left; }
+.pasofi-home-hero-copy > .pf-button .pf-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.pasofi-home-hero-copy > .pf-button:hover { background: #f0ff95; }
+.pasofi-home-hero-photo { min-height: 170px; height: 170px; position: relative; overflow: hidden; }
+.pasofi-home-hero-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.pasofi-home-photo-note { display: none; }
+.pf-home .pasofi-home-actions { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 6px; margin: 10px 0 16px; }
+.pf-home .pasofi-home-actions > button { background: #fff; border: 1px solid #cfdaeb; min-height: 66px; border-radius: 10px; padding: 8px 4px; gap: 5px; }
+.pf-home .pasofi-home-actions > button:nth-child(n) > span { color: var(--home-blue); background: transparent; width: 22px; height: 22px; }
+.pf-home .pasofi-home-actions > button strong { font-size: 11px; font-weight: 650; line-height: 1.25; color: var(--home-navy); }
+.pf-home .pasofi-home-actions > button:hover:not(:disabled) { border-color: var(--home-blue); background: #edf4ff; }
+.pasofi-home-more { display: grid; gap: 12px; margin: 24px 0 16px; }
+.pasofi-home-story { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: 180px auto; background: #e7efff; overflow: hidden; border: 1px solid #d0def8; border-radius: 15px; }
+.pasofi-home-story > img { width: 100%; height: 180px; min-height: 0; object-fit: cover; object-position: center top; }
+.pasofi-home-story > div { min-width: 0; padding: 17px 13px; align-self: center; }
+.pasofi-home-story .pasofi-home-kicker { font-size: 8px; letter-spacing: .5px; color: #355b95; }
+.pasofi-home-content .pasofi-home-story h2 { font-size: 20px; line-height: 1.15; letter-spacing: -.5px; margin: 8px 0; font-weight: 780; color: var(--home-navy); }
+.pasofi-home-story p { font-size: 12px; line-height: 1.6; color: var(--home-muted); margin: 0 0 8px; }
+.pasofi-home-story .pf-text-link { font-size: 11px; min-height: 44px; white-space: normal; text-align: left; gap: 6px; color: #084ac0; }
+.pasofi-home-story .pf-text-link .pf-icon { flex-shrink: 0; }
+.pasofi-home-account { background: var(--home-navy); color: #fff; border-radius: 15px; padding: 20px; position: relative; }
+.pasofi-home-account > .pasofi-home-kicker { color: #d1e2ff; font-size: 9px; padding-right: 36px; }
+.pasofi-home-account-icon { position: absolute; top: 18px; right: 18px; width: 36px; height: 36px; display: grid; place-items: center; background: var(--home-lime); color: var(--home-navy); border-radius: 11px; }
+.pasofi-home-content .pasofi-home-account h2 { font-size: 24px; line-height: 1.1; letter-spacing: -.5px; margin: 9px 0; font-weight: 760; color: #fff; }
+.pasofi-home-account > p { margin: 8px 0 14px; color: #d1e2ff; font-size: 12px; line-height: 1.6; max-width: 310px; }
+.pasofi-home-account > div { display: grid; gap: 5px; }
+.pasofi-home-account button { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 9px 11px; color: #fff; background: #163768; border: 1px solid #406292; border-radius: 8px; font: inherit; font-size: 12px; text-align: left; }
+.pasofi-home-account button > .pf-icon:first-child { color: var(--home-lime); width: 18px; height: 18px; }
+.pasofi-home-account button > .pf-icon:last-child { margin-left: auto; width: 17px; height: 17px; }
+.pasofi-home-account button:hover:not(:disabled) { background: #234c87; }
+.pasofi-home-locations,.pasofi-home-guide { border: 1px solid #cfdaeb; border-radius: 12px; margin-top: 10px; background: #fff; scroll-margin-top: 16px; }
+.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary { list-style: none; display: flex; align-items: center; gap: 10px; cursor: pointer; min-height: 78px; padding: 14px; }
+.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary::-webkit-details-marker { display: none; }
+.pasofi-home-section-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: #eaf2ff; color: var(--home-blue); flex-shrink: 0; }
+.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary > span:nth-child(2) { display: grid; gap: 4px; min-width: 0; }
+.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary strong { font-size: 13px; line-height: 1.35; }
+.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary small { font-size: 11px; line-height: 1.45; font-weight: 400; color: var(--home-muted); }
+.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary > .pf-icon { margin-left: auto; width: 18px; height: 18px; flex-shrink: 0; }
+.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide)[open] > summary > .pf-icon { transform: rotate(45deg); }
+.pasofi-home-location-content { padding: 0 14px 15px; }
+.pasofi-home-location-content p { font-size: 12px; line-height: 1.6; color: var(--home-muted); margin: 0 0 10px; }
+.pasofi-home-location-status { background: #f0f5ff; color: #294d82; border-radius: 7px; padding: 9px 10px; font-size: 11px; line-height: 1.5; margin-bottom: 12px; }
+.pasofi-home-location-tools { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
+.pasofi-home-location-tools label { display: grid; gap: 5px; flex: 1 1 150px; font-size: 12px; font-weight: 600; }
+.pasofi-home-location-tools input { width: 100%; min-height: 44px; border: 1px solid #b4c6e1; border-radius: 8px; padding: 9px 10px; background: #fff; color: var(--home-navy); font: inherit; }
+.pasofi-home-location-content .pf-button { min-height: 44px; padding: 8px 10px; border-radius: 8px; font-size: 11px; gap: 6px; }
+.pasofi-home-location-content ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+.pasofi-home-location-content li { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid #dce5f2; border-radius: 8px; padding: 10px; }
+.pasofi-home-location-content li > span { display: grid; gap: 4px; min-width: 0; }
+.pasofi-home-location-content li strong { font-size: 12px; overflow-wrap: anywhere; }
+.pasofi-home-location-content li small { color: var(--home-muted); font-size: 10px; }
+.pasofi-home-location-content li button { flex-shrink: 0; }
+.pasofi-home-location-content li .pf-icon { width: 14px; height: 14px; }
+.pasofi-home-location-content .pasofi-home-location-count { font-size: 11px; }
+.pasofi-home-guide ol { list-style: none; padding: 0 14px 16px; margin: 0; display: grid; gap: 18px; }
+.pasofi-home-guide li { display: flex; gap: 10px; }
+.pasofi-home-guide li > span { font-size: 13px; font-weight: 750; background: var(--home-lime); border-radius: 50%; width: 30px; height: 30px; display: grid; place-items: center; flex-shrink: 0; }
+.pasofi-home-guide h3 { margin: 3px 0 6px; font-size: 14px; color: var(--home-navy); }
+.pasofi-home-guide p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--home-muted); }
+.pasofi-home-guide .pf-text-link { font-size: 12px; min-height: 44px; gap: 7px; color: #084ac0; }
+@media (min-width: 600px) {
+  .pasofi-home-hero { grid-template-columns: minmax(0,.85fr) minmax(0,1fr); border-radius: 21px; }
+  .pasofi-home-hero-copy { padding: 26px; }
+  .pasofi-home-hero-copy .pasofi-home-kicker { font-size: 10px; }
+  .pasofi-home-hero h1 { font-size: 39px; margin-bottom: 13px; }
+  .pasofi-home-hero-copy > p { display: block; margin: 0 0 16px; font-size: 13px; line-height: 1.6; color: #e3edff; max-width: 250px; }
+  .pasofi-home-hero-copy > .pf-button { padding: 10px 14px; font-size: 13px; }
+  .pasofi-home-hero-photo { min-height: 270px; height: auto; }
+  .pasofi-home-hero-photo img { object-position: center top; }
+  .pf-home .pasofi-home-actions { margin: 12px 0 20px; gap: 9px; }
+  .pf-home .pasofi-home-actions > button { min-height: 54px; flex-direction: row; padding: 9px; gap: 8px; }
+  .pf-home .pasofi-home-actions > button strong { font-size: 12px; }
+  .pasofi-home-more { grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); }
+  .pasofi-home-story { grid-template-columns: minmax(0,1fr); grid-template-rows: 150px auto; }
+  .pasofi-home-story > img { height: 150px; min-height: 0; object-position: center top; }
+  .pasofi-home-story > div { padding: 18px; }
+  .pasofi-home-story h2 br { display: none; }
+  .pasofi-home-story .pasofi-home-kicker { font-size: 9px; }
+  .pasofi-home-account { padding: 23px 19px; }
+  .pasofi-home-account > p { margin-bottom: 20px; }
+  .pasofi-home-locations,.pasofi-home-guide { margin-top: 12px; }
+  .pasofi-home-location-content { padding: 0 20px 20px; }
+  .pasofi-home-guide ol { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; padding: 5px 20px 20px; }
+  .pasofi-home-guide li { flex-direction: column; }
+}
+@media (min-width: 1000px) {
+  .pasofi-home-hero { grid-template-columns: minmax(0,.85fr) minmax(0,1fr); }
+  .pasofi-home-hero-copy { padding: 30px; }
+  .pasofi-home-hero h1 { font-size: 46px; letter-spacing: -1.8px; }
+  .pasofi-home-hero-copy > p { font-size: 14px; max-width: 310px; }
+  .pasofi-home-hero-photo { min-height: 302px; }
+  .pasofi-home-photo-note { position: absolute; right: 15px; bottom: 15px; display: flex; align-items: center; gap: 7px; border-radius: 30px; padding: 9px 12px; background: #e5ff52; color: #092451; font-size: 11px; font-weight: 600; }
+  .pasofi-home-photo-note .pf-icon { width: 16px; height: 16px; }
+  .pasofi-home-more { grid-template-columns: minmax(0,1.55fr) minmax(0,1fr); margin-top: 28px; gap: 14px; }
+  .pasofi-home-story { grid-template-columns: minmax(0,.9fr) minmax(0,1fr); grid-template-rows: auto; }
+  .pasofi-home-story > img { min-height: 100%; height: 100%; object-position: 50% center; }
+  .pasofi-home-content .pasofi-home-story h2 { font-size: 27px; margin: 12px 0; }
+  .pasofi-home-story p { font-size: 13px; }
+  .pasofi-home-story .pf-text-link { font-size: 12px; }
+}
+@media (max-width: 359px) {
+  .pasofi-home-hero-copy { padding: 14px 10px; }
+  .pasofi-home-hero h1 { font-size: 24px; letter-spacing: -.8px; }
+  .pasofi-home-hero-copy .pasofi-home-kicker { font-size: 7px; }
+  .pasofi-home-hero-copy > .pf-button { font-size: 10px; gap: 4px; padding: 8px 7px; }
+  .pasofi-home-hero-copy > .pf-button .pf-icon { width: 12px; }
+  .pasofi-home-hero-photo { min-height: 160px; height: 160px; }
+  .pf-home .pasofi-home-actions > button strong { font-size: 10px; }
+  .pasofi-home-story > div { padding: 14px 10px; }
+  .pasofi-home-content .pasofi-home-story h2 { font-size: 18px; }
+}

@@ -183,7 +183,8 @@ test('home actions and heading retain readable contrast', async ({ page }) => {
   await fixture(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.' })).toBeVisible();
   for (const [foreground, background] of [
-    ['.pf-page-intro h1', 'html'],
+    ['#home-hero-heading', '.pasofi-home-hero'],
+    ['#home-hero-heading em', '.pasofi-home-hero'],
     ...[1, 2, 3, 4].map(n => [`.pf-quick-actions button:nth-child(${n}) strong`, `.pf-quick-actions button:nth-child(${n})`]),
   ]) {
     const colors = await page.evaluate(([fg, bg]) => [getComputedStyle(document.querySelector(fg)!).color, getComputedStyle(document.querySelector(bg)!).backgroundColor], [foreground, background]);
@@ -214,8 +215,9 @@ for (const width of [320, 390, 1280]) {
     await expect(names(page)).toHaveCount(5);
     const cards = page.locator('.pf-bundle-card');
     const first = await cards.first().boundingBox(), last = await cards.last().boundingBox();
-    expect(first!.y, 'first offer should appear in the first phone viewport').toBeLessThan(600);
-    expect(last!.y + last!.height, 'all five offers should need at most one short scroll').toBeLessThan(width >= 1000 ? 844 : 1100);
+    await expect(page.locator('.pasofi-home-hero')).toBeVisible();
+    expect(first!.y, 'first offer should follow the compact photo hero in the first viewport').toBeLessThan(800);
+    expect(last!.y + last!.height, 'the photo hero and five compact offers should need at most one short scroll').toBeLessThan(width >= 1000 ? 1140 : 1350);
     for (const card of await cards.all()) {
       const box = await card.boundingBox(); expect(box!.height).toBeLessThan(125);
       const button = await card.getByRole('button').boundingBox(); expect(button!.height).toBeGreaterThanOrEqual(44); expect(button!.width).toBeGreaterThanOrEqual(44);
