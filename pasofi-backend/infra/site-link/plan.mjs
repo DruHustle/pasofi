@@ -2,19 +2,21 @@
 import {readFile, mkdir, writeFile, rm} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {object, endpoint, publicKeys, listenPort, ipv4Networks, tunnelAddresses} from '../remote-access/validation.mjs';
+import {object, choice, endpoint, publicKeys, listenPort, ipv4Networks, tunnelAddresses} from '../remote-access/validation.mjs';
 
-const routerInterface = 'pamofi-service';
 const tag = 'PamoFi site:';
 export function validatePlan(input) {
-  object(input, ['serverEndpoint','port','serverPublicKey','routerPublicKey','serverTunnelIp','routerTunnelIp','serverInterface','routerNetworks','serverNetworks'], 'Site link');
+  object(input, ['serverEndpoint','port','serverPublicKey','routerPublicKey','serverTunnelIp','routerTunnelIp','serverInterface','routerInterface','routerListenPort','routerNetworks','serverNetworks'], 'Site link');
+  const routerInterface = choice(input.routerInterface === undefined ? 'pamofi-service' : input.routerInterface, ['pamofi-service', 'pasofi-service'], 'routerInterface');
   endpoint(input.serverEndpoint, 4, 'serverEndpoint');
   listenPort(input.port);
+  const routerListenPort = input.routerListenPort === undefined ? input.port : input.routerListenPort;
+  listenPort(routerListenPort);
   publicKeys(input.routerPublicKey, input.serverPublicKey);
   if (typeof input.serverInterface !== 'string' || !/^pfi-[a-z0-9][a-z0-9-]{0,10}$/.test(input.serverInterface)) throw Error('Use a fresh pfi- prefixed Linux interface of at most 15 characters');
   const networks = [...ipv4Networks(input.routerNetworks, 'routerNetworks'), ...ipv4Networks(input.serverNetworks, 'serverNetworks')];
   tunnelAddresses(input.routerTunnelIp, input.serverTunnelIp, networks);
-  return {...input};
+  return {...input, routerInterface, routerListenPort};
 }
 function first(family, chain, rule) {
   const menu = family === 4 ? '/ip firewall filter' : '/ipv6 firewall filter';
@@ -22,16 +24,18 @@ function first(family, chain, rule) {
   return `:if ([:len ${found}] > 0) do={ ${menu} add chain=${chain} ${rule} place-before=(${found}->0) } else={ ${menu} add chain=${chain} ${rule} }`;
 }
 function router(p) {
+  const {routerInterface} = p;
   const own = `[/interface wireguard find where name="${routerInterface}"]`;
   const incoming = `in-interface="${routerInterface}" src-address=${p.serverTunnelIp}/32 dst-address=${p.routerTunnelIp}/32`;
   const outgoing = `out-interface="${routerInterface}" src-address=${p.routerTunnelIp}/32 dst-address=${p.serverTunnelIp}/32`;
   return ['{',
     '# REVIEW ONLY. A fresh disabled interface and independent local recovery are required.',
-    `:if ([:len ${own}] != 1) do={ :error "Create one disabled pamofi-service interface first and retain its private key on the router" }`,
+    `:if ([:len ${own}] != 1) do={ :error "Create one disabled ${routerInterface} interface first and retain its private key on the router" }`,
+    ':if ([:len [/interface find where name="pamofi-service" or name="pasofi-service"]] != 1) do={ :error "Multiple service interfaces exist; inspect before selecting the site link" }',
     `:if ([/interface wireguard get ${own} disabled] != true) do={ :error "Service interface must be disabled" }`,
     `:if ([/interface wireguard get ${own} public-key] != "${p.routerPublicKey}") do={ :error "Router public key differs from the reviewed plan" }`,
-    `:if ([/interface wireguard get ${own} listen-port] != ${p.port}) do={ :error "Service interface listen port differs from the reviewed plan" }`,
-    `:if ([:len [/interface wireguard find where listen-port=${p.port}]] != 1) do={ :error "WireGuard listen port is already used" }`,
+    `:if ([/interface wireguard get ${own} listen-port] != ${p.routerListenPort}) do={ :error "Service interface listen port differs from the reviewed plan" }`,
+    `:if ([:len [/interface wireguard find where listen-port=${p.routerListenPort}]] != 1) do={ :error "WireGuard listen port is already used" }`,
     ...['/interface wireguard peers','/ip address','/interface list member','/interface bridge port'].map(menu => `:if ([:len [${menu} find where interface="${routerInterface}"]] > 0) do={ :error "Service interface contains prior state; inspect and recover before applying" }`),
     `:if ([:len [/ipv6 address find where interface="${routerInterface}" and (dynamic=no or link-local=no)]] > 0) do={ :error "Service interface contains unexpected IPv6 addresses" }`,
     ...['/ip route','/ipv6 route'].map(menu => `:if ([:len [${menu} find where gateway="${routerInterface}"]] > 0) do={ :error "Service interface already has routes" }`),
@@ -69,11 +73,11 @@ export function buildPlan(input) {
     'router-service.rsc.review': router(p),
     'oracle-wireguard.conf.review': `[Interface]\nAddress = ${p.serverTunnelIp}/32\nListenPort = ${p.port}\nPrivateKey = REPLACE_ON_ORACLE_ONLY\n\n[Peer]\nPublicKey = ${p.routerPublicKey}\nAllowedIPs = ${p.routerTunnelIp}/32\n`,
     'oracle-firewall.nft.review': firewall(p),
-    'review.json': JSON.stringify({status:'prepared-only',routerInterface,serverInterface:p.serverInterface,serverEndpoint:p.serverEndpoint,wireguardPort:p.port,serverTunnelIp:p.serverTunnelIp,routerTunnelIp:p.routerTunnelIp,customerDefaultRouteIncluded:false,privateKeysIncluded:false,checks:[
+    'review.json': JSON.stringify({status:'prepared-only',routerInterface:p.routerInterface,serverInterface:p.serverInterface,serverEndpoint:p.serverEndpoint,wireguardPort:p.port,routerListenPort:p.routerListenPort,serverTunnelIp:p.serverTunnelIp,routerTunnelIp:p.routerTunnelIp,customerDefaultRouteIncluded:false,privateKeysIncluded:false,checks:[
       'This plan targets one fresh site interface. Inspect current routes, interface names, existing peers, host firewall manager and OCI NSG before activation.',
       'Resolve the Oracle endpoint and verify its public IPv4 and UDP reachability. The router initiates outbound traffic; Starlink port forwarding and a static Starlink address are not required.',
       'Retain the router private key on RouterOS and server private key on Oracle. Inspect file ownership/modes before using wg-quick.',
-      'The selected router port must be unused and existing WAN rules must permit established replies to its outbound WireGuard packets.',
+      'The selected router listen port must belong only to its existing service interface. Allocate an unused Oracle listen port for the new dedicated server interface; the ports need not match. Existing WAN rules must permit established replies to the router\'s outbound WireGuard packets.',
       'Check the nftables file in an isolated network namespace first and merge its exact scope with the actual firewall manager. It does not flush existing rules or independently override other policy drops.',
       'Bind production RADIUS UDP ports only to the Oracle tunnel IP, preserve each NAS source IP through Docker, and match its registry/client entry to the router tunnel /32.',
       'Configure the actual RouterOS HTTPS certificate and restricted service account separately. This plan does not enable www-ssl, add credentials, configure RADIUS or enable HotSpot.',

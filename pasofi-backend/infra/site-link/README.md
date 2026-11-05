@@ -24,11 +24,17 @@ Actual UDP availability and reconnect behavior remain physical acceptance work.
 2. Inspect the MikroTik route inventory and ensure a working local recovery
    connection. Allocate a private address pair that overlaps neither inventory.
 3. Generate WireGuard keys on their originating devices. The router needs one
-   fresh **disabled** `pamofi-service` interface; retain its private key there.
-   Retain the Oracle private key on Oracle. The JSON contains public keys only.
+   fresh **disabled** service interface; retain its private key there. The
+   default is the existing `pamofi-service` name. For the Lawfield bootstrap's
+   `pasofi-service`, set `"routerInterface": "pasofi-service"` in the public
+   plan. Only these two dedicated names are accepted. The generated preflight
+   refuses a router containing both names, a selected non-WireGuard interface,
+   or prior peer/address/route state. Retain the Oracle private key on Oracle.
+   The JSON contains public keys only.
 4. Copy `public-plan.example.json`, replace all placeholders, and supply complete
-   current non-default IPv4 route inventories. The example cannot be deployed
-   unchanged.
+   current non-default IPv4 route inventories. Record the selected router
+   interface and use that same name for the later RADIUS client plan. The
+   example cannot be deployed unchanged.
 
 ```sh
 node pasofi-backend/infra/site-link/plan.mjs \
@@ -38,6 +44,16 @@ node pasofi-backend/infra/site-link/plan.mjs \
 The tool is offline. It writes a new mode0700 directory and mode0600 files,
 refuses an existing output directory and does not contact any router/server.
 The report remains **`prepared-only`**.
+
+`port` is the selected **Oracle listener and router peer endpoint** port.
+`routerListenPort` is the router interface's existing **local** listener port;
+it defaults to `port` for earlier plans. When preparing a second dedicated
+Oracle interface, allocate an unused Oracle port from the inspected host and
+cloud configuration. The router can keep its current local listener by setting
+`routerListenPort` explicitly. The generated server configuration and outer
+firewall guidance use `port`; only the router's local-listener preflight uses
+`routerListenPort`. The generator does not change the router listener, check
+live server port availability, or open a cloud/firewall port.
 
 | Output | Purpose |
 | --- | --- |

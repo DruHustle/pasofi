@@ -2,6 +2,8 @@
 
 These tools operate only on a deliberately configured PamoFi environment. No host, scheduler, alert destination or production deployment is selected by checking them in. Keep the [production role/secret instructions](../production/README.md), [independent backup procedure](../backup-production/README.md) and actual site acceptance record with the release record.
 
+For the ordered cash-only opening sequence and current pending physical evidence, use [CASH_HOTSPOT_LAUNCH.md](../../docs/CASH_HOTSPOT_LAUNCH.md). It separates the protected RADIUS authority/ensure timer from the Mac application upgrade, requires real HTTPS session reconciliation and cash-to-reconnect tests, and documents location pause → network issuance pause → accounting/absence drain before transport shutdown.
+
 ## Read-only checks
 
 Run the diagnostic on the deployment host with the production stack's non-secret environment and protected secret-file paths already configured:
@@ -58,6 +60,8 @@ Observe host/container memory, CPU, disk and connection usage under the measured
 6. Enable only capabilities with completed acceptance evidence. Verify the public exposure boundary, private TLS, real router accounting/termination, active monitoring and backup schedule. Record the release and operator decision. Keep recovery access available.
 
 ## Rollback and disaster recovery
+
+For an ordinary location pause, use the approved-admin versioned **Sales locations** action to stop new sales while preserving paid receipts/retries/history. Pause new customer credentials separately and retain RADIUS, the enabled NAS and the HTTPS reconciler until sessions have final accounting and independent absence. Disabling a NAS first also rejects its accounting. Before intentionally stopping/replacing the protected first-site RADIUS containers, stop their existing ensure timer and requalify its pinned definitions before restoring its schedule. Follow [the complete pause/drain sequence](../../docs/CASH_HOTSPOT_LAUNCH.md#9-pause-drain-and-roll-back-safely).
 
 If the schema remains backward-compatible, return each failed application image to the recorded previous digest and restore its compatible configuration/key ring. Re-run readiness and targeted acceptance. Do not run a second writer/authorizer beside the first, erase migration history, or blindly execute reverse SQL against balances or audit records.
 

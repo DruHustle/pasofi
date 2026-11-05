@@ -147,10 +147,11 @@ class ReleaseSafetyTests(unittest.TestCase):
     def run_plan(self, apply=False):
         self.args.apply = apply
         self.commands = []
+        self.plan_output = io.StringIO()
         with patch.object(DEPLOY, "run", side_effect=self.fake_run), \
                 patch.object(DEPLOY, "inspect_project", side_effect=lambda project=None: ("existing", copy.deepcopy(self.containers))), \
                 patch.object(DEPLOY, "build_release", return_value={name: NEW_IMAGE for name in self.manifest["services"]}), \
-                contextlib.redirect_stdout(io.StringIO()):
+                contextlib.redirect_stdout(self.plan_output):
             DEPLOY.deploy(self.args)
 
     def test_manifest_rejects_hash_mismatch_and_unowned_migration(self):
@@ -189,6 +190,7 @@ class ReleaseSafetyTests(unittest.TestCase):
 
     def test_preflight_has_no_mutating_docker_commands_or_private_release_record(self):
         self.run_plan()
+        self.assertIn("Existing Compose project: existing.", self.plan_output.getvalue())
         self.assertFalse(Path(self.args.release_root).exists())
         self.assertTrue(self.commands)
         self.assertFalse(any("run" in cmd or "up" in cmd or "build" in cmd or "down" in cmd for cmd in self.commands))

@@ -45,6 +45,92 @@ test('configured migration origin reaches the authenticated guard and foreign or
   assert.equal((await call('https://other.onesa.eu')).statusCode,403);
  }finally{await f.cleanup();}
 });
+test('sales location status requires current approved admin MFA and origin even while commerce is disabled',{skip:!url},async()=>{
+ const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false',PAMOFI_PAYMENTS_ENABLED:'false',VOUCHER_DELIVERY_KEYS_JSON:''}});
+ try{
+  const capabilities=(await f.call('GET','/v1/capabilities')).json();assert.equal(capabilities.salesLocationStatus,true);assert.equal(capabilities.staffSales,false);assert.equal(capabilities.networkAccess,false);
+  const path=`/v1/admin/sites/${f.site}`,body={enabled:false,expectedVersion:'1',reason:'Pause new sales during commissioning'};
+  assert.equal((await f.call('PATCH',path,body,'missing')).statusCode,401);
+  assert.equal((await f.call('PATCH',path,body,'pending')).statusCode,403);
+  for(const who of ['agent','support'])assert.equal((await f.call('PATCH',path,body,who)).statusCode,403);
+  assert.equal((await f.app.inject({method:'PATCH',url:path,headers:{origin:'https://foreign.example',cookie:'staff=admin','idempotency-key':randomUUID()},payload:body})).statusCode,403);
+  f.staff.admin.mfaVerified=false;assert.equal((await f.call('PATCH',path,body)).statusCode,503);f.staff.admin.mfaVerified=true;
+  assert.equal((await f.pool.query("SELECT count(*)::int AS n FROM commerce_audit WHERE actor_id=$1 AND action='site.status'",[f.admin])).rows[0].n,0);
+  const result=await f.call('PATCH',path,body);assert.equal(result.statusCode,200);assert.equal(result.json().site.enabled,false);assert.equal(result.json().site.version,'2');
+  assert.equal((await f.call('GET','/v1/staff/sites')).json().sites.find(site=>site.id===f.site).enabled,false);
+  const after=(await f.call('GET','/v1/capabilities')).json();for(const key of ['staffSales','vouchers','networkAccess','paymentCheckout'])assert.equal(after[key],false);
+ }finally{await f.cleanup();}
+});
+test('sales location status validates the exact reviewed request without changing or auditing rejected input',{skip:!url},async()=>{
+ const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false'}});
+ try{
+  const path=`/v1/admin/sites/${f.site}`,body={enabled:false,expectedVersion:'1',reason:'Pause this sales location for review'};
+  for(const changed of [{enabled:'false'},{enabled:null},{expectedVersion:1},{expectedVersion:'0'},{expectedVersion:'01'},{expectedVersion:'9223372036854775808'},{reason:'short'},{reason:' '.repeat(10)},{reason:'r'.repeat(501)},{networkAccess:false}]){
+   const response=await f.call('PATCH',path,{...body,...changed});assert.equal(response.statusCode,400);assert.equal(response.json().error,'invalid_site_status');
+  }
+  assert.equal((await f.call('PATCH',path,body,'admin','not-a-uuid')).statusCode,400);
+  assert.equal((await f.call('PATCH','/v1/admin/sites/not-a-uuid',body)).statusCode,400);
+  assert.equal((await f.call('PATCH',`/v1/admin/sites/${randomUUID()}`,body)).statusCode,404);
+  assert.deepEqual((await f.pool.query('SELECT enabled,status_version::text AS version FROM sales_locations WHERE id=$1',[f.site])).rows[0],{enabled:true,version:'1'});
+  assert.equal((await f.pool.query("SELECT count(*)::int AS n FROM commerce_audit WHERE actor_id=$1 AND action='site.status'",[f.admin])).rows[0].n,0);
+ }finally{await f.cleanup();}
+});
+test('sales location status audits once, detects stale versions and recovers an older decision without undoing a newer one',{skip:!url},async()=>{
+ const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false'}});
+ try{
+  const path=`/v1/admin/sites/${f.site}`,key=randomUUID(),pause={enabled:false,expectedVersion:'1',reason:'Pause the reviewed location for commissioning'};
+  const first=await f.call('PATCH',path,pause,'admin',key);assert.equal(first.statusCode,200);assert.equal(first.json().replayed,false);assert.equal(first.json().changed,true);
+  const duplicate=await f.call('PATCH',path,pause,'admin',key);assert.equal(duplicate.statusCode,200);assert.equal(duplicate.json().replayed,true);assert.deepEqual(duplicate.json().site,first.json().site);
+  const conflict=await f.call('PATCH',path,{...pause,reason:'Another different decision using a reused key'},'admin',key);assert.equal(conflict.statusCode,409);assert.equal(conflict.json().error,'idempotency_conflict');
+  const enable=await f.call('PATCH',path,{enabled:true,expectedVersion:'2',reason:'Enable the location after reviewed cash acceptance'});assert.equal(enable.statusCode,200);assert.equal(enable.json().site.version,'3');
+  const stale=await f.call('PATCH',path,pause);assert.equal(stale.statusCode,409);assert.equal(stale.json().error,'version_conflict');
+  const oldReplay=await f.call('PATCH',path,pause,'admin',key);assert.equal(oldReplay.statusCode,200);assert.equal(oldReplay.json().site.enabled,false);assert.equal(oldReplay.json().site.version,'2');
+  assert.deepEqual((await f.pool.query('SELECT enabled,status_version::text AS version FROM sales_locations WHERE id=$1',[f.site])).rows[0],{enabled:true,version:'3'});
+  const unchanged=await f.call('PATCH',path,{enabled:true,expectedVersion:'3',reason:'Confirmed this existing enabled sales status'});assert.equal(unchanged.statusCode,200);assert.equal(unchanged.json().changed,false);assert.equal(unchanged.json().site.version,'3');
+  const events=(await f.pool.query("SELECT target_id,reason,details FROM commerce_audit WHERE actor_id=$1 AND action='site.status' ORDER BY created_at",[f.admin])).rows;
+  assert.equal(events.length,3);assert.equal(events[0].target_id,f.site);assert.equal(events[0].reason,pause.reason);assert.equal(events[0].details.requestId,key);assert.equal(events[0].details.before.enabled,true);assert.equal(events[0].details.result.site.version,'2');assert.equal(events[2].details.result.changed,false);
+  await f.pool.query('UPDATE sales_locations SET enabled=false,status_version=1 WHERE id=$1',[f.site]);assert.equal((await f.pool.query('SELECT status_version::text AS version FROM sales_locations WHERE id=$1',[f.site])).rows[0].version,'4');
+ }finally{await f.cleanup();}
+});
+test('pausing a sales location blocks new cash sales but preserves paid receipt retry, invoices, stock and allowance recovery',{skip:!url},async()=>{
+ const f=await setup();
+ try{
+  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:2,reason:'Two cash test sales for location status'})).statusCode,201);
+  const first=(await f.call('POST','/v1/receipt-pairings',{bundleId:'mini',siteId:f.site},'customer')).json().pairing;
+  const second=(await f.call('POST','/v1/receipt-pairings',{bundleId:'mini',siteId:f.site},'customer2')).json().pairing;
+  const product=(await f.call('GET','/v1/bundles')).json().products.find(product=>product.id==='mini');
+  const key=randomUUID(),body={siteId:f.site,bundleId:'mini',delivery:'receipt',pairingCode:first.code,payment:{method:'cash',confirmed:true,amountMinor:product.price_minor,currency:product.currency}};
+  const sold=await f.call('POST','/v1/staff/sales',body,'agent',key);assert.equal(sold.statusCode,201);const sale=sold.json();assert.ok(sale.invoice.id);
+  assert.equal((await f.call('PATCH',`/v1/admin/sites/${f.site}`,{enabled:false,expectedVersion:'1',reason:'Pause new sales while keeping existing customer access'})).statusCode,200);
+  const blocked=await f.call('POST','/v1/staff/sales',{...body,pairingCode:second.code},'agent');assert.equal(blocked.statusCode,409);assert.equal(blocked.json().error,'site_unavailable');
+  const retry=await f.call('POST','/v1/staff/sales',body,'agent',key);assert.equal(retry.statusCode,200);assert.equal(retry.json().replayed,true);assert.equal(retry.json().sale.id,sale.sale.id);assert.equal(retry.json().invoice.id,sale.invoice.id);
+  assert.equal((await f.call('GET','/v1/staff/sites',undefined,'agent')).json().sites.some(site=>site.id===f.site),false);
+  const history=(await f.call('GET','/v1/staff/sales',undefined,'agent')).json().sales;assert.equal(history.length,1);assert.equal(history[0].id,sale.sale.id);
+  assert.equal((await f.call('GET','/v1/staff/inventory',undefined,'agent')).json().inventory.find(row=>row.siteId===f.site).quantity,1);
+  const receipt=await f.call('GET',`/v1/staff/sales/${sale.sale.id}/receipt`,undefined,'agent');assert.equal(receipt.statusCode,200);
+  assert.equal((await f.call('GET',`/v1/staff/invoices/${sale.invoice.id}/pdf`,undefined,'agent')).statusCode,200);
+  const privateReceipt=await f.call('GET',`/v1/receipt-pairings/${first.id}`,undefined,'customer');assert.equal(privateReceipt.statusCode,200);
+  const redemption=await f.call('POST','/v1/vouchers/redeem',{code:privateReceipt.json().receipt.voucher.code},'customer');assert.equal(redemption.statusCode,200);
+  assert.equal((await f.call('GET','/v1/access',undefined,'customer')).json().entitlements[0].id,redemption.json().entitlementId);
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM agent_sales WHERE site_id=$1',[f.site])).rows[0].n,1);
+  assert.equal((await f.call('GET','/v1/capabilities')).json().staffSales,true);
+ }finally{await f.cleanup();}
+});
+test('a new cash sale waits for a concurrent location pause and cannot sell using its earlier enabled snapshot',{skip:!url,timeout:15000},async()=>{
+ const f=await setup(),blocker=await f.pool.connect();let pending;
+ try{
+  assert.equal((await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:1,reason:'Race between cash sale and sales location pause'})).statusCode,201);
+  const pair=(await f.call('POST','/v1/receipt-pairings',{bundleId:'mini',siteId:f.site},'customer')).json().pairing;
+  const product=(await f.call('GET','/v1/bundles')).json().products.find(product=>product.id==='mini');
+  await blocker.query('BEGIN');await blocker.query('UPDATE sales_locations SET enabled=false WHERE id=$1',[f.site]);const pid=(await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+  pending=f.call('POST','/v1/staff/sales',{siteId:f.site,bundleId:'mini',delivery:'receipt',pairingCode:pair.code,payment:{method:'cash',confirmed:true,amountMinor:product.price_minor,currency:product.currency}},'agent').then(response=>response);
+  let observed=false;const deadline=Date.now()+5000;
+  while(Date.now()<deadline){const waiting=await f.pool.query('SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database() AND $1::int=ANY(pg_blocking_pids(pid))',[pid]);if(waiting.rows[0].n>0){observed=true;break;}await new Promise(resolve=>setTimeout(resolve,10));}
+  assert.equal(observed,true,'new sale must wait on the sales location status lock');await blocker.query('COMMIT');
+  const response=await pending;pending=null;assert.equal(response.statusCode,409);assert.equal(response.json().error,'site_unavailable');
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM agent_sales WHERE site_id=$1',[f.site])).rows[0].n,0);assert.equal((await f.pool.query('SELECT quantity FROM agent_site_inventory WHERE agent_id=$1 AND site_id=$2',[f.agent,f.site])).rows[0].quantity,1);
+ }finally{await blocker.query('ROLLBACK');blocker.release();if(pending)await Promise.allSettled([pending]);await f.cleanup();}
+});
 test('administrators can onboard agents and allocate scoped stock while commerce stays closed',{skip:!url},async()=>{
  const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false',PAMOFI_PAYMENTS_ENABLED:'false',VOUCHER_DELIVERY_KEYS_JSON:''}}),bundleId=`setup-${randomUUID().slice(0,8)}`;
  try{

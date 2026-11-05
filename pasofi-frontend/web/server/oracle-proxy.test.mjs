@@ -258,7 +258,7 @@ test('cash workflow, recovery, staff and network routes are available through or
   const paths = [
     ['GET', '/api/capabilities'], ['GET', '/api/usage?entitlementIds=a%2Cb'], ['POST', '/api/session'], ['DELETE', '/api/session'],
     ['POST', '/api/staff/register'], ['POST', '/api/staff/mfa/confirm'], ['GET', '/api/staff/password-reset/availability'], ['POST', '/api/staff/password-reset/request'], ['POST', '/api/staff/password-reset/confirm'], ['POST', `/api/staff/users/${id}/decision`], ['POST', `/api/staff/users/${id}/recover-mfa`],
-    ['POST', '/api/admin/inventory/allocations'], ['POST', '/api/staff/sales'], ['GET', `/api/staff/sales/${id}/receipt`],
+    ['POST', '/api/admin/inventory/allocations'], ['PATCH', `/api/admin/sites/${id}`], ['POST', '/api/staff/sales'], ['GET', `/api/staff/sales/${id}/receipt`],
     ['GET', '/api/customer/invoices'], ['GET', '/api/staff/invoices'], ['GET', `/api/customer/invoices/${id}`], ['GET', `/api/staff/invoices/${id}`],
     ['GET','/api/staff/cash-refunds'], ['POST','/api/staff/cash-refunds'], ['POST',`/api/staff/cash-refunds/${id}/payout`], ['POST',`/api/staff/cash-refunds/${id}/prepare-payout`], ['POST',`/api/admin/cash-refunds/${id}/decision`], ['GET', '/api/staff/cash-shifts'], ['POST', '/api/staff/cash-shifts'], ['POST', `/api/staff/cash-shifts/${id}/close`], ['POST', '/api/staff/cash-references/lookup'], ['POST', `/api/receipt-pairings/${id}/cancel`], ['POST', '/api/receipt-pairings'], ['GET', `/api/receipt-pairings/${id}`], ['POST', '/api/vouchers/redeem'],
     ['POST', '/api/recovery/rotate'], ['POST', '/api/handoff/redeem'], ['POST', '/api/network/credentials'],
@@ -285,6 +285,11 @@ test('router management exposes only the explicit fleet contract', () => {
   for (const [path, method] of [['/api/admin/routers', 'POST'], [`/api/admin/routers/${id}`, 'PATCH'], [`/api/admin/routers/${id}/changes/${id}/apply`, 'GET'], [`/api/admin/routers/${id}/changes/${id}`, 'DELETE']]) {
     assert.throws(() => publicRoute(path, method), error => error.status === 405);
   }
+});
+
+test('sales location status exposes only the bounded PATCH route',()=>{
+  for(const method of ['GET','POST','DELETE'])assert.throws(()=>publicRoute(`/api/admin/sites/${id}`,method),error=>error.status===405);
+  for(const path of ['/api/admin/sites/all','/api/admin/sites/not-a-uuid',`/api/admin/sites/${id}/enable`])assert.throws(()=>publicRoute(path,'PATCH'),error=>error.status===404);
 });
 
 test('invoice-only PDF routes preserve exact bytes and attachment names without caching or leaking a bearer into the URL', async () => {
