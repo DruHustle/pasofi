@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -22,7 +23,7 @@ async function fixture(){
   await pool.query('DELETE FROM verified_charges WHERE order_id=ANY($1::uuid[])',[orders]);
   await pool.query('DELETE FROM purchase_entitlements WHERE order_id=ANY($1::uuid[])',[orders]);
   await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=ANY($1::uuid[])',[orders]);
-  await pool.query('DELETE FROM purchase_orders WHERE id=ANY($1::uuid[])',[orders]);await pool.end();
+  await cleanupInvoiceEvidence(pool,{orderIds:orders});await pool.query('DELETE FROM purchase_orders WHERE id=ANY($1::uuid[])',[orders]);await pool.end();
  }};
 }
 test('mock reconciliation cannot claim, query or fulfill historical Pesepay attempts',{skip:!url},async()=>{

@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY dist ./dist
+COPY assets ./assets
 COPY migrate.mjs ./migrate.mjs
 COPY migrations ./migrations
 USER node

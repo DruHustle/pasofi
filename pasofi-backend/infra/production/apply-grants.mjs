@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 
 const policies = JSON.parse(await readFile(new URL('./role-policies.json', import.meta.url), 'utf8'));
+// Invoice numbers may advance and be read; runtime cannot rewind them with setval.
+const sequencePolicies = { 'prepaid-access': { paid_invoice_number_seq: ['USAGE', 'SELECT'] } };
 const identifier = value => { if (!/^[a-z][a-z0-9_]{0,62}$/.test(value)) throw Error('Invalid database identifier.'); return `"${value}"`; };
 
 export async function applyRuntimeGrants(client, { service, owner, runtime }) {
@@ -10,8 +12,9 @@ export async function applyRuntimeGrants(client, { service, owner, runtime }) {
   if (actor !== owner) throw Error('Migrations and grants must run as the non-login object owner.');
   const tables = (await client.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map(row => row.tablename);
   if (tables.some(name => !Object.hasOwn(policy, name)) || Object.keys(policy).some(name => !tables.includes(name))) throw Error('Owned schema and reviewed runtime grant manifest differ. Review every new table before releasing.');
-  const sequences = (await client.query("SELECT sequencename FROM pg_sequences WHERE schemaname='public'")).rows;
-  if (sequences.length) throw Error('New sequences require an explicit runtime usage policy before release.');
+  const sequences = (await client.query("SELECT sequencename FROM pg_sequences WHERE schemaname='public'")).rows.map(row => row.sequencename);
+  const sequencePolicy = sequencePolicies[service] ?? {};
+  if (sequences.some(name => !Object.hasOwn(sequencePolicy, name)) || Object.keys(sequencePolicy).some(name => !sequences.includes(name))) throw Error('Owned sequences and reviewed runtime usage policy differ.');
   await client.query('BEGIN');
   try {
     // Reset grants so this is equally safe after a rollback/forward release.
@@ -28,6 +31,10 @@ export async function applyRuntimeGrants(client, { service, owner, runtime }) {
       if (!privileges.length) continue;
       if (privileges.some(value => !/^(SELECT|INSERT|UPDATE|DELETE|UPDATE \((id|request_hash)\))$/.test(value))) throw Error('Invalid runtime grant policy.');
       await client.query(`GRANT ${privileges.join(',')} ON TABLE public.${identifier(table)} TO ${identifier(runtime)}`);
+    }
+    for (const [sequence, privileges] of Object.entries(sequencePolicy)) {
+      if (!privileges.length || privileges.some(value => !['USAGE', 'SELECT'].includes(value))) throw Error('Invalid sequence grant policy.');
+      await client.query(`GRANT ${privileges.join(',')} ON SEQUENCE public.${identifier(sequence)} TO ${identifier(runtime)}`);
     }
     await client.query('COMMIT');
   } catch (error) { await client.query('ROLLBACK'); throw error; }

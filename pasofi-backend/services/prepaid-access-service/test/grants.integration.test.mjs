@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -50,7 +51,7 @@ test('global grant reservation, duplicate accounting and uncertain stop fail clo
   } finally {
     await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);
     await pool.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);
-    await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);
+    await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);
     await pool.end();
   }
 });
@@ -74,7 +75,7 @@ test('one NAS session cannot reserve two customers, even concurrently', {skip:!u
   } finally {
     await pool.query('DELETE FROM access_grants WHERE customer_id=ANY($1::uuid[])',[customers]);
     await pool.query('DELETE FROM purchase_entitlements WHERE id=ANY($1::uuid[])',[entitlements]);
-    await pool.query('DELETE FROM purchase_orders WHERE id=ANY($1::uuid[])',[orders]);
+    await cleanupInvoiceEvidence(pool,{orderIds:orders});await pool.query('DELETE FROM purchase_orders WHERE id=ANY($1::uuid[])',[orders]);
     await pool.end();
   }
 });

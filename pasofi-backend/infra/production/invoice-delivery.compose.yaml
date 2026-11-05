@@ -1,0 +1,21 @@
+# Optional email delivery. This overlay does not enable sales, payments or SMS.
+# Create and restrict the external provider network before using it.
+services:
+  notification:
+    environment:
+      INVOICE_DELIVERY_WORKER_ENABLED: ${PAMOFI_INVOICE_DELIVERY_ENABLED:?Choose true or false explicitly}
+      INVOICE_EMAIL_MODE: resend
+      INVOICE_EMAIL_QUALIFIED: ${PAMOFI_INVOICE_EMAIL_QUALIFIED:?Record actual sender and delivery qualification}
+      INVOICE_EMAIL_FROM: ${PAMOFI_INVOICE_EMAIL_FROM:?Set the verified invoice sender}
+      RESEND_API_KEY_FILE: /run/secrets/resend_api_key
+    secrets:
+      - resend_api_key
+    networks:
+      - invoice_provider_egress
+secrets:
+  resend_api_key:
+    file: ${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/resend_api_key
+networks:
+  invoice_provider_egress:
+    external: true
+    name: ${PAMOFI_INVOICE_EGRESS_NETWORK:?Create a separately restricted HTTPS provider egress network}

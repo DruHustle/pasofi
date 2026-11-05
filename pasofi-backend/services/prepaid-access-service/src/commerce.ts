@@ -10,6 +10,8 @@ import {loadDeliveryKeys,unseal} from './delivery-crypto.js';
 import {paymentConfiguration} from './checkout.js';
 import {customerNetworkEnabled} from './network-lifecycle.js';
 import {registerNetworkAdmin} from './network-admin.js';
+import {InvoiceError,normalizeInvoiceDelivery} from './invoices.js';
+import {registerInvoices,invoiceDeliveryCapabilities} from './invoice-routes.js';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type Staff={staffId:string;role:'admin'|'agent'|'support';siteIds:string[];version:number;mfaVerified:boolean};
 type Customer=(request:FastifyRequest)=>Promise<string|null>;
@@ -57,8 +59,9 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
  registerCashRefunds(app,pool,(request,reply,roles)=>staff(request,reply,roles,false));
  registerCashShifts(app,pool,(request,reply,roles)=>staff(request,reply,roles,false),enabled,cashCurrencies);
  registerNetworkAdmin(app,pool,(request,reply,roles)=>staff(request,reply,roles,false));
- const errors=(reply:FastifyReply,error:unknown)=>reply.code(error instanceof VoucherError?409:503).send({error:error instanceof VoucherError?error.code:'unavailable'});
- app.get('/v1/capabilities',async request=>{const p=paymentConfiguration(demo);let smsAvailable=false;if(deliverySms){try{const capability=await notification(request,'/internal/v1/delivery/capabilities');smsAvailable=capability.status===200&&capability.data.enabled===true&&capability.data.simulation===demo;}catch{/* unavailable delivery never advertises an actionable SMS option */}}return {demo,paymentMode:p.mode,paymentCheckout:p.enabled,vouchers:enabled,receiptPairing:enabled,staffSales:enabled,inventoryAllocation:!!pool,cashShifts:true,deliverySms:smsAvailable,networkAccess:customerNetworkEnabled(demo),mobileCookies:false};});
+ registerInvoices(app,pool,demo,customer,(request,reply)=>staff(request,reply,['admin','agent'],false),originAllowed);
+ const errors=(reply:FastifyReply,error:unknown)=>reply.code(error instanceof VoucherError?409:error instanceof InvoiceError?(error.code==='invalid_invoice_delivery'?400:error.code==='idempotency_conflict'?409:503):503).send({error:error instanceof VoucherError||error instanceof InvoiceError?error.code:'unavailable'});
+ app.get('/v1/capabilities',async request=>{const p=paymentConfiguration(demo);const invoiceCaps=pool?invoiceDeliveryCapabilities(demo):Promise.resolve({invoiceEmail:false,invoiceSms:false});let smsAvailable=false;if(deliverySms){try{const capability=await notification(request,'/internal/v1/delivery/capabilities');smsAvailable=capability.status===200&&capability.data.enabled===true&&capability.data.simulation===demo;}catch{/* unavailable delivery never advertises an actionable SMS option */}}return {demo,paymentMode:p.mode,paymentCheckout:p.enabled,vouchers:enabled,receiptPairing:enabled,staffSales:enabled,inventoryAllocation:!!pool,cashShifts:true,deliverySms:smsAvailable,networkAccess:customerNetworkEnabled(demo),mobileCookies:false,invoices:!!pool,...await invoiceCaps};});
  app.get('/v1/sites',async(_request,reply)=>{if(!pool)return reply.code(503).send({error:'unavailable'});try{return {sites:(await pool.query('SELECT id,name FROM sales_locations WHERE enabled ORDER BY name,id')).rows};}catch{return reply.code(503).send({error:'unavailable'});}});
  // Administrators must be able to prepare the service while customer commerce
  // is paused. This bypasses only the selling switch, never staff/MFA/origin checks.
@@ -117,8 +120,9 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
   try{const prior=(await pool!.query('SELECT site_name FROM agent_sales WHERE agent_id=$1 AND idempotency_key=$2',[s.staffId,key])).rows[0];
    if(!prior&&b.delivery!=='receipt'){if(!deliverySms)return reply.code(409).send({error:'sms_delivery_disabled'});const capability=await notification(request,'/internal/v1/delivery/capabilities');if(capability.status!==200||capability.data.enabled!==true||capability.data.simulation!==demo)return reply.code(503).send({error:'sms_delivery_unavailable'});}
    const site=prior?{name:prior.site_name}:(await pool!.query('SELECT name FROM sales_locations WHERE id=$1 AND enabled',[b.siteId])).rows[0];if(!site)return reply.code(409).send({error:'site_unavailable'});
-   const result=await sellVoucher(pool!,s.staffId,b.siteId,b.bundleId,key,keys!,{siteInventory:true,siteName:site.name,commissionBps:commission,delivery:b.delivery as 'receipt'|'sms'|'both',phone:destination??undefined,pairingCode:pairing,simulation:demo,payment:b.payment});
-   const sale=(await pool!.query('SELECT * FROM agent_sales WHERE id=$1',[result.saleId])).rows[0];return reply.code(result.replayed?200:201).send({sale:saleDto(sale),replayed:result.replayed});
+   const invoiceDelivery=normalizeInvoiceDelivery(b.invoiceDelivery);
+   const result=await sellVoucher(pool!,s.staffId,b.siteId,b.bundleId,key,keys!,{siteInventory:true,siteName:site.name,commissionBps:commission,delivery:b.delivery as 'receipt'|'sms'|'both',phone:destination??undefined,pairingCode:pairing,simulation:demo,payment:b.payment,invoiceDelivery});
+   const sale=(await pool!.query('SELECT * FROM agent_sales WHERE id=$1',[result.saleId])).rows[0],invoice=(await pool!.query('SELECT id,number FROM paid_invoices WHERE sale_id=$1',[result.saleId])).rows[0];return reply.code(result.replayed?200:201).send({sale:saleDto(sale),replayed:result.replayed,invoice:invoice?{...invoice,downloadPath:`/v1/staff/invoices/${invoice.id}/pdf`}:null});
   }catch(error){return errors(reply,error);}
  });
  app.get('/v1/staff/sales',{schema:{querystring:{type:'object',properties:{limit:{type:'integer',minimum:1,maximum:100,default:50},offset:{type:'integer',minimum:0,maximum:1000000,default:0}},additionalProperties:false}}},async(request,reply)=>{const s=await staff(request,reply,setupRoles,false);if(!s)return;const q=request.query as {limit:number;offset:number};try{const rows=await pool!.query('SELECT * FROM agent_sales WHERE ($1::boolean OR site_id=ANY($2::uuid[])) AND ($3::boolean OR agent_id=$4) ORDER BY sold_at DESC,id DESC LIMIT $5 OFFSET $6',[s.role==='admin',s.siteIds,s.role!=='agent',s.staffId,q.limit+1,q.offset]);const hasMore=rows.rows.length>q.limit;return {sales:rows.rows.slice(0,q.limit).map(saleDto),hasMore,nextOffset:hasMore?q.offset+q.limit:null};}catch{return errors(reply,null);}});

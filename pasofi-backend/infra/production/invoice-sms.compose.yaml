@@ -1,0 +1,23 @@
+# Optional paid Sendai SMS delivery of invoice links. Sender/use case and
+# destination networks require qualification before these flags can be true.
+services:
+  notification:
+    environment:
+      INVOICE_DELIVERY_WORKER_ENABLED: ${PAMOFI_INVOICE_DELIVERY_ENABLED:?Choose true or false explicitly}
+      INVOICE_SMS_MODE: sendai
+      INVOICE_SMS_QUALIFIED: ${PAMOFI_INVOICE_SMS_QUALIFIED:?Record actual invoice SMS qualification}
+      INVOICE_SMS_FROM: ${PAMOFI_INVOICE_SMS_FROM:?Set the registered alphanumeric sender}
+      SENDAI_LIVE_ENABLED: ${PAMOFI_SENDAI_LIVE_ENABLED:?Choose true or false explicitly}
+      SENDAI_QUALIFIED: ${PAMOFI_SENDAI_QUALIFIED:?Record actual provider qualification}
+      SENDAI_API_KEY_FILE: /run/secrets/sendai_api_key
+    secrets:
+      - sendai_api_key
+    networks:
+      - invoice_provider_egress
+secrets:
+  sendai_api_key:
+    file: ${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/sendai_api_key
+networks:
+  invoice_provider_egress:
+    external: true
+    name: ${PAMOFI_INVOICE_EGRESS_NETWORK:?Create a separately restricted HTTPS provider egress network}

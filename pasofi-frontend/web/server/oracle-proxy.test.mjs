@@ -59,7 +59,7 @@ async function withProxy(options, run) {
       const parts = [];
       response.on('data', chunk => parts.push(chunk));
       response.on('error', reject);
-      response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(parts).toString() }));
+      response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(parts).toString(), bytes: Buffer.concat(parts) }));
     });
     request.on('error', reject);
     if (chunks) { for (const chunk of chunks) request.write(chunk); }
@@ -259,6 +259,7 @@ test('cash workflow, recovery, staff and network routes are available through or
     ['GET', '/api/capabilities'], ['GET', '/api/usage?entitlementIds=a%2Cb'], ['POST', '/api/session'], ['DELETE', '/api/session'],
     ['POST', '/api/staff/register'], ['POST', '/api/staff/mfa/confirm'], ['GET', '/api/staff/password-reset/availability'], ['POST', '/api/staff/password-reset/request'], ['POST', '/api/staff/password-reset/confirm'], ['POST', `/api/staff/users/${id}/decision`], ['POST', `/api/staff/users/${id}/recover-mfa`],
     ['POST', '/api/admin/inventory/allocations'], ['POST', '/api/staff/sales'], ['GET', `/api/staff/sales/${id}/receipt`],
+    ['GET', '/api/customer/invoices'], ['GET', '/api/staff/invoices'], ['GET', `/api/customer/invoices/${id}`], ['GET', `/api/staff/invoices/${id}`],
     ['GET','/api/staff/cash-refunds'], ['POST','/api/staff/cash-refunds'], ['POST',`/api/staff/cash-refunds/${id}/payout`], ['POST',`/api/staff/cash-refunds/${id}/prepare-payout`], ['POST',`/api/admin/cash-refunds/${id}/decision`], ['GET', '/api/staff/cash-shifts'], ['POST', '/api/staff/cash-shifts'], ['POST', `/api/staff/cash-shifts/${id}/close`], ['POST', '/api/staff/cash-references/lookup'], ['POST', `/api/receipt-pairings/${id}/cancel`], ['POST', '/api/receipt-pairings'], ['GET', `/api/receipt-pairings/${id}`], ['POST', '/api/vouchers/redeem'],
     ['POST', '/api/recovery/rotate'], ['POST', '/api/handoff/redeem'], ['POST', '/api/network/credentials'],
     ['POST', '/api/network/disconnect'], ['PATCH', '/api/admin/bundles/day-1'], ['POST', `/api/admin/network/reviews/${id}/resolve`],
@@ -270,6 +271,46 @@ test('cash workflow, recovery, staff and network routes are available through or
     }
     const response = await call('/api/usage?__pamofi_path=usage&opaque=x%2Fy'); assert.equal(response.status, 200); assert.equal(events.at(-1).url, '/api/usage?opaque=x%2Fy');
     const head = await call('/api/capabilities', { method: 'HEAD' }); assert.equal(head.status, 200); assert.equal(head.body, ''); privateResponse(head);
+  });
+});
+
+test('invoice-only PDF routes preserve exact bytes and attachment names without caching or leaking a bearer into the URL', async () => {
+  await withProxy({}, async call => {
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from([0, 128, 255, 10]), Buffer.from('%%EOF')]);
+    behavior = (_req, res) => { res.writeHead(200, { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="PFI-000001.pdf"', 'cache-control': 'public' }); res.end(pdf); };
+    for (const path of [`/api/customer/invoices/${id}/pdf`, `/api/gateway?__pamofi_path=staff%2Finvoices%2F${id}%2Fpdf`]) {
+      const result = await call(path);
+      assert.equal(result.status, 200); assert.deepEqual(result.bytes, pdf); privateResponse(result);
+      assert.equal(result.headers['content-disposition'], 'attachment; filename="PFI-000001.pdf"');
+      assert.match(result.headers['content-security-policy'], /sandbox/);
+    }
+    const token = 'a'.repeat(43);
+    const result = await call('/api/invoice-downloads', { method: 'POST', body: JSON.stringify({ token }), headers: { origin: env.PAMOFI_PUBLIC_ORIGIN, 'content-type': 'application/json' } });
+    assert.equal(result.status, 200); assert.deepEqual(result.bytes, pdf); privateResponse(result);
+    assert.equal(events.at(-1).url, '/api/invoice-downloads');
+    assert.equal(JSON.parse(events.at(-1).body).token, token);
+    const head = await call(`/api/customer/invoices/${id}/pdf`, { method: 'HEAD' });
+    assert.equal(head.status, 200); assert.equal(head.body, '');
+    assert.equal((await call('/api/capabilities')).status, 502);
+    assert.equal((await call('/api/invoice-downloads')).status, 405);
+    behavior = (_req, res) => { res.writeHead(401, { 'content-type': 'application/json' }); res.end('{"error":"unauthorized"}'); };
+    const rejected = await call(`/api/staff/invoices/${id}/pdf`); assert.equal(rejected.status, 401); assert.equal(rejected.headers['content-disposition'], undefined);
+  });
+});
+
+test('PDF routes reject disguised HTML, excessive bytes, unsafe filenames and PDF error responses', async () => {
+  await withProxy({}, async call => {
+    for (const [status, name, bytes] of [
+      [200, 'PFI-1.pdf', Buffer.from('<html>fake PDF</html>')],
+      [200, '../private.pdf', Buffer.from('%PDF-1.7\n%%EOF')],
+      [200, 'PFI-1.pdf', Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(1048576)])],
+      [500, 'PFI-1.pdf', Buffer.from('%PDF-1.7\n%%EOF')],
+    ]) {
+      behavior = (_req, res) => { res.writeHead(status, { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${name}"` }); res.end(bytes); };
+      const result = await call(`/api/customer/invoices/${id}/pdf`);
+      assert.equal(result.status, 502); privateResponse(result);
+      assert.equal(result.headers['content-disposition'], undefined);
+    }
   });
 });
 

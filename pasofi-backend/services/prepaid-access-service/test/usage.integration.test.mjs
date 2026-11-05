@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -38,7 +39,7 @@ async function fixture(t,{http=false}={}){
   await pool.query('DELETE FROM network_account_holds WHERE customer_id=ANY($1::uuid[])',[[customer,other]]);
   await pool.query('DELETE FROM access_grants WHERE customer_id=ANY($1::uuid[])',[[customer,other]]);
   await pool.query('DELETE FROM purchase_entitlements WHERE id=ANY($1::uuid[])',[ids]);
-  await pool.query('DELETE FROM purchase_orders WHERE id=ANY($1::uuid[])',[ids]);
+  await cleanupInvoiceEvidence(pool,{orderIds:ids});await pool.query('DELETE FROM purchase_orders WHERE id=ANY($1::uuid[])',[ids]);
   await pool.end();
   if(saved)for(const [key,value]of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}
  }};

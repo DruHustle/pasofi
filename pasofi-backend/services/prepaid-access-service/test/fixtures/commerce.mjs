@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './invoices.mjs';
 // Test-only accounting/cleanup for the browser's API-created commerce fixtures. This file
 // is not copied into the runtime image and never accepts a remote database.
 import pg from 'pg';
@@ -58,7 +59,7 @@ async function main() {
     await client.query('DELETE FROM event_outbox WHERE aggregate_id=ANY($1::uuid[])', [ids]);
     await client.query('DELETE FROM agent_sale_deliveries WHERE sale_id=ANY($1::uuid[])', [ids]);
     await client.query('DELETE FROM issued_vouchers WHERE sale_id=ANY($1::uuid[])', [ids]);
-    await client.query('DELETE FROM agent_sales WHERE id=ANY($1::uuid[])', [ids]);
+    await cleanupInvoiceEvidence(client,{saleIds:ids});await client.query('DELETE FROM agent_sales WHERE id=ANY($1::uuid[])', [ids]);
     await client.query("DELETE FROM commerce_audit WHERE action='inventory.allocate' AND target_id IN (SELECT id FROM inventory_allocations WHERE site_id=$1 AND agent_id=$2)", [site, agent]);
     await client.query('DELETE FROM inventory_allocations WHERE site_id=$1 AND agent_id=$2', [site, agent]);
     await client.query('DELETE FROM agent_site_inventory WHERE site_id=$1 AND agent_id=$2', [site, agent]);

@@ -88,6 +88,7 @@ jobs:
           sh -n pasofi-backend/infra/production/postgres-ready.sh
           sh -n pasofi-backend/infra/radius-production/entrypoint.sh
           bash 'pasofi-backend/local-tools/manual deployment/test-production-volume-preflight.sh'
+          python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_release_deploy.py' -v
       - name: Validate the site firewall in an isolated network namespace
         run: |
           if ! command -v nft >/dev/null || ! command -v unshare >/dev/null; then

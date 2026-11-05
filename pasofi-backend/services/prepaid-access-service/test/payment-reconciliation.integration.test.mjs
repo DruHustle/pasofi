@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -51,6 +52,6 @@ test('callback hints and durable jobs require a separate provider check', {skip:
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM purchase_entitlements WHERE order_id=$1',[order])).rows[0].n,1);
   assert.equal((await pool.query('SELECT state FROM payment_reconciliation_jobs WHERE attempt_id=$1',[attempt])).rows[0].state,'idle');
  } finally {
-  await app.close();await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[order]);await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[order]);await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
+  await app.close();await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[order]);await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[order]);await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
  }
 });

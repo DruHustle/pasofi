@@ -155,7 +155,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
       {(staff.status === 'disabled' || staff.status === 'rejected') && <div className="empty"><h3>Staff access is {staff.status}</h3><p>This account cannot perform staff actions. Contact your PasoFi administrator to resolve access.</p></div>}
       {staff.status === 'approved' && staff.role === 'agent' && <AgentWorkspace key={`${staff.staffId}:${staff.version}`} staff={staff} capabilities={capabilities} />}
       {staff.status === 'approved' && staff.role === 'admin' && <AdminWorkspace key={`${staff.staffId}:${staff.version}`} staff={staff} capabilities={capabilities} />}
-      {staff.status === 'approved' && staff.role === 'support' && <SalesHistory staff={staff} deliveryEnabled={!!capabilities?.deliverySms} />}
+      {staff.status === 'approved' && staff.role === 'support' && <SalesHistory staff={staff} deliveryEnabled={!!capabilities?.deliverySms} invoicesEnabled={!!capabilities?.invoices} />}
     </>}
   </section>;
 }

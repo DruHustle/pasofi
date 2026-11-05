@@ -1,3 +1,4 @@
+import {cleanupInvoiceEvidence} from './fixtures/invoices.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -32,7 +33,7 @@ test('provider reconciliation fulfills once, isolates duplicate charges and reve
   assert.equal((await reconcileProviderPayment(pool,attempt,adapter)).state,'reversed');
   assert.ok((await pool.query('SELECT revoked_at FROM purchase_entitlements WHERE order_id=$1',[order])).rows[0].revoked_at);
   await assert.rejects(issueGrant(pool,customer,site,randomUUID(),randomUUID(),'lab-session-1'),{code:'no_usable_entitlement'});
- }finally{await pool.query('DELETE FROM payment_reviews WHERE order_id=$1',[order]);await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[order]);await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[order]);await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();}
+ }finally{await pool.query('DELETE FROM payment_reviews WHERE order_id=$1',[order]);await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[order]);await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[order]);await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();}
 });
 test('ambiguous initiation blocks re-initiation and used access reversal is reviewed',{skip:!url},async()=>{
  const pool=new pg.Pool({connectionString:url,max:6}), customer=randomUUID(), site=randomUUID(), order=randomUUID(), uncertainOrder=randomUUID();let calls=0,status='verified_success';
@@ -51,7 +52,7 @@ test('ambiguous initiation blocks re-initiation and used access reversal is revi
   status='verified_success';assert.equal((await reconcileProviderPayment(pool,started.attemptId,adapter)).state,'pending_review');
   const ent=(await pool.query('SELECT revoked_at,consumed_bytes::text FROM purchase_entitlements WHERE order_id=$1',[order])).rows[0];assert.equal(ent.revoked_at,null);assert.equal(ent.consumed_bytes,'3');
   assert.equal((await pool.query("SELECT id FROM payment_reviews WHERE order_id=$1 AND reason='consumed_reversal'",[order])).rowCount,1);
- }finally{await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);for(const id of [order,uncertainOrder]){await pool.query('DELETE FROM payment_reviews WHERE order_id=$1',[id]);await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[id]);await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[id]);await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[id]);await pool.query('DELETE FROM purchase_orders WHERE id=$1',[id]);}await pool.end();}
+ }finally{await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);for(const id of [order,uncertainOrder]){await pool.query('DELETE FROM payment_reviews WHERE order_id=$1',[id]);await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[id]);await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[id]);await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[id]);await cleanupInvoiceEvidence(pool,{orderIds:[id]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[id]);}await pool.end();}
 });
 
 test('late initiation response recovers a reference after timeout monitoring',{skip:!url},async()=>{
@@ -67,7 +68,7 @@ test('late initiation response recovers a reference after timeout monitoring',{s
   release();const result=await pending;assert.equal(result.state,'pending');
   assert.equal((await pool.query('SELECT provider_reference FROM provider_payment_attempts WHERE id=$1',[attempt])).rows[0].provider_reference,`PP-${order}`);
   assert.equal((await reconcileProviderPayment(pool,attempt,adapter)).state,'unable_to_verify');
- }finally{release();await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();}
+ }finally{release();await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();}
 });
 
 
@@ -96,7 +97,7 @@ test('a reversal observed first survives an older success reply without fulfilli
   await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[order]);
   await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[order]);
   await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);
-  await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);
+  await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);
   await pool.end();
  }
 });
@@ -117,7 +118,7 @@ test('a provider reference conflict blocks another charge until investigation',{
  } finally {
   await pool.query('DELETE FROM payment_reviews WHERE order_id=ANY($1::uuid[])',[orders]);
   await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=ANY($1::uuid[])',[orders]);
-  await pool.query('DELETE FROM purchase_orders WHERE id=ANY($1::uuid[])',[orders]);
+  await cleanupInvoiceEvidence(pool,{orderIds:orders});await pool.query('DELETE FROM purchase_orders WHERE id=ANY($1::uuid[])',[orders]);
   await pool.end();
  }
 });
@@ -135,7 +136,7 @@ test('an unrecognized adapter result never becomes evidence of payment',{skip:!u
   await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[order]);
   await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[order]);
   await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);
-  await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);
+  await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);
   await pool.end();
  }
 });
@@ -174,7 +175,7 @@ test('an untrusted checkout URL retains the provider reference and reconciles wi
   await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[order]);
   await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[order]);
   await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[order]);
-  await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);
+  await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);
   await pool.end();
  }
 });

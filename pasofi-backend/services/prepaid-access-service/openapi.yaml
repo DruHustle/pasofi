@@ -47,7 +47,7 @@ paths:
           description: Authoritative service unavailable
     post:
       summary: Create or retry a server-priced quote
-      description: Requires the configured origin, an authenticated session, and a customer-scoped idempotency key. Demo mode is available only in demo/development. Checkout currently requires explicit local mock configuration; no external provider is selectable. Idempotency binds both bundle and mode.
+      description: Requires the configured origin, an authenticated session, and a customer-scoped idempotency key. Demo mode is available only in demo/development. Checkout currently requires explicit local mock configuration; no external provider is selectable. Idempotency binds bundle, mode and normalized invoice delivery intent. Intent is encrypted; quotes and pending attempts issue no invoice. Only verified provider fulfillment creates a paid invoice. Demo-confirm never creates one.
       parameters:
         - in: header
           name: Idempotency-Key
@@ -72,6 +72,7 @@ paths:
                   type: string
                   enum: [demo, checkout]
                   default: demo
+                invoiceDelivery: {$ref: '#/components/schemas/InvoiceDeliveryIntent'}
       responses:
         '201':
           description: Quote created with immutable server terms and purchase_mode
@@ -164,6 +165,9 @@ paths:
                   deliverySms: {type: boolean}
                   networkAccess: {type: boolean}
                   mobileCookies: {const: false}
+                  invoices: {type: boolean, description: Authenticated invoice storage is configured independently of selling gates.}
+                  invoiceEmail: {type: boolean, description: Outbox and secrets are configured and notification advertises a qualified matching email mode.}
+                  invoiceSms: {type: boolean, description: Outbox and secrets are configured and notification advertises a qualified matching SMS mode.}
   /v1/sites:
     get:
       summary: List active commercial locations
@@ -418,8 +422,9 @@ paths:
                 pairingCode: {type: string, minLength: 10, maxLength: 32}
                 phone: {type: string, description: Zimbabwe mobile number normalized to 263 and nine digits}
                 payment: {$ref: '#/components/schemas/CashConfirmation'}
+                invoiceDelivery: {$ref: '#/components/schemas/InvoiceDeliveryIntent'}
       responses:
-        '201': {description: sale snapshot including immutable payment evidence and replayed false; no plaintext voucher}
+        '201': {description: sale snapshot including immutable payment evidence, invoice id/number/downloadPath, and replayed false; no plaintext voucher. Invoice and any requested email/SMS invoice.issued outbox event commit with the recorded cash sale. Download-only invoices create no notification job.}
         '200': {description: Original sale snapshot and replayed true; historical tender remains unrecorded}
         '409': {description: 'cash_confirmation_required, cash_amount_mismatch, stock/pairing/delivery unavailable or idempotency conflict'}
   /v1/staff/sales/{id}/receipt:
@@ -593,6 +598,97 @@ paths:
       responses:
         '200': {description: 'state closed, grantId, chargedBytes, additionalBytes, version and replayed; only this hold is cleared'}
         '409': {description: Stale review, idempotency conflict, insufficient evidence, another unresolved session or unbounded final usage}
+  /v1/customer/invoices:
+    get:
+      security: [{CustomerSession: []}]
+      summary: List owned paid invoices even while purchases are paused
+      description: Cash ownership follows the paired or redeeming customer; digital invoices belong to the order customer. No contact destinations or download tokens are returned. Supports limit (default 25, max 100), offset, and optional UUID saleId/orderId filters.
+      responses:
+        '200': {description: 'invoices array of InvoiceSummary, hasMore and nullable nextOffset'}
+        '401': {description: Customer session required}
+  /v1/customer/invoices/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{CustomerSession: []}]
+      summary: Read the immutable owned invoice and safe delivery status
+      responses:
+        '200': {description: 'invoice contains InvoiceSummary, immutable snapshot, canonical /v1 downloadPath and delivery state; requestedChannel does not claim that a message was sent'}
+        '404': {description: Invoice not found or not owned}
+  /v1/customer/invoices/{id}/pdf:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{CustomerSession: []}]
+      summary: Download the original stored invoice PDF
+      responses:
+        '200': {description: Byte-identical PDF attachment with Cache-Control no-store, content: {application/pdf: {schema: {type: string, format: binary}}}}
+        '404': {description: Invoice not found or not owned}
+  /v1/staff/invoices:
+    get:
+      security: [{StaffSession: []}]
+      summary: List invoices within current administrator or issuing-agent authority
+      description: Administrator sees cash and digital invoices. An agent sees only their own cash sales at currently assigned sites. Support is not authorized. Same pagination and optional saleId/orderId filters as the customer list; selling gates do not disable records access.
+      responses:
+        '200': {description: 'invoices array of InvoiceSummary, hasMore and nullable nextOffset'}
+        '403': {description: Current administrator or agent authority required}
+  /v1/staff/invoices/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{StaffSession: []}]
+      summary: Read an authorized immutable invoice and safe delivery status
+      responses:
+        '200': {description: 'invoice contains InvoiceSummary, snapshot, downloadPath and delivery state'}
+        '404': {description: Invoice outside current ownership or site scope}
+  /v1/staff/invoices/{id}/pdf:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{StaffSession: []}]
+      summary: Download an authorized original invoice PDF
+      responses:
+        '200': {description: PDF attachment with no-store, content: {application/pdf: {schema: {type: string, format: binary}}}}
+        '404': {description: Invoice outside current ownership or site scope}
+  /internal/v1/invoices/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{InternalBearer: []}]
+      summary: Resolve one invoice delivery without exposing its recipient publicly
+      description: Requires INTERNAL_DELIVERY_SECRET JWT with notification issuer/subject, prepaid-access audience and invoice:read scope. Returns invoiceId, invoiceNumber, channel (email, sms or none), simulation, filename and contentType; email adds to, SMS adds to, an expiring fragment link and expiresAt (ISO UTC). Event invoice.issued version 1 contains only invoiceId and uses that ID as aggregateId. Delivery is asynchronous and never part of the payment transaction.
+      responses:
+        '200': {description: Bounded private delivery metadata, no voucher or network credentials}
+        '410': {description: SMS invoice link expired}
+  /internal/v1/invoices/{id}/pdf:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      security: [{InternalBearer: []}]
+      summary: Read original PDF bytes for a transactional email attachment
+      description: Same invoice:read service authority as private invoice metadata; unavailable to the public gateway.
+      responses:
+        '200': {description: Original PDF with no-store, content: {application/pdf: {schema: {type: string, format: binary}}}}
+  /v1/invoice-downloads:
+    post:
+      security: []
+      summary: Redeem an expiring invoice-only SMS link for the PDF
+      description: The 32-byte random bearer token is carried in a URL fragment, then submitted in this body; only its hash is looked up. Requires an allowed Origin, is rate limited to 10 per minute, expires seven days after issuance and grants no account, voucher or network access. No anonymous lookup by invoice ID is exposed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: {type: string, pattern: '^[A-Za-z0-9_-]{43}$'}
+      responses:
+        '200': {description: Invoice-only PDF attachment with no-store, content: {application/pdf: {schema: {type: string, format: binary}}}}
+        '403': {description: Origin rejected}
+        '404': {description: Invalid or expired link}
+        '429': {description: Retry-After applies}
 components:
   securitySchemes:
     CustomerSession:
@@ -616,6 +712,29 @@ components:
     Limit: {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
     Offset: {in: query, name: offset, schema: {type: integer, minimum: 0, maximum: 1000000, default: 0}}
   schemas:
+    InvoiceDeliveryIntent:
+      type: object
+      additionalProperties: false
+      required: [channel]
+      description: Optional transactional receipt destination. Omission means download. Email/SMS require a valid recipient; download must omit it. Stored encrypted and bound to the original request; never grants marketing permission. Disabled providers do not disable authenticated PDF access.
+      properties:
+        channel: {type: string, enum: [download, email, sms]}
+        recipient: {type: string, maxLength: 254, description: Email address or Zimbabwe mobile number; SMS normalizes to 263 and nine digits.}
+    InvoiceSummary:
+      type: object
+      description: An immutable commercial payment record, explicitly not a ZIMRA fiscal tax invoice. Original PDF and terms survive later refunds/reversals unchanged; no tax number, VAT rate, fiscal QR or deductibility is invented.
+      properties:
+        id: {type: string, format: uuid}
+        number: {type: string, pattern: '^PFI-[0-9]+$'}
+        issuedAt: {type: string, format: date-time}
+        paidAt: {type: string, format: date-time}
+        currency: {type: string}
+        totalMinor: {type: integer, minimum: 1}
+        sourceType: {type: string, enum: [cash, digital]}
+        saleId: {type: [string, 'null'], format: uuid}
+        orderId: {type: [string, 'null'], format: uuid}
+        simulation: {type: boolean}
+        requestedChannel: {type: string, enum: [download, email, sms]}
     UsageBytes: {type: string, pattern: '^(0|[1-9][0-9]*)$', description: Exact nonnegative decimal byte count; aggregate can exceed the signed 64-bit range.}
     UsageTotals:
       type: object
