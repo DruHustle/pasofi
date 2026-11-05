@@ -194,12 +194,13 @@ test('home actions and heading retain readable contrast', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
-test('support and draft service information remain reachable directly and from the footer', async ({ page }) => {
+test('support and published service policies remain reachable directly and from the footer', async ({ page }) => {
   await fixture(page); await page.goto('/#help');
   await expect(page.getByRole('link', { name: '+263 715 092 221' })).toHaveAttribute('href', 'tel:+263715092221');
   await page.getByRole('link', { name: 'Service terms' }).click();
   await expect(page.getByRole('heading', { name: 'Service terms', exact: true })).toBeVisible();
-  await expect(page.getByText('These details are being finalized before service launch.')).toBeVisible();
+  await expect(page.getByText('Operated by Onesa', { exact: true })).toBeVisible();
+  await expect(page.getByText('3964 98th Crescent Kuwadzana 5', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Privacy', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Privacy information' })).toBeVisible();
   await page.reload();

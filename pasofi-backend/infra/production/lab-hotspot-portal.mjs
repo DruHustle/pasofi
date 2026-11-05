@@ -21,7 +21,7 @@ function request(path, { method = 'GET', body, cookie, requestOrigin = origin, e
       const chunks = []; let size = 0;
       response.on('data', data => { size += data.length; if (size > 4_000_000) response.destroy(Error('Unexpected response size')); else chunks.push(data); });
       response.on('error', reject);
-      response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, text: Buffer.concat(chunks).toString('utf8') }));
+      response.on('end', () => { const bytes = Buffer.concat(chunks); resolve({ status: response.statusCode, headers: response.headers, text: bytes.toString('utf8'), bytes }); });
     });
     req.on('timeout', () => req.destroy(Error('Portal qualification timed out'))); req.on('error', reject); req.end(payload);
   });
@@ -33,6 +33,18 @@ for (const asset of page.text.matchAll(/(?:src|href)="(\/assets\/[^\"]+)"/g)) {
   const response = await request(asset[1]); check(response.status, 200, `portal asset ${asset[1]}`);
   if (asset[1].endsWith('.js')) { assert.ok(response.text.includes('/portal-api/'), 'frontend must use its matching public prefix'); checks++; }
 }
+for (const [path, type, signature] of [
+  ['/favicon.svg', /^image\/svg\+xml/, Buffer.from('<svg')],
+  ['/favicon.ico', /^image\/(?:x-icon|vnd\.microsoft\.icon)/, Buffer.from([0, 0, 1, 0, 3, 0])],
+  ['/apple-touch-icon.png', /^image\/png/, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])],
+]) {
+  assert.ok(page.text.includes(`href="${path}"`), `portal declares ${path}`); checks++;
+  const icon = await request(path); check(icon.status, 200, `anonymous portal icon ${path}`);
+  assert.match(icon.headers['content-type'], type); checks++;
+  assert.deepEqual(icon.bytes.subarray(0, signature.length), signature); checks++;
+  check(icon.headers['set-cookie'], undefined, 'static icon never creates a customer account');
+}
+for (const path of ['/favicon.svg/private', '/favicon.ico/private', '/apple-touch-icon.png/private', '/favicon-secret.svg']) check((await request(path)).status, 404, 'icon allowlist is exact');
 for (const path of ['/internal/v1/session', '/v1/session', '/portal-api/internal/v1/session', '/portal-api/no-such-route', '/hotspot-build.json', '/run/secrets/vercel_proxy_token']) check((await request(path)).status, 404, path);
 for (const path of ['/api/session', '/api/capabilities']) check((await request(path)).status, 403, 'Vercel boundary remains credential-protected');
 check((await request('/portal-api/session')).status, 401);
