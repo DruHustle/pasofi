@@ -194,3 +194,44 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
   .pf-navigation > button[aria-current=page] .pf-nav-icon { color: var(--pf-forest); }
   .pf-nav-dot { background: var(--pf-forest); }
 }
+
+/* Compact comparison: keep data, validity, price and selection together. */
+.pf-bundle-grid{grid-template-columns:1fr;gap:8px}
+.pf-bundle-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(70px,auto) 72px;grid-template-areas:"name price action" "data price action" "validity price action";column-gap:12px;row-gap:2px;padding:11px 14px;border-radius:14px;border-top-width:1px;border-left:4px solid #075cf5;box-shadow:none}
+.pf-bundle-card:nth-child(3n+2){border-left-color:#7434e8}.pf-bundle-card:nth-child(3n){border-left-color:#ffad00}
+.pf-bundle-top{grid-area:name;min-height:0;line-height:1.2}.pf-plan-name{font-size:12px;overflow-wrap:anywhere}.pf-bundle-top>.pf-icon{display:none}
+.pf-bundle-card h3{grid-area:data;font-size:29px;letter-spacing:-1px;margin:0;gap:4px;line-height:1.15}
+.pf-bundle-card h3 span{font-size:13px}.pf-validity{grid-area:validity;font-size:12px;line-height:1.4;gap:4px}
+.pf-bundle-price{grid-area:price;align-self:center;display:grid;gap:2px;margin:0;padding:0;border:0;text-align:right}
+.pf-bundle-price strong{font-size:22px;letter-spacing:-.6px;line-height:1.2}.pf-bundle-price>span{font-size:12px;line-height:1.3;max-width:82px}
+.pf-bundle-card>.pf-button{grid-area:action;align-self:center;min-height:44px;margin:0;padding:9px 5px;font-size:12px;border-radius:10px;gap:0}
+.pf-bundle-card>.pf-button .pf-icon{display:none}.pf-bundle-skeleton{min-height:94px;padding:12px;gap:8px}.pf-bundle-skeleton>span:nth-child(2){height:24px;margin:0}
+.pf-catalogue .pf-section-heading{margin:18px 0 10px;gap:10px}.pf-catalogue .pf-section-heading h1,.pf-catalogue .pf-section-heading h2{font-size:25px;margin:0}
+.pf-catalogue .pf-section-heading .pf-eyebrow,.pf-catalogue .pf-section-heading p{display:none}
+.pf-filter-row{margin:8px 0 12px;gap:5px}.pf-filter-row button{padding:8px 11px;font-size:12px;min-height:44px}
+.pf-catalogue-toolbar{align-items:center;gap:8px;margin-bottom:12px;flex-wrap:nowrap}.pf-catalogue-caption{gap:2px;font-size:12px}.pf-result-count{font-size:12px}
+.pf-sort{min-width:0;width:auto;flex:0 1 190px;gap:3px}.pf-sort select{font-size:13px;min-height:44px;padding:8px 24px 8px 9px}
+.pf-bundle-terms{margin:14px 0;padding:12px}.pf-bundle-terms p{line-height:1.6}
+.pf-home .pf-service-status{margin-bottom:14px;padding:8px 12px}.pf-home .pf-page-intro{margin:14px 0}.pf-home .pf-page-intro h1{font-size:26px;line-height:1.2;margin:5px 0}.pf-home .pf-page-intro p{font-size:13px;margin:5px 0}
+.pf-home .pf-quick-actions{margin:12px 0 18px;gap:7px}.pf-home .pf-quick-actions>button{min-height:64px;padding:8px 3px;gap:5px;border-radius:12px}
+.pf-home .pf-quick-actions>button>span,.pf-home .pf-quick-actions>button:nth-child(n)>span{width:24px;height:24px;background:transparent;border-radius:0}.pf-home .pf-quick-actions>button .pf-icon{width:22px;height:22px}.pf-home .pf-quick-actions>button strong{font-size:11px}
+@media(min-width:700px){.pf-bundle-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.pf-home .pf-quick-actions>button{flex-direction:row;justify-content:center;min-height:48px;gap:8px}.pf-home .pf-quick-actions>button strong{font-size:13px}}
+@media(min-width:1000px){.pf-home .pf-page-intro{margin-top:8px}.pf-home .pf-page-intro h1{font-size:30px}.pf-home .pf-quick-actions{margin:14px 0 20px}.pf-bundle-card{padding:14px}.pf-home .pf-service-status{margin-bottom:14px}}
+@media(min-width:1400px){.pf-bundle-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:359px){.pf-bundle-card{column-gap:8px;padding:10px;grid-template-columns:minmax(0,1fr) 68px 62px}.pf-bundle-price strong{font-size:20px}.pf-sort{flex-basis:152px}.pf-home .pf-quick-actions>button strong{font-size:10px}.pf-home .pf-page-intro h1{font-size:24px}}
+
+/* Match the local Wi-Fi welcome: blue, white, navy and one lime accent. */
+.pf-bundle-card:nth-child(n){background:#fff;border-color:#cfdef5;border-left-color:#075cf5}
+.pf-home .pf-quick-actions>button:nth-child(n){background:#fff;color:#092451;border-color:#cfdef5}
+.pf-home .pf-quick-actions>button:nth-child(n)>span{color:#075cf5}
+.pf-home .pf-quick-actions>button:first-child{background:#e5ff52;border-color:#d2ed39}
+.pf-home .pf-quick-actions>button:first-child>span{color:#092451}
+.pf-bundle-terms{background:#fff;border-color:#cfdef5}.pf-bundle-terms p{color:#425d7a}
+
+.pf-catalogue-options{margin:0 0 10px;border:1px solid #cfdef5;border-radius:10px;background:#fff;padding:0 12px}
+.pf-catalogue-options>summary{font-size:12px;font-weight:650;color:#425d7a;padding:12px 0;min-height:44px;cursor:pointer}
+.pf-catalogue-options[open]>summary{margin-bottom:6px}.pf-catalogue-options .pf-catalogue-toolbar{margin-bottom:12px}
+
+.pf-text-link{color:#0647c7}.pf-bundle-card h3 span,.pf-navigation>button{color:#425d7a}
+.pf-navigation>button[aria-current=page] .pf-nav-icon{background:#075cf5;color:#fff}
+@media(min-width:1000px){.pf-navigation>button[aria-current=page]{background:#075cf5;color:#fff}.pf-navigation>button[aria-current=page] .pf-nav-icon{background:transparent}.pf-nav-dot{background:#e5ff52}}

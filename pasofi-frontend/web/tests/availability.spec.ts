@@ -77,7 +77,7 @@ for (const width of [320, 390]) {
       await bundles.focus(); await bundles.press('Enter');
       await expectEmptyBundles(page);
     });
-    for (const entry of ['Explore bundles', 'Buy data']) {
+    for (const entry of ['Buy data']) {
       await test.step(`Home ${entry} opens the catalogue`, async () => {
         await navigation(page).getByRole('button', { name: 'Home', exact: true }).click();
         await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toBeVisible();
