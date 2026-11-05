@@ -90,6 +90,75 @@ test('administrators can onboard agents and allocate scoped stock while commerce
   const after=(await f.app.inject({url:'/v1/capabilities'})).json();assert.equal(after.staffSales,false);assert.equal(after.vouchers,false);
  }finally{await f.pool.query('DELETE FROM bundle_versions WHERE id=$1',[bundleId]);await f.cleanup();}
 });
+test('guarded publication validates prerequisites and records only a committed withdrawal',{skip:!url},async()=>{
+ const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false'}}),prefix=`guard-${randomUUID().slice(0,8)}`,target=`${prefix}-old`,first=`${prefix}-a`,second=`${prefix}-b`,ids=[target,first,second];
+ const reason='Reviewed isolated guarded catalogue withdrawal';
+ try{
+  await f.pool.query("INSERT INTO bundle_versions(id,price_minor,currency,byte_limit,validity_seconds,published) SELECT id,100,'USD',1000000000,86400,true FROM unnest($1::text[]) AS id",[ids]);
+  assert.equal((await f.call('GET','/v1/admin/bundles')).json().publicationGuardVersion,1);
+  const path=`/v1/admin/bundles/${target}`;
+  for(const requiredPublishedBundleIds of [null,[],[first,first],[target],['INVALID'],Array.from({length:21},(_,index)=>`${prefix}-extra-${index}`)]){
+   const response=await f.call('PATCH',path,{published:false,reason,requiredPublishedBundleIds});
+   assert.equal(response.statusCode,400);assert.equal(response.json().error,'invalid_publication_guard');
+  }
+  assert.equal((await f.call('PATCH',path,{published:true,reason,requiredPublishedBundleIds:[first]})).statusCode,400);
+  assert.equal((await f.call('PATCH',path,{published:false,reason,requiredPublishedBundleIds:[first]},'agent')).statusCode,403);
+  const foreign=await f.app.inject({method:'PATCH',url:path,headers:{origin:'https://foreign.example',cookie:'staff=admin'},payload:{published:false,reason,requiredPublishedBundleIds:[first]}});assert.equal(foreign.statusCode,403);
+  await f.pool.query('UPDATE bundle_versions SET published=false WHERE id=$1',[second]);
+  for(const requiredPublishedBundleIds of [[first,second],[`${prefix}-missing`]]){
+   const response=await f.call('PATCH',path,{published:false,reason,requiredPublishedBundleIds});
+   assert.equal(response.statusCode,409);assert.equal(response.json().error,'required_bundles_not_published');
+  }
+  assert.equal((await f.pool.query('SELECT published FROM bundle_versions WHERE id=$1',[target])).rows[0].published,true);
+  assert.equal((await f.pool.query("SELECT count(*)::int AS n FROM commerce_audit WHERE actor_id=$1 AND action='bundle.publish'",[f.admin])).rows[0].n,0);
+  await f.pool.query('UPDATE bundle_versions SET published=true WHERE id=$1',[second]);
+  const response=await f.call('PATCH',path,{published:false,reason,requiredPublishedBundleIds:[second,first]});assert.equal(response.statusCode,200);
+  assert.equal((await f.pool.query('SELECT published FROM bundle_versions WHERE id=$1',[target])).rows[0].published,false);
+  const audit=(await f.pool.query("SELECT details FROM commerce_audit WHERE actor_id=$1 AND action='bundle.publish'",[f.admin])).rows;
+  assert.equal(audit.length,1);assert.deepEqual(audit[0].details,{bundleId:target,published:false,requiredPublishedBundleIds:[first,second]});
+ }finally{await f.pool.query('DELETE FROM bundle_versions WHERE id=ANY($1::text[])',[ids]);await f.cleanup();}
+});
+test('guarded withdrawal waits for a replacement transaction and rejects its committed unpublication',{skip:!url,timeout:15000},async()=>{
+ const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false'}}),prefix=`race-${randomUUID().slice(0,8)}`,target=`${prefix}-old`,replacement=`${prefix}-replacement`,ids=[target,replacement],blocker=await f.pool.connect();
+ let pending;
+ try{
+  await f.pool.query("INSERT INTO bundle_versions(id,price_minor,currency,byte_limit,validity_seconds,published) SELECT id,100,'USD',1000000000,86400,true FROM unnest($1::text[]) AS id",[ids]);
+  const before=(await f.call('GET','/v1/admin/bundles')).json();assert.equal(before.products.find(product=>product.id===replacement).published,true);
+  await blocker.query('BEGIN');await blocker.query('UPDATE bundle_versions SET published=false WHERE id=$1',[replacement]);
+  const blockerPid=(await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+  pending=f.call('PATCH',`/v1/admin/bundles/${target}`,{published:false,reason:'Stale frontend snapshot must not retire its older offer',requiredPublishedBundleIds:[replacement]}).then(response=>response);
+  let observed=false;const deadline=Date.now()+5000;
+  while(Date.now()<deadline){
+   const waiting=await f.pool.query('SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database() AND $1::int=ANY(pg_blocking_pids(pid))',[blockerPid]);
+   if(waiting.rows[0].n>0){observed=true;break;}
+   await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.equal(observed,true,'the guarded PATCH must wait on the replacement row lock');
+  await blocker.query('COMMIT');
+  const response=await pending;pending=null;
+  assert.equal(response.statusCode,409);assert.equal(response.json().error,'required_bundles_not_published');
+  assert.equal((await f.pool.query('SELECT published FROM bundle_versions WHERE id=$1',[target])).rows[0].published,true);
+  assert.equal((await f.pool.query("SELECT count(*)::int AS n FROM commerce_audit WHERE actor_id=$1 AND action='bundle.publish'",[f.admin])).rows[0].n,0);
+ }finally{
+  await blocker.query('ROLLBACK');blocker.release();if(pending)await Promise.allSettled([pending]);
+  await f.pool.query('DELETE FROM bundle_versions WHERE id=ANY($1::text[])',[ids]);await f.cleanup();
+ }
+});
+test('reciprocal guarded withdrawals serialize without deadlock and retain one published offer',{skip:!url,timeout:15000},async()=>{
+ const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false'}}),prefix=`pair-${randomUUID().slice(0,8)}`,first=`${prefix}-a`,second=`${prefix}-b`,ids=[first,second];
+ try{
+  await f.pool.query("INSERT INTO bundle_versions(id,price_minor,currency,byte_limit,validity_seconds,published) SELECT id,100,'USD',1000000000,86400,true FROM unnest($1::text[]) AS id",[ids]);
+  const responses=await Promise.all([
+   f.call('PATCH',`/v1/admin/bundles/${first}`,{published:false,reason:'Concurrent guarded first offer withdrawal',requiredPublishedBundleIds:[second]}),
+   f.call('PATCH',`/v1/admin/bundles/${second}`,{published:false,reason:'Concurrent guarded second offer withdrawal',requiredPublishedBundleIds:[first]}),
+  ]);
+  assert.deepEqual(responses.map(response=>response.statusCode).sort(),[200,409]);
+  assert.equal(responses.find(response=>response.statusCode===409).json().error,'required_bundles_not_published');
+  const states=(await f.pool.query('SELECT published FROM bundle_versions WHERE id=ANY($1::text[])',[ids])).rows;
+  assert.equal(states.filter(row=>row.published).length,1);
+  assert.equal((await f.pool.query("SELECT count(*)::int AS n FROM commerce_audit WHERE actor_id=$1 AND action='bundle.publish'",[f.admin])).rows[0].n,1);
+ }finally{await f.pool.query('DELETE FROM bundle_versions WHERE id=ANY($1::text[])',[ids]);await f.cleanup();}
+});
 test('operator-configured cash currency is enforced through sale and redemption',{skip:!url},async()=>{
  const f=await setup({env:{PAMOFI_CASH_CURRENCIES:JSON.stringify(['USD','ZWG'])}}),bundleId=`cash-${randomUUID().slice(0,8)}`;
  try{

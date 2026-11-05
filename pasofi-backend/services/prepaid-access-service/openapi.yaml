@@ -311,7 +311,7 @@ paths:
       security: [{StaffSession: []}]
       summary: List all catalogue versions including drafts as an administrator
       responses:
-        '200': {description: 'products with id, price_minor, currency, byte_limit string, validity_seconds, published'}
+        '200': {description: 'products with id, price_minor, currency, byte_limit string, validity_seconds, published; configured currencies; publicationGuardVersion: 1 advertises transactional guarded withdrawals. Automated catalogue revisions must require this version before their first write.'}
     post:
       security: [{StaffSession: []}]
       summary: Create immutable catalogue terms with an audit reason
@@ -340,6 +340,7 @@ paths:
     patch:
       security: [{StaffSession: []}]
       summary: Publish or withdraw a version with an audit reason
+      description: A withdrawal may require other bundle versions to remain published. The target and all required versions are locked in deterministic ID order; prerequisite validation, withdrawal and audit commit in the same transaction. Missing or unpublished prerequisites return 409 without withdrawing the target or writing an audit entry. An omitted guard preserves the existing manual publication workflow.
       requestBody:
         required: true
         content:
@@ -351,13 +352,23 @@ paths:
               properties:
                 published: {type: boolean}
                 reason: {$ref: '#/components/schemas/Reason'}
+                requiredPublishedBundleIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  uniqueItems: true
+                  items: {type: string, pattern: '^[a-z][a-z0-9-]{0,39}$'}
+                  description: Optional only when published is false. Every ID must differ from the target and identify a currently published bundle. The guard is checked under row locks in the withdrawal transaction.
       responses:
         '200': {description: Product id/publication state and durable audit}
+        '400': {description: Invalid publication/reason or invalid_publication_guard}
+        '404': {description: Target bundle not found}
+        '409': {description: required_bundles_not_published; target and audit remain unchanged}
   /v1/admin/inventory/allocations:
     post:
       security: [{StaffSession: []}]
       summary: Allocate stock to an approved agent at an approved site
-      description: Commerce must be enabled. A matching recorded request is replayed before rechecking target eligibility. New allocations validate the approved agent, assigned site and published bundle under the request lock.
+      description: An approved MFA-authenticated administrator and an available ledger are required. Stock can be prepared while customer sales are paused; inventoryAllocation reports availability independently of staffSales. A matching recorded request is replayed before rechecking target eligibility. New allocations validate the approved agent, assigned active site and published bundle under the request lock.
       parameters:
         - {$ref: '#/components/parameters/IdempotencyKey'}
       requestBody:

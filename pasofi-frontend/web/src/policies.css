@@ -13,6 +13,7 @@
 .pasofi-policy summary { min-height: 44px; padding: 12px 14px; cursor: pointer; font-size: 14px; font-weight: 700; line-height: 1.45; }
 .pasofi-policy summary::marker { color: #175ec7; }
 .pasofi-policy summary:focus-visible, .pasofi-policy a:focus-visible { outline: 3px solid #175ec7; outline-offset: 3px; }
+.pasofi-policy-sections > details > summary:focus-visible { outline-offset: -3px; }
 .pasofi-policy-sections > details > div { padding: 0 15px 12px; }
 .pasofi-policy p { margin: 0 0 12px; }
 .pasofi-policy p:last-child { margin-bottom: 0; }
