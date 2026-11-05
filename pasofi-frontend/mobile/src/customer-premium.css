@@ -351,3 +351,21 @@
   .customer-workspace .customer-quick-actions button { padding: 12px 3px; font-size: 12px; }
   .customer-workspace .customer-quick-actions button > span { width: 42px; height: 42px; }
 }
+
+/* Vivid surfaces retain distinct warning and failure colours. */
+.customer-workspace { --customer-forest: #092451; --customer-mint: #00e39a; --customer-wash: #f2f7ff; }
+.customer-workspace .premium-usage { background: #075cf5; border-color: #075cf5; }
+.customer-workspace .premium-usage::before { border: 30px solid #00e39a26; }
+.customer-workspace .primary:hover:not(:disabled) { background: #00ca88; border-color: #00ca88; }
+.customer-workspace .customer-section-tabs button.selected { background: #00e39a; color: #073b31; }
+.customer-workspace .customer-quick-actions button:first-child > span { background: #00e39a; border-color: #00e39a; color: #073b31; }
+.customer-workspace .customer-quick-actions button:nth-child(2) > span { background: #e5ff52; border-color: #e5ff52; color: #073b31; }
+.customer-workspace .customer-quick-actions button:nth-child(3) > span { background: #7434e8; border-color: #7434e8; color: #fff; }
+.customer-workspace .customer-quick-actions button:nth-child(4) > span { background: #ffb927; border-color: #ffb927; color: #073b31; }
+.customer-workspace .usage-ring-fill { stroke: #e5ff52; }
+.customer-workspace .premium-usage progress::-webkit-progress-value { background: #e5ff52; }
+.customer-workspace .premium-usage progress::-moz-progress-bar { background: #e5ff52; }
+
+.customer-workspace .primary { background: #075cf5; border-color: #075cf5; color: #fff; }
+.customer-workspace .primary:hover:not(:disabled) { background: #0647c7; border-color: #0647c7; color: #fff; }
+.customer-workspace .premium-usage .primary { background: #e5ff52; border-color: #e5ff52; color: #092451; }

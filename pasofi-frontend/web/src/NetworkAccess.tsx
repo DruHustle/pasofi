@@ -7,7 +7,7 @@ import { type UsageSnapshot, dataAmount } from './LiveUsage';
 type NetworkSite = { id: string; name: string; loginUrl: string };
 const formOrigins = (() => {
   try {
-    const values: unknown = JSON.parse(import.meta.env.VITE_PAMOFI_ROUTER_FORM_ORIGINS || '[]');
+    const values: unknown = JSON.parse(import.meta.env.VITE_PAMOFI_ROUTER_FORM_ORIGINS || '["https://hotspot.pasofi.onesa.eu","https://hotspot.pamofi.onesa.eu"]');
     if (!Array.isArray(values) || values.length > 20 || !values.every(value => {
       if (typeof value !== 'string') return false;
       const url = new URL(value);
@@ -52,7 +52,7 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
       if (!validity.current.fresh || validity.current.revision !== verifiedRevision) { setMessage('Account status changed while preparing sign-in. Check the connection, then retry the prepared request safely.'); return; }
       const url = new URL(result.loginUrl), registered = sites.find(site => site.id === siteId);
       if (url.protocol !== 'https:' || url.username || url.password || url.hash || !registered || result.loginUrl !== registered.loginUrl || typeof result.username !== 'string' || typeof result.password !== 'string') throw Error('invalid_connection_details');
-      if (isCurrent(revision)) { setCredentials(result); setMessage('Short-lived sign-in details are ready. You are not connected until the hotspot confirms successful access.'); await refresh(); }
+      if (isCurrent(revision)) { setCredentials(result); setMessage('Your connection is ready to start. Continue below; the hotspot will confirm when you’re online.'); await refresh(); }
     } catch (error) { if (isCurrent(revision)) { setMessage(messageFor(error, 'Connection details could not be verified. Check status before retrying.')); await refresh(); } }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
@@ -72,8 +72,30 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
     <p className={`connection-state ${connected ? 'connected' : ''}`} role="status">{!fresh ? 'Connection status not verified' : usage?.hold.active ? 'Connection needs review' : !session ? 'No active hotspot session' : session.disconnectRequested ? 'Disconnect awaiting confirmation' : connected ? 'Connected · recent router report' : session.state === 'uncertain' ? 'Connection needs reconciliation' : usage?.connectivity === 'stale' ? 'Router report delayed · connection not verified' : 'Sign-in pending · not confirmed connected'}</p>
     {session && <p>Usage recorded for this connection: {dataAmount(session.chargedBytes)} · Grant deadline {localDate(session.deadline)}. Connection status and remaining data use the same verified account snapshot above.</p>}
     {message && <p className="feedback" role="status">{message}</p>}
-    <form className="form-grid" onSubmit={prepare}><label>Hotspot site<select required value={siteId} onChange={event => { setSiteId(event.target.value); setCredentials(null); }} disabled={busy || !!session}><option value="">Choose a configured hotspot</option>{sites.map(site => <option value={site.id} key={site.id}>{site.name}</option>)}</select></label><button className="primary" disabled={busy || !fresh || !!usage?.hold.active || !siteId || (!!session && !retryPending)}>{retryPending ? 'Retry prepared sign-in safely' : 'Prepare hotspot sign-in'}</button></form>
-    {credentials && fresh && <div className="private-value"><h4>Continue at your hotspot</h4><p>These details expire {localDate(credentials.expiresAt)}. Keep this page open while the hotspot verifies your connection.</p><a className="primary button-link" href={credentials.loginUrl} target="_blank" rel="noopener noreferrer">Open registered hotspot sign-in ↗</a><p>Open the hotspot page and enter these short-lived details. They are not placed in the link.</p><label>Hotspot username<input readOnly autoComplete="off" value={credentials.username} onFocus={event => event.target.select()} /></label><label>Hotspot password<input readOnly type={showPassword ? 'text' : 'password'} autoComplete="off" value={credentials.password} onFocus={event => event.target.select()} /></label><div className="purchase-actions"><button className="secondary" onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide hotspot password' : 'Show hotspot password'}</button><button className="secondary" onClick={async () => { try { await navigator.clipboard.writeText(credentials.password); setMessage('Hotspot password copied. Paste it only into the registered hotspot sign-in page.'); } catch { setShowPassword(true); setMessage('Select the hotspot password and copy it manually.'); } }}>Copy hotspot password</button></div>{formOrigins.includes(new URL(credentials.loginUrl).origin) && <form action={credentials.loginUrl} method="post" target="_blank" rel="noopener"><input type="hidden" name="username" value={credentials.username} /><input type="hidden" name="password" value={credentials.password} /><button className="secondary" type="submit">Submit to configured hotspot</button></form>}<button className="text-button" onClick={() => setCredentials(null)}>Hide sign-in details</button></div>}
+    {!credentials && <form className="form-grid" onSubmit={prepare}>
+      {sites.length === 1 ? <p>Connecting at <strong>{sites[0].name}</strong>. No Wi-Fi name to enter.</p> : <label>Choose your PasoFi location<select required value={siteId} onChange={event => { setSiteId(event.target.value); setCredentials(null); }} disabled={busy || !!session}><option value="">Select a location</option>{sites.map(site => <option value={site.id} key={site.id}>{site.name}</option>)}</select></label>}
+      <button className="primary" disabled={busy || !fresh || !!usage?.hold.active || !siteId || (!!session && !retryPending)}>{busy ? 'Getting your connection ready…' : retryPending ? 'Retry connection' : 'Connect to Wi-Fi'}</button>
+    </form>}
+    {credentials && fresh && <div className="private-value">
+      <h4>One more tap and you’re on your way</h4>
+      {formOrigins.includes(new URL(credentials.loginUrl).origin) ? <>
+        <p>Connect securely to your PasoFi hotspot. Your connection details are filled in for you.</p>
+        <form action={credentials.loginUrl} method="post">
+          <input type="hidden" name="username" value={credentials.username} />
+          <input type="hidden" name="password" value={credentials.password} />
+          <button className="primary" type="submit">Connect now →</button>
+        </form>
+      </> : <p>This location needs a manual sign-in. Open the connection details below to continue.</p>}
+      <p>Ready until {localDate(credentials.expiresAt)}.</p>
+      <details><summary>Manual connection details</summary>
+        <a className="secondary button-link" href={credentials.loginUrl} target="_blank" rel="noopener noreferrer">Open registered hotspot sign-in ↗</a>
+        <p>Enter these temporary details only on the registered hotspot page.</p>
+        <label>Hotspot username<input readOnly autoComplete="off" value={credentials.username} onFocus={event => event.target.select()} /></label>
+        <label>Hotspot password<input readOnly type={showPassword ? 'text' : 'password'} autoComplete="off" value={credentials.password} onFocus={event => event.target.select()} /></label>
+        <div className="purchase-actions"><button className="secondary" onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide hotspot password' : 'Show hotspot password'}</button><button className="secondary" onClick={async () => { try { await navigator.clipboard.writeText(credentials.password); setMessage('Hotspot password copied. Paste it only into the registered hotspot sign-in page.'); } catch { setShowPassword(true); setMessage('Select the hotspot password and copy it manually.'); } }}>Copy hotspot password</button></div>
+      </details>
+      <button className="text-button" onClick={() => setCredentials(null)}>Hide connection details</button>
+    </div>}
     {session && <button className="secondary" disabled={busy || !fresh || session.disconnectRequested} onClick={disconnect}>{session.disconnectRequested ? 'Waiting for disconnection' : 'Disconnect this hotspot session'}</button>}
   </section>;
 }

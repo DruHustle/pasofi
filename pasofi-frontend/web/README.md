@@ -115,7 +115,7 @@ Optional form POST is disabled unless the build provides an exact JSON array of 
 VITE_PAMOFI_ROUTER_FORM_ORIGINS='["https://hotspot.example.invalid"]' npm run build
 ```
 
-The returned login URL must match the selected registered site's URL, and its origin must match the array before a form appears. The deployment's CSP `form-action` must separately permit the same exact origin. The checked-in Nginx and Vercel CSPs permit only `'self'`; they intentionally do not allow arbitrary `https:` form targets. This is a public origin allowlist, never a place for a router password or service secret.
+The returned login URL must match the selected registered site's URL, and its origin must match the array before a form appears. The deployment's CSP `form-action` must separately permit the same exact origin. The checked-in Nginx and Vercel CSPs permit `'self'` and the two explicitly registered PasoFi hotspot origins (`https://hotspot.pasofi.onesa.eu` and its legacy `pamofi` hostname); they do not allow arbitrary `https:` form targets. Those same two origins are the UI defaults. A single registered site is displayed without asking the customer to select it again, and the main connection action posts the temporary credentials over HTTPS. Manual copying remains inside a collapsed fallback. This is a public origin allowlist, never a place for a router password or service secret.
 
 ## Verification
 

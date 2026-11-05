@@ -195,7 +195,7 @@ test('network credentials are private and prepared access stays unconnected unti
     if (path === '/api/network/disconnect') { disconnect = true; await json(route, { state: 'disconnect_pending' }, 202); return true; }
     return false;
   });
-  await openCustomer(page); await page.getByRole('button', { name: 'Prepare hotspot sign-in' }).click(); await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible(); await expect(page.getByRole('link', { name: /Open registered hotspot sign-in/ })).toHaveAttribute('href', 'https://hotspot.example.test/login'); await expect(page.getByRole('button', { name: 'Submit to configured hotspot' })).toHaveCount(0);
+  await openCustomer(page); await page.getByRole('button', { name: 'Connect to Wi-Fi' }).click(); await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible(); await page.getByText('Manual connection details', { exact: true }).click(); await expect(page.getByRole('link', { name: /Open registered hotspot sign-in/ })).toHaveAttribute('href', 'https://hotspot.example.test/login'); await expect(page.getByRole('button', { name: 'Connect now →' })).toHaveCount(0);
   expect(await page.evaluate(() => JSON.stringify({ local: localStorage, session: sessionStorage })) ).not.toContain('short-lived-password');
   connected = true; await page.getByRole('button', { name: 'Check connection', exact: true }).click(); await expect(page.getByText('Connected · recent router report', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Disconnect this hotspot session' }).click(); await expect(page.getByText('Disconnect awaiting confirmation', { exact: true })).toBeVisible(); await expect(page.getByText('No active hotspot session', { exact: true })).toHaveCount(0);
 });
@@ -555,4 +555,33 @@ test('an approved agent can inspect assigned stock before sales are enabled', as
   await expect(page.getByRole('combobox', { name: 'Sale site', exact: true })).toHaveValue(siteId);
   await expect(page.getByRole('heading', { name: 'Available inventory' }).locator('..')).toContainText('5');
   expect(writes).toEqual([]);
+});
+
+test('registered PasoFi hotspot connects by HTTPS POST without retyping a network name or exposing secrets in URLs', async ({ page }) => {
+  const loginUrl = 'https://hotspot.pasofi.onesa.eu/login';
+  await mock(page, async (route, path) => {
+    if (path === '/api/capabilities') { await json(route, { ...capabilities, networkAccess: true }); return true; }
+    if (path === '/api/network/sites') { await json(route, { sites: [{ ...site, loginUrl }] }); return true; }
+    if (path === '/api/network/credentials') { await json(route, { username: 'private-connection-user', password: 'private-connection-password', expiresAt: future(), loginUrl }); return true; }
+    return false;
+  });
+  let posted = false;
+  await page.route(loginUrl, async route => {
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().url()).toBe(loginUrl);
+    const form = new URLSearchParams(route.request().postData()!);
+    expect(form.get('username')).toBe('private-connection-user');
+    expect(form.get('password')).toBe('private-connection-password');
+    posted = true;
+    await route.fulfill({ contentType: 'text/html', body: '<h1>Hotspot confirmed</h1>' });
+  });
+  await openCustomer(page);
+  await expect(page.getByRole('combobox', { name: /location|Hotspot site/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Connect to Wi-Fi' }).click();
+  await expect(page.getByLabel('Hotspot username', { exact: true })).not.toBeVisible();
+  await expect(page.getByLabel('Hotspot password', { exact: true })).not.toBeVisible();
+  await page.getByRole('button', { name: 'Connect now →' }).click();
+  await expect(page.getByRole('heading', { name: 'Hotspot confirmed' })).toBeVisible();
+  expect(posted).toBe(true);
+  expect(page.url()).toBe(loginUrl);
 });
