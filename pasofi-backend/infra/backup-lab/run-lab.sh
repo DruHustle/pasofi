@@ -36,11 +36,11 @@ docker build --quiet -t "$image" "$lab_dir" >/dev/null
 # Initialize only these newly created volumes. There is no network and no published port.
 docker run --rm --network none --user root -v "$source_volume:/var/lib/postgresql/data" -v "$repo_volume:/var/lib/pgbackrest" "$image" sh -c 'chown postgres:postgres /var/lib/postgresql/data /var/lib/pgbackrest'
 docker run --rm --network none --user root -v "$restore_volume:/var/lib/postgresql/data" "$image" sh -c 'chown postgres:postgres /var/lib/postgresql/data'
-docker run -d --name "$source_name" --network none \
+docker run -d --name "$source_name" --label "com.pamofi.backup-lab=$lab_id" --network none \
  -e POSTGRES_USER=pamofi_bootstrap -e POSTGRES_PASSWORD=disposable-lab-only -e PGDATA=/var/lib/postgresql/data/pgdata \
  -e PGBACKREST_REPO1_CIPHER_PASS="$lab_key" \
  -v "$source_volume:/var/lib/postgresql/data" -v "$repo_volume:/var/lib/pgbackrest" \
- "$image" postgres -c archive_mode=on -c "archive_command=pgbackrest --stanza=pamofi-lab archive-push %p" -c wal_level=replica >/dev/null
+ "$image" postgres -c archive_mode=on -c "archive_command=pgbackrest --stanza=pamofi archive-push %p" -c wal_level=replica >/dev/null
 created_containers+=("$source_name")
 wait_ready() {
  local name=$1
@@ -53,7 +53,7 @@ wait_ready() {
  printf '%s did not become ready\n' "$name" >&2; return 1
 }
 wait_ready "$source_name"
-docker exec --user postgres "$source_name" pgbackrest --stanza=pamofi-lab stanza-create
+docker exec --user postgres "$source_name" pgbackrest --stanza=pamofi stanza-create
 # Use the real service-owned databases and schema migrations, but only disposable fixtures.
 docker exec -i "$source_name" psql -X -v ON_ERROR_STOP=1 -U pamofi_bootstrap -d postgres < "$backend_dir/infra/postgres/init.sql" >/dev/null
 for service in identity prepaid-access network notification assistant; do
@@ -81,14 +81,19 @@ INSERT INTO access_grants(id,customer_id,entitlement_id,site_id,nas_id,request_k
  VALUES('44444444-4444-4444-8444-444444444444','11111111-1111-4111-8111-111111111111','33333333-3333-4333-8333-333333333333','55555555-5555-4555-8555-555555555555','66666666-6666-4666-8666-666666666666','77777777-7777-4777-8777-777777777777','88888888-8888-4888-8888-888888888888','uncertain',5000000000,now()+interval '1 hour','lab-session');
 SQL
 printf 'Creating encrypted full-cluster backup...\n'
-docker exec --user postgres "$source_name" pgbackrest --stanza=pamofi-lab --type=full backup
-docker exec --user postgres "$source_name" pgbackrest --stanza=pamofi-lab check
-if wrong_key_output=$(docker exec --user postgres -e PGBACKREST_REPO1_CIPHER_PASS=incorrect "$source_name" pgbackrest --stanza=pamofi-lab check 2>&1); then
+docker exec --user postgres "$source_name" pgbackrest --stanza=pamofi --type=full backup
+docker exec --user postgres "$source_name" pgbackrest --stanza=pamofi check
+if wrong_key_output=$(docker exec --user postgres -e PGBACKREST_REPO1_CIPHER_PASS=incorrect "$source_name" pgbackrest --stanza=pamofi check 2>&1); then
  printf 'Backup unexpectedly accepted the wrong encryption key\n' >&2; exit 1
 fi
 if [[ "$wrong_key_output" != *'CryptoError'* && "$wrong_key_output" != *'CipherError'* && "$wrong_key_output" != *'FormatError'* ]]; then
  printf 'The wrong-key check failed for a reason other than decryption:\n%s\n' "$wrong_key_output" >&2; exit 1
 fi
+# Exercise the candidate's actual automatic backup/exact-restore helpers. The
+# existing empty restore volume is an unrelated ownership-cleanup sentinel.
+python3 "$lab_dir/test-exact-deployment-restore.py" \
+ --source-container "$source_name" --repository-volume "$repo_volume" \
+ --sentinel-volume "$restore_volume" --lab-id "$lab_id"
 # This transaction occurs after the full backup and must be recovered from WAL.
 docker exec -i "$source_name" psql -X -v ON_ERROR_STOP=1 -U pamofi_prepaid_access -d pamofi_prepaid_access >/dev/null <<'SQL'
 BEGIN;
@@ -111,7 +116,7 @@ docker stop --time 30 "$source_name" >/dev/null
 printf 'Restoring into a separate isolated volume...\n'
 docker run --rm --network none --user postgres -e PGBACKREST_REPO1_CIPHER_PASS="$lab_key" \
  -v "$restore_volume:/var/lib/postgresql/data" -v "$repo_volume:/var/lib/pgbackrest:ro" \
- "$image" pgbackrest --stanza=pamofi-lab restore
+ "$image" pgbackrest --stanza=pamofi restore
 docker run -d --name "$restore_name" --network none \
  -e PGDATA=/var/lib/postgresql/data/pgdata -e PGBACKREST_REPO1_CIPHER_PASS="$lab_key" \
  -v "$restore_volume:/var/lib/postgresql/data" -v "$repo_volume:/var/lib/pgbackrest:ro" \

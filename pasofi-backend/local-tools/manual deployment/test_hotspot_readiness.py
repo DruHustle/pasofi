@@ -338,23 +338,297 @@ class ReadinessTests(unittest.TestCase):
         self.assertFalse(destination.exists())
 
 
+class AutomaticReadinessTests(unittest.TestCase):
+    def setUp(self):
+        self.profile = {"schema": 1, "ssh_aliases": ["existing-private", "existing-public"]}
+        self.report = READINESS.base_report()
+        self.report["blockers"] = ["project_missing_or_ambiguous", "physical_acceptance_not_performed"]
+
+    def test_profile_accepts_only_bounded_aliases_and_optional_explicit_project(self):
+        self.assertEqual(READINESS.validate_profile(self.profile), self.profile)
+        selected = {**self.profile, "project": "pasofi-production"}
+        self.assertEqual(READINESS.validate_profile(selected), selected)
+        invalid = [None, {}, {**self.profile, "schema": True}, {**self.profile, "ssh_aliases": []},
+                   {**self.profile, "ssh_aliases": ["same", "same"]}, {**self.profile, "ssh_aliases": [None]},
+                   {**self.profile, "ssh_aliases": ["$(touch " + SECRET + ")"]},
+                   {**self.profile, "ssh_aliases": ["-oProxyCommand=" + SECRET]},
+                   {**self.profile, "ssh_aliases": ["host" + str(i) for i in range(5)]},
+                   {**self.profile, "password": SECRET}, {**self.profile, "project": None},
+                   {**self.profile, "project": "prod;" + SECRET}]
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaisesRegex(READINESS.DiagnosticError, "^connection_profile_invalid$"):
+                READINESS.validate_profile(value)
+
+    def test_profile_loading_rejects_symlinks_oversize_and_extra_secret_fields(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "profile.json"
+            path.write_text(json.dumps(self.profile))
+            self.assertEqual(READINESS.load_profile(path), self.profile)
+            link = path.with_name("link.json")
+            link.symlink_to(path)
+            with self.assertRaisesRegex(READINESS.DiagnosticError, "connection_profile_invalid"):
+                READINESS.load_profile(link)
+            for text in (" " * 4097, json.dumps({**self.profile, "key": SECRET}), "invalid: " + SECRET):
+                path.write_text(text)
+                with self.assertRaisesRegex(READINESS.DiagnosticError, "connection_profile_invalid"):
+                    READINESS.load_profile(path)
+
+    def test_configuration_resolution_requires_a_real_hostname_substitution_and_keeps_settings_private(self):
+        output = "hostname 100.100.20.4\nuser ubuntu\nidentityfile /private/" + SECRET + "\n"
+        with patch.object(READINESS, "command", return_value=output) as command:
+            self.assertTrue(READINESS.configured_alias("existing-private"))
+        argv = command.call_args.args[0]
+        self.assertEqual(argv[:2], ["ssh", "-G"])
+        self.assertEqual(argv[-1], "existing-private")
+        self.assertIn("StrictHostKeyChecking=yes", argv)
+        self.assertIn("PermitLocalCommand=no", argv)
+        self.assertEqual(command.call_args.kwargs, {"timeout": 15, "ssh": True})
+        with patch.object(READINESS, "command", return_value="hostname Existing-Private.\n"):
+            self.assertFalse(READINESS.configured_alias("existing-private"))
+        for output in ("hostname x\nhostname y\n", "user " + SECRET, "hostname /private/" + SECRET):
+            with self.subTest(output=output), patch.object(READINESS, "command", return_value=output):
+                with self.assertRaisesRegex(READINESS.DiagnosticError, "ssh_configuration_unavailable"):
+                    READINESS.configured_alias("existing-private")
+
+    def test_preferred_alias_is_used_without_testing_public_when_report_has_installation_blockers(self):
+        with patch.object(READINESS, "configured_alias", return_value=True) as configured, \
+             patch.object(READINESS, "probe_connection") as probe, \
+             patch.object(READINESS, "remote_report", return_value=self.report) as collect:
+            report, connection = READINESS.automatic_report(self.profile)
+        self.assertEqual(report, self.report)
+        self.assertEqual(connection, {"schema": 1, "selection": "automatic", "selected_alias": "existing-private",
+                                     "attempts": [{"alias": "existing-private", "status": "collected"}]})
+        configured.assert_called_once_with("existing-private")
+        probe.assert_called_once_with("existing-private")
+        collect.assert_called_once_with("existing-private", None)
+
+    def test_network_failure_uses_public_fallback_but_does_not_reorder_profile(self):
+        with patch.object(READINESS, "configured_alias", return_value=True), \
+             patch.object(READINESS, "probe_connection", side_effect=[READINESS.DiagnosticError("ssh_network_unavailable"), None]) as probe, \
+             patch.object(READINESS, "remote_report", return_value=self.report) as collect:
+            report, connection = READINESS.automatic_report(self.profile)
+        self.assertEqual(report, self.report)
+        self.assertEqual([call.args[0] for call in probe.call_args_list], self.profile["ssh_aliases"])
+        collect.assert_called_once_with("existing-public", None)
+        self.assertEqual(connection["selected_alias"], "existing-public")
+        self.assertEqual([item["status"] for item in connection["attempts"]], ["network_unavailable", "collected"])
+
+    def test_unconfigured_alias_is_skipped_without_a_network_probe(self):
+        with patch.object(READINESS, "configured_alias", side_effect=[False, True]), \
+             patch.object(READINESS, "probe_connection") as probe, \
+             patch.object(READINESS, "remote_report", return_value=self.report):
+            _, connection = READINESS.automatic_report(self.profile)
+        probe.assert_called_once_with("existing-public")
+        self.assertEqual(connection["attempts"][0]["status"], "not_configured")
+        with patch.object(READINESS, "configured_alias", return_value=False), patch.object(READINESS, "probe_connection") as probe:
+            report, connection = READINESS.automatic_report(self.profile)
+        probe.assert_not_called()
+        self.assertIsNone(connection["selected_alias"])
+        self.assertIn("ssh_or_remote_collection_unavailable", report["blockers"])
+
+    def test_trust_authentication_and_unclassified_failures_never_try_another_alias(self):
+        cases = {"ssh_host_key_changed": "host_key_changed", "ssh_host_key_untrusted": "host_key_untrusted",
+                 "ssh_authentication_failed": "authentication_failed", "ssh_connection_failed": "connection_failed",
+                 "remote_report_invalid": "connection_failed", "command_output_limit": "connection_failed",
+                 "command_timed_out": "connection_failed"}
+        for error, status in cases.items():
+            with self.subTest(error=error), patch.object(READINESS, "configured_alias", return_value=True) as configured, \
+                 patch.object(READINESS, "probe_connection", side_effect=READINESS.DiagnosticError(error)), \
+                 patch.object(READINESS, "remote_report") as collect:
+                report, connection = READINESS.automatic_report(self.profile)
+            configured.assert_called_once_with("existing-private")
+            collect.assert_not_called()
+            self.assertIsNone(connection["selected_alias"])
+            self.assertEqual(connection["attempts"], [{"alias": "existing-private", "status": status}])
+            self.assertFalse(report["customer_ready"])
+
+    def test_connection_failure_after_successful_probe_never_switches_server(self):
+        for error, status in (("command_failed", "remote_collection_unavailable"),
+                              ("remote_report_invalid", "remote_report_invalid"),
+                              ("command_timed_out", "remote_collection_unavailable")):
+            with self.subTest(error=error), patch.object(READINESS, "configured_alias", return_value=True) as configured, \
+                 patch.object(READINESS, "probe_connection"), \
+                 patch.object(READINESS, "remote_report", side_effect=READINESS.DiagnosticError(error)) as collect:
+                report, connection = READINESS.automatic_report(self.profile)
+            configured.assert_called_once_with("existing-private")
+            collect.assert_called_once_with("existing-private", None)
+            self.assertEqual(connection["selected_alias"], "existing-private")
+            self.assertEqual(connection["attempts"][0]["status"], status)
+            self.assertIn("ssh_or_remote_collection_unavailable", report["blockers"])
+
+    def test_known_project_is_forwarded_without_guessing_and_explicit_override_is_respected(self):
+        profile = {**self.profile, "project": "known-production"}
+        for override, expected in ((None, "known-production"), ("explicit-production", "explicit-production")):
+            with self.subTest(override=override), patch.object(READINESS, "configured_alias", return_value=True), \
+                 patch.object(READINESS, "probe_connection"), patch.object(READINESS, "remote_report", return_value=self.report) as collect:
+                READINESS.automatic_report(profile, override)
+            collect.assert_called_once_with("existing-private", expected)
+
+    def test_ssh_probe_is_fixed_noninteractive_strict_and_has_bounded_timeout(self):
+        with patch.object(READINESS, "command", return_value=READINESS.SSH_PROBE + "\n") as command:
+            READINESS.probe_connection("existing-private")
+        argv = command.call_args.args[0]
+        for option in ("StrictHostKeyChecking=yes", "BatchMode=yes", "UpdateHostKeys=no", "ForwardAgent=no",
+                       "PermitLocalCommand=no", "ClearAllForwardings=yes", "ControlPath=none"):
+            self.assertIn(option, argv)
+        self.assertEqual(argv[-2], "existing-private")
+        self.assertEqual(argv[-1], "printf '%s\\n' PASOFI_READINESS_SSH_OK")
+        self.assertEqual(command.call_args.kwargs, {"timeout": 25, "ssh": True})
+        for output in (SECRET, READINESS.SSH_PROBE + "\n" + SECRET):
+            with patch.object(READINESS, "command", return_value=output), self.assertRaisesRegex(READINESS.DiagnosticError, "remote_report_invalid"):
+                READINESS.probe_connection("existing-private")
+
+    def test_fixed_ssh_error_classification_never_discloses_stderr(self):
+        cases = {"REMOTE HOST IDENTIFICATION HAS CHANGED!": "ssh_host_key_changed",
+                 "Host key verification failed.": "ssh_host_key_untrusted",
+                 "Permission denied (publickey).": "ssh_authentication_failed",
+                 "ssh: connect to host 100.100.20.4 port 22: Connection timed out": "ssh_network_unavailable",
+                 "No route to host": "ssh_network_unavailable", "Unexpected SSH issue": "ssh_connection_failed"}
+        for error, code in cases.items():
+            with self.subTest(error=error), contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
+                program = "import sys; sys.stderr.write(" + repr(error + "\n" + SECRET) + "); sys.exit(255)"
+                with self.assertRaisesRegex(READINESS.DiagnosticError, "^" + code + "$"):
+                    READINESS.command([sys.executable, "-c", program], ssh=True)
+                self.assertNotIn(SECRET, stdout.getvalue() + stderr.getvalue())
+
+    def test_local_connection_provenance_is_validated_and_cannot_be_supplied_by_remote(self):
+        connection = {"schema": 1, "selection": "automatic", "selected_alias": "existing-private",
+                      "attempts": [{"alias": "existing-private", "status": "collected"}]}
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "report.json"
+            READINESS.save_report(self.report, path, connection=connection)
+            saved = json.loads(path.read_text())
+            self.assertEqual(saved.pop("connection"), connection)
+            self.assertEqual(saved, self.report)
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        with self.assertRaisesRegex(READINESS.DiagnosticError, "remote_report_invalid"):
+            READINESS.validate_report({**self.report, "connection": connection})
+        invalid = [None, {**connection, "secret": SECRET}, {**connection, "schema": True},
+                   {**connection, "selected_alias": "another-host"}, {**connection, "selected_alias": None},
+                   {**connection, "attempts": [{"alias": "existing-private", "status": SECRET}]},
+                   {**connection, "attempts": [{"alias": "existing-private", "status": "host_key_changed"},
+                                               {"alias": "existing-public", "status": "collected"}]}]
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaisesRegex(READINESS.DiagnosticError, "connection_provenance_invalid"):
+                READINESS.validate_connection(value)
+
+
 class ReadinessMacLauncherTests(unittest.TestCase):
-    def test_paths_with_spaces_and_literal_prompt_input_are_passed_without_shell_evaluation(self):
+    def test_paths_with_spaces_and_literal_cli_arguments_are_passed_without_shell_evaluation(self):
         with tempfile.TemporaryDirectory(prefix="PasoFi Mac Readiness ") as temporary:
             root = Path(temporary)
             launcher = root / "hotspot-readiness.command"
             launcher.write_bytes(Path(__file__).with_name("hotspot-readiness.command").read_bytes())
+            (root / "mac-python.sh").write_bytes(Path(__file__).with_name("mac-python.sh").read_bytes())
             (root / "hotspot-readiness.py").write_text("import json, pathlib, sys\npathlib.Path('args.json').write_text(json.dumps(sys.argv[1:]))\n")
             marker = root / "must-not-exist"
             host = "$(touch '" + str(marker) + "')"
             environment = dict(os.environ)
             environment.pop("BASH_ENV", None)
             environment.pop("ENV", None)
-            result = subprocess.run(["/bin/bash", str(launcher)], cwd=root, input=host + "\nexisting-project\n", text=True,
+            result = subprocess.run(["/bin/bash", str(launcher), "--host", host, "--project", "existing-project"], cwd=root, stdin=subprocess.DEVNULL, text=True,
                                     capture_output=True, env=environment, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads((root / "args.json").read_text()), ["--host", host, "--project", "existing-project"])
             self.assertFalse(marker.exists())
+
+    def test_zero_argument_launcher_selects_and_collects_without_reading_terminal_input(self):
+        for mode, selected, statuses in (("preferred", "existing-private", ["collected"]),
+                                          ("fallback", "existing-public", ["network_unavailable", "collected"]),
+                                          ("unconfigured", "existing-public", ["not_configured", "collected"]),
+                                          ("hostkey", None, ["host_key_changed"]),
+                                          ("auth", None, ["authentication_failed"]),
+                                          ("malformed", "existing-private", ["remote_report_invalid"])):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory(prefix="PasoFi Mac Automatic ") as temporary:
+                root = Path(temporary)
+                for name in ("hotspot-readiness.command", "hotspot-readiness.py", "mac-python.sh"):
+                    (root / name).write_bytes(Path(__file__).with_name(name).read_bytes())
+                (root / "mac-connection.json").write_text(json.dumps({"schema": 1, "ssh_aliases": ["existing-private", "existing-public"]}))
+                bin_dir = root / "recording tools"
+                bin_dir.mkdir()
+                log = root / "ssh-calls.jsonl"
+                payload = root / "remote-report.json"
+                report = READINESS.base_report()
+                report["blockers"] = ["project_missing_or_ambiguous", "physical_acceptance_not_performed"]
+                payload.write_text(json.dumps(report))
+                ssh = bin_dir / "ssh"
+                ssh.write_text("#!" + sys.executable + "\n" + '''
+import json, os, pathlib, sys
+args = sys.argv[1:]
+stage = 'configuration' if '-G' in args else 'probe' if args[-1].startswith('printf ') else 'collection'
+alias = args[-1] if stage == 'configuration' else args[-2]
+with pathlib.Path(os.environ['PASOFI_TEST_CALLS']).open('a') as log:
+    log.write(json.dumps({'stage': stage, 'alias': alias, 'arguments': args}) + '\\n')
+mode = os.environ['PASOFI_TEST_MODE']
+if stage == 'configuration':
+    print('hostname ' + (alias if mode == 'unconfigured' and alias == 'existing-private' else '192.0.2.19'))
+    print('identityfile /private/DO_NOT_DISCLOSE_test_password_and_private_payload')
+elif stage == 'probe':
+    if alias == 'existing-private' and mode in ('fallback', 'hostkey', 'auth'):
+        message = {'fallback': 'Connection timed out', 'hostkey': 'REMOTE HOST IDENTIFICATION HAS CHANGED!', 'auth': 'Permission denied (publickey).'}[mode]
+        print(message + '\\nDO_NOT_DISCLOSE_test_password_and_private_payload', file=sys.stderr)
+        sys.exit(255)
+    print('PASOFI_READINESS_SSH_OK')
+else:
+    source = sys.stdin.read()
+    assert '--remote' in args[-1] and 'def collect(' in source
+    if mode == 'malformed':
+        print('DO_NOT_DISCLOSE_test_password_and_private_payload')
+    else:
+        print(pathlib.Path(os.environ['PASOFI_TEST_REPORT']).read_text())
+''')
+                ssh.chmod(0o755)
+                environment = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+                                   PASOFI_TEST_MODE=mode, PASOFI_TEST_CALLS=str(log), PASOFI_TEST_REPORT=str(payload))
+                environment.pop("BASH_ENV", None)
+                environment.pop("ENV", None)
+                result = subprocess.run(["/bin/bash", str(root / "hotspot-readiness.command")], cwd="/",
+                                        stdin=subprocess.DEVNULL, text=True, capture_output=True, env=environment, timeout=15)
+                self.assertEqual(result.returncode, 1 if mode in ("hostkey", "auth", "malformed") else 0, result.stderr)
+                self.assertNotIn("Existing SSH alias:", result.stdout)
+                self.assertNotIn("Press Return", result.stdout)
+                self.assertNotIn(SECRET, result.stdout + result.stderr)
+                reports = list((root / "PasoFi_Readiness").glob("*.json"))
+                self.assertEqual(len(reports), 1)
+                saved = json.loads(reports[0].read_text())
+                self.assertNotIn(SECRET, reports[0].read_text())
+                self.assertEqual(saved["connection"]["selected_alias"], selected)
+                self.assertEqual([item["status"] for item in saved["connection"]["attempts"]], statuses)
+                self.assertFalse(saved["customer_ready"])
+                self.assertEqual(stat.S_IMODE(reports[0].stat().st_mode), 0o600)
+                self.assertEqual(stat.S_IMODE(reports[0].parent.stat().st_mode), 0o700)
+                calls = [json.loads(line) for line in log.read_text().splitlines()]
+                for call in calls:
+                    for option in ("StrictHostKeyChecking=yes", "BatchMode=yes", "UpdateHostKeys=no", "ClearAllForwardings=yes", "PermitLocalCommand=no"):
+                        self.assertIn(option, call["arguments"])
+                if mode in ("preferred", "hostkey", "auth", "malformed"):
+                    self.assertEqual({call["alias"] for call in calls}, {"existing-private"})
+
+    def test_python_discovery_uses_selected_executable_for_the_launcher(self):
+        with tempfile.TemporaryDirectory(prefix="PasoFi Python Choice ") as temporary:
+            root = Path(temporary)
+            for name in ("hotspot-readiness.command", "mac-python.sh"):
+                (root / name).write_bytes(Path(__file__).with_name(name).read_bytes())
+            (root / "hotspot-readiness.py").write_text("print('recorded readiness entry')\n")
+            bin_dir = root / "installed Python"
+            bin_dir.mkdir()
+            python = bin_dir / "python3"
+            log = root / "python-calls.jsonl"
+            python.write_text("#!" + sys.executable + "\n" +
+                "import json, os, pathlib, sys\n" +
+                "with pathlib.Path(os.environ['PASOFI_TEST_PYTHON_CALLS']).open('a') as log: log.write(json.dumps(sys.argv[1:]) + '\\n')\n" +
+                "os.execv(" + repr(sys.executable) + ", [" + repr(sys.executable) + ", *sys.argv[1:]])\n")
+            python.chmod(0o755)
+            environment = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], PASOFI_TEST_PYTHON_CALLS=str(log))
+            environment.pop("BASH_ENV", None)
+            result = subprocess.run(["/bin/bash", str(root / "hotspot-readiness.command")], cwd=root,
+                                    stdin=subprocess.DEVNULL, capture_output=True, text=True, env=environment, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[0][:4], ["-I", "-B", "-S", "-c"])
+            self.assertEqual(calls[1], ["-I", "-B", "-S", str(root / "hotspot-readiness.py")])
+            self.assertIn("recorded readiness entry", result.stdout)
 
 
 if __name__ == "__main__":

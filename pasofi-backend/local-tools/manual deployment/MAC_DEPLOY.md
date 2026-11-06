@@ -1,132 +1,81 @@
-# Deploy an existing PasoFi installation from your Mac
+# PasoFi automatic Mac deployment
 
-Use the qualified release ZIP prepared for this deployment. Its launcher upgrades the existing Oracle Docker Compose installation from the exact commit and archive hash in `release.json`. It first checks the installation and shows a deployment plan. You then choose whether to apply that plan.
+**When you are ready to deploy, extract the ZIP and double-click `Start_PasoFi.command`.**
 
-The Mac launcher reuses `release-deploy.sh` and the Python deployment engine. You do not need Git, Node.js or Docker on your Mac. The existing Linux server needs Python 3.9 or newer, Docker and Docker Compose, with the PasoFi installation already running.
+The launcher finds the existing server, checks its recorded installation, qualifies a fresh backup through an isolated restore, deploys the pinned application source, and runs the server and public website checks. It has no configuration form or `APPLY` prompt. Running this entry point requests the application deployment.
 
-If the current installation references are not at hand, first run **`hotspot-readiness.command`** from the same Mac package. It needs only your existing SSH alias, with an optional project selection, and gathers a private read-only report. It can check recorded configuration paths and the retained database identity without exposing environment values or changing production. Missing records remain unresolved; it does not replace deployment preflight or physical acceptance. See [HOTSPOT_READINESS.md](HOTSPOT_READINESS.md).
-
-## 1. Extract and keep the release files together
-
-In Finder, double-click the release ZIP to extract it. Open the extracted folder and keep these files beside one another:
-
-- `release-deploy.command` — the Mac entry point.
-- `release-deploy.sh` and `release-deploy.py` — the deployment engine and its shell entry point.
-- `release.json` and `source.tar.gz` — the pinned release manifest and source archive.
-- `MAC_DEPLOY.md` and the supplied release and router-fleet guides.
-
-Leave `source.tar.gz` compressed. Folder names containing spaces are supported. Use the manifest and archive from the same qualified bundle; the deployment stops if their hashes or Git commit do not match.
-
-## 2. Check the Mac and existing SSH connection
-
-Open **Terminal** from Applications → Utilities. Check the existing tools:
+To start from Terminal instead, open the extracted folder in Terminal and run:
 
 ```sh
-python3 --version
-ssh -V
-command -v scp
+/bin/bash ./Start_PasoFi.command
 ```
 
-Python must report **3.9 or newer**. If a required tool is missing, install it through your normal trusted setup process and repeat the check. The launcher does not install software or change your SSH configuration.
+Keep the folder's files together. Leave `source.tar.gz` compressed. Folder names containing spaces work. `release-deploy.command` with no arguments performs the same automatic workflow.
 
-Use the existing SSH alias for the Onesa backend. The examples below use `YOUR_SSH_ALIAS`; replace it with that existing alias, without angle brackets.
+## Details already filled in
+
+| Setting | Value |
+| --- | --- |
+| Preferred existing SSH alias | `onesa-portal-worker` — provided address `100.80.225.21` |
+| Existing fallback SSH alias | `onesa-portal-worker-public` — provided address `92.5.170.138` |
+| Public website | `https://pasofi.onesa.eu` |
+| Backend HTTPS boundary | `https://api.pamofi.onesa.eu` |
+| Source release and archive checksum | Included in `release.json` |
+| Existing project, ordered Compose overlays and environment files | Read automatically from the running installation's recorded metadata |
+| Expected PostgreSQL cluster | Independently retained server record, checked against the running database |
+
+The launcher uses the aliases already configured on your Mac. It does not infer an SSH username or copy a private key into the package. The preferred alias is tried first; the public alias is a connection fallback. Missing or inconsistent installation records stop the operation before application changes.
+
+## What the Mac needs
+
+Python **3.9 or newer**, OpenSSH (`ssh` and `scp`), an available SSH key or agent, and a previously trusted host record for the existing server are required. The helper finds common Python installations on Intel and Apple Silicon Macs. Git, Node and Docker are not required on the Mac.
+
+The existing Linux server needs Python 3.9+, Docker Compose, access to the protected installation files, its recorded database identifier, and its working encrypted pgBackRest repository. These are existing installation prerequisites. The launcher does not install a new database, fabricate missing records, accept an unknown host key, request a password or alter SSH configuration.
+
+If the SSH key is encrypted, unlock it through your normal Mac SSH agent before starting. If the connection is not already trusted, verify its fingerprint through your existing server record. The launcher will identify an unavailable connection without trying alternative credentials.
+
+## Automatic steps
+
+1. **Check the package and server.** Verify the source checksum and Git commit, discover the single recorded PasoFi project and complete overlay/environment order, and compare the retained database identifier with the running cluster.
+2. **Check the proposed deployment.** Verify that the rendered configuration agrees with the existing mounts, networks, ports, environment and protected containers.
+3. **Prove the fresh backup can be restored.** Validate the known encrypted repository and reject pgBackRest environment/include overrides. Create a fresh backup without expiring older sets. Restore that exact captured label, using the running database's immutable image, into a new temporary volume. Verify the retained cluster identity and all five captured migration ledgers. Remove only resources carrying this operation's unique ownership label and expected names. Failure or unconfirmed cleanup stops deployment.
+4. **Build and deploy.** Build from the pinned archive, run the applications' owned pending migrations, update the selected applications and gateways, and wait for health. Preserve the existing ordered overlays, provider/feature gates, protected PostgreSQL and RADIUS containers, and optional fleet overlay. A mounted captive portal is rebuilt in its dedicated mode.
+5. **Run post-deployment checks.** Check immutable image revisions, all five target migration ledgers, HTTP health, the retained database, unchanged feature gates, aggregate queue counts, and scheduled-operation status. Check public HTTPS, capabilities, anonymous customer/staff denials and blocked internal/direct API paths. Unexpected cookies, redirects or denial envelopes fail the relevant check.
+
+The restore is isolated **on the existing server**. It does not prove recovery onto a replacement host. Timer observations report status only; they do not prove delivery of operational alerts.
+
+## Results and safe retries
+
+The launcher saves `result.html` and `result.json` under a new private `PasoFi_Results/run-…` directory beside the package and opens the HTML result on the Mac. The result distinguishes deployment success from checks needing attention and always leaves physical customer acceptance outstanding.
+
+Private control records live in `~/Library/Application Support/PasoFi/Deployments`, keyed by the retained database, project and release. They survive copying or extracting the same package again:
+
+- A confirmed completed deployment runs **read-only checks** on the next launch.
+- An interrupted or uncertain deployment runs checks and blocks a second automatic application. A failed SSH response can arrive after some server work completed; the launcher does not guess.
+- The original feature-gate baseline is retained for comparison during a retry.
+
+Do not delete these control records to force another deployment. Review the private server release record first. The server also keeps a project lock, original image IDs/configuration references and an application rollback command. Rollback restores application images and binds; it does not put an old database over later sales or payments.
+
+For observations without requesting a rollout, run:
 
 ```sh
-ssh YOUR_SSH_ALIAS
+/bin/bash ./hotspot-readiness.command
 ```
 
-Confirm that this is the intended server. If SSH presents a host fingerprint, verify it against your independently trusted server record before accepting it. An unexpected changed fingerprint needs investigation. Once signed in, confirm that Python 3.9 or newer and the existing Docker Compose installation are available, then run `exit` to return to your Mac.
-
-The SSH account must already be able to access Docker, read the installation's protected configuration files and create its private deployment lock/record. Load the existing encrypted SSH key into your normal SSH agent if necessary. You can check the agent with `ssh-add -l`. The deployment uses OpenSSH batch mode: it needs an available key and trusted host record, and will not pause to request a key password. It does not automatically use `sudo` or change host-key verification.
-
-Have these existing installation details ready:
-
-- **SSH alias** for the intended Oracle server.
-- **Absolute server paths to the existing Compose environment files**, in their original order. Multiple files are supported; later files retain their existing precedence.
-- **PostgreSQL system identifier from your retained installation or backup record.** This is a cluster identifier, not a database name or Docker container ID. If the record is unavailable, independently establish the correct production cluster before deploying; do not adopt whatever identifier an unfamiliar server returns.
-- **Existing Compose project name**, only if you know it or more than one PasoFi installation makes discovery ambiguous.
-
-The launcher asks for names, paths and the database identifier. Do not enter passwords, private-key contents, router credentials or environment-file contents into its prompts. Keep a recent successful protected database backup and its restore evidence, with enough server disk space for the new images and retained rollback images.
-
-## 3. Run the Mac launcher
-
-In the extracted folder, double-click **`release-deploy.command`**. Terminal opens the interactive launcher.
-
-If you prefer to start from Terminal, type `cd ` with a trailing space, drag the extracted folder from Finder into the Terminal window, and press Return. Then run:
+For automatic configuration preflight plus public checks without a new rollout, run:
 
 ```sh
-/bin/bash ./release-deploy.command
+python3 -I -B -S ./pasofi-auto.py --no-open
 ```
 
-If the extracted command has lost its executable permission, the Terminal command above still works. To restore the executable bit on that file:
+A preflight-only run does not fail merely because the current application is older than the packaged release. An existing pending/completed operation record still triggers the appropriate read-only target-release checks.
 
-```sh
-chmod u+x ./release-deploy.command
-```
+## What still needs physical acceptance
 
-The launcher is compatible with macOS's bundled Bash 3.2. It does not depend on a newer Homebrew shell.
+The package does not configure the routers from the Mac, enroll unverified fleet endpoints, issue a real sale, send customer messages or activate digital payment providers. Those require their actual devices and operational acceptance. Follow `CASH_HOTSPOT_LAUNCH.md`, `TWO_SITE_HOTSPOT_ACCEPTANCE.md` and `ROUTER_FLEET.md` supplied in the package.
 
-Enter the requested details:
+Before serving customers, prove the real captive sign-in, controlled cash sale/receipt/redemption, paid network admission, accounting, disconnect, quota/expiry and reconnect behavior on the routers and phones. Keep checkout disabled until its actual provider integration is qualified.
 
-1. Enter your existing SSH alias.
-2. Enter the first absolute environment-file path **on the server**. Add any additional environment files on separate lines, in their original order. Press Return on an empty line after the last file. In these prompts, enter paths literally, **without surrounding quotes**; spaces are preserved.
-3. Enter the retained PostgreSQL system identifier.
-4. Enter the existing Compose project name, or press Return to let the deployment discover it. If discovery reports multiple projects, rerun the launcher with the correct existing project name.
+## Package qualification
 
-The launcher now runs **preflight**. This checks the pinned archive, actual Compose project and overlays, retained database identity, running mounts, networks, environment and ports. It stages temporary files but does not change running containers, database contents, secrets or persistent volumes.
-
-Review the reported release, project and selected services. If preflight fails, the launcher stops before offering apply. Resolve the specific reported installation mismatch; keep the existing complete Compose configuration.
-
-After a successful preflight, type **`APPLY`** exactly to deploy. Any other answer, including an empty line, finishes after preflight. Apply reuses the same arguments and the Python engine repeats preflight before the upgrade. The Terminal window keeps the outcome visible until you press Return.
-
-## 4. Optional: use explicit Terminal arguments
-
-From the extracted release folder, the same launcher accepts the deployment engine's arguments. Explicit arguments pass through unchanged and use the current Terminal directory for relative paths.
-
-Run preflight first:
-
-```sh
-./release-deploy.command \
-  --host YOUR_SSH_ALIAS \
-  --manifest ./release.json \
-  --archive ./source.tar.gz \
-  --env-file '/absolute/existing/production.env' \
-  --expected-database-id YOUR_RECORDED_SYSTEM_ID
-```
-
-For multiple environment files, repeat `--env-file` in the original order:
-
-```sh
-  --env-file '/absolute/existing/production.env' \
-  --env-file '/absolute/existing/qualified overlays.env'
-```
-
-Add `--project EXISTING_PROJECT` only when needed to select the known installation. Replace all placeholders with existing values. Quote paths containing spaces when entering a **Terminal command**; do not add those quotes when answering the interactive prompts.
-
-After a successful preflight and review, repeat the complete command with `--apply` added. Explicit command-line mode delegates directly to the Python engine, so adding `--apply` is the operator's application request; it does not show the interactive `APPLY` prompt again. The engine still performs its normal preflight. You can use `/bin/bash ./release-deploy.command` in place of `./release-deploy.command` if needed.
-
-## 5. Review the result and complete acceptance
-
-Apply builds the selected application images on the server, runs their owned pending migrations, updates the selected applications and gateways, and waits for their health checks. It retains the full existing Compose overlay order, protected database/RADIUS containers, existing feature gates and provider settings. An already-mounted captive portal is rebuilt with its dedicated configuration.
-
-The deployment prints the private server release-record location. Keep the original image IDs, source/configuration paths and rollback record until acceptance is complete. These records can contain resolved configuration and must remain private. If apply stops partway through, some builds, migrations or application replacements may already have completed; inspect the private record before retrying. The saved application rollback restores application images and configuration binds, not an older database over later transactions.
-
-Follow the supplied release guide to check the public API, authenticated staff/customer flows, catalogue, invoices and the dedicated captive portal. Container health alone does not prove real email/SMS receipt or physical hotspot operation.
-
-For the complete cash launch order, follow [CASH_HOTSPOT_LAUNCH.md](../../docs/CASH_HOTSPOT_LAUNCH.md): backend and RADIUS upgrade, verified private router control, isolated hotspot setup, controlled cash/redemption/paid-session checks, Stop/absence/closure/reconnect, quota and cross-site acceptance, then the reviewed launch or pause decision. The same document is included by filename in the extracted Mac package.
-
-For **central router management**, follow `ROUTER_FLEET.md` for the required overlay, protected configuration and router enrollment procedure. The general deployment launcher preserves existing overlays; it does not enroll routers or infer a new router-fleet overlay. After the documented setup, qualify the authorized staff access and router configuration flows, then perform the physical hotspot tests with the actual routers.
-
-These instructions and a prepared package are not evidence that Oracle or any router has already been updated. Record the actual release and acceptance results after running the deployment.
-
-## Launcher verification
-
-The Mac launcher tests run offline with a recording engine stub. They check exact argument handling, paths containing spaces, original environment-file order, unexecuted shell-looking input, cancellation and failure handling:
-
-```sh
-python3 -m unittest discover \
-  -s 'pasofi-backend/local-tools/manual deployment' \
-  -p 'test_release_deploy_mac.py' -v
-```
-
-This command is for a source checkout. It requires no SSH connection, Docker daemon, production credentials or database.
+`RELEASE_EVIDENCE.json` records this package's exact source, local checks and any recorded CI results. A prepared package is not evidence of an Oracle deployment, a Finder launch on your particular Mac, an off-host recovery or a successful customer session. Server deployment remains deferred until you run the launcher.

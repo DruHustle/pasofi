@@ -30,6 +30,9 @@ class ReleaseSafetyTests(unittest.TestCase):
         self.compose_file.write_text("services: {}\n")
         self.env_file = self.root / "protected.env"
         self.env_file.write_text("EXAMPLE=not-a-secret\n")
+        self.retained_id = self.root / "cluster-system-id"
+        self.retained_id.write_text("1234567890123456789\n")
+        self.retained_id.chmod(0o600)
         self.production = self.root / "existing-production"
         self.production.mkdir()
         self.source_files = ["compose.yaml", "entrypoint.mjs", "apply-grants.mjs", "role-policies.json",
@@ -77,6 +80,7 @@ class ReleaseSafetyTests(unittest.TestCase):
                       for volume in service.get("volumes", [])]
             labels = {DEPLOY.LABEL + "project": "existing", DEPLOY.LABEL + "service": name,
                       DEPLOY.LABEL + "project.working_dir": str(self.root),
+                      DEPLOY.LABEL + "project.environment_file": str(self.env_file),
                       DEPLOY.LABEL + "project.config_files": str(self.compose_file)}
             self.containers[name] = {"Id": name + "-old", "Image": OLD_IMAGE, "State": {"Running": True},
                                      "Config": {"Labels": labels, "Env": ["PATH=/image/bin"] + [k + "=" + v for k, v in service["environment"].items()]},
@@ -97,7 +101,8 @@ class ReleaseSafetyTests(unittest.TestCase):
         self.manifest_file.write_text(json.dumps(self.manifest))
         self.args = argparse.Namespace(manifest=str(self.manifest_file), archive=str(self.archive),
                                        expected_database_id="1234567890123456789", env_file=[str(self.env_file)],
-                                       host=None, project=None, release_root=str(self.root / "records"), apply=False)
+                                       host=None, project=None, release_root=str(self.root / "records"), apply=False,
+                                       discover_existing=False)
 
     def write_archive(self, commit=COMMIT, extra=None):
         with tarfile.open(self.archive, "w:gz", format=tarfile.PAX_FORMAT, pax_headers={"comment": commit}) as bundle:
@@ -144,14 +149,19 @@ class ReleaseSafetyTests(unittest.TestCase):
             return ""
         self.fail("Unexpected command in fixture: " + repr(argv))
 
-    def run_plan(self, apply=False):
+    def run_plan(self, apply=False, backup_effect=None):
         self.args.apply = apply
         self.commands = []
         self.plan_output = io.StringIO()
         with patch.object(DEPLOY, "run", side_effect=self.fake_run), \
                 patch.object(DEPLOY, "inspect_project", side_effect=lambda project=None: ("existing", copy.deepcopy(self.containers))), \
-                patch.object(DEPLOY, "build_release", return_value={name: NEW_IMAGE for name in self.manifest["services"]}), \
+                patch.object(DEPLOY, "RETAINED_ID", self.retained_id), \
+                patch.object(DEPLOY, "build_release", return_value={name: NEW_IMAGE for name in self.manifest["services"]}) as build_mock, \
+                patch.object(DEPLOY, "prepare_automatic_backup", return_value={"schema": 1, "status": "passed"},
+                             side_effect=backup_effect) as backup_mock, \
                 contextlib.redirect_stdout(self.plan_output):
+            self.build_mock = build_mock
+            self.backup_mock = backup_mock
             DEPLOY.deploy(self.args)
 
     def test_manifest_rejects_hash_mismatch_and_unowned_migration(self):
@@ -275,6 +285,247 @@ class ReleaseSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(DEPLOY.Refusal, "runtime image"):
             self.run_plan(apply=True)
         self.assertFalse(list(Path(self.args.release_root).glob("*/completed.json")))
+
+    def automatic_args(self):
+        self.args.discover_existing = True
+        self.args.expected_database_id = None
+        self.args.env_file = []
+
+    def test_automatic_preflight_recovers_ordered_fields_without_runtime_writes(self):
+        overlay = self.root / "qualified overlays.env"
+        overlay.write_text("EXAMPLE=not-a-secret\n")
+        ordered = [str(overlay), str(self.env_file)]
+        for container in self.containers.values():
+            container["Config"]["Labels"][DEPLOY.LABEL + "project.environment_file"] = ",".join(ordered)
+        self.automatic_args()
+        self.run_plan()
+        compose_calls = [command for command in self.commands if command[:2] == ["docker", "compose"]]
+        self.assertTrue(compose_calls)
+        for command in compose_calls:
+            self.assertEqual([command[index + 1] for index, value in enumerate(command) if value == "--env-file"], ordered)
+        self.assertEqual(self.args.env_file, [])
+        self.assertIsNone(self.args.expected_database_id)
+        self.assertFalse(any("run" in cmd or "up" in cmd or "build" in cmd for cmd in self.commands))
+
+    def test_automatic_discovery_refuses_missing_inconsistent_or_unsafe_env_labels(self):
+        original = self.containers["radius"]["Config"]["Labels"][DEPLOY.LABEL + "project.environment_file"]
+        invalid = [None, "", "protected.env", str(self.env_file) + "," + str(self.env_file),
+                   str(self.root / "missing.env"), str(self.env_file) + "\n", "/tmp/../protected.env"]
+        for value in invalid:
+            with self.subTest(label=value):
+                self.containers["radius"]["Config"]["Labels"][DEPLOY.LABEL + "project.environment_file"] = value
+                with patch.object(DEPLOY, "RETAINED_ID", self.retained_id), self.assertRaisesRegex(DEPLOY.Refusal, "without guessing"):
+                    DEPLOY.discover_existing_inputs(self.containers)
+        self.containers["radius"]["Config"]["Labels"][DEPLOY.LABEL + "project.environment_file"] = original
+        other = self.root / "other.env"
+        other.write_text("EXAMPLE=not-a-secret\n")
+        for container in self.containers.values():
+            container["Config"]["Labels"][DEPLOY.LABEL + "project.environment_file"] = original + "," + str(other)
+        self.containers["radius"]["Config"]["Labels"][DEPLOY.LABEL + "project.environment_file"] = str(other) + "," + original
+        with self.assertRaisesRegex(DEPLOY.Refusal, "without guessing"):
+            DEPLOY.discover_existing_inputs(self.containers)
+
+    def test_missing_retained_id_is_never_replaced_with_live_database_identity(self):
+        self.automatic_args()
+        self.retained_id.unlink()
+        with self.assertRaisesRegex(DEPLOY.Refusal, "cannot replace it with the live"):
+            self.run_plan()
+        self.assertFalse(any("pg_controldata" in command for command in self.commands))
+        self.assertFalse(Path(self.args.release_root).exists())
+
+    def test_unsafe_retained_record_is_rejected_without_reading_pipes(self):
+        target = self.root / "valid-id"
+        target.write_text("1234567890123456789\n")
+        target.chmod(0o600)
+        for kind in ("symlink", "fifo", "writable", "oversize", "invalid"):
+            with self.subTest(kind=kind):
+                self.retained_id.unlink(missing_ok=True)
+                if kind == "symlink":
+                    self.retained_id.symlink_to(target)
+                elif kind == "fifo":
+                    os.mkfifo(self.retained_id, 0o600)
+                else:
+                    self.retained_id.write_text("1" * 129 if kind == "oversize" else
+                                                "not-a-database-id" if kind == "invalid" else target.read_text())
+                    self.retained_id.chmod(0o666 if kind == "writable" else 0o600)
+                with patch.object(DEPLOY, "RETAINED_ID", self.retained_id), self.assertRaises(DEPLOY.Refusal):
+                    DEPLOY.retained_database_identity()
+
+    def test_automatic_id_mismatch_stops_before_mutation(self):
+        self.automatic_args()
+        self.retained_id.write_text("2234567890123456789\n")
+        with self.assertRaisesRegex(DEPLOY.Refusal, "does not match the retained"):
+            self.run_plan(apply=True)
+        self.assertFalse(any("run" in command or "up" in command for command in self.commands))
+
+    def test_automatic_discovery_cannot_mix_stale_manual_inputs(self):
+        self.args.discover_existing = True
+        with self.assertRaisesRegex(DEPLOY.Refusal, "cannot be combined"):
+            self.run_plan()
+        self.assertEqual(self.commands, [])
+
+    def test_retained_record_change_during_build_stops_before_migration(self):
+        self.automatic_args()
+        original_run = self.fake_run
+        def change_retained_after_first_identity_check(argv, **kwargs):
+            result = original_run(argv, **kwargs)
+            if "pg_controldata" in argv:
+                self.retained_id.write_text("2234567890123456789\n")
+            return result
+        self.fake_run = change_retained_after_first_identity_check
+        with self.assertRaisesRegex(DEPLOY.Refusal, "installation inputs changed"):
+            self.run_plan(apply=True)
+        self.assertFalse(any("run" in command or "up" in command for command in self.commands))
+
+    def test_project_discovery_ignores_oneoff_containers_from_other_projects(self):
+        rows = copy.deepcopy(list(self.containers.values()))
+        oneoff = copy.deepcopy(rows[0])
+        oneoff["Config"]["Labels"].update({DEPLOY.LABEL + "project": "unrelated", DEPLOY.LABEL + "oneoff": "True"})
+        rows.append(oneoff)
+        with patch.object(DEPLOY, "run", side_effect=["fixture-container-ids", json.dumps(rows)]):
+            project, containers = DEPLOY.inspect_project()
+        self.assertEqual(project, "existing")
+        self.assertEqual(set(containers), set(self.containers))
+
+    def test_remote_discovery_uses_strict_ssh_and_no_manual_database_value(self):
+        self.automatic_args()
+        self.args.host = "existing-oracle"
+        self.args.release_root = None
+        commands = []
+        def fake_remote_run(argv, **kwargs):
+            commands.append(argv)
+            return "/tmp/pasofi-release.fixture123\n" if "mktemp" in argv[-1] else ""
+        with patch.object(DEPLOY, "run", side_effect=fake_remote_run), \
+                patch.object(DEPLOY.subprocess, "run", return_value=type("Result", (), {"returncode": 0})()) as remote_run:
+            DEPLOY.deploy(self.args)
+        remote_command = remote_run.call_args.args[0]
+        self.assertIn("--discover-existing", remote_command[-1])
+        self.assertNotIn("--expected-database-id", remote_command[-1])
+        self.assertNotIn("--env-file", remote_command[-1])
+        self.assertIn("python3 -I -B -S", remote_command[-1])
+        for command in commands + [remote_command]:
+            self.assertIn("StrictHostKeyChecking=yes", command)
+            self.assertIn("BatchMode=yes", command)
+            self.assertIn("ForwardAgent=no", command)
+            self.assertIn("ControlPath=none", command)
+
+    def test_automatic_apply_qualifies_backup_before_build_or_migration(self):
+        self.automatic_args()
+        def backup_before_build(*args):
+            self.build_mock.assert_not_called()
+            self.assertFalse(any("run" in command or "up" in command for command in self.commands))
+            self.assertEqual(args[1], "1234567890123456789")
+            self.assertTrue((args[2] / "pasofi-backend/infra/production/compose.yaml").is_file())
+            return {"schema": 1, "status": "passed"}
+        self.run_plan(apply=True, backup_effect=backup_before_build)
+        self.backup_mock.assert_called_once()
+        self.build_mock.assert_called_once()
+        self.assertEqual(len(list(Path(self.args.release_root).glob("*/completed.json"))), 1)
+
+    def test_automatic_backup_refusal_prevents_builds_and_all_runtime_mutation(self):
+        self.automatic_args()
+        with self.assertRaisesRegex(DEPLOY.Refusal, "Backup fixture failed"):
+            self.run_plan(apply=True, backup_effect=DEPLOY.Refusal("Backup fixture failed"))
+        self.build_mock.assert_not_called()
+        self.assertFalse(any("run" in command or "up" in command for command in self.commands))
+        self.assertFalse(list(Path(self.args.release_root).glob("*/completed.json")))
+
+    def test_missing_automatic_backup_helper_stops_before_any_ssh(self):
+        self.automatic_args()
+        self.args.apply = True
+        self.args.host = "existing-oracle"
+        self.args.release_root = None
+        with patch.object(DEPLOY, "__file__", str(self.root / "release-deploy.py")), \
+                patch.object(DEPLOY, "run") as run_mock, \
+                self.assertRaisesRegex(DEPLOY.Refusal, "nothing was sent"):
+            DEPLOY.deploy(self.args)
+        run_mock.assert_not_called()
+
+    def pin_backup_helpers(self):
+        destination = self.root / 'pasofi-backend/local-tools/manual deployment'
+        destination.mkdir(parents=True, exist_ok=True)
+        (self.root / 'deployment-restore.py').write_text('# fixture restore driver, never executed\n')
+        for filename in ('deployment-backup.py', 'deployment-restore.py'):
+            (destination / filename).write_bytes((self.root / filename).read_bytes())
+
+    def test_changed_backup_helper_is_rejected_before_import(self):
+        helper = self.root / 'deployment-backup.py'
+        helper.write_text('# original pinned fixture\n')
+        self.pin_backup_helpers()
+        helper.write_text('raise RuntimeError("must never import")\n')
+        with patch.object(DEPLOY, '__file__', str(self.root / 'release-deploy.py')), \
+                patch.object(DEPLOY.importlib.util, 'spec_from_file_location') as loader, \
+                self.assertRaisesRegex(DEPLOY.Refusal, 'before loading'):
+            DEPLOY.prepare_automatic_backup(self.containers['postgres'], '1234567890123456789', self.root, self.root)
+        loader.assert_not_called()
+
+    def test_invalid_backup_helper_result_cannot_authorize_builds(self):
+        helper = self.root / "deployment-backup.py"
+        for evidence in ({}, {"schema": 1, "status": "passed"}, None):
+            with self.subTest(evidence=evidence):
+                helper.write_text("class BackupError(Exception): pass\n"
+                                  "def prepare_backup(*args): return " + repr(evidence) + "\n")
+                self.pin_backup_helpers()
+                with patch.object(DEPLOY, "__file__", str(self.root / "release-deploy.py")), \
+                        self.assertRaisesRegex(DEPLOY.Refusal, "invalid evidence"):
+                    DEPLOY.prepare_automatic_backup(self.containers["postgres"], "1234567890123456789", self.root, self.root)
+
+    def test_backup_helper_must_prove_each_required_success_state(self):
+        helper = self.root / "deployment-backup.py"
+        expected = {"schema": 1, "status": "passed", "encrypted_backup": "passed", "fresh_backup": "passed",
+                    "isolated_restore": "passed", "cluster_identity": "matched", "completed_at_utc": "2026-11-06T01:00:00+00:00",
+                    "backup_label": "20261106-010000F", "backup_completed_at_unix": 1793926800,
+                    "restored_backup_label": "20261106-010000F", "restore_image_id": "sha256:" + "a" * 64,
+                    "migration_ledgers": "matched_all_five", "cleanup": "passed", "off_host_recovery_tested": False,
+                    "restore_scope": "new_disposable_volume_on_existing_host"}
+        self.containers['postgres']['Image'] = expected['restore_image_id']
+        helper.write_text("import json\nfrom pathlib import Path\nclass BackupError(Exception): pass\n"
+                          "def prepare_backup(*args):\n"
+                          "    return json.loads(Path(__file__ + '.json').read_text())\n")
+        self.pin_backup_helpers()
+        with patch.object(DEPLOY, "__file__", str(self.root / "release-deploy.py")):
+            for changed in (None, "encrypted_backup", "fresh_backup", "isolated_restore", "cluster_identity", "restore_scope",
+                            "restored_backup_label", "restore_image_id", "migration_ledgers", "cleanup", "off_host_recovery_tested"):
+                with self.subTest(changed=changed):
+                    evidence = dict(expected)
+                    if changed:
+                        evidence[changed] = "not_verified"
+                    helper.with_name(helper.name + ".json").write_text(json.dumps(evidence))
+                    if changed:
+                        with self.assertRaisesRegex(DEPLOY.Refusal, "invalid evidence"):
+                            DEPLOY.prepare_automatic_backup(self.containers["postgres"], "1234567890123456789", self.root, self.root)
+                    else:
+                        self.assertEqual(DEPLOY.prepare_automatic_backup(
+                            self.containers["postgres"], "1234567890123456789", self.root, self.root), expected)
+
+    def test_remote_automatic_apply_uploads_and_cleans_required_backup_guard(self):
+        self.automatic_args()
+        self.args.apply = True
+        self.args.host = "existing-oracle"
+        self.args.release_root = None
+        helper = self.root / "deployment-backup.py"
+        helper.write_text("# fixture guard, never executed\n")
+        restore = self.root / 'deployment-restore.py'
+        restore.write_text('# fixture exact restore, never executed\n')
+        commands = []
+        def fake_remote_run(argv, **kwargs):
+            commands.append(argv)
+            return "/tmp/pasofi-release.fixture123\n" if "mktemp" in argv[-1] else ""
+        with patch.object(DEPLOY, "__file__", str(self.root / "release-deploy.py")), \
+                patch.object(DEPLOY, "run", side_effect=fake_remote_run), \
+                patch.object(DEPLOY.subprocess, "run", return_value=type("Result", (), {"returncode": 0})()) as remote_run:
+            DEPLOY.deploy(self.args)
+        uploaded = [command for command in commands if command[0] == "scp"]
+        self.assertEqual(len(uploaded), 5)
+        self.assertEqual(uploaded[-2][-2], str(helper))
+        self.assertEqual(uploaded[-1][-2], str(restore))
+        self.assertIn("/tmp/pasofi-release.fixture123/deployment-backup.py", uploaded[-2][-1])
+        self.assertIn("/tmp/pasofi-release.fixture123/deployment-restore.py", uploaded[-1][-1])
+        self.assertIn("deployment-backup.py", commands[-1][-1])
+        self.assertIn("deployment-restore.py", commands[-1][-1])
+        self.assertIn("--discover-existing", remote_run.call_args.args[0][-1])
+        self.assertIn("--apply", remote_run.call_args.args[0][-1])
+        remote_run.assert_called_once()
 
 
 if __name__ == "__main__":

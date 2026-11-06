@@ -3,13 +3,16 @@
 import argparse
 import copy
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -21,7 +24,12 @@ UPDATABLE = (*APPS, "web")
 PROTECTED = ("postgres", "radius", "radius-api")
 LABEL = "com.docker.compose."
 NODE_IMAGE = "node:24.22.1-alpine"
-SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15"]
+RETAINED_ID = Path("/home/ubuntu/pamofi/production/cluster-system-id")
+SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "UpdateHostKeys=no",
+               "-o", "ConnectTimeout=15", "-o", "ConnectionAttempts=1", "-o", "ServerAliveInterval=10",
+               "-o", "ServerAliveCountMax=2", "-o", "ClearAllForwardings=yes", "-o", "ForwardAgent=no",
+               "-o", "PermitLocalCommand=no", "-o", "ControlMaster=no", "-o", "ControlPath=none",
+               "-o", "RequestTTY=no"]
 CONFIG_BINDS = {
     "/opt/pamofi/entrypoint.mjs": "entrypoint.mjs",
     "/opt/pamofi/apply-grants.mjs": "apply-grants.mjs",
@@ -44,7 +52,7 @@ def require(condition, message):
 
 def run(argv, *, cwd=None, log=None):
     """Never echo command output: Compose/inspect output can contain credentials."""
-    result = subprocess.run(argv, cwd=cwd, text=True, stdout=subprocess.PIPE,
+    result = subprocess.run(argv, cwd=cwd, text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, check=False)
     if log is not None:
         with open(log, "a", encoding="utf-8") as handle:
@@ -110,7 +118,8 @@ def extract_source(archive, destination, commit):
 def inspect_project(project=None):
     ids = run(["docker", "ps", "-aq", "--filter", "label=" + LABEL + "project"]).split()
     require(ids, "No existing Compose containers were found; this tool cannot install a new stack.")
-    containers = json.loads(run(["docker", "inspect", *ids]))
+    containers = [container for container in json.loads(run(["docker", "inspect", *ids]))
+                  if container["Config"]["Labels"].get(LABEL + "oneoff", "False").lower() != "true"]
     if project is None:
         candidates = {c["Config"]["Labels"].get(LABEL + "project") for c in containers
                       if c["Config"]["Labels"].get(LABEL + "service") == "prepaid-access"}
@@ -150,6 +159,49 @@ def discover_stack(containers):
     candidates = {s for s in stacks if all(subsequence(other, s) for other in stacks)}
     require(len(candidates) == 1, "Recorded Compose stacks disagree; reconcile their ordered overlays first.")
     return directory, list(candidates.pop())
+
+
+def retained_database_identity():
+    """Read the existing independent record; never adopt a live database ID."""
+    message = ("The retained PostgreSQL installation record is missing or unsafe. "
+               "Automatic deployment cannot replace it with the live database identity.")
+    try:
+        descriptor = os.open(RETAINED_ID, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            require(stat.S_ISREG(info.st_mode) and info.st_size <= 128
+                    and info.st_mode & 0o022 == 0 and info.st_uid in (0, os.geteuid()), message)
+            value = handle.read(129).decode("ascii").strip()
+            require(re.fullmatch(r"[0-9]{10,30}", value) is not None, message)
+            return value
+    except (OSError, UnicodeError):
+        raise Refusal(message) from None
+
+
+def discover_existing_inputs(containers):
+    """Recover original env-file order only from complete consistent labels."""
+    message = ("The original environment-file order is not recorded consistently on every existing container. "
+               "Automatic deployment stopped without guessing environment files.")
+    records = []
+    for container in containers.values():
+        value = container["Config"]["Labels"].get(LABEL + "project.environment_file")
+        require(isinstance(value, str) and 0 < len(value) <= 32768, message)
+        files = value.split(",")
+        require(0 < len(files) <= 32 and len(files) == len(set(files)), message)
+        require(all(1 < len(path) <= 4096 and path.startswith("/") and not path.startswith("//")
+                    and all(character.isprintable() for character in path)
+                    and not {".", ".."}.intersection(path.split("/"))
+                    and Path(path).is_file() for path in files), message)
+        records.append(files)
+    require(records and all(record == records[0] for record in records), message)
+    return list(records[0]), retained_database_identity()
+
+
+def recheck_discovered_inputs(args, containers):
+    if getattr(args, "discover_existing", False):
+        environment_files, database_id = discover_existing_inputs(containers)
+        require(environment_files == args.env_file and database_id == args.expected_database_id,
+                "The retained installation inputs changed during deployment; stopped before migration.")
 
 
 def compose_command(project, directory, files, env_files):
@@ -403,20 +455,85 @@ def build_release(source, selected, commit, hotspot, log):
     return images
 
 
+def prepare_automatic_backup(postgres, expected_database_id, source, release):
+    """Automatic apply requires the packaged protected-backup qualification guard."""
+    helper = Path(__file__).resolve().with_name("deployment-backup.py")
+    require(helper.is_file(), "The automatic deployment backup guard is missing; deployment stopped before building or migrating.")
+    for filename in ("deployment-backup.py", "deployment-restore.py"):
+        uploaded = helper.with_name(filename)
+        pinned = Path(source) / "pasofi-backend/local-tools/manual deployment" / filename
+        try:
+            matches = (uploaded.is_file() and not uploaded.is_symlink() and pinned.is_file() and not pinned.is_symlink()
+                       and uploaded.stat().st_size <= 128 * 1024 and pinned.stat().st_size <= 128 * 1024
+                       and uploaded.read_bytes() == pinned.read_bytes())
+        except OSError:
+            matches = False
+        require(matches, "The automatic backup helpers differ from the pinned source; deployment stopped before loading them.")
+    try:
+        specification = importlib.util.spec_from_file_location("pasofi_deployment_backup", helper)
+        require(specification is not None and specification.loader is not None,
+                "The automatic deployment backup guard could not be loaded.")
+        module = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(module)
+        backup_error = module.BackupError
+        prepare = module.prepare_backup
+    except Refusal:
+        raise
+    except Exception:
+        raise Refusal("The automatic deployment backup guard could not be loaded.") from None
+    try:
+        evidence = prepare(postgres, expected_database_id, source, release)
+    except backup_error as error:
+        raise Refusal(str(error)) from None
+    except Exception:
+        raise Refusal("Automatic backup qualification did not complete; deployment stopped before building or migrating.") from None
+    valid = (type(evidence) is dict and type(evidence.get("schema")) is int and evidence.get("schema") == 1
+             and all(evidence.get(key) == value for key, value in {
+                 "status": "passed", "encrypted_backup": "passed", "fresh_backup": "passed",
+                 "isolated_restore": "passed", "cluster_identity": "matched",
+                 "migration_ledgers": "matched_all_five", "cleanup": "passed",
+                 "restore_scope": "new_disposable_volume_on_existing_host"}.items())
+             and evidence.get("off_host_recovery_tested") is False
+             and type(evidence.get("restore_image_id")) is str
+             and re.fullmatch(r"sha256:[0-9a-f]{64}", evidence["restore_image_id"]) is not None
+             and evidence.get("restore_image_id") == postgres.get("Image")
+             and evidence.get("restored_backup_label") == evidence.get("backup_label")
+             and type(evidence.get("backup_completed_at_unix")) is int and evidence["backup_completed_at_unix"] > 0
+             and type(evidence.get("backup_label")) is str
+             and re.fullmatch(r"[0-9]{8}-[0-9]{6}F(?:_[0-9]{8}-[0-9]{6}[DI])?", evidence["backup_label"]) is not None
+             and type(evidence.get("completed_at_utc")) is str)
+    try:
+        valid = valid and datetime.fromisoformat(evidence["completed_at_utc"]).tzinfo == timezone.utc
+    except ValueError:
+        valid = False
+    require(valid, "Automatic backup qualification returned invalid evidence; deployment stopped.")
+    return evidence
+
+
 def remote(args):
     require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]*", args.host or ""),
             "Use an existing SSH alias or user@hostname; put ports and identity files in SSH config.")
     require(not args.release_root, "--release-root is local-server-only.")
-    # OpenSSH retains normal host-key verification. No credentials or private host values are logged.
+    uploads = [(Path(__file__).resolve(), "release-deploy.py"),
+               (Path(args.manifest).resolve(), "release.json"),
+               (Path(args.archive).resolve(), "source.tar.gz")]
+    if getattr(args, "discover_existing", False) and args.apply:
+        for filename in ("deployment-backup.py", "deployment-restore.py"):
+            helper = Path(__file__).resolve().with_name(filename)
+            require(helper.is_file() and not helper.is_symlink(), "An automatic deployment backup helper is missing; nothing was sent to the server.")
+            uploads.append((helper, filename))
+    # Never prompt, add host keys, forward agents, or reuse a control connection.
     remote_dir = run(["ssh", *SSH_OPTIONS, args.host, "umask 077; mktemp -d /tmp/pasofi-release.XXXXXXXX"]).strip()
     require(re.fullmatch(r"/tmp/pasofi-release\.[A-Za-z0-9]+", remote_dir), "Unexpected remote staging path.")
     try:
-        for local, filename in ((Path(__file__).resolve(), "release-deploy.py"),
-                                (Path(args.manifest).resolve(), "release.json"),
-                                (Path(args.archive).resolve(), "source.tar.gz")):
+        for local, filename in uploads:
             run(["scp", *SSH_OPTIONS, str(local), args.host + ":" + remote_dir + "/" + filename])
-        command = ["python3", remote_dir + "/release-deploy.py", "--manifest", remote_dir + "/release.json",
-                   "--archive", remote_dir + "/source.tar.gz", "--expected-database-id", args.expected_database_id]
+        command = ["python3", "-I", "-B", "-S", remote_dir + "/release-deploy.py", "--manifest", remote_dir + "/release.json",
+                   "--archive", remote_dir + "/source.tar.gz"]
+        if getattr(args, "discover_existing", False):
+            command += ["--discover-existing"]
+        else:
+            command += ["--expected-database-id", args.expected_database_id]
         if args.project:
             command += ["--project", args.project]
         for env_file in args.env_file:
@@ -424,23 +541,32 @@ def remote(args):
         if args.apply:
             command += ["--apply"]
         # The remote script prints only its safe progress messages, never Docker/Compose output.
-        result = subprocess.run(["ssh", *SSH_OPTIONS, args.host, shlex.join(command)], check=False)
+        result = subprocess.run(["ssh", *SSH_OPTIONS, args.host, shlex.join(command)],
+                                stdin=subprocess.DEVNULL, check=False)
         require(result.returncode == 0, "Remote deployment command did not complete successfully.")
     finally:
-        run(["ssh", *SSH_OPTIONS, args.host, "rm -f " + shlex.quote(remote_dir + "/release-deploy.py") + " "
-             + shlex.quote(remote_dir + "/release.json") + " " + shlex.quote(remote_dir + "/source.tar.gz")
+        run(["ssh", *SSH_OPTIONS, args.host, "rm -f " + shlex.join([remote_dir + "/" + filename for _, filename in uploads])
              + " && rmdir " + shlex.quote(remote_dir)])
 
 
 def deploy(args):
+    args = copy.copy(args)
     manifest = load_manifest(args.manifest, args.archive)
+    if getattr(args, "discover_existing", False):
+        require(not args.env_file and args.expected_database_id is None,
+                "Automatic discovery cannot be combined with manually supplied environment files or database identity.")
+    else:
+        require(re.fullmatch(r"[0-9]{10,30}", args.expected_database_id or "") is not None,
+                "Supply the retained --expected-database-id, or use --discover-existing for verified installation records.")
     if args.host:
         return remote(args)
     require(os.name == "posix", "Run via --host from Windows, or run on the existing Linux Docker host.")
+    project, containers = inspect_project(args.project)
+    if getattr(args, "discover_existing", False):
+        args.env_file, args.expected_database_id = discover_existing_inputs(containers)
     require(args.env_file, "Supply the existing protected Compose --env-file; do not create or guess one.")
     env_files = [Path(path).resolve() for path in args.env_file]
     require(all(path.is_file() for path in env_files), "An existing environment file is missing.")
-    project, containers = inspect_project(args.project)
     directory, files = discover_stack(containers)
     base = compose_command(project, directory, files, env_files)
     model = json.loads(run(base + ["config", "--format", "json"]))
@@ -495,6 +621,8 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
                   "database_rollback": "None: additive migrations are retained. Never restore an older database over new sales."})
     log = release / "operations.log"
     print("Private rollback record: " + str(release / "record.json"), flush=True)
+    if getattr(args, "discover_existing", False):
+        prepare_automatic_backup(containers["postgres"], args.expected_database_id, source, release)
     print("Building pinned application images and existing captive assets; private build log is in the record directory.", flush=True)
     built_images = build_release(source, manifest["services"], manifest["commit"], hotspot, log)
     # Recheck immediately before the first database/runtime mutation.
@@ -503,6 +631,7 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
     _, current = inspect_project(project)
     require({n: c["Id"] for n, c in current.items()} == {n: c["Id"] for n, c in containers.items()},
             "The running installation changed during build; stopped before migration.")
+    recheck_discovered_inputs(args, current)
     database_identity(current["postgres"], args.expected_database_id)
     planned = json.loads(run(upgrade + ["config", "--format", "json"]))
     verify_delta(model, planned, overlay)
@@ -526,7 +655,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--archive", required=True)
-    parser.add_argument("--expected-database-id", required=True)
+    parser.add_argument("--expected-database-id", help="Independently retained production PostgreSQL system identifier")
+    parser.add_argument("--discover-existing", action="store_true",
+                        help="Read complete ordered environment-file labels and the retained installation database record on the server")
     parser.add_argument("--env-file", action="append", default=[], help="Existing absolute path on the Docker host; repeat in original order")
     parser.add_argument("--host", help="Existing OpenSSH alias or user@hostname")
     parser.add_argument("--project", help="Existing Docker Compose project, if discovery is ambiguous")
