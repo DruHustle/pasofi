@@ -44,7 +44,10 @@ export function registerNetworkInternal(app:FastifyInstance,pool:Pool|null) {
   }catch{return reply.code(503).send({error:'unavailable'});}
  });
  app.post<{Body:{customerId:string;siteId:string;nasId?:string;requestKey:string;replayCredentialId?:string}}>('/internal/v1/network/credentials',{schema:{body:{type:'object',additionalProperties:false,required:['customerId','siteId','requestKey'],properties:{customerId:id,siteId:id,nasId:id,requestKey:id,replayCredentialId:id}}}},async(request,reply)=>{
-  if(!await authorize(request,reply,'network:credentials'))return;
+  // A distinct scope is also a version gate: older network servers reject it
+  // before issuance even if their validator strips the new replay-only field.
+  const scope=request.body.replayCredentialId===undefined?'network:credentials':'network:credentials:replay';
+  if(!await authorize(request,reply,scope))return;
   try {
    const {customerId,siteId,requestKey}=request.body;
    const prior=await pool!.query('SELECT c.nas_id,c.secret_key_version,n.site_id FROM radius_credentials c JOIN radius_nas n ON n.id=c.nas_id WHERE c.customer_id=$1 AND c.request_key=$2',[customerId,requestKey]);

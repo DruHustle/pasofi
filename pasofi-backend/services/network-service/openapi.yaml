@@ -34,7 +34,10 @@ paths:
     post:
       security: [{serviceToken: []}]
       description: >-
-        Requires prepaid-access issuer/subject, network audience and network:credentials scope.
+        Requires prepaid-access issuer/subject, network audience and network:credentials scope
+        for ordinary issuance, or network:credentials:replay scope with replayCredentialId present.
+        Either mismatched scope/body combination is denied before SQL. Older network versions
+        reject the replay scope before issuance, even if they strip the new body field.
         The caller first verifies customer eligibility. Explicit NAS/site selection is checked under
         the registry lock. Without nasId, an owned prior request replays its original NAS; new
         requests require exactly one enabled NAS at the site. The private replayCredentialId

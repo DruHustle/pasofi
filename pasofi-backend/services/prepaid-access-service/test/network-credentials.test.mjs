@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import Fastify from 'fastify';
+import {jwtVerify} from 'jose';
 import {registerCustomerNetwork} from '../dist/network-lifecycle.js';
 
 async function fixture(t,work){
@@ -45,6 +46,8 @@ async function fixture(t,work){
   state.log.push('upstream');
   assert.equal(new URL(url).pathname,'/internal/v1/network/credentials');
   const body=JSON.parse(init.body);state.privateCalls.push(body);
+  const {payload}=await jwtVerify(init.headers.authorization.slice(7),new TextEncoder().encode(env.INTERNAL_NETWORK_SECRET),{algorithms:['HS256'],issuer:'prepaid-access',subject:'prepaid-access',audience:'network'});
+  assert.equal(payload.scope,grant()?'network:credentials:replay':'network:credentials');
   assert.deepEqual(body,{customerId,siteId,...(state.nasId?{nasId:state.nasId}:{}),requestKey,...(grant()?{nasId:grant().nas_id,replayCredentialId:grant().request_key}:{})});
   if(state.onUpstream)await state.onUpstream();
   return new Response(state.body,{status:state.status,headers:{'content-type':'application/json'}});

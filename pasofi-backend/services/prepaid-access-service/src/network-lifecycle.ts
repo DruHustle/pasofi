@@ -20,7 +20,7 @@ export function registerCustomerNetwork(app:FastifyInstance,pool:Pool|null,demo:
     if(!response.ok){
       // Expose only definite expiry and ambiguous-site selection conflicts.
       // Only expiry permits a new retry key; uncertain failures stay generic.
-      if(scope==='network:credentials'&&response.status===409){
+      if((scope==='network:credentials'||scope==='network:credentials:replay')&&response.status===409){
         const failure:unknown=await response.json().catch(()=>null);
         if(failure&&typeof failure==='object'&&!Array.isArray(failure)&&'error' in failure&&(failure.error==='credential_expired'||failure.error==='nas_selection_required'))throw new CredentialBoundaryError(failure.error);
       }
@@ -61,7 +61,7 @@ export function registerCustomerNetwork(app:FastifyInstance,pool:Pool|null,demo:
       await assertEligible();
       let result;
       try {
-        result=await network('/internal/v1/network/credentials','network:credentials',{customerId,...selection,...(grant?{nasId:grant.nas_id,replayCredentialId:grant.request_key}:{})});
+        result=await network('/internal/v1/network/credentials',grant?'network:credentials:replay':'network:credentials',{customerId,...selection,...(grant?{nasId:grant.nas_id,replayCredentialId:grant.request_key}:{})});
       } catch(error) {
         // Expiry while a reservation is pending must not offer a fresh key or
         // credential; its original reservation still needs verified closure.
