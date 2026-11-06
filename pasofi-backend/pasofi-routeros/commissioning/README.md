@@ -19,7 +19,28 @@ The baseline records the inspected mode, package/version, active management
 address, retired overlapping addresses, preserved recovery/CPE ports and
 required route inventory. It is an operator-selected fact record, not evidence
 that a connection still reaches that hardware. Generated scripts check the
-serial again on the router. The staging check requires `hotspot=yes`; it never
+serial again on the router.
+
+On **SMIPS with RouterOS 7.20 or newer**, HotSpot requires the separate
+`hotspot` package; `routeros` and `wireless` alone do not provide its menu.
+MikroTik documents the split in the
+[7.20 release notes](https://download.mikrotik.com/routeros/7.20/CHANGELOG).
+The example baseline includes this package as synthetic installed inventory.
+Record only packages actually observed on the selected device. Preparation
+refuses a SMIPS 7.20+ baseline without `hotspot`; the staging check requires its
+exact RouterOS version, enabled and installed (not merely available), with no
+pending package action. A missing menu is not an empty HotSpot configuration.
+
+Follow the [package installation procedure](https://manual.mikrotik.com/docs/7.25/getting-started/installation-and-upgrade/packages/)
+for the exact installed RouterOS version and architecture: upload only the
+reviewed ordinary `.npk`, reboot under the established recovery procedure, and
+verify the installation log, package record and menu before updating the
+private baseline. Inspect other pending package actions first. Do not use an
+`.auto.npk` filename or substitute a RouterBOOT upgrade for the missing package.
+Package installation and physical device-mode permission are separate checks;
+these helpers neither perform nor combine their reboot procedures.
+
+The staging check also requires `hotspot=yes`; it never
 changes device-mode or reboots the router. If permission is currently disabled,
 physical confirmation remains a separate step. The official
 [7.25 device-mode guide](https://manual.mikrotik.com/docs/7.25/system-information-and-utilities/device-mode/)
@@ -48,6 +69,12 @@ shared secrets, HotSpot passwords, lease/on-event scripts, DoH URLs, customer
 sessions, vouchers and DHCP lease records. Unavailable fields are labelled
 `unavailable`; they are not silently assumed to match the plan. Treat the
 resulting network inventory as private operational information.
+
+If a SMIPS 7.20+ baseline contains only `routeros` and `wireless`, collection
+still works: it reports the missing HotSpot prerequisite and omits HotSpot menu
+commands, while retaining the other metadata reads. It does not report zero
+HotSpot objects. After the exact package is installed and verified, refresh the
+private package inventory and regenerate the collector to include those menus.
 
 The report is intentionally bounded. It does not establish peer reachability,
 TLS validity, AP forwarding, Internet access or accounting. It does not scan
