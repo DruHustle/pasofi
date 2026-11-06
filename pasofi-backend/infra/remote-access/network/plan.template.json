@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "planId": "replace-with-private-plan-id",
+  "owner": {
+    "tailscaleLogin": "EXACT_EXISTING_TAILSCALE_LOGIN",
+    "ipv4Routes": ["OBSERVED_CLIENT_NONDEFAULT_IPV4_NETWORK"]
+  },
+  "hub": {
+    "endpoint": "SELECTED_PUBLIC_HUB_ENDPOINT",
+    "listenPort": "OBSERVED_UNUSED_UDP_PORT",
+    "interface": "pfi-owner-hub",
+    "publicKey": "PUBLIC_KEY_DERIVED_LOCALLY_ON_HUB",
+    "tunnelIp": "INSPECTED_UNALLOCATED_PRIVATE_IPV4",
+    "tailscaleNodeId": "OBSERVED_STABLE_NODE_ID",
+    "ipv4Routes": ["OBSERVED_HUB_NONDEFAULT_IPV4_NETWORK"],
+    "existingAdvertisedRoutes": ["COMPLETE_CURRENT_IPV4_AND_IPV6_ADVERTISEMENTS_OR_EXPLICIT_EMPTY_ARRAY"]
+  },
+  "gateways": [
+    {
+      "id": "gateway-a",
+      "name": "REPLACE_WITH_OBSERVED_GATEWAY_NAME",
+      "expectedSerial": "OBSERVED_SERIAL",
+      "verifiedAt": "OBSERVED_UTC_TIMESTAMP",
+      "interface": "pfi-owner",
+      "listenPort": "OBSERVED_UNUSED_ROUTER_UDP_PORT",
+      "publicKey": "PUBLIC_KEY_OF_FRESH_DISABLED_ROUTER_INTERFACE",
+      "tunnelIp": "INSPECTED_DISTINCT_PRIVATE_IPV4",
+      "wanInterface": "OBSERVED_WAN_INTERFACE",
+      "ipv4Routes": ["COMPLETE_OBSERVED_ROUTER_NONDEFAULT_IPV4_NETWORKS"],
+      "management": {"tcpPorts": ["SELECT_EXPLICIT_ENABLED_MANAGEMENT_PORTS"], "icmp": true},
+      "targets": [
+        {
+          "id": "management-device-a",
+          "name": "REPLACE_WITH_OBSERVED_DEVICE_NAME",
+          "vendor": "REPLACE_WITH_mikrotik_tenda_mercusys_OR_other",
+          "address": "VERIFIED_DEVICE_MANAGEMENT_IPV4",
+          "management": {"tcpPorts": ["SELECT_EXPLICIT_ENABLED_MANAGEMENT_PORTS"], "icmp": true},
+          "expectedIdentity": {"kind": "mac", "value": "OBSERVED_UNIQUE_MANAGEMENT_MAC"},
+          "verifiedAt": "OBSERVED_UTC_TIMESTAMP",
+          "path": {
+            "egressInterface": "OBSERVED_LOCAL_MANAGEMENT_INTERFACE",
+            "connectedCidr": "OBSERVED_CONNECTED_MANAGEMENT_NETWORK",
+            "gatewayLanIp": "OBSERVED_GATEWAY_ADDRESS_ON_THIS_NETWORK",
+            "returnPath": "SELECT_source-nat_OR_verified-gateway-route"
+          }
+        }
+      ]
+    }
+  ]
+}

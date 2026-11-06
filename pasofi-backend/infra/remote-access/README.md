@@ -1,4 +1,26 @@
-# Remote management: direct WireGuard first, hub fallback
+# Remote management
+
+## Owner access to multiple routers and CPEs
+
+Use the [owner network planner](network/README.md) when the owner must connect
+from another Wi-Fi/mobile network and administer multiple MikroTik routers
+plus individually verified Tenda/Mercusys management pages. It prepares a
+dedicated Tailscale-to-WireGuard management path, explicit device `/32` routes,
+per-device ports and return-path rules. It preserves the existing backend
+service tunnel and requires review of the hub's current policy and routes.
+
+The [separate Mac checker](operator-mac/README.md) checks the expected account,
+hub and actual VPN routes before probing only the enrolled targets. It is
+read-only and is separate from `Start_PasoFi.command`, which deploys the
+application. Neither tool activates remote access or qualifies a device from
+a reachable TCP port alone. Authenticated device logins, isolation and
+off-site/reconnect acceptance remain live checks.
+
+One owner VPN connection provides network access; each device retains its
+native administrator login and maintenance interface. This does not add
+firmware upgrades or Tenda/Mercusys adapters to the fleet API.
+
+## Single-router access: direct WireGuard first, hub fallback
 
 The first inspected router is a **SMIPS hAP lite with RouterOS 7.18.2**. It supports native WireGuard. The owner can connect directly from a phone or laptop **without operating a separate public server** when either a reachable public IPv4 path or usable global IPv6 path exists. A local `192.168.0.1` upstream gateway establishes an upstream private network; it does **not** establish carrier-grade NAT or rule out direct access.
 
