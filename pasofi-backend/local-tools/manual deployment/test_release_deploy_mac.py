@@ -1,9 +1,11 @@
-"""Offline Mac launcher safety checks; the real deployment engine is not invoked."""
+"""Offline Mac launcher checks; no SSH connection or deployment is invoked."""
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -20,15 +22,15 @@ class MacLauncherTests(unittest.TestCase):
             shutil.copy2(source / name, self.bundle / name)
         self.calls = self.root / "calls.jsonl"
         self.marker = self.root / "input-was-executed"
-        (self.bundle / "release.json").write_text("{}\n")
-        (self.bundle / "source.tar.gz").write_bytes(b"synthetic archive: never opened")
-        (self.bundle / "release-deploy.py").write_text(
-            "import json, os, sys\n"
-            "with open(os.environ['PASOFI_MAC_TEST_CALLS'], 'a') as handle:\n"
-            "    handle.write(json.dumps(sys.argv[1:]) + '\\n')\n"
-            "mode = 'APPLY' if '--apply' in sys.argv else 'PREFLIGHT'\n"
-            "sys.exit(int(os.environ.get('PASOFI_MAC_TEST_' + mode + '_EXIT', '0')))\n"
-        )
+        for filename, entry in (("release-deploy.py", "engine"), ("pasofi-auto.py", "automatic")):
+            (self.bundle / filename).write_text(
+                "import json, os, sys\n"
+                "with open(os.environ['PASOFI_MAC_TEST_CALLS'], 'a') as handle:\n"
+                "    handle.write(json.dumps({'entry': " + repr(entry) + ", 'args': sys.argv[1:]}) + '\\n')\n"
+                "sys.exit(int(os.environ.get('PASOFI_MAC_TEST_EXIT', '0')))\n"
+            )
+        (self.bundle / "mac-python.sh").write_text(
+            "PASOFI_PYTHON=" + shlex.quote(sys.executable) + "\nexport PASOFI_PYTHON\n")
         self.fake_bin = self.root / "offline-bin"
         self.fake_bin.mkdir()
         for name in ("ssh", "scp"):
@@ -37,12 +39,8 @@ class MacLauncherTests(unittest.TestCase):
             tool.chmod(0o755)
         self.environment = dict(os.environ, PASOFI_MAC_TEST_CALLS=str(self.calls),
                                 PATH=str(self.fake_bin) + os.pathsep + os.environ["PATH"])
-        # Keep workstation shell startup hooks out of this isolated launcher check.
         self.environment.pop("BASH_ENV", None)
         self.environment.pop("ENV", None)
-        self.host = "existing-oracle"
-        self.env_files = ["/server/existing/production.env", "/server/existing/qualified overlays.env"]
-        self.database_id = "1234567890123456789"
 
     def invoke(self, args=(), answers="", **environment):
         return subprocess.run(
@@ -54,59 +52,57 @@ class MacLauncherTests(unittest.TestCase):
     def recorded(self):
         return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
 
-    def answers(self, confirmation="APPLY", project="", files=None):
-        values = [self.host, *(self.env_files if files is None else files), "", self.database_id, project]
-        if confirmation is not None:
-            values.append(confirmation)
-        return "\n".join(values) + "\n"
-
-    def expected(self, project="", files=None):
-        args = ["--host", self.host, "--manifest", str(self.bundle / "release.json"),
-                "--archive", str(self.bundle / "source.tar.gz")]
-        for path in self.env_files if files is None else files:
-            args.extend(["--env-file", path])
-        args.extend(["--expected-database-id", self.database_id])
-        if project:
-            args.extend(["--project", project])
-        return args
-
-    def test_cli_arguments_pass_through_exactly_without_interactive_prompts(self):
-        args = ["--host", self.host, "--manifest", "relative manifest.json", "--archive", "relative archive.tar.gz",
-                "--env-file", "/server/a 'quoted' file.env", "--env-file", "/server/$(printf literal).env",
-                "--expected-database-id", self.database_id, "--apply"]
+    def test_cli_arguments_pass_through_exactly_without_prompts_or_dispatcher(self):
+        args = ["--host", "existing-oracle", "--manifest", "relative manifest.json", "--archive", "relative archive.tar.gz",
+                "--env-file", "/server/a 'quoted' file.env", "--env-file", "/server/$(touch '" + str(self.marker) + "').env",
+                "--expected-database-id", "1234567890123456789", "--apply"]
         result = self.invoke(args)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.recorded(), [args])
+        self.assertEqual(self.recorded(), [{"entry": "engine", "args": args}])
+        self.assertFalse(self.marker.exists())
         self.assertNotIn("Existing SSH alias", result.stdout)
         self.assertTrue((self.bundle / "release-deploy.command").stat().st_mode & 0o111)
 
-    def test_interactive_apply_reuses_preflight_inputs_and_never_evaluates_paths(self):
-        files = [self.env_files[1], "/server/$(touch '" + str(self.marker) + "').env"]
-        result = self.invoke(answers=self.answers(project="existing-production", files=files))
+    def test_finder_runs_automatic_apply_with_no_input_or_field_prompts(self):
+        result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
-        expected = self.expected(project="existing-production", files=files)
-        self.assertEqual(self.recorded(), [expected, [*expected, "--apply"]])
-        self.assertFalse(self.marker.exists())
-
-    def test_only_exact_apply_confirmation_can_start_apply(self):
-        for confirmation in ("", "apply", "APPLY ", None):
-            with self.subTest(confirmation=confirmation):
-                self.calls.unlink(missing_ok=True)
-                result = self.invoke(answers=self.answers(confirmation=confirmation))
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(self.recorded(), [self.expected()])
-
-    def test_failed_preflight_never_offers_or_runs_apply(self):
-        result = self.invoke(answers=self.answers(), PASOFI_MAC_TEST_PREFLIGHT_EXIT="31")
-        self.assertEqual(result.returncode, 31)
-        self.assertEqual(self.recorded(), [self.expected()])
+        self.assertEqual(self.recorded(), [{"entry": "automatic", "args": ["--apply"]}])
+        self.assertNotIn("Enter", result.stdout)
         self.assertNotIn("Type APPLY", result.stdout)
 
-    def test_apply_failure_keeps_exit_status_and_explains_partial_completion(self):
-        result = self.invoke(answers=self.answers(), PASOFI_MAC_TEST_APPLY_EXIT="32")
+    def test_stdin_cannot_supply_or_execute_deployment_fields(self):
+        result = self.invoke(answers="$(touch '" + str(self.marker) + "')\nAPPLY\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded(), [{"entry": "automatic", "args": ["--apply"]}])
+        self.assertFalse(self.marker.exists())
+
+    def test_dispatcher_failure_preserves_exit_code_without_retry(self):
+        result = self.invoke(PASOFI_MAC_TEST_EXIT="32")
         self.assertEqual(result.returncode, 32)
-        self.assertEqual(self.recorded(), [self.expected(), [*self.expected(), "--apply"]])
-        self.assertIn("Some operations may have completed", result.stderr)
+        self.assertEqual(self.recorded(), [{"entry": "automatic", "args": ["--apply"]}])
+
+    def test_incomplete_bundle_stops_before_invocation(self):
+        (self.bundle / "pasofi-auto.py").unlink()
+        result = self.invoke()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.recorded(), [])
+        self.assertIn("automatic Mac package is incomplete", result.stderr)
+
+    def test_python_selection_failure_stops_before_dispatcher(self):
+        (self.bundle / "mac-python.sh").write_text("return 23\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 23)
+        self.assertEqual(self.recorded(), [])
+
+    def test_automatic_python_does_not_load_user_startup_modules(self):
+        custom = self.root / "untrusted-python-path"
+        custom.mkdir()
+        (custom / "sitecustomize.py").write_text(
+            "from pathlib import Path\nPath(" + repr(str(self.marker)) + ").touch()\n")
+        result = self.invoke(PYTHONPATH=str(custom))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.marker.exists())
+        self.assertEqual(self.recorded(), [{"entry": "automatic", "args": ["--apply"]}])
 
 
 if __name__ == "__main__":

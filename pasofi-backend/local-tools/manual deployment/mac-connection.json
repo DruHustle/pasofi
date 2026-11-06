@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "ssh_aliases": [
+    "onesa-portal-worker",
+    "onesa-portal-worker-public"
+  ]
+}

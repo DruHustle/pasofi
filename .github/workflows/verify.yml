@@ -89,9 +89,10 @@ jobs:
           sh -n pasofi-backend/infra/production/postgres-ready.sh
           sh -n pasofi-backend/infra/radius-production/entrypoint.sh
           bash 'pasofi-backend/local-tools/manual deployment/test-production-volume-preflight.sh'
-          python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_release_deploy*.py' -v
-          python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_hotspot_readiness*.py' -v
-          bash -n 'pasofi-backend/local-tools/manual deployment/hotspot-readiness.command'
+          python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_*.py' -v
+          for launcher in Start_PasoFi.command release-deploy.command release-deploy.sh hotspot-readiness.command mac-python.sh; do
+            bash -n "pasofi-backend/local-tools/manual deployment/$launcher"
+          done
       - name: Validate the site firewall in an isolated network namespace
         run: |
           if ! command -v nft >/dev/null || ! command -v unshare >/dev/null; then
@@ -135,3 +136,25 @@ jobs:
             pasofi-frontend/mobile/test-results/
           if-no-files-found: warn
           retention-days: 3
+
+  mac-deployment:
+    name: Verify Mac deployment launcher
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check the available Python and native Bash
+        run: |
+          python3 -c 'import sys; assert sys.version_info >= (3, 9)'
+          /bin/bash --version
+          for launcher in Start_PasoFi.command release-deploy.command release-deploy.sh hotspot-readiness.command mac-python.sh; do
+            /bin/bash -n "pasofi-backend/local-tools/manual deployment/$launcher"
+          done
+      - name: Verify actual Mac filesystem persistence and isolated orchestration
+        run: |
+          python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_mac_state.py' -v
+          python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_pasofi_auto.py' -v
+          python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_release_deploy_mac.py' -v

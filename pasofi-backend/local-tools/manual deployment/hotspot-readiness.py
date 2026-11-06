@@ -2,6 +2,7 @@
 """Read-only PasoFi installation inventory. Never authorizes customer activation."""
 import argparse
 from datetime import datetime, timezone
+import ipaddress
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -23,17 +24,28 @@ FLAGS = {
                        "PAMOFI_PAYMENTS_ENABLED", "PAMOFI_ROUTER_FLEET_ENABLED", "PAMOFI_ROUTER_FLEET_WRITE_ENABLED"),
     "network": ("PAMOFI_CUSTOMER_NETWORK_ENABLED", "PAMOFI_RADIUS_QUALIFIED", "NETWORK_RECONCILER_ENABLED",
                 "ROUTER_FLEET_ENABLED", "ROUTER_FLEET_WRITES_ENABLED"),
+    "notification": ("DELIVERY_WORKER_ENABLED", "SENDAI_LIVE_ENABLED", "SENDAI_QUALIFIED",
+                     "INVOICE_DELIVERY_WORKER_ENABLED", "INVOICE_EMAIL_QUALIFIED", "INVOICE_SMS_QUALIFIED"),
 }
 SSH_OPTIONS = ["-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "UpdateHostKeys=no",
                "-o", "ConnectTimeout=15", "-o", "ConnectionAttempts=1", "-o", "ServerAliveInterval=10",
                "-o", "ServerAliveCountMax=2", "-o", "ClearAllForwardings=yes", "-o", "ForwardAgent=no",
                "-o", "PermitLocalCommand=no", "-o", "ControlMaster=no", "-o", "ControlPath=none"]
 MAX_OUTPUT = 2 * 1024 * 1024
+MAX_ALIASES = 4
+SSH_PROBE = "PASOFI_READINESS_SSH_OK"
+CONNECTION_STATUSES = {"not_configured", "configuration_unavailable", "network_unavailable",
+    "authentication_failed", "host_key_untrusted", "host_key_changed", "connection_failed",
+    "remote_report_invalid", "remote_collection_unavailable", "collected"}
+SELECTED_STATUSES = {"remote_report_invalid", "remote_collection_unavailable", "collected"}
 ERROR_CODES = {"command_unavailable", "command_timed_out", "command_output_limit", "command_failed",
                "invalid_ssh_alias", "invalid_project", "container_inventory_invalid", "project_metadata_invalid",
                "project_missing_or_ambiguous", "selected_project_not_found", "container_inventory_ambiguous",
                "remote_report_invalid", "report_directory_not_private", "invalid_arguments",
-               "python_version_unavailable", "remote_output_forbidden"}
+               "python_version_unavailable", "remote_output_forbidden", "connection_profile_invalid",
+               "ssh_network_unavailable", "ssh_authentication_failed", "ssh_host_key_untrusted",
+               "ssh_host_key_changed", "ssh_connection_failed", "ssh_configuration_unavailable",
+               "connection_provenance_invalid"}
 BLOCKER_CODES = ERROR_CODES | {"diagnostic_data_unavailable", "nas_registry_not_checked", "compose_stack_not_established",
     "environment_file_order_not_established", "retained_database_identity_not_verified", "physical_acceptance_not_performed",
     "ssh_or_remote_collection_unavailable"}
@@ -66,14 +78,33 @@ class DiagnosticError(Exception):
         super().__init__(code if code in ERROR_CODES else "diagnostic_data_unavailable")
 
 
-def command(argv, *, payload=None, timeout=15):
+def ssh_failure(stderr):
+    """Classify a fixed set of OpenSSH failures without returning its raw text."""
+    message = stderr.decode("utf-8", errors="replace").lower()
+    if "remote host identification has changed" in message or "offending " in message and " key in " in message:
+        return "ssh_host_key_changed"
+    if "host key verification failed" in message or "host key is known for" in message:
+        return "ssh_host_key_untrusted"
+    if any(text in message for text in ("permission denied", "authentication failed", "too many authentication failures",
+                                        "no more authentication methods", "unprotected private key file")):
+        return "ssh_authentication_failed"
+    if any(text in message for text in ("connection timed out", "operation timed out", "no route to host",
+                                        "network is unreachable", "connection refused", "host is down",
+                                        "could not resolve hostname", "connection reset", "connection closed")):
+        return "ssh_network_unavailable"
+    return "ssh_connection_failed"
+
+
+def command(argv, *, payload=None, timeout=15, ssh=False):
     """Bound time and both output streams; discard stderr without echoing it."""
     try:
         process = subprocess.Popen(argv, stdin=subprocess.PIPE if payload is not None else subprocess.DEVNULL,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   env={**os.environ, "LC_ALL": "C"} if ssh else None)
     except OSError:
         raise DiagnosticError("command_unavailable") from None
     output = bytearray()
+    private_errors = bytearray()
     counts = {"stdout": 0, "stderr": 0}
     pending = memoryview(payload or b"")
     deadline = time.monotonic() + timeout
@@ -111,9 +142,11 @@ def command(argv, *, payload=None, timeout=15):
                         raise DiagnosticError("command_output_limit")
                     if key.data == "stdout":
                         output.extend(chunk)
+                    elif ssh:
+                        private_errors.extend(chunk)
             process.wait(timeout=max(0.01, deadline - time.monotonic()))
         if process.returncode:
-            raise DiagnosticError("command_failed")
+            raise DiagnosticError(ssh_failure(private_errors) if ssh else "command_failed")
         return output.decode("utf-8")
     except (OSError, UnicodeError, subprocess.TimeoutExpired):
         raise DiagnosticError("command_unavailable") from None
@@ -135,6 +168,152 @@ def validate_inputs(host, project):
         raise DiagnosticError("invalid_ssh_alias")
     if project is not None and not valid_project(project):
         raise DiagnosticError("invalid_project")
+
+
+def validate_profile(value):
+    """Profiles contain aliases only; never passwords, keys or guessed server facts."""
+    try:
+        if type(value) is not dict or not {"schema", "ssh_aliases"} <= set(value) <= {"schema", "ssh_aliases", "project"}:
+            raise ValueError()
+        aliases = value["ssh_aliases"]
+        if type(value["schema"]) is not int or value["schema"] != 1 or type(aliases) is not list or not 1 <= len(aliases) <= MAX_ALIASES:
+            raise ValueError()
+        if any(type(alias) is not str for alias in aliases) or len(aliases) != len(set(aliases)):
+            raise ValueError()
+        for alias in aliases:
+            validate_inputs(alias, None)
+        project = value.get("project")
+        if "project" in value and not valid_project(project):
+            raise ValueError()
+        return {"schema": 1, "ssh_aliases": list(aliases), **({"project": project} if project is not None else {})}
+    except (ValueError, TypeError, DiagnosticError):
+        raise DiagnosticError("connection_profile_invalid") from None
+
+
+def load_profile(path):
+    """Read a small regular profile without following a link or accepting extra keys."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 4096:
+                raise ValueError()
+            raw = handle.read(4097)
+            if len(raw) > 4096:
+                raise ValueError()
+        return validate_profile(json.loads(raw.decode("utf-8")))
+    except (OSError, ValueError, UnicodeError, RecursionError):
+        raise DiagnosticError("connection_profile_invalid") from None
+
+
+def configured_alias(host):
+    """Ask OpenSSH to resolve trusted local configuration without connecting.
+
+    An alias with no HostName substitution is not an automatic target. This
+    prevents a missing profile alias from falling through to ordinary DNS.
+    OpenSSH itself handles Include, Match and its usual configuration precedence.
+    The effective settings are kept in memory and never saved or printed.
+    """
+    validate_inputs(host, None)
+    raw = command(["ssh", "-G", *SSH_OPTIONS, host], timeout=15, ssh=True)
+    values = [line.split(None, 1)[1].strip() for line in raw.splitlines()
+              if len(line.split(None, 1)) == 2 and line.split(None, 1)[0].lower() == "hostname"]
+    if len(values) != 1:
+        raise DiagnosticError("ssh_configuration_unavailable")
+    hostname = values[0]
+    try:
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        if not re.fullmatch(r"(?=.{1,253}\.?$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.?", hostname):
+            raise DiagnosticError("ssh_configuration_unavailable") from None
+    return hostname.rstrip(".").lower() != host.rstrip(".").lower()
+
+
+def probe_connection(host):
+    """Confirm authenticated remote command access before inspecting a server."""
+    remote = shlex.join(["printf", "%s\\n", SSH_PROBE])
+    raw = command(["ssh", *SSH_OPTIONS, host, remote], timeout=25, ssh=True)
+    if raw != SSH_PROBE + "\n":
+        raise DiagnosticError("remote_report_invalid")
+
+
+def incomplete_report():
+    report = base_report()
+    report["blockers"] = ["ssh_or_remote_collection_unavailable", "physical_acceptance_not_performed"]
+    report["next_inputs"].insert(0, NEXT_INPUTS["ssh"])
+    return report
+
+
+def validate_connection(value):
+    """Validate local connection provenance separately from the remote schema."""
+    try:
+        if type(value) is not dict or set(value) != {"schema", "selection", "selected_alias", "attempts"}:
+            raise ValueError()
+        attempts, selected = value["attempts"], value["selected_alias"]
+        if type(value["schema"]) is not int or value["schema"] != 1 or value["selection"] != "automatic":
+            raise ValueError()
+        if type(attempts) is not list or not 1 <= len(attempts) <= MAX_ALIASES:
+            raise ValueError()
+        clean, seen = [], set()
+        for index, attempt in enumerate(attempts):
+            if type(attempt) is not dict or set(attempt) != {"alias", "status"}:
+                raise ValueError()
+            alias, status = attempt["alias"], attempt["status"]
+            validate_inputs(alias, None)
+            if type(alias) is not str or alias in seen or type(status) is not str or status not in CONNECTION_STATUSES:
+                raise ValueError()
+            if index < len(attempts) - 1 and status not in ("not_configured", "network_unavailable"):
+                raise ValueError()
+            seen.add(alias)
+            clean.append({"alias": alias, "status": status})
+        if selected is not None:
+            validate_inputs(selected, None)
+            if selected != clean[-1]["alias"] or clean[-1]["status"] not in SELECTED_STATUSES:
+                raise ValueError()
+        elif clean[-1]["status"] in SELECTED_STATUSES:
+            raise ValueError()
+        return {"schema": 1, "selection": "automatic", "selected_alias": selected, "attempts": clean}
+    except (TypeError, ValueError, DiagnosticError):
+        raise DiagnosticError("connection_provenance_invalid") from None
+
+
+def automatic_report(profile, project=None, progress=None):
+    """Use one configured server; never switch after authenticating and probing it."""
+    profile = validate_profile(profile)
+    project = project if project is not None else profile.get("project")
+    validate_inputs(None, project)
+    connection = {"schema": 1, "selection": "automatic", "selected_alias": None, "attempts": []}
+    statuses = {"ssh_host_key_changed": "host_key_changed", "ssh_host_key_untrusted": "host_key_untrusted",
+                "ssh_authentication_failed": "authentication_failed", "ssh_network_unavailable": "network_unavailable",
+                "ssh_configuration_unavailable": "configuration_unavailable"}
+    for alias in profile["ssh_aliases"]:
+        attempt = {"alias": alias, "status": "connection_failed"}
+        connection["attempts"].append(attempt)
+        try:
+            if progress is not None:
+                progress(alias, "checking_configuration")
+            if not configured_alias(alias):
+                attempt["status"] = "not_configured"
+                continue
+            if progress is not None:
+                progress(alias, "connecting")
+            probe_connection(alias)
+        except DiagnosticError as error:
+            attempt["status"] = statuses.get(str(error), "connection_failed")
+            if attempt["status"] == "network_unavailable":
+                continue
+            break
+        connection["selected_alias"] = alias
+        try:
+            if progress is not None:
+                progress(alias, "collecting")
+            report = remote_report(alias, project)
+            attempt["status"] = "collected"
+        except (DiagnosticError, ValueError, OSError) as error:
+            attempt["status"] = "remote_report_invalid" if str(error) == "remote_report_invalid" else "remote_collection_unavailable"
+            report = incomplete_report()
+        return report, validate_connection(connection)
+    return incomplete_report(), validate_connection(connection)
 
 
 def inspect_filtered(filter_value):
@@ -424,8 +603,12 @@ def remote_report(host, project=None):
         raise DiagnosticError("remote_report_invalid") from None
 
 
-def save_report(report, output=None):
+def save_report(report, output=None, connection=None):
     report = validate_report(report)
+    if connection is not None:
+        # This field is created by the Mac after validation. The remote is not
+        # allowed to supply, spoof or extend local connection provenance.
+        report["connection"] = validate_connection(connection)
     if output is None:
         directory = Path.cwd() / "PasoFi_Readiness"
         directory.mkdir(mode=0o700, exist_ok=True)
@@ -448,9 +631,11 @@ class Parser(argparse.ArgumentParser):
 
 def main(argv=None):
     parser = Parser(description="Collect a private read-only PasoFi readiness report through an existing SSH alias.")
-    mode = parser.add_mutually_exclusive_group(required=True)
+    mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--host", help="Existing SSH alias with a trusted host record and available key")
+    mode.add_argument("--auto", action="store_true", help="Use the packaged connection profile automatically (default)")
     mode.add_argument("--remote", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--profile", help="Connection profile; default: mac-connection.json beside this script")
     parser.add_argument("--project", help="Existing Compose project, only when needed to resolve ambiguity")
     parser.add_argument("--output", help="New local JSON file; default: a private PasoFi_Readiness folder")
     try:
@@ -459,18 +644,30 @@ def main(argv=None):
             raise DiagnosticError("python_version_unavailable")
         validate_inputs(args.host, args.project)
         if args.remote:
-            if args.output:
+            if args.output or args.profile:
                 raise DiagnosticError("remote_output_forbidden")
             print(json.dumps(collect(args.project)))
             return 0
-        try:
-            report = remote_report(args.host, args.project)
-        except (DiagnosticError, ValueError, OSError):
-            report = base_report()
-            report["blockers"] = ["ssh_or_remote_collection_unavailable", "physical_acceptance_not_performed"]
-            report["next_inputs"].insert(0, NEXT_INPUTS["ssh"])
-        path = save_report(report, args.output)
+        connection = None
+        if args.host:
+            if args.profile:
+                raise DiagnosticError("invalid_arguments")
+            try:
+                report = remote_report(args.host, args.project)
+            except (DiagnosticError, ValueError, OSError):
+                report = incomplete_report()
+        else:
+            profile = load_profile(args.profile or Path(__file__).with_name("mac-connection.json"))
+            labels = {"checking_configuration": "Checking configured SSH alias", "connecting": "Checking secure connection",
+                      "collecting": "Reading the existing PasoFi installation"}
+            report, connection = automatic_report(profile, args.project,
+                progress=lambda alias, stage: print(labels[stage] + ": " + alias, flush=True))
+            for attempt in connection["attempts"]:
+                print("Connection " + attempt["alias"] + ": " + attempt["status"])
+        path = save_report(report, args.output, connection=connection)
         print("Private read-only report saved: " + str(path))
+        if report["project"]:
+            print("Existing Compose project: " + report["project"])
         print("No deployment or customer activation was performed. Physical and cash acceptance remain required.")
         return 1 if "ssh_or_remote_collection_unavailable" in report["blockers"] else 0
     except (DiagnosticError, OSError):
