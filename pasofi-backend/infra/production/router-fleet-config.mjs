@@ -17,6 +17,8 @@ export function validateRouterFleetRows(rows) {
         !text(row.expectedSerial, 64) || !text(row.password, 4096) || typeof row.allowWrites !== 'boolean' ||
         row.caFile !== '/run/pamofi/router-fleet-ca/' + row.nasId + '.pem' ||
         !Array.isArray(row.targets) || row.targets.length < 1 || row.targets.length > 16) throw Error('Each router requires its verified serial, explicit write policy, public trust file, and 1–16 managed targets.');
+    // Match the fleet runtime's byte limit and full whitespace exclusion.
+    if (!text(row.username, 128) || /[:\s]/.test(row.username)) throw Error('The fleet account name must contain 1–128 UTF-8 bytes without colons or whitespace.');
     if (serials.has(row.expectedSerial.toUpperCase()) || urls.has(row.url)) throw Error('Each physical router must use one registered NAS identity and management endpoint.');
     serials.add(row.expectedSerial.toUpperCase()); urls.add(row.url);
     const keys = new Set(), resources = new Set();
