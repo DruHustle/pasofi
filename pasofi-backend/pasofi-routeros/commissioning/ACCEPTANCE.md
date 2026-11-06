@@ -30,6 +30,7 @@ application receipt as evidence for another gate.
 
 | Gate | Required observation | Result / evidence |
 | --- | --- | --- |
+| Package availability | On SMIPS 7.20+: installed enabled `hotspot` at the exact RouterOS version, not merely available or scheduled; successful install log and HotSpot menu available | Pending |
 | Physical permission | After any required physical confirmation: inspected mode retained, `flagged=no`, `hotspot=yes`; same serial and packages | Pending |
 | Recovery | Baseline management, WAN default route, DNS/Internet and CPE paths work after reboot; obtain a real customer DHCP lease later | Pending |
 | Customer separation | Intended guest members only; management/CPE/recovery path retained; two phones have distinct IP/MAC host identities | Pending |

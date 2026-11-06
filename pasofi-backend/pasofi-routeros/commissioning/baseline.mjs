@@ -6,6 +6,14 @@ export function routerName(value, label) {
   return value;
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// The SMIPS HotSpot feature moved out of routeros starting with RouterOS 7.20.
+// Call only after validateBaseline has checked the stable RouterOS 7 version.
+// https://download.mikrotik.com/routeros/7.20/CHANGELOG
+export function requiresHotspotPackage(router) {
+  return router.architecture.toLowerCase() === 'smips' && Number(router.version.split('.')[1]) >= 20;
+}
+
 export function canonicalNetwork(cidr) {
   if (typeof cidr !== 'string') throw Error('Baseline addresses require an IPv4 CIDR');
   const [address, prefix, extra] = cidr.split('/'), bits = Number(prefix);

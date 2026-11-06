@@ -3,6 +3,7 @@ import type {Pool} from 'pg';
 import {SignJWT} from 'jose';
 
 const uuid={type:'string',pattern:'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'};
+class ExpiredCredential extends Error {}
 export function customerNetworkEnabled(demo:boolean) {
   if(process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED!=='true'||Buffer.byteLength(process.env.INTERNAL_NETWORK_SECRET||'')<32)return false;
   if(demo?process.env.INTERNAL_RADIUS_ENABLED!=='true':process.env.PAMOFI_RADIUS_QUALIFIED!=='true')return false;
@@ -15,7 +16,15 @@ export function registerCustomerNetwork(app:FastifyInstance,pool:Pool|null,demo:
   async function network(path:string,scope:string,body?:unknown) {
     const token=await new SignJWT({scope}).setProtectedHeader({alg:'HS256'}).setIssuer('prepaid-access').setSubject('prepaid-access').setAudience('network').setIssuedAt().setExpirationTime('15s').sign(new TextEncoder().encode(process.env.INTERNAL_NETWORK_SECRET!));
     const response=await fetch(new URL(path,process.env.NETWORK_URL),{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)}),redirect:'error',signal:AbortSignal.timeout(5000)});
-    if(!response.ok)throw new Error('network_unavailable');
+    if(!response.ok){
+      // Only this explicit rejection proves the saved credential can no longer
+      // be replayed. Timeouts and other failures retain the original request key.
+      if(scope==='network:credentials'&&response.status===409){
+        const failure:unknown=await response.json().catch(()=>null);
+        if(failure&&typeof failure==='object'&&!Array.isArray(failure)&&'error' in failure&&failure.error==='credential_expired')throw new ExpiredCredential();
+      }
+      throw new Error('network_unavailable');
+    }
     return response.json();
   }
   app.get('/v1/network/sites',async(request,reply)=>{
@@ -46,7 +55,7 @@ export function registerCustomerNetwork(app:FastifyInstance,pool:Pool|null,demo:
         ((activated_at IS NULL AND start_by>=now()) OR activated_at+make_interval(secs=>validity_seconds)>now()) LIMIT 1`,[customerId]);
       if(!usable.rowCount)return reply.code(409).send({error:'no_usable_entitlement'});
       return await network('/internal/v1/network/credentials','network:credentials',{customerId,...request.body});
-    }catch{return reply.code(503).send({error:'network_unavailable'});}
+    }catch(error){return error instanceof ExpiredCredential?reply.code(409).send({error:'credential_expired'}):reply.code(503).send({error:'network_unavailable'});}
   });
   app.post<{Body:{grantId:string}}>('/v1/network/disconnect',{schema:{body:{type:'object',additionalProperties:false,required:['grantId'],properties:{grantId:uuid}}}},async(request,reply)=>{
     // Always allow an authenticated customer to request termination of their

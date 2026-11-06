@@ -8,7 +8,7 @@ import { object, hostname, inIpv4, ipv4Networks, ipv4Number, privateIpv4 } from 
 import { validatePlan as validateServiceLink } from '../../infra/site-link/plan.mjs';
 import { registrationSql, validateRegistry } from '../../infra/radius-production/prepare.mjs';
 import { buildPages } from '../portal/welcome/build-install.mjs';
-import { routerName as name, validateBaseline } from './baseline.mjs';
+import { requiresHotspotPackage, routerName as name, validateBaseline } from './baseline.mjs';
 import { buildCollector } from './collect.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -22,7 +22,7 @@ const schema = {
   routerControl: { url: null, username: null, certificateName: null, certificateSha256: null },
 };
 const gates = [
-  'physical-device-mode-confirmation', 'management-and-uplink-recovery',
+  'hotspot-package-availability', 'physical-device-mode-confirmation', 'management-and-uplink-recovery',
   'separate-customer-topology', 'private-service-transport', 'incremental-nas-enrollment',
   'trusted-hotspot-https', 'private-https-disconnect-control', 'guest-isolation-and-ipv6',
   'cash-sale-and-redemption', 'paid-auth-and-accounting', 'disconnect-absence-and-reconnect',
@@ -64,6 +64,9 @@ export async function validatePlan(baselineInput, input) {
   const baseline = validateBaseline(baselineInput), r = baseline.router;
   const missing = missingInputs(input);
   if (missing.length) throw Error(`Required commissioning inputs: ${missing.join(', ')}`);
+  if (requiresHotspotPackage(r) && !baseline.packages.includes('hotspot')) {
+    throw Error('SMIPS RouterOS 7.20+ requires the installed hotspot package in baseline.packages; verify its matching enabled version after installation before preparing HotSpot. Read-only --collect remains available.');
+  }
   if (input.schemaVersion !== 1) throw Error('Unsupported commissioning schema');
   if (baseline.protectedSiteIds.includes(input.site.siteId)) throw Error('This router requires its verified site mapping; do not reuse another protected site');
   if (typeof input.site.displayName !== 'string' || !/^[\p{L}\p{N}][\p{L}\p{N} .,'()-]{0,79}$/u.test(input.site.displayName) || input.site.displayName !== input.site.displayName.trim()) throw Error('site.displayName requires the actual plain-text site name');
@@ -127,7 +130,12 @@ function targetGuards(baseline) {
     `:if ([/system routerboard get serial-number] != "${r.serial}") do={ :error "Wrong hardware serial for this private baseline" }`,
     `:if ([/system routerboard get model] != "${r.model}" || [/system resource get architecture-name] != "${r.architecture}") do={ :error "Hardware baseline changed" }`,
     `:if ([/system identity get name] != "${r.identity}") do={ :error "Router identity changed" }`,
-    ...baseline.packages.map(pkg => `:if ([:len [/system package find where name="${pkg}" and version="${r.version}" and disabled=no]] != 1) do={ :error "Expected package/version missing" }`),
+    ...baseline.packages.map(pkg => {
+      const separateHotspot = pkg === 'hotspot' && requiresHotspotPackage(r);
+      const installed = separateHotspot ? ' and available=no and scheduled=""' : '';
+      const error = separateHotspot ? 'Expected installed enabled HotSpot package at the exact RouterOS version with no pending changes' : 'Expected package/version missing';
+      return `:if ([:len [/system package find where name="${pkg}" and version="${r.version}" and disabled=no${installed}]] != 1) do={ :error "${error}" }`;
+    }),
     `:if ([/system device-mode get mode] != "${r.deviceMode}" || [/system device-mode get flagged] != false || [/system device-mode get hotspot] != true) do={ :error "Device-mode requires inspected mode, flagged=no and hotspot=yes after physical confirmation" }`,
     `:if ([:len [/interface bridge find where name="${r.managementBridge}" and disabled=no]] != 1 || [:len [/ip address find where interface="${r.managementBridge}" and address="${r.managementAddress}" and disabled=no]] != 1) do={ :error "Management path changed" }`,
     ...baseline.retiredManagementAddresses.map(address => `:if ([:len [/ip address find where interface="${r.managementBridge}" and address="${address}" and disabled=no]] != 0) do={ :error "Retired management address is enabled" }`),

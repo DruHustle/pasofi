@@ -1,4 +1,4 @@
-import { validateBaseline } from './baseline.mjs';
+import { requiresHotspotPackage, validateBaseline } from './baseline.mjs';
 
 // Explicit field selection: never emit on-event/lease scripts, raw exports,
 // credential-bearing DoH URLs, secrets, customer sessions or private keys.
@@ -15,6 +15,9 @@ const each = (menu, fields) => [
 ];
 export function buildCollector(input) {
   const baseline = validateBaseline(input), r = baseline.router;
+  // Do not emit commands for an unavailable menu: RouterOS may reject the whole
+  // block before executing an in-script guard. Recollect after installation.
+  const collectHotspot = !requiresHotspotPackage(r) || baseline.packages.includes('hotspot');
   return ['{',
     '# READ ONLY. Generated from a private inspected baseline; do not publish this inventory.',
     `:if ([/system routerboard get serial-number] != "${r.serial}") do={ :error "Wrong hardware serial for this private baseline" }`,
@@ -43,8 +46,13 @@ export function buildCollector(input) {
     ':put "=== RADIUS endpoint metadata only ==="',
     ...each('/radius', ['service', 'address', 'src-address', 'disabled', 'require-message-auth']),
     ':put "=== HotSpot server and profile metadata only ==="',
-    ...each('/ip hotspot', ['name', 'interface', 'profile', 'disabled']),
-    ...each('/ip hotspot profile', ['name', 'dns-name', 'login-by', 'ssl-certificate', 'use-radius', 'radius-accounting', 'radius-interim-update', 'html-directory']),
+    ...(collectHotspot ? [
+      ...each('/ip hotspot', ['name', 'interface', 'profile', 'disabled']),
+      ...each('/ip hotspot profile', ['name', 'dns-name', 'login-by', 'ssl-certificate', 'use-radius', 'radius-accounting', 'radius-interim-update', 'html-directory']),
+    ] : [
+      ':put "HotSpot metadata skipped: SMIPS RouterOS 7.20+ requires the separate hotspot package, missing from this baseline."',
+      ':put "Inspect the current package list and refresh the baseline after installation; HotSpot objects remain unverified."',
+    ]),
     ':put "=== Certificate public metadata only ==="',
     ...each('/certificate', ['name', 'fingerprint', 'trusted']),
     ':put "=== IPv4 and IPv6 policy fields ==="',

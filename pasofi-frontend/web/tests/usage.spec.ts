@@ -117,3 +117,40 @@ test('credentials arriving after a failed usage check stay hidden until a new ve
   await open(page); await page.getByRole('button', { name: 'Connect to Wi-Fi' }).click(); await waiting; unavailable = true; await page.clock.runFor(5_000); await expect(page.getByText('Connection status not verified', { exact: true })).toBeVisible(); release(); await expect(page.getByText('Account status changed while preparing sign-in.', { exact: false })).toBeVisible(); await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
   unavailable = false; await page.getByRole('button', { name: 'Check connection', exact: true }).click(); await expect(page.getByRole('button', { name: 'Retry connection' })).toBeEnabled(); await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0); await page.getByRole('button', { name: 'Retry connection' }).click(); await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('private-hotspot-password'); expect(new Set(keys).size).toBe(1);
 });
+
+for (const initial of ['hidden details', 'lost response'] as const) {
+  test(`expired hotspot credentials recover after ${initial} without repeating an uncertain request under a new key`, async ({ page }) => {
+    const keys: string[] = [];
+    await mock(page, async (route, path) => {
+      if (path === '/api/capabilities') { await json(route, { demo: true, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: true, mobileCookies: false }); return true; }
+      if (path === '/api/network/sites') { await json(route, { sites: [{ id: siteId, name: 'Test hotspot', loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
+      if (path === '/api/usage') { await json(route, usageSnapshot('0', { queuedBytes: '5000000000' })); return true; }
+      if (path === '/api/network/credentials') {
+        keys.push(route.request().postDataJSON().requestKey);
+        if (keys.length === 1 && initial === 'lost response') await json(route, { error: 'network_unavailable' }, 503);
+        else if (keys.length === 2) await json(route, { error: 'credential_expired' }, 409);
+        else await json(route, { username: 'private-hotspot-user', password: 'private-hotspot-password', expiresAt: future(), loginUrl: 'https://hotspot.example.test/login' });
+        return true;
+      }
+      return false;
+    });
+    await open(page);
+    const connect = page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true });
+    await connect.click();
+    if (initial === 'hidden details') {
+      await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('private-hotspot-password');
+      await page.getByRole('button', { name: 'Hide connection details' }).click();
+    } else await expect(page.getByText('The service is temporarily unavailable.', { exact: false })).toBeVisible();
+    await expect(connect).toBeEnabled();
+    await connect.click();
+    await expect(page.getByText('Your prepared hotspot sign-in expired.', { exact: false })).toBeVisible();
+    await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]);
+    await expect(connect).toBeEnabled();
+    await connect.click();
+    await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('private-hotspot-password');
+    expect(keys).toHaveLength(3);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+}

@@ -98,6 +98,89 @@ test('guards are derived from a validated private baseline without fixed live in
   }
 });
 
+test('SMIPS collection without the extra HotSpot package omits unavailable menus and retains other safe reads', () => {
+  const inspected = baseline();
+  inspected.packages = ['routeros', 'wireless'];
+  assert.doesNotThrow(() => validateBaseline(inspected));
+  const collector = buildCollector(inspected);
+  assert.match(collector, /HotSpot metadata skipped/);
+  assert.match(collector, /HotSpot objects remain unverified/);
+  assert.doesNotMatch(collector, /\/ip hotspot\b/);
+  for (const marker of ['/system package print', '/system device-mode print', '/interface wireless find', '/radius find', '/ip firewall filter find', 'Read-only collection finished']) {
+    assert.ok(collector.includes(marker), marker);
+  }
+  assert.doesNotMatch(collector, /private-key|\/radius print|secret=|lease-script|use-doh-server|\/ip dns print|\/ip dhcp-client print/);
+});
+
+test('commissioning requires the separate package from SMIPS 7.20 without imposing it on older or other architectures', async () => {
+  for (const version of ['7.20', '7.20.1', '7.25.1']) {
+    const inspected = baseline();
+    inspected.router.version = version;
+    inspected.packages = ['routeros', 'wireless'];
+    await assert.rejects(buildPackage(inspected, fixture()), /requires the installed hotspot package in baseline\.packages/);
+  }
+  for (const [architecture, version] of [['smips', '7.9'], ['smips', '7.19.5'], ['mipsbe', '7.25.1'], ['arm', '7.25.1']]) {
+    const inspected = baseline();
+    Object.assign(inspected.router, { architecture, version });
+    inspected.packages = ['routeros', 'wireless'];
+    const files = await buildPackage(inspected, fixture());
+    assert.match(files['collect-readiness.rsc'], /\/ip hotspot find/);
+    assert.doesNotMatch(files['collect-readiness.rsc'], /HotSpot metadata skipped/);
+    assert.doesNotMatch(files['check-disabled-staging.rsc'], /name="hotspot"/);
+  }
+});
+
+test('rendered HotSpot package guard accepts only one installed enabled exact-version record with no pending action', async () => {
+  for (const version of ['7.20', '7.25.1']) {
+    const inspected = baseline();
+    inspected.router.version = version;
+    const files = await buildPackage(inspected, fixture()), script = files['check-disabled-staging.rsc'];
+    const selector = script.match(/\[\/system package find where (name="hotspot"[^\]]+)\]/)?.[1];
+    assert.ok(selector, 'A separate HotSpot package must have a live staging guard');
+    const fields = Object.fromEntries([...selector.matchAll(/([a-z-]+)=(?:"([^"]*)"|(yes|no))/g)].map(([, field, text, flag]) => [field, flag ? flag === 'yes' : text]));
+    assert.deepEqual(fields, { name: 'hotspot', version, disabled: false, available: false, scheduled: '' });
+    // Interpret the emitted field predicates against independent package states;
+    // this does not claim to execute RouterOS or qualify a physical installation.
+    const accepts = records => records.filter(row => Object.entries(fields).every(([field, value]) => row[field] === value)).length === 1;
+    const installed = { name: 'hotspot', version, disabled: false, available: false, scheduled: '' };
+    assert.equal(accepts([installed]), true);
+    for (const records of [[], [installed, installed],
+      [{ ...installed, name: 'routeros' }], [{ ...installed, version: '7.19.5' }],
+      [{ ...installed, disabled: true }], [{ ...installed, available: true }],
+      [{ ...installed, scheduled: 'Use `apply-changes` to proceed with install' }],
+      [{ ...installed, scheduled: 'scheduled for disable' }],
+    ]) assert.equal(accepts(records), false);
+    assert.ok(script.indexOf(selector) < script.indexOf('/system device-mode get hotspot'));
+    assert.match(files['collect-readiness.rsc'], /\/ip hotspot profile find/);
+    const report = JSON.parse(files['review.json']);
+    assert.equal(report.gates['hotspot-package-availability'], 'pending-live-evidence');
+    assert.equal(report.customerServiceQualified, false);
+  }
+});
+
+test('missing-package CLI permits collection but refuses check/bundle output without inventing package inventory', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pasofi-hotspot-package-'));
+  try {
+    const inspected = baseline(); inspected.packages = ['routeros', 'wireless'];
+    const privateBaseline = join(dir, 'baseline.json'), plan = join(dir, 'plan.json');
+    await writeFile(privateBaseline, JSON.stringify(inspected), { mode: 0o600 });
+    await writeFile(plan, JSON.stringify(fixture()), { mode: 0o600 });
+    const collected = join(dir, 'collect.rsc');
+    const collect = spawnSync(process.execPath, [script, privateBaseline, '--collect', collected], { encoding: 'utf8' });
+    assert.equal(collect.status, 0, collect.stderr);
+    assert.doesNotMatch(await readFile(collected, 'utf8'), /\/ip hotspot\b/);
+    const target = join(dir, 'must-not-exist');
+    for (const destination of ['--check', target]) {
+      const result = spawnSync(process.execPath, [script, privateBaseline, plan, destination], { encoding: 'utf8' });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /requires the installed hotspot package/);
+      assert.equal(result.stdout, '');
+    }
+    await assert.rejects(stat(target), { code: 'ENOENT' });
+    assert.deepEqual(JSON.parse(await readFile(privateBaseline, 'utf8')).packages, ['routeros', 'wireless']);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('rejects protected paths, site reuse and RouterOS input injection', async () => {
   const changes = [
     p => { p.site.siteId = baselineExample.protectedSiteIds[0]; },

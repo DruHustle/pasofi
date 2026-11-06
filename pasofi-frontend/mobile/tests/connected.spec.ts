@@ -80,6 +80,43 @@ test('a gateway that cannot retain the mobile cookie never redeems a voucher', a
   await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Use a voucher', exact: true }).click(); await page.getByLabel('Voucher code', { exact: true }).fill('DEMOVOUCHER234567'); await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click(); await expect(page.getByRole('button', { name: 'Redeem voucher', exact: true })).toBeEnabled(); await expect(page.getByText('This browser did not keep the account cookie.', { exact: false })).toBeVisible(); expect(redemptions).toBe(0); await expect(page.getByText('Queued · not connected', { exact: true })).toHaveCount(0);
 });
 
+for (const initial of ['hidden details', 'lost response'] as const) {
+  test(`expired mobile hotspot credentials recover after ${initial} only after authoritative rejection`, async ({ page, configuredBaseURL }) => {
+    const siteId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', keys: string[] = [];
+    await mock(page, async (route, path, _method, reply) => {
+      if (path === '/api/capabilities') { await reply({ ...capabilities, networkAccess: true }); return true; }
+      if (path === '/api/network/sites') { await reply({ sites: [{ id: siteId, name: 'Test hotspot', loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
+      if (path === '/api/usage') { await reply(usageSnapshot('0', { queuedBytes: '5000000000', entitlementId })); return true; }
+      if (path === '/api/network/credentials') {
+        keys.push(route.request().postDataJSON().requestKey);
+        if (keys.length === 1 && initial === 'lost response') await reply({ error: 'network_unavailable' }, 503);
+        else if (keys.length === 2) await reply({ error: 'credential_expired' }, 409);
+        else await reply({ username: 'private-hotspot-user', password: 'private-hotspot-password', expiresAt: new Date(Date.now() + 120_000).toISOString(), loginUrl: 'https://hotspot.example.test/login' });
+        return true;
+      }
+      return false;
+    });
+    await open(page, configuredBaseURL);
+    const connect = page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true });
+    await connect.click();
+    if (initial === 'hidden details') {
+      await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('private-hotspot-password');
+      await page.getByRole('button', { name: 'Hide connection details' }).click();
+    } else await expect(page.getByText('The service is temporarily unavailable.', { exact: false })).toBeVisible();
+    await expect(connect).toBeEnabled();
+    await connect.click();
+    await expect(page.getByText('Your prepared hotspot sign-in expired.', { exact: false })).toBeVisible();
+    await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]);
+    await expect(connect).toBeEnabled();
+    await connect.click();
+    await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('private-hotspot-password');
+    expect(keys).toHaveLength(3);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+}
+
 test('gateway failure preserves the useful offline preview and offers retry', async ({ page, configuredBaseURL }) => {
   await page.route(`${apiOrigin}/api/**`, route => route.abort('failed')); await open(page, configuredBaseURL); await expect(page.getByRole('button', { name: 'Retry service connection' })).toBeVisible(); await page.getByRole('button', { name: '← Offline preview' }).click(); await page.getByRole('button', { name: /Explore bundles/ }).click(); await expect(page.getByRole('button', { name: 'View Flex example bundle' })).toBeVisible();
 });

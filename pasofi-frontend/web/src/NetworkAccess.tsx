@@ -66,7 +66,16 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
       const url = new URL(result.loginUrl), registered = sites.find(site => site.id === siteId);
       if (url.protocol !== 'https:' || url.username || url.password || url.hash || !registered || result.loginUrl !== registered.loginUrl || typeof result.username !== 'string' || typeof result.password !== 'string') throw Error('invalid_connection_details');
       if (isCurrent(revision)) { setCredentials(result); setMessage('Your connection is ready to start. Continue below; the hotspot will confirm when you’re online.'); await refresh(); }
-    } catch (error) { if (isCurrent(revision)) { setMessage(messageFor(error, 'Connection details could not be verified. Check status before retrying.')); await refresh(); } }
+    } catch (error) {
+      if (isCurrent(revision)) {
+        const expired = error instanceof ApiError && error.status === 409 && error.code === 'credential_expired';
+        // A lost response must retry the same preparation. Rotate only after
+        // the credential authority confirms it is no longer usable.
+        if (expired) request.current = null;
+        setMessage(expired ? 'Your prepared hotspot sign-in expired. Choose Connect to Wi-Fi again to get fresh details.' : messageFor(error, 'Connection details could not be verified. Check status before retrying.'));
+        await refresh();
+      }
+    }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
   async function disconnect() {
