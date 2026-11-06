@@ -30,6 +30,16 @@ test('fleet enrollment requires an explicit device identity and a bounded resour
   assert.equal(validateRouterFleetRows([value, {...other, expectedSerial: 'ANOTHER_SERIAL', url: 'https://10.77.254.3/rest/'}]).length, 2);
 });
 
+test('fleet enrollment rejects account names that the runtime cannot load', () => {
+  const value = router();
+  for (const username of ['é'.repeat(65), 'fleet\u00a0operator', 'fleet\u2003operator']) {
+    assert.throws(() => validateRouterFleetRows([{...value, username}]));
+  }
+  for (const username of ['pasofi-fleet', 'a'.repeat(128), 'é'.repeat(64)]) {
+    assert.equal(validateRouterFleetRows([{...value, username}])[0].username, username);
+  }
+});
+
 test('fleet preflight validates protected files and explicit independent gates without emitting secrets', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'pasofi-router-fleet-')), row = router();
   try {
