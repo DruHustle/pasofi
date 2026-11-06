@@ -51,6 +51,10 @@ class BackupBoundary(DockerBoundary):
                 self.created_backup = True
                 return ''
             if argv[-1] == 'check':
+                # Match the actual 2.57 main-role command contract. This is
+                # intentionally stricter than merely returning fake success.
+                if any(value.startswith('--repo=') for value in argv):
+                    raise BACKUP.BackupError('option repo not valid for command check')
                 return ''
             if argv[-1] == 'info':
                 self.info_calls += 1
@@ -101,6 +105,20 @@ class MetadataTests(unittest.TestCase):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_lab_check_also_uses_the_257_main_role_options(self):
+        path = REPO / 'pasofi-backend/infra/backup-lab/test-exact-deployment-restore.py'
+        specification = importlib.util.spec_from_file_location('exact_restore_command_contract', path)
+        lab = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(lab)
+        fixture = object.__new__(lab.Fixture)
+        fixture.source_id = 'd' * 64
+        check = fixture.pgbackrest('check')
+        self.assertNotIn('--repo=1', check)
+        self.assertIn('--config=/etc/pgbackrest/pgbackrest.conf', check)
+        self.assertIn('--stanza=pamofi', check)
+        for args in (('--output=json', '--detail-level=full', 'info'), ('--type=diff', '--no-expire-auto', 'backup')):
+            self.assertIn('--repo=1', fixture.pgbackrest(*args))
+
     def test_environment_overrides_duplicates_and_secret_mount_changes_stop_before_commands(self):
         for extra in ('PGBACKREST_REPO1_CIPHER_TYPE=none', 'PGBACKREST_CONFIG_INCLUDE_PATH=/unsafe',
                       'PGBACKREST_CONFIG=/unexpected', 'PGBACKREST_STANZA=other'):
@@ -152,7 +170,11 @@ class BackupFlowTests(unittest.TestCase):
         self.assertEqual(evidence['restore_image_id'], IMAGE)
         self.assertEqual(evidence['cleanup'], 'passed')
         commands = [argv for argv in docker.calls if 'pgbackrest' in argv]
-        self.assertTrue(all('--config=/run/pgbackrest/pgbackrest.conf' in argv and '--repo=1' in argv for argv in commands))
+        self.assertTrue(all('--config=/run/pgbackrest/pgbackrest.conf' in argv for argv in commands))
+        self.assertTrue(all('--repo=1' in argv for argv in commands if argv[-1] != 'check'))
+        checks = [argv for argv in commands if argv[-1] == 'check']
+        self.assertEqual(len(checks), 1)
+        self.assertNotIn('--repo=1', checks[0])
         self.assertIn('--no-expire-auto', next(argv for argv in commands if argv[-1] == 'backup'))
 
     def test_missing_captured_backup_after_restore_does_not_write_success(self):

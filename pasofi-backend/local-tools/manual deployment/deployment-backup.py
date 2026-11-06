@@ -218,16 +218,19 @@ def prepare_backup(container, expected_database_id, source, release):
     restore, program_hash = restore_module(source)
     image = configuration(container)
     postgres = container['Id']
-    base = ['docker', 'exec', '--user', 'postgres', postgres, 'pgbackrest', '--config=' + BACKUP_CONFIG, '--stanza=pamofi', '--repo=1']
+    base = ['docker', 'exec', '--user', 'postgres', postgres, 'pgbackrest', '--config=' + BACKUP_CONFIG, '--stanza=pamofi']
+    selected_repo = base + ['--repo=1']
     info = ['--output=json', '--detail-level=full', 'info']
-    before = backup_info(command(base + info, timeout=90), expected_database_id)
+    before = backup_info(command(selected_repo + info, timeout=90), expected_database_id)
     try:
         ledgers = restore.capture_ledgers(command, postgres)
         started = int(time.time())
         print('Creating a fresh encrypted backup using the existing protected repository.', flush=True)
-        command(base + ['--type=diff', '--no-expire-auto', 'backup'], timeout=4 * 3600)
+        command(selected_repo + ['--type=diff', '--no-expire-auto', 'backup'], timeout=4 * 3600)
+        # pgBackRest 2.57 permits --repo for check's remote role only, not its
+        # local main role. The validated config/env above permits only repo1.
         command(base + ['check'], timeout=300)
-        fresh = backup_info(command(base + info, timeout=90), expected_database_id)
+        fresh = backup_info(command(selected_repo + info, timeout=90), expected_database_id)
         require(fresh['label'] != before['label'] and fresh['completed'] >= started - 5,
                 'A newly completed backup was not established; deployment has not started.')
         require(configuration(container) == image, 'The immutable restore image changed during backup qualification.')
@@ -235,7 +238,7 @@ def prepare_backup(container, expected_database_id, source, release):
         restored = restore.restore_exact(command, image=image, backup_label=fresh['label'],
                                          expected_id=expected_database_id, expected_ledgers=ledgers)
         # Do not silently accept a replacement latest backup or a disappeared set.
-        require(backup_info(command(base + info, timeout=90), expected_database_id, exact_label=fresh['label']) == fresh,
+        require(backup_info(command(selected_repo + info, timeout=90), expected_database_id, exact_label=fresh['label']) == fresh,
                 'The captured backup metadata changed during restore qualification.')
     except restore.RestoreError as error:
         raise BackupError(str(error)) from None

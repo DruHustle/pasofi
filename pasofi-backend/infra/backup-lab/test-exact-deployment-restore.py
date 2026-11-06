@@ -129,8 +129,11 @@ class Fixture:
         return row['Image']
 
     def pgbackrest(self, *args):
+        # In 2.57, --repo is invalid for the local main role of check. This
+        # fixture configuration contains exactly one repository, repo1.
+        selection = [] if args == ('check',) else ['--repo=1']
         return ['docker', 'exec', '--user', 'postgres', self.source_id, 'pgbackrest',
-                '--config=' + CONFIG, '--stanza=pamofi', '--repo=1', *args]
+                '--config=' + CONFIG, '--stanza=pamofi', *selection, *args]
 
     def info(self):
         return self.real(self.pgbackrest('--output=json', '--detail-level=full', 'info'), timeout=90)
