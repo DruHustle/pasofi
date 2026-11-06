@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "site": {
+    "siteId": null,
+    "nasId": null,
+    "clientName": null,
+    "displayName": null
+  },
+  "customer": {
+    "bridge": null,
+    "interfaces": null,
+    "network": null,
+    "gateway": null,
+    "poolStart": null,
+    "poolEnd": null,
+    "dhcpServer": null,
+    "ipv6Policy": null
+  },
+  "serviceLink": {
+    "serverEndpoint": null,
+    "port": null,
+    "serverPublicKey": null,
+    "routerPublicKey": null,
+    "serverTunnelIp": null,
+    "routerTunnelIp": null,
+    "serverInterface": null,
+    "routerInterface": null,
+    "routerListenPort": null,
+    "routerNetworks": null,
+    "serverNetworks": null
+  },
+  "hotspot": {
+    "name": null,
+    "profile": null,
+    "origin": null,
+    "appOrigin": null,
+    "certificateName": null,
+    "certificateSha256": null,
+    "sourceDirectory": null,
+    "targetDirectory": null
+  },
+  "routerControl": {
+    "url": null,
+    "username": null,
+    "certificateName": null,
+    "certificateSha256": null
+  }
+}

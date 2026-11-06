@@ -80,6 +80,7 @@ jobs:
             pasofi-backend/infra/pilot-isolation/*.test.mjs \
             pasofi-backend/pasofi-routeros/site-01/*.test.mjs \
             pasofi-backend/pasofi-routeros/site-02/*.test.mjs \
+            pasofi-backend/pasofi-routeros/commissioning/*.test.mjs \
             pasofi-backend/pasofi-routeros/portal/welcome/*.test.mjs
           sh -n pasofi-backend/infra/backup-production/render-config.sh
           sh -n pasofi-backend/infra/backup-production/entrypoint.sh
@@ -139,7 +140,7 @@ jobs:
 
   mac-deployment:
     name: Verify Mac deployment launcher
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
       - name: Check out source
@@ -153,6 +154,8 @@ jobs:
           for launcher in Start_PasoFi.command release-deploy.command release-deploy.sh hotspot-readiness.command mac-python.sh; do
             /bin/bash -n "pasofi-backend/local-tools/manual deployment/$launcher"
           done
+          /bin/bash 'pasofi-backend/local-tools/manual deployment/Start_PasoFi.command' --help
+          /bin/bash 'pasofi-backend/local-tools/manual deployment/hotspot-readiness.command' --help
       - name: Verify actual Mac filesystem persistence and isolated orchestration
         run: |
           python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_mac_state.py' -v

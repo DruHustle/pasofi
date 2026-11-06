@@ -64,10 +64,11 @@ def read_ci(path, commit, tree):
                 and type(item['url']) is str and re.fullmatch(r'https://github\.com/DruHustle/pasofi/actions/runs/[0-9]+(?:/job/[0-9]+)?', item['url'])
                 and type(item['head_sha']) is str and re.fullmatch(r'[0-9a-f]{40}', item['head_sha']),
                 'CI evidence contains an unsupported or unsuccessful check.')
+        require(item['head_sha'] == commit, 'Every recorded CI check must belong to the exact packaged commit.')
         checks.append(item)
     require({'Verify PasoFi', 'Verify Mac deployment launcher'} <= {item['name'] for item in checks},
             'Record both the complete workflow and native Mac job for CI qualification.')
-    return {'status': 'passed_for_source_tree', 'source_tree': tree, 'checks': checks}
+    return {'status': 'passed_for_pinned_commit', 'source_commit': commit, 'source_tree': tree, 'checks': checks}
 
 
 def build(output, ci_path=None):
