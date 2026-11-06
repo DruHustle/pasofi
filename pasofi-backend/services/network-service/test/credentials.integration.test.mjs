@@ -27,3 +27,23 @@ test('credential retries return one encrypted, NAS-bound secret without extendin
   await assert.rejects(issueRadiusCredential(pool,input,key),{code:'credential_expired'});
  }finally{await pool.query('DELETE FROM radius_credentials WHERE customer_id=$1',[customerId]);await pool.query('DELETE FROM radius_nas WHERE id=ANY($1::uuid[])',[[nasId,otherNas]]);await pool.end();}
 });
+
+test('the issuance lock binds a selected site to its registered NAS and safe login context',{skip:!url},async()=>{
+ const pool=new pg.Pool({connectionString:url}),customerId=randomUUID(),otherCustomer=randomUUID(),nasId=randomUUID(),siteId=randomUUID(),otherSite=randomUUID(),requestKey=randomUUID();
+ const key={version:1,key:randomBytes(32)},input={customerId,nasId,siteId,requestKey};
+ try {
+  await pool.query("INSERT INTO radius_nas(id,site_id,client_name,enabled,login_url) VALUES($1,$2,$3,true,'https://selected.example.test/login')",[nasId,siteId,`selected_${nasId.replaceAll('-','')}`]);
+  await assert.rejects(issueRadiusCredential(pool,{...input,siteId:otherSite},key),{code:'nas_unavailable'});
+  assert.equal((await pool.query('SELECT count(*)::int AS total FROM radius_credentials WHERE customer_id=$1',[customerId])).rows[0].total,0);
+  const selected=await issueRadiusCredential(pool,input,key);
+  assert.equal(selected.siteId,siteId);assert.equal(selected.nasId,nasId);assert.equal(selected.loginUrl,'https://selected.example.test/login');
+  const replayCredentialId=(await pool.query('SELECT id FROM radius_credentials WHERE customer_id=$1 AND request_key=$2',[customerId,requestKey])).rows[0].id;
+  assert.deepEqual(await issueRadiusCredential(pool,{...input,replayCredentialId},key),selected);
+  for(const changed of [{customerId:otherCustomer},{requestKey:randomUUID()},{replayCredentialId:randomUUID()}])await assert.rejects(issueRadiusCredential(pool,{...input,replayCredentialId,...changed},key),{code:'credential_not_replayable'});
+  await assert.rejects(issueRadiusCredential(pool,{...input,siteId:otherSite},key),{code:'nas_unavailable'});
+  await pool.query('UPDATE radius_nas SET site_id=$2 WHERE id=$1',[nasId,otherSite]);
+  await assert.rejects(issueRadiusCredential(pool,input,key),{code:'nas_unavailable'});
+  await assert.rejects(issueRadiusCredential(pool,{...input,requestKey:randomUUID()},key),{code:'nas_unavailable'});
+  assert.equal((await pool.query('SELECT count(*)::int AS total FROM radius_credentials WHERE customer_id=$1',[customerId])).rows[0].total,1);
+ } finally {await pool.query('DELETE FROM radius_credentials WHERE customer_id=ANY($1::uuid[])',[[customerId,otherCustomer]]);await pool.query('DELETE FROM radius_nas WHERE id=$1',[nasId]);await pool.end();}
+});

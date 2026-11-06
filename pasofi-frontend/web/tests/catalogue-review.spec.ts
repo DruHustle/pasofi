@@ -26,7 +26,8 @@ async function fixture(page: Page, products = catalogue) {
     if (path === '/api/capabilities') return reply({ demo: false, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: false, mobileCookies: false });
     if (path === '/api/help') return reply({ articles: [] });
     if (path === '/api/session') return reply({ error: 'not_authenticated' }, 401);
-    if (path === '/api/sites' || path === '/api/network/sites') return reply({ sites: [] });
+    if (path === '/api/sites') return reply({ sites: [] });
+    if (path === '/api/network/sites') return reply({ accessPoints: [] });
     state.unexpected.push(`${request.method()} ${path}`);
     return reply({ error: 'unexpected_request' }, 500);
   });

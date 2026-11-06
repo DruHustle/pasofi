@@ -82,16 +82,16 @@ test('a gateway that cannot retain the mobile cookie never redeems a voucher', a
 
 for (const initial of ['hidden details', 'lost response'] as const) {
   test(`expired mobile hotspot credentials recover after ${initial} only after authoritative rejection`, async ({ page, configuredBaseURL }) => {
-    const siteId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', keys: string[] = [];
+    const siteId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', nasId = '11111111-1111-4111-8111-111111111111', keys: string[] = [];
     await mock(page, async (route, path, _method, reply) => {
       if (path === '/api/capabilities') { await reply({ ...capabilities, networkAccess: true }); return true; }
-      if (path === '/api/network/sites') { await reply({ sites: [{ id: siteId, name: 'Test hotspot', loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
+      if (path === '/api/network/sites') { await reply({ accessPoints: [{ siteId, nasId, siteName: 'Test site', name: 'Test hotspot', loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
       if (path === '/api/usage') { await reply(usageSnapshot('0', { queuedBytes: '5000000000', entitlementId })); return true; }
       if (path === '/api/network/credentials') {
         keys.push(route.request().postDataJSON().requestKey);
         if (keys.length === 1 && initial === 'lost response') await reply({ error: 'network_unavailable' }, 503);
         else if (keys.length === 2) await reply({ error: 'credential_expired' }, 409);
-        else await reply({ username: 'private-hotspot-user', password: 'private-hotspot-password', expiresAt: new Date(Date.now() + 120_000).toISOString(), loginUrl: 'https://hotspot.example.test/login' });
+        else await reply({ siteId, nasId, username: 'private-hotspot-user', password: 'private-hotspot-password', expiresAt: new Date(Date.now() + 120_000).toISOString(), loginUrl: 'https://hotspot.example.test/login' });
         return true;
       }
       return false;
@@ -269,4 +269,55 @@ test('native invoice export uses a cache file and system share only on click, th
   expect(calls.filter((call: any) => call.method === 'deleteFile' && call.options.path === write.options.path)).toHaveLength(0);
   await page.clock.fastForward(600_001);
   await expect.poll(() => page.evaluate(path => (window as any).invoiceNativeCalls.filter((call: any) => call.method === 'deleteFile' && call.options.path === path).length, write.options.path)).toBe(1);
+});
+
+for (const pendingContext of ['different', 'unknown'] as const) {
+  test('mobile retries the chosen same-site router and blocks a pending ' + pendingContext + ' router', async ({ page, configuredBaseURL }) => {
+    const siteId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', firstNas = '11111111-1111-4111-8111-111111111111', secondNas = '22222222-2222-4222-8222-222222222222';
+    const points = [{ siteId, nasId: firstNas, siteName: 'Test site', name: 'Router A', loginUrl: 'https://first.example.test/login' }, { siteId, nasId: secondNas, siteName: 'Test site', name: 'Router B', loginUrl: 'https://second.example.test/login' }];
+    const requests: { siteId: string; nasId: string; requestKey: string }[] = [];
+    let pendingElsewhere = false;
+    await mock(page, async (route, path, _method, reply) => {
+      if (path === '/api/capabilities') { await reply({ ...capabilities, networkAccess: true }); return true; }
+      if (path === '/api/network/sites') { await reply({ sites: [], accessPoints: points }); return true; }
+      if (path === '/api/usage') {
+        const snapshot = usageSnapshot('0', { queuedBytes: '5000000000', entitlementId });
+        if (pendingElsewhere) { snapshot.connectivity = 'pending'; snapshot.session = { grantId: entitlementId, entitlementId, siteId, nasId: pendingContext === 'unknown' ? null : firstNas, state: 'pending', connected: false, issuedAt: new Date().toISOString(), deadline: new Date(Date.now() + 120_000).toISOString(), lastAccountingAt: null, reservedBytes: '5000000000', chargedBytes: '0', reservationOutstandingBytes: '5000000000', disconnectRequested: false, accountingStale: false, accountingAnomaly: false }; }
+        await reply(snapshot); return true;
+      }
+      if (path === '/api/network/credentials') {
+        requests.push(route.request().postDataJSON());
+        await reply(requests.length === 1 ? { error: 'network_unavailable' } : { siteId, nasId: secondNas, username: 'mobile-router-b-user', password: 'mobile-router-b-password', expiresAt: new Date(Date.now() + 120_000).toISOString(), loginUrl: points[1].loginUrl }, requests.length === 1 ? 503 : 200); return true;
+      }
+      return false;
+    });
+    await open(page, configuredBaseURL);
+    const choice = page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' });
+    const connect = page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true });
+    await expect(choice).toHaveValue(''); await expect(connect).toBeDisabled();
+    await choice.selectOption(secondNas); await connect.click(); await expect(page.getByText('The service is temporarily unavailable.', { exact: false })).toBeVisible();
+    await expect(choice).toHaveValue(secondNas); await connect.click(); await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('mobile-router-b-password');
+    expect(requests).toHaveLength(2); expect(requests[0]).toEqual(requests[1]); expect(requests[0]).toEqual({ siteId, nasId: secondNas, requestKey: expect.any(String) });
+    await page.getByRole('button', { name: 'Hide connection details' }).click(); pendingElsewhere = true;
+    await page.getByRole('button', { name: 'Check connection', exact: true }).click(); await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
+    await expect(choice).toBeDisabled(); await expect(connect).toBeDisabled(); await expect(page.getByRole('button', { name: 'Retry connection' })).toHaveCount(0); await expect(page.getByRole('button', { name: 'Disconnect this hotspot session' })).toBeEnabled(); expect(requests).toHaveLength(2);
+  });
+}
+
+test('mobile hides credentials returned for another router and keeps the selected request intact', async ({ page, configuredBaseURL }) => {
+  const siteId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', firstNas = '11111111-1111-4111-8111-111111111111', secondNas = '22222222-2222-4222-8222-222222222222';
+  const points = [{ siteId, nasId: firstNas, siteName: 'Test site', name: 'Router A', loginUrl: 'https://first.example.test/login' }, { siteId, nasId: secondNas, siteName: 'Test site', name: 'Router B', loginUrl: 'https://second.example.test/login' }];
+  const requests: { siteId: string; nasId: string; requestKey: string }[] = [];
+  await mock(page, async (route, path, _method, reply) => {
+    if (path === '/api/capabilities') { await reply({ ...capabilities, networkAccess: true }); return true; }
+    if (path === '/api/network/sites') { await reply({ accessPoints: points }); return true; }
+    if (path === '/api/usage') { await reply(usageSnapshot('0', { queuedBytes: '5000000000', entitlementId })); return true; }
+    if (path === '/api/network/credentials') { requests.push(route.request().postDataJSON()); await reply({ siteId, nasId: firstNas, username: 'wrong-user', password: 'wrong-password', expiresAt: new Date(Date.now() + 120_000).toISOString(), loginUrl: points[1].loginUrl }); return true; }
+    return false;
+  });
+  await open(page, configuredBaseURL); await page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' }).selectOption(secondNas);
+  const connect = page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true }); await connect.click();
+  await expect(page.getByText('Connection details could not be verified.', { exact: false })).toBeVisible(); await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
+  await connect.click(); await expect(connect).toBeEnabled(); expect(requests).toHaveLength(2); expect(requests[0]).toEqual(requests[1]);
+  await expect(page.getByRole('link', { name: /registered hotspot sign-in/ })).toHaveCount(0);
 });

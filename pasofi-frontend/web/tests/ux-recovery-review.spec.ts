@@ -5,6 +5,7 @@ const siteId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const grantId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const product = { id: 'flex', price_minor: 100, currency: 'USD', byte_limit: '10000000000', validity_seconds: 604800 };
 const site = { id: siteId, name: 'Review hotspot', loginUrl: 'https://hotspot.pasofi.onesa.eu/login' };
+const accessPoint = { siteId, nasId: '11111111-1111-4111-8111-111111111111', siteName: site.name, name: 'Review router', loginUrl: site.loginUrl };
 const capabilities = { demo: false, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: true, mobileCookies: false };
 const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 async function fixture(page: Page, handle: (route: Route, path: string) => Promise<boolean>) {
@@ -17,7 +18,8 @@ async function fixture(page: Page, handle: (route: Route, path: string) => Promi
     if (path === '/api/session') return json(route, { customerId });
     if (path === '/api/usage') return json(route, usageSnapshot('0'));
     if (path === '/api/access') return json(route, { customerId, entitlements: [], hasMore: false, nextOffset: null });
-    if (path === '/api/sites' || path === '/api/network/sites') return json(route, { sites: [site] });
+    if (path === '/api/sites') return json(route, { sites: [site] });
+    if (path === '/api/network/sites') return json(route, { accessPoints: [accessPoint] });
     if (path === '/api/bundles') return json(route, { products: [product], candidate: false });
     if (path === '/api/help') return json(route, { articles: [] });
     return json(route, { error: 'unexpected_request' }, 500);
@@ -30,7 +32,7 @@ for (const failure of ['unavailable', 'empty'] as const) {
     let recover = false;
     const mutations = await fixture(page, async (route, path) => {
       if (path !== '/api/network/sites') return false;
-      await json(route, recover ? { sites: [site] } : failure === 'empty' ? { sites: [] } : { error: 'unavailable' }, !recover && failure === 'unavailable' ? 503 : 200);
+      await json(route, recover ? { accessPoints: [accessPoint] } : failure === 'empty' ? { accessPoints: [] } : { error: 'unavailable' }, !recover && failure === 'unavailable' ? 503 : 200);
       return true;
     });
     await page.goto('/#wifi');

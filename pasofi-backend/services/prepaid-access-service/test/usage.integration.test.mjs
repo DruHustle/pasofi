@@ -88,6 +88,7 @@ test('usage follows verified accounting once and preserves reservations through 
   const event={grantId:grant.id,siteId:site,nasId:nas,generation:grant.generation,sessionId:'usage-session',kind:'start',upload:100n,download:200n};
   let snapshot=await f.snapshot();
   assert.equal(snapshot.connectivity,'pending');assert.equal(snapshot.session.connected,false);assert.equal(snapshot.session.lastAccountingAt,null);
+  assert.equal(snapshot.session.siteId,site);assert.equal(snapshot.session.nasId,nas);
   assert.equal(snapshot.reservationOutstandingBytes,'10000');assert.equal(snapshot.totals.remainingBytes,'30000');
   assert.deepEqual(snapshot.entitlementUpdates.map(e=>e.id),[entitlement]);
   await recordAccounting(f.pool,event);await recordAccounting(f.pool,event);

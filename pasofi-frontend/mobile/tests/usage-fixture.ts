@@ -10,7 +10,7 @@ export function usageSnapshot(usedBytes = '0', { customerId = usageCustomerId, a
     active: { bundleCount: activeCount, allowanceBytes: String(active), usedBytes, remainingBytes: String(active - used) },
     queued: { bundleCount: queuedCount, allowanceBytes: queuedBytes, usedBytes: '0', remainingBytes: queuedBytes },
     lifetimeAccountedBytes: usedBytes, reservationOutstandingBytes: '0', lastAccountingAt: used > 0n ? asOf : null,
-    session: null as null | { grantId: string; entitlementId: string; siteId: string; state: string; issuedAt: string; deadline: string; lastAccountingAt: string | null; reservedBytes: string; chargedBytes: string; reservationOutstandingBytes: string; disconnectRequested: boolean; accountingAnomaly: boolean; accountingStale: boolean; connected: boolean },
+    session: null as null | { grantId: string; entitlementId: string; siteId: string; nasId?: string | null; state: string; issuedAt: string; deadline: string; lastAccountingAt: string | null; reservedBytes: string; chargedBytes: string; reservationOutstandingBytes: string; disconnectRequested: boolean; accountingAnomaly: boolean; accountingStale: boolean; connected: boolean },
     hold: { active: false, reason: null, since: null }, connectivity: 'none',
     accounting: { expectedIntervalSeconds: 60, staleAfterSeconds: 90, pollAfterSeconds: 5 },
     entitlementUpdates: [{ id: entitlementId, consumed_bytes: usedBytes, activated_at: active > 0n ? asOf : null, revoked_at: null, start_by: startBy, expires_at: active > 0n ? startBy : null }],

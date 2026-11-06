@@ -15,7 +15,8 @@ async function fixture(page: Page, signedIn = false) {
     if (path === '/api/capabilities') return reply({ demo: signedIn, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: false, mobileCookies: false });
     if (path === '/api/bundles') return reply({ products, candidate: false });
     if (path === '/api/help') return reply({ articles: [] });
-    if (path === '/api/sites' || path === '/api/network/sites') return reply({ sites: [] });
+    if (path === '/api/sites') return reply({ sites: [] });
+    if (path === '/api/network/sites') return reply({ accessPoints: [] });
     if (path === '/api/session') return reply(signedIn ? { customerId: usageCustomerId } : { error: 'not_authenticated' }, signedIn ? 200 : 401);
     if (path === '/api/usage') return reply(usageSnapshot('1000000000'));
     if (path === '/api/recovery/status') return reply({ configured: false });
