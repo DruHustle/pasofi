@@ -35,7 +35,8 @@ async function guestAvailability(page: Page) {
       return json(route, body);
     }
     if (path === '/api/help') return json(route, { articles: [{ question: 'How can I check availability?', answer: 'Browse the currently published bundles.' }] });
-    if (path === '/api/sites' || path === '/api/network/sites') return json(route, { sites: [] });
+    if (path === '/api/sites') return json(route, { sites: [] });
+    if (path === '/api/network/sites') return json(route, { accessPoints: [] });
     if (['/api/session', '/api/access', '/api/usage', '/api/orders', '/api/recovery/status'].includes(path)) {
       return json(route, { error: 'not_authenticated' }, 401);
     }

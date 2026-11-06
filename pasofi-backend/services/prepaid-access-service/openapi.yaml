@@ -552,20 +552,33 @@ paths:
   /v1/network/sites:
     get:
       security: [{CustomerSession: []}]
-      summary: List qualified network sites with configured safe login URLs
+      summary: List registered customer hotspot choices
+      description: New clients require accessPoints. Legacy sites are returned only for exactly one enabled NAS. Deploy compatible backends first; registry inclusion does not prove physical service readiness.
       responses:
-        '200': {description: sites with id/name/loginUrl}
+        '200':
+          description: Registered per-NAS choices plus unambiguous legacy sites.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NetworkLocations'}
         '404': {description: Network feature disabled}
   /v1/network/session:
     get:
       security: [{CustomerSession: []}]
       summary: Read this customer's current reservation and observed connection state
       responses:
-        '200': {description: 'nullable session with id, siteId, state, accountedAt, deadline, chargedBytes, disconnectRequested and connected'}
+        '200': {description: 'nullable session with id, siteId, nasId (null for legacy grants), state, accountedAt, deadline, chargedBytes, disconnectRequested and connected'}
   /v1/network/credentials:
     post:
       security: [{CustomerSession: []}]
-      summary: Request a short-lived site credential for eligible access
+      summary: Prepare or safely replay a short-lived credential for the selected hotspot
+      description: >-
+        Authenticated customer and allowed origin required. New clients send the exact site/NAS pair.
+        A pending grant permits only its original owned credential replay while its own entitlement,
+        deadline and state remain eligible, without hold, fencing, accounting or disconnect evidence.
+        The server derives private replay authority from the locked grant; public extra fields are rejected.
+        No new credential, grant, accounting-session ID or extended deadline is created by pending replay.
+        Keep the original browser key after uncertainty or session_pending_or_active. Only explicit
+        credential_expired without a pending reservation permits a fresh key on a later customer action.
       requestBody:
         required: true
         content:
@@ -576,10 +589,17 @@ paths:
               required: [siteId, requestKey]
               properties:
                 siteId: {type: string, format: uuid}
+                nasId: {type: string, format: uuid, description: Exact registered gateway; omission is reserved for unambiguous legacy requests or owned retries}
                 requestKey: {type: string, format: uuid}
       responses:
-        '200': {description: username/password/expiresAt/loginUrl; no-store, no logging, no URL transport}
-        '409': {description: Existing reservation, accounting hold or no usable entitlement}
+        '200':
+          description: Credential and exact site/NAS/login URL; no-store, no logging and no credential URL transport.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NetworkCredential'}
+        '400': {description: Invalid request or an extra public field such as private replay authority}
+        '409': {description: Ineligible reservation, accounting hold, no usable entitlement, NAS selection required or definitive credential expiry}
+        '503': {description: Unavailable or uncertain credential result; retain the original request key}
   /v1/network/disconnect:
     post:
       security: [{CustomerSession: []}]
@@ -874,6 +894,42 @@ components:
     Limit: {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
     Offset: {in: query, name: offset, schema: {type: integer, minimum: 0, maximum: 1000000, default: 0}}
   schemas:
+    NetworkLocations:
+      type: object
+      required: [sites, accessPoints]
+      properties:
+        sites:
+          type: array
+          description: Legacy choices only for sites with exactly one enabled NAS and a safe registered URL.
+          items:
+            type: object
+            required: [id, name, loginUrl]
+            properties:
+              id: {type: string, format: uuid}
+              name: {type: string}
+              loginUrl: {type: string, format: uri}
+        accessPoints:
+          type: array
+          description: Registered gateway choices; inclusion does not prove hardware qualification or reachability.
+          items:
+            type: object
+            required: [nasId, siteId, siteName, name, loginUrl]
+            properties:
+              nasId: {type: string, format: uuid}
+              siteId: {type: string, format: uuid}
+              siteName: {type: string}
+              name: {type: string, description: Registered NAS client name}
+              loginUrl: {type: string, format: uri, description: Clean registered HTTPS URL ending exactly in /login}
+    NetworkCredential:
+      type: object
+      required: [username, password, expiresAt, loginUrl, siteId, nasId]
+      properties:
+        username: {type: string}
+        password: {type: string}
+        expiresAt: {type: string, format: date-time}
+        loginUrl: {type: string, format: uri}
+        siteId: {type: string, format: uuid}
+        nasId: {type: string, format: uuid}
     InvoiceDeliveryIntent:
       type: object
       additionalProperties: false
@@ -937,6 +993,7 @@ components:
             grantId: {type: string, format: uuid}
             entitlementId: {type: string, format: uuid}
             siteId: {type: string, format: uuid}
+            nasId: {type: [string, 'null'], format: uuid, description: Exact NAS when known; null for legacy grants, never sufficient to match a retry target}
             state: {type: string, enum: [pending, active, uncertain]}
             issuedAt: {type: string, format: date-time}
             deadline: {type: string, format: date-time}

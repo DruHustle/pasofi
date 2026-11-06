@@ -5,6 +5,7 @@ const customerId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const staffId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const agentId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const siteId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const nasId = '11111111-1111-4111-8111-111111111111';
 const saleId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const orderId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const future = () => new Date(Date.now() + 900_000).toISOString();
@@ -189,9 +190,9 @@ test('network credentials are private and prepared access stays unconnected unti
   let prepared = false, connected = false, disconnect = false;
   await mock(page, async (route, path) => {
     if (path === '/api/capabilities') { await json(route, { ...capabilities, networkAccess: true }); return true; }
-    if (path === '/api/network/sites') { await json(route, { sites: [{ ...site, loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
-    if (path === '/api/usage') { const snapshot = usageSnapshot('0', { queuedBytes: connected ? '0' : '5000000000' }); snapshot.session = prepared ? { grantId: saleId, entitlementId: saleId, siteId, state: connected ? 'active' : 'pending', connected: connected && !disconnect, issuedAt: new Date().toISOString(), lastAccountingAt: connected ? new Date().toISOString() : null, deadline: future(), reservedBytes: '5000000000', chargedBytes: '0', reservationOutstandingBytes: '5000000000', disconnectRequested: disconnect, accountingAnomaly: false, accountingStale: false } : null; snapshot.connectivity = prepared ? connected ? 'recent_accounting' : 'pending' : 'none'; await json(route, snapshot); return true; }
-    if (path === '/api/network/credentials') { prepared = true; await json(route, { username: 'short-lived-user', password: 'short-lived-password', expiresAt: future(), loginUrl: 'https://hotspot.example.test/login' }); return true; }
+    if (path === '/api/network/sites') { await json(route, { accessPoints: [{ siteId, nasId, siteName: site.name, name: 'Test router', loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
+    if (path === '/api/usage') { const snapshot = usageSnapshot('0', { queuedBytes: connected ? '0' : '5000000000' }); snapshot.session = prepared ? { grantId: saleId, entitlementId: saleId, siteId, nasId, state: connected ? 'active' : 'pending', connected: connected && !disconnect, issuedAt: new Date().toISOString(), lastAccountingAt: connected ? new Date().toISOString() : null, deadline: future(), reservedBytes: '5000000000', chargedBytes: '0', reservationOutstandingBytes: '5000000000', disconnectRequested: disconnect, accountingAnomaly: false, accountingStale: false } : null; snapshot.connectivity = prepared ? connected ? 'recent_accounting' : 'pending' : 'none'; await json(route, snapshot); return true; }
+    if (path === '/api/network/credentials') { prepared = true; await json(route, { siteId, nasId, username: 'short-lived-user', password: 'short-lived-password', expiresAt: future(), loginUrl: 'https://hotspot.example.test/login' }); return true; }
     if (path === '/api/network/disconnect') { disconnect = true; await json(route, { state: 'disconnect_pending' }, 202); return true; }
     return false;
   });
@@ -561,8 +562,8 @@ test('registered PasoFi hotspot connects by HTTPS POST without retyping a networ
   const loginUrl = 'https://hotspot.pasofi.onesa.eu/login';
   await mock(page, async (route, path) => {
     if (path === '/api/capabilities') { await json(route, { ...capabilities, networkAccess: true }); return true; }
-    if (path === '/api/network/sites') { await json(route, { sites: [{ ...site, loginUrl }] }); return true; }
-    if (path === '/api/network/credentials') { await json(route, { username: 'private-connection-user', password: 'private-connection-password', expiresAt: future(), loginUrl }); return true; }
+    if (path === '/api/network/sites') { await json(route, { accessPoints: [{ siteId, nasId, siteName: site.name, name: 'Test router', loginUrl }] }); return true; }
+    if (path === '/api/network/credentials') { await json(route, { siteId, nasId, username: 'private-connection-user', password: 'private-connection-password', expiresAt: future(), loginUrl }); return true; }
     return false;
   });
   let posted = false;

@@ -7,7 +7,7 @@ export type UsageSnapshot = {
   customerId: string; asOf: string; totals: Allowance; active: Allowance; queued: Allowance;
   lifetimeAccountedBytes: string; reservationOutstandingBytes: string; lastAccountingAt: string | null;
   session: null | {
-    grantId: string; entitlementId: string; siteId: string; state: 'pending' | 'active' | 'uncertain';
+    grantId: string; entitlementId: string; siteId: string; nasId?: string | null; state: 'pending' | 'active' | 'uncertain';
     issuedAt: string; deadline: string; lastAccountingAt: string | null;
     reservedBytes: string; chargedBytes: string; reservationOutstandingBytes: string;
     disconnectRequested: boolean; accountingAnomaly: boolean; accountingStale: boolean; connected: boolean;
@@ -41,6 +41,7 @@ function validSnapshot(value: unknown): value is UsageSnapshot {
   if (value.session !== null) {
     const session = value.session;
     if (!record(session) || !['grantId', 'entitlementId', 'siteId'].every(key => typeof session[key] === 'string' && uuid.test(session[key] as string))
+      || (session.nasId != null && (typeof session.nasId !== 'string' || !uuid.test(session.nasId)))
       || !['pending', 'active', 'uncertain'].includes(String(session.state)) || !date(session.issuedAt) || !date(session.deadline) || !optionalDate(session.lastAccountingAt)
       || !bytes(session.reservedBytes) || !bytes(session.chargedBytes) || !bytes(session.reservationOutstandingBytes)
       || !['disconnectRequested', 'accountingAnomaly', 'accountingStale', 'connected'].every(key => typeof session[key] === 'boolean')) return false;

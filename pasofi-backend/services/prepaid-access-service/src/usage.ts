@@ -25,7 +25,7 @@ export async function readUsageSnapshot(pool:Pool,customerId:string,entitlementI
   ),
   account_hold AS MATERIALIZED (SELECT reason,created_at FROM network_account_holds WHERE customer_id=$1),
   live AS MATERIALIZED (
-   SELECT g.id,g.entitlement_id,g.site_id,g.state,g.issued_at,g.deadline,g.last_accounting_at,
+   SELECT g.id,g.entitlement_id,g.site_id,g.nas_id,g.state,g.issued_at,g.deadline,g.last_accounting_at,
     g.reserved_bytes,g.charged_bytes,g.accounting_anomaly,g.disconnect_requested_at,
     COALESCE(g.last_accounting_at,g.issued_at)<=c.as_of-interval '90 seconds' AS accounting_stale,
     g.state='active' AND g.last_accounting_at>c.as_of-interval '90 seconds' AND g.deadline>c.as_of
@@ -62,7 +62,7 @@ export async function readUsageSnapshot(pool:Pool,customerId:string,entitlementI
    'reservationOutstandingBytes',(SELECT COALESCE(sum(reserved_bytes-charged_bytes),0)::text FROM live),
    'lastAccountingAt',(SELECT last_accounting_at FROM access_grants WHERE customer_id=$1 ORDER BY last_accounting_at DESC NULLS LAST LIMIT 1),
    'session',(SELECT jsonb_build_object(
-    'grantId',g.id,'entitlementId',g.entitlement_id,'siteId',g.site_id,'state',g.state,
+    'grantId',g.id,'entitlementId',g.entitlement_id,'siteId',g.site_id,'nasId',g.nas_id,'state',g.state,
     'issuedAt',g.issued_at,'deadline',g.deadline,'lastAccountingAt',g.last_accounting_at,
     'reservedBytes',g.reserved_bytes::text,'chargedBytes',g.charged_bytes::text,
     'reservationOutstandingBytes',(g.reserved_bytes-g.charged_bytes)::text,

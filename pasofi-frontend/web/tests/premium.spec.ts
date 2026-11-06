@@ -23,7 +23,7 @@ async function fixture(page: Page, options: { guest?: boolean; queued?: boolean;
     if (path === '/api/bundles') return json(route, { products: options.products ?? products, candidate: false });
     if (path === '/api/help') return json(route, { articles: [{ question: 'When does bundle time start?', answer: 'Bundle validity starts after a successful hotspot connection.' }] });
     if (path === '/api/sites') return json(route, { sites: [{ id: siteId, name: 'Kuwadzana test hotspot' }] });
-    if (path === '/api/network/sites') return json(route, { sites: [{ id: siteId, name: 'Kuwadzana test hotspot', loginUrl: 'https://hotspot.example.test/login' }] });
+    if (path === '/api/network/sites') return json(route, { accessPoints: [{ siteId, nasId: '11111111-1111-4111-8111-111111111111', siteName: 'Kuwadzana test site', name: 'Kuwadzana test hotspot', loginUrl: 'https://hotspot.example.test/login' }] });
     if (path === '/api/session') {
       if (request.method() === 'POST') { state.sessionCreates++; state.signedIn = true; }
       return json(route, state.signedIn ? { customerId } : { error: 'not_authenticated' }, state.signedIn ? 200 : 401);

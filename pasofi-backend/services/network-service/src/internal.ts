@@ -1,13 +1,10 @@
 import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import type {Pool} from 'pg';
 import {jwtVerify} from 'jose';
-import {CredentialError,issueRadiusCredential} from './credentials.js';
+import {CredentialError,issueRadiusCredential,safeLoginUrl} from './credentials.js';
+export {safeLoginUrl} from './credentials.js';
 
 const id={type:'string',pattern:'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'};
-export function safeLoginUrl(raw:unknown):string|null {
- if(typeof raw!=='string')return null;
- try {const url=new URL(raw);return url.protocol==='https:'&&!url.username&&!url.password&&!url.search&&!url.hash&&url.pathname==='/login'?url.toString():null;}catch{return null;}
-}
 function deliveryKeys() {
  const version=Number(process.env.RADIUS_CREDENTIAL_KEY_VERSION);
  const raw=JSON.parse(process.env.RADIUS_CREDENTIAL_KEYS||'{}') as Record<string,unknown>;
@@ -33,22 +30,42 @@ export function registerNetworkInternal(app:FastifyInstance,pool:Pool|null) {
  app.get('/internal/v1/network/sites',async(request,reply)=>{
   if(!await authorize(request,reply,'network:sites'))return;
   try {
-   const rows=await pool!.query('SELECT site_id,site_name,login_url FROM radius_nas WHERE enabled=true ORDER BY site_name,id');
-   const sites=new Map<string,{id:string;name:string;loginUrl:string}>();
-   for(const row of rows.rows){const loginUrl=safeLoginUrl(row.login_url);if(loginUrl&&!sites.has(row.site_id))sites.set(row.site_id,{id:row.site_id,name:row.site_name,loginUrl});}
-   return {sites:[...sites.values()]};
+   const rows=await pool!.query('SELECT id,site_id,site_name,client_name,login_url FROM radius_nas WHERE enabled=true ORDER BY site_name,client_name,id');
+   const counts=new Map<string,number>();
+   for(const row of rows.rows)counts.set(row.site_id,(counts.get(row.site_id)??0)+1);
+   const sites:{id:string;name:string;loginUrl:string}[]=[],accessPoints:{nasId:string;siteId:string;siteName:string;name:string;loginUrl:string}[]=[];
+   for(const row of rows.rows){
+    const loginUrl=safeLoginUrl(row.login_url);if(!loginUrl)continue;
+    accessPoints.push({nasId:row.id,siteId:row.site_id,siteName:row.site_name,name:row.client_name,loginUrl});
+    // Older clients can select a site only when it identifies one gateway.
+    if(counts.get(row.site_id)===1)sites.push({id:row.site_id,name:row.site_name,loginUrl});
+   }
+   return {sites,accessPoints};
   }catch{return reply.code(503).send({error:'unavailable'});}
  });
- app.post<{Body:{customerId:string;siteId:string;requestKey:string}}>('/internal/v1/network/credentials',{schema:{body:{type:'object',additionalProperties:false,required:['customerId','siteId','requestKey'],properties:{customerId:id,siteId:id,requestKey:id}}}},async(request,reply)=>{
-  if(!await authorize(request,reply,'network:credentials'))return;
+ app.post<{Body:{customerId:string;siteId:string;nasId?:string;requestKey:string;replayCredentialId?:string}}>('/internal/v1/network/credentials',{schema:{body:{type:'object',additionalProperties:false,required:['customerId','siteId','requestKey'],properties:{customerId:id,siteId:id,nasId:id,requestKey:id,replayCredentialId:id}}}},async(request,reply)=>{
+  // A distinct scope is also a version gate: older network servers reject it
+  // before issuance even if their validator strips the new replay-only field.
+  const scope=request.body.replayCredentialId===undefined?'network:credentials':'network:credentials:replay';
+  if(!await authorize(request,reply,scope))return;
   try {
-   const nas=await pool!.query('SELECT id,login_url FROM radius_nas WHERE site_id=$1 AND enabled=true ORDER BY id LIMIT 1',[request.body.siteId]);
-   if(!nas.rowCount)return reply.code(409).send({error:'site_unavailable'});
-   const loginUrl=safeLoginUrl(nas.rows[0].login_url);if(!loginUrl)return reply.code(409).send({error:'site_unavailable'});
-   const ring=deliveryKeys(),prior=await pool!.query('SELECT secret_key_version FROM radius_credentials WHERE customer_id=$1 AND request_key=$2',[request.body.customerId,request.body.requestKey]);
-   const version=prior.rows[0]?.secret_key_version??ring.version,key=ring.keys.get(version);if(!key)throw new Error('credential_key_unavailable');
-   const credential=await issueRadiusCredential(pool!,{customerId:request.body.customerId,nasId:nas.rows[0].id,requestKey:request.body.requestKey},{version,key});
-   return {...credential,loginUrl};
+   const {customerId,siteId,requestKey}=request.body;
+   const prior=await pool!.query('SELECT c.nas_id,c.secret_key_version,n.site_id FROM radius_credentials c JOIN radius_nas n ON n.id=c.nas_id WHERE c.customer_id=$1 AND c.request_key=$2',[customerId,requestKey]);
+   let nasId=request.body.nasId;
+   if(!nasId&&prior.rowCount){
+    // Recover the original owned request even if another gateway was enrolled
+    // later. Never retarget a lost response to the first current registry row.
+    if(prior.rows[0].site_id!==siteId.toLowerCase())throw new CredentialError('idempotency_conflict');
+    nasId=prior.rows[0].nas_id;
+   }
+   if(!nasId){
+    const candidates=await pool!.query('SELECT id FROM radius_nas WHERE site_id=$1 AND enabled=true ORDER BY id LIMIT 2',[siteId]);
+    if(!candidates.rowCount)return reply.code(409).send({error:'site_unavailable'});
+    if(candidates.rowCount!==1)return reply.code(409).send({error:'nas_selection_required'});
+    nasId=candidates.rows[0].id;
+   }
+   const ring=deliveryKeys(),version=prior.rows[0]?.secret_key_version??ring.version,key=ring.keys.get(version);if(!key)throw new Error('credential_key_unavailable');
+   return await issueRadiusCredential(pool!,{customerId,siteId,nasId:nasId!,requestKey,replayCredentialId:request.body.replayCredentialId},{version,key});
   }catch(error){return reply.code(error instanceof CredentialError?409:503).send({error:error instanceof CredentialError?error.code:'unavailable'});}
  });
 }

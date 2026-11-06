@@ -2,6 +2,9 @@ import { test, expect, type Page, type Route } from '@playwright/test';
 import { usageSnapshot, usageCustomerId as customerId, usageEntitlementId as entitlementId } from './usage-fixture';
 
 const siteId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const nasId = '11111111-1111-4111-8111-111111111111';
+const secondNasId = '22222222-2222-4222-8222-222222222222';
+const accessPoint = (id = nasId, name = 'Test hotspot', host = 'hotspot.example.test') => ({ nasId: id, siteId, siteName: 'Test site', name, loginUrl: `https://${host}/login` });
 const otherCustomer = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const future = () => new Date(Date.now() + 86400_000).toISOString();
 const entitlement = () => ({ id: entitlementId, bundle_id: 'flex', byte_limit: '5000000000', consumed_bytes: '0', validity_seconds: 604800, activated_at: new Date().toISOString(), revoked_at: null, start_by: future() });
@@ -109,9 +112,9 @@ test('credentials arriving after a failed usage check stay hidden until a new ve
   const keys: string[] = [], gate = new Promise<void>(resolve => { release = resolve; }), waiting = new Promise<void>(resolve => { held = resolve; });
   await page.clock.install(); await mock(page, async (route, path) => {
     if (path === '/api/capabilities') { await json(route, { demo: true, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: true, mobileCookies: false }); return true; }
-    if (path === '/api/network/sites') { await json(route, { sites: [{ id: siteId, name: 'Test hotspot', loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
-    if (path === '/api/usage') { const snapshot = usageSnapshot('0', { queuedBytes: '5000000000' }); if (prepared) { snapshot.connectivity = 'pending'; snapshot.session = { grantId: entitlementId, entitlementId, siteId, state: 'pending', connected: false, issuedAt: new Date().toISOString(), deadline: future(), lastAccountingAt: null, reservedBytes: '5000000000', chargedBytes: '0', reservationOutstandingBytes: '5000000000', disconnectRequested: false, accountingStale: false, accountingAnomaly: false }; } await json(route, unavailable ? { error: 'usage_unavailable' } : snapshot, unavailable ? 503 : 200); return true; }
-    if (path === '/api/network/credentials') { keys.push(route.request().postDataJSON().requestKey); calls++; prepared = true; if (calls === 1) { held(); await gate; } await json(route, { username: 'private-hotspot-user', password: 'private-hotspot-password', expiresAt: future(), loginUrl: 'https://hotspot.example.test/login' }); return true; }
+    if (path === '/api/network/sites') { await json(route, { accessPoints: [accessPoint()] }); return true; }
+    if (path === '/api/usage') { const snapshot = usageSnapshot('0', { queuedBytes: '5000000000' }); if (prepared) { snapshot.connectivity = 'pending'; snapshot.session = { grantId: entitlementId, entitlementId, siteId, nasId, state: 'pending', connected: false, issuedAt: new Date().toISOString(), deadline: future(), lastAccountingAt: null, reservedBytes: '5000000000', chargedBytes: '0', reservationOutstandingBytes: '5000000000', disconnectRequested: false, accountingStale: false, accountingAnomaly: false }; } await json(route, unavailable ? { error: 'usage_unavailable' } : snapshot, unavailable ? 503 : 200); return true; }
+    if (path === '/api/network/credentials') { keys.push(route.request().postDataJSON().requestKey); calls++; prepared = true; if (calls === 1) { held(); await gate; } await json(route, { siteId, nasId, username: 'private-hotspot-user', password: 'private-hotspot-password', expiresAt: future(), loginUrl: 'https://hotspot.example.test/login' }); return true; }
     return false;
   });
   await open(page); await page.getByRole('button', { name: 'Connect to Wi-Fi' }).click(); await waiting; unavailable = true; await page.clock.runFor(5_000); await expect(page.getByText('Connection status not verified', { exact: true })).toBeVisible(); release(); await expect(page.getByText('Account status changed while preparing sign-in.', { exact: false })).toBeVisible(); await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
@@ -123,13 +126,13 @@ for (const initial of ['hidden details', 'lost response'] as const) {
     const keys: string[] = [];
     await mock(page, async (route, path) => {
       if (path === '/api/capabilities') { await json(route, { demo: true, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: true, mobileCookies: false }); return true; }
-      if (path === '/api/network/sites') { await json(route, { sites: [{ id: siteId, name: 'Test hotspot', loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
+      if (path === '/api/network/sites') { await json(route, { accessPoints: [accessPoint()] }); return true; }
       if (path === '/api/usage') { await json(route, usageSnapshot('0', { queuedBytes: '5000000000' })); return true; }
       if (path === '/api/network/credentials') {
         keys.push(route.request().postDataJSON().requestKey);
         if (keys.length === 1 && initial === 'lost response') await json(route, { error: 'network_unavailable' }, 503);
         else if (keys.length === 2) await json(route, { error: 'credential_expired' }, 409);
-        else await json(route, { username: 'private-hotspot-user', password: 'private-hotspot-password', expiresAt: future(), loginUrl: 'https://hotspot.example.test/login' });
+        else await json(route, { siteId, nasId, username: 'private-hotspot-user', password: 'private-hotspot-password', expiresAt: future(), loginUrl: 'https://hotspot.example.test/login' });
         return true;
       }
       return false;
@@ -152,5 +155,76 @@ for (const initial of ['hidden details', 'lost response'] as const) {
     await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('private-hotspot-password');
     expect(keys).toHaveLength(3);
     expect(keys[2]).not.toBe(keys[0]);
+  });
+}
+
+test('a legacy deduplicated site list cannot silently choose a physical router', async ({ page }) => {
+  let credentialCalls = 0;
+  await mock(page, async (route, path) => {
+    if (path === '/api/capabilities') { await json(route, { demo: true, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: true, mobileCookies: false }); return true; }
+    if (path === '/api/network/sites') { await json(route, { sites: [{ id: siteId, name: 'Ambiguous legacy site', loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
+    if (path === '/api/usage') { await json(route, usageSnapshot('0', { queuedBytes: '5000000000' })); return true; }
+    if (path === '/api/network/credentials') { credentialCalls++; await json(route, { error: 'unexpected_request' }, 500); return true; }
+    return false;
+  });
+  await open(page); await expect(page.getByRole('alert')).toHaveText('Hotspot locations could not be loaded. Try again to choose where to connect.');
+  await expect(page.getByRole('button', { name: 'Retry locations' })).toBeVisible(); await expect(page.getByRole('button', { name: 'Connect to Wi-Fi' })).toHaveCount(0); expect(credentialCalls).toBe(0);
+});
+
+for (const pendingNas of [nasId, null] as const) {
+  test('same-site hotspots retry the chosen router and block a pending ' + (pendingNas === null ? 'unknown' : 'different') + ' router', async ({ page }) => {
+    const points = [accessPoint(nasId, 'Router A'), accessPoint(secondNasId, 'Router B', 'second.example.test')];
+    const requests: { siteId: string; nasId: string; requestKey: string }[] = [];
+    let pendingElsewhere = false;
+    await mock(page, async (route, path) => {
+      if (path === '/api/capabilities') { await json(route, { demo: true, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: true, mobileCookies: false }); return true; }
+      if (path === '/api/network/sites') { await json(route, { sites: [], accessPoints: points }); return true; }
+      if (path === '/api/usage') {
+        const snapshot = usageSnapshot('0', { queuedBytes: '5000000000' });
+        if (pendingElsewhere) { snapshot.connectivity = 'pending'; snapshot.session = { grantId: entitlementId, entitlementId, siteId, nasId: pendingNas, state: 'pending', connected: false, issuedAt: new Date().toISOString(), deadline: future(), lastAccountingAt: null, reservedBytes: '5000000000', chargedBytes: '0', reservationOutstandingBytes: '5000000000', disconnectRequested: false, accountingStale: false, accountingAnomaly: false }; }
+        await json(route, snapshot); return true;
+      }
+      if (path === '/api/network/credentials') {
+        requests.push(route.request().postDataJSON());
+        await json(route, requests.length === 1 ? { error: 'network_unavailable' } : { siteId, nasId: secondNasId, username: 'router-b-user', password: 'router-b-password', expiresAt: future(), loginUrl: points[1].loginUrl }, requests.length === 1 ? 503 : 200); return true;
+      }
+      return false;
+    });
+    await open(page);
+    const choice = page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' });
+    const connect = page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true });
+    await expect(choice).toHaveValue(''); await expect(connect).toBeDisabled();
+    await choice.selectOption(secondNasId); await connect.click();
+    await expect(page.getByText('The service is temporarily unavailable.', { exact: false })).toBeVisible();
+    await expect(choice).toHaveValue(secondNasId); await connect.click();
+    await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('router-b-password');
+    expect(requests).toHaveLength(2); expect(requests[0]).toEqual(requests[1]); expect(requests[0]).toEqual({ siteId, nasId: secondNasId, requestKey: expect.any(String) });
+    await page.getByRole('button', { name: 'Hide connection details' }).click();
+    pendingElsewhere = true; await page.getByRole('button', { name: 'Check connection', exact: true }).click();
+    await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
+    await expect(choice).toBeDisabled(); await expect(connect).toBeDisabled(); await expect(page.getByRole('button', { name: 'Retry connection' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Disconnect this hotspot session' })).toBeEnabled(); expect(requests).toHaveLength(2);
+  });
+}
+
+for (const mismatch of ['router', 'login URL'] as const) {
+  test('credentials for a different ' + mismatch + ' stay hidden and keep the original retry key', async ({ page }) => {
+    const points = [accessPoint(nasId, 'Router A'), accessPoint(secondNasId, 'Router B', 'second.example.test')];
+    const requests: { siteId: string; nasId: string; requestKey: string }[] = [];
+    await mock(page, async (route, path) => {
+      if (path === '/api/capabilities') { await json(route, { demo: true, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: true, mobileCookies: false }); return true; }
+      if (path === '/api/network/sites') { await json(route, { accessPoints: points }); return true; }
+      if (path === '/api/usage') { await json(route, usageSnapshot('0', { queuedBytes: '5000000000' })); return true; }
+      if (path === '/api/network/credentials') {
+        requests.push(route.request().postDataJSON());
+        await json(route, { siteId, nasId: mismatch === 'router' ? nasId : secondNasId, username: 'wrong-user', password: 'wrong-password', expiresAt: future(), loginUrl: mismatch === 'login URL' ? points[0].loginUrl : points[1].loginUrl }); return true;
+      }
+      return false;
+    });
+    await open(page); await page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' }).selectOption(secondNasId);
+    const connect = page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true }); await connect.click();
+    await expect(page.getByText('Connection details could not be verified.', { exact: false })).toBeVisible(); await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
+    await connect.click(); await expect(connect).toBeEnabled(); expect(requests).toHaveLength(2); expect(requests[0]).toEqual(requests[1]);
+    await expect(page.getByRole('link', { name: /registered hotspot sign-in/ })).toHaveCount(0);
   });
 }
