@@ -25,6 +25,7 @@ class ServiceBaselineTests(unittest.TestCase):
         f.commands = []
         self.models = {}
         self.expected_hashes = {}
+        self.supplemental_inputs = {}
         self.role_result = "matched"
         f.model["services"]["postgres"]["environment"]["POSTGRES_USER"] = "pamofi_bootstrap"
         f.containers["postgres"]["Config"]["Env"].append("POSTGRES_USER=pamofi_bootstrap")
@@ -89,6 +90,7 @@ class ServiceBaselineTests(unittest.TestCase):
         self.args.capture_baseline = str(self.path)
         self.args.baseline = None
         self.args.migration_origin = ["prepaid-access=network"]
+        self.args.origin_env = []
         self.output = io.StringIO()
         self.backup = None
         self.build = None
@@ -109,6 +111,13 @@ class ServiceBaselineTests(unittest.TestCase):
         else:
             # Simulate Compose JSON interpolation for the retained literal model.
             model = decode(json.loads(Path(first).read_text()))
+        for index, argument in enumerate(argv):
+            supplemental = self.supplemental_inputs.get(argv[index + 1]) if argument == "--env-file" else None
+            if (supplemental and supplemental["source"] == first
+                    and Path(argv[index + 1]).read_text() == supplemental["content"]):
+                model["services"][supplemental["service"]]["environment"].update(supplemental["environment"])
+                for name, environment in supplemental.get("other_service_environments", {}).items():
+                    model["services"][name]["environment"].update(environment)
         for filename in files[1:]:
             overlay = decode(json.loads(Path(filename).read_text()))
             for name, change in overlay["services"].items():
@@ -134,7 +143,13 @@ class ServiceBaselineTests(unittest.TestCase):
             f.commands.append(argv)
             origin = argv[argv.index("-f") + 1]
             name = argv[-1]
-            return name + " " + self.expected_hashes[origin][name] + "\n"
+            digest = self.expected_hashes[origin][name]
+            for index, argument in enumerate(argv):
+                supplemental = self.supplemental_inputs.get(argv[index + 1]) if argument == "--env-file" else None
+                if (supplemental and supplemental["source"] == origin and supplemental["service"] == name
+                        and Path(argv[index + 1]).read_text() == supplemental["content"]):
+                    digest = supplemental["label_hash"]
+            return name + " " + digest + "\n"
         if argv[-3:] == ["config", "--format", "json"]:
             f.commands.append(argv)
             return self.compose_result(argv)
@@ -159,6 +174,7 @@ class ServiceBaselineTests(unittest.TestCase):
         self.args.capture_baseline = None
         self.args.baseline = str(self.path)
         self.args.migration_origin = []
+        self.args.origin_env = []
 
     def mutating_commands(self):
         return [command for command in self.fixture.commands if "up" in command or "run" in command]
@@ -166,6 +182,22 @@ class ServiceBaselineTests(unittest.TestCase):
     def origin(self, name):
         path = self.fixture.containers[name]["Config"]["Labels"][self.engine.LABEL + "project.config_files"]
         return path, self.models[path]
+
+    def historical_origin_fixture(self):
+        source, model = self.origin("network")
+        model["services"]["network"]["environment"]["PUBLIC_ORIGIN"] = "https://current.example.test"
+        self.fixture.containers["network"]["Config"]["Env"].append("PUBLIC_ORIGIN=https://retained.example.test")
+        path = self.directory / "historical-network.env"
+        content = "PAMOFI_PUBLIC_ORIGIN=https://retained.example.test\n"
+        path.write_text(content)
+        path.chmod(0o600)
+        self.supplemental_inputs[str(path)] = {
+            "source": source, "service": "network", "content": content,
+            "environment": {"PUBLIC_ORIGIN": "https://retained.example.test"},
+            "label_hash": self.expected_hashes[source]["network"],
+        }
+        self.expected_hashes[source]["network"] = "f" * 64
+        return path, content
 
     def test_capture_and_preflight_reconstruct_each_actual_origin_without_runtime_writes(self):
         self.capture()
@@ -199,6 +231,99 @@ class ServiceBaselineTests(unittest.TestCase):
         with self.operations(), self.assertRaisesRegex(self.engine.Refusal, "unrecorded"):
             self.engine.deploy(self.args)
         self.assertFalse(self.path.exists())
+
+    def test_explicit_private_origin_environment_must_restore_original_hash_and_runtime(self):
+        supplement, _ = self.historical_origin_fixture()
+        with self.operations(), self.assertRaisesRegex(self.engine.Refusal, "rendered service hash"):
+            self.engine.deploy(self.args)
+        original = {item: Path(item).read_bytes() for item in self.models}
+        self.args.origin_env = ["network=" + str(supplement)]
+        self.capture()
+        record = json.loads(self.path.read_text())
+        self.assertEqual(set(record["origin_environments"]), {"network"})
+        self.assertEqual(record["origin_environments"]["network"]["path"], str(supplement))
+        self.assertEqual(record["origin_environments"]["network"]["sha256"], self.engine.file_digest(supplement))
+        self.assertNotIn("https://retained.example.test", self.path.read_text())
+        self.assertNotIn("https://retained.example.test", self.output.getvalue())
+        with self.operations():
+            self.engine.deploy(self.args)
+        self.assertFalse(self.mutating_commands())
+        self.assertEqual(original, {item: Path(item).read_bytes() for item in self.models})
+        original_env = self.fixture.containers["network"]["Config"]["Labels"][self.engine.LABEL + "project.environment_file"]
+        commands = [command for command in self.fixture.commands if "--hash" in command and command[-1] == "network"]
+        self.assertTrue(any(command.index(original_env) < command.index(str(supplement)) for command in commands if str(supplement) in command))
+
+    def test_origin_environments_cannot_bypass_hash_scope_privacy_or_capture_only_rules(self):
+        supplement, content = self.historical_origin_fixture()
+        self.args.origin_env = ["network=" + str(supplement)]
+        supplement.write_text(content.replace("retained", "unreviewed"))
+        with self.operations(), self.assertRaisesRegex(self.engine.Refusal, "rendered service hash"):
+            self.engine.deploy(self.args)
+        supplement.write_text(content)
+        supplement.chmod(0o644)
+        with self.operations(), self.assertRaisesRegex(self.engine.Refusal, "private regular file"):
+            self.engine.deploy(self.args)
+        supplement.chmod(0o600)
+        for values in (["unobserved=" + str(supplement)], ["network=" + str(supplement)] * 2):
+            self.args.origin_env = values
+            with self.operations(), self.assertRaisesRegex(self.engine.Refusal, "Use each --origin-env once"):
+                self.engine.deploy(self.args)
+        self.args.origin_env = ["network=" + str(supplement)]
+        self.args.capture_baseline = None
+        self.args.baseline = str(self.path)
+        with self.operations(), self.assertRaisesRegex(self.engine.Refusal, "selection belongs to baseline capture"):
+            self.engine.deploy(self.args)
+        self.assertFalse(self.path.exists())
+        self.assertFalse(self.mutating_commands())
+
+    def test_supplemental_environment_drift_stops_before_backup_or_migration(self):
+        supplement, content = self.historical_origin_fixture()
+        self.args.origin_env = ["network=" + str(supplement)]
+        self.capture()
+        self.args.apply = True
+        supplement.write_text(content + "# changed after capture\n")
+        with self.operations(), self.assertRaisesRegex(self.engine.Refusal, "rendered service hash"):
+            self.engine.deploy(self.args)
+        self.backup.assert_not_called()
+        self.assertFalse(self.mutating_commands())
+        supplement.write_text(content)
+        def drift(*_args):
+            supplement.write_text(content + "# changed while building\n")
+            return {name: self.new_image for name in self.fixture.manifest["services"]}
+        with self.operations(build_effect=drift), self.assertRaisesRegex(self.engine.Refusal, "files changed during build"):
+            self.engine.deploy(self.args)
+        self.backup.assert_called_once()
+        self.assertFalse(self.mutating_commands())
+
+    def test_protected_origin_qualification_never_changes_selected_application_origins(self):
+        source, radius_model = self.origin("radius")
+        radius_model["services"]["radius"]["environment"]["PAMOFI_RADIUS_QUALIFIED"] = "false"
+        self.fixture.containers["radius"]["Config"]["Env"].append("PAMOFI_RADIUS_QUALIFIED=true")
+        for name in ("network", "prepaid-access"):
+            _, model = self.origin(name)
+            model["services"][name]["environment"]["PAMOFI_RADIUS_QUALIFIED"] = "false"
+            self.fixture.containers[name]["Config"]["Env"].append("PAMOFI_RADIUS_QUALIFIED=false")
+        supplement = self.directory / "protected-radius.env"
+        content = "PAMOFI_RADIUS_QUALIFIED=true\n"
+        supplement.write_text(content)
+        supplement.chmod(0o600)
+        self.supplemental_inputs[str(supplement)] = {
+            "source": source, "service": "radius", "content": content,
+            "environment": {"PAMOFI_RADIUS_QUALIFIED": "true"},
+            "other_service_environments": {name: {"PAMOFI_RADIUS_QUALIFIED": "true"}
+                                           for name in ("network", "prepaid-access")},
+            "label_hash": self.expected_hashes[source]["radius"],
+        }
+        self.expected_hashes[source]["radius"] = "f" * 64
+        self.args.origin_env = ["radius=" + str(supplement)]
+        self.capture()
+        model = json.loads(Path(str(self.path) + ".compose.json").read_text())
+        self.assertEqual(model["services"]["radius"]["environment"]["PAMOFI_RADIUS_QUALIFIED"], "true")
+        for name in ("network", "prepaid-access"):
+            self.assertEqual(model["services"][name]["environment"]["PAMOFI_RADIUS_QUALIFIED"], "false")
+        with self.operations():
+            self.engine.deploy(self.args)
+        self.assertFalse(self.mutating_commands())
 
     def test_mismatched_compose_hash_and_retagged_image_cannot_create_a_baseline(self):
         path, _ = self.origin("network")

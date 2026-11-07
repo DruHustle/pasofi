@@ -55,6 +55,14 @@ python3 -I -B -S ./release-deploy.py \
 
 Capture checks every current service's exact container/image identity, recorded Compose configuration hash, ordered input files and file hashes. It renders each origin with its own recorded environment files and retains the existing environment, mount, secret, tmpfs, network, DNS-alias and port checks. A missing environment-file label is accepted only for an existing complete staged JSON model; an empty interpolation environment is used, and both its actual rendered hash and runtime configuration must agree. No historical `.env` file is guessed.
 
+An original shared environment file may have changed after an independent service deployment, or its launch may have supplied additional shell variables. After recovering the specific historical values from the observed service and retained installation evidence, an operator can add one explicit private supplemental file for that service during capture:
+
+```sh
+  --origin-env network=/absolute/private/historical-network.env
+```
+
+The file is appended after that service's recorded environment files. It must be mode `0600` inside a private `0700` directory. Capture still requires the exact original recorded Compose service hash, immutable image and all runtime checks to match; this option cannot accept a new configuration. It applies only to the named service's origin, so protected RADIUS qualification inputs cannot change the selected network or prepaid origins. The baseline records both the original input hashes and the supplemental file hash, and rechecks them after locking and before migration. Keep the supplemental file private and unchanged through acceptance and rollback. Neither the existing environment files nor running containers are edited.
+
 A staged JSON runtime definition can omit its migration profile. In that case, explicitly select another **observed and verified** origin that contains the same service's original migration definition. For example, if the current network origin contains both original jobs, add:
 
 ```sh

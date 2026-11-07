@@ -337,11 +337,14 @@ def origin_record(container):
             "environment_files": env_files, "environment_mode": mode}
 
 
-def render_origin(project, record):
+def render_origin(project, record, supplemental_environment=None):
     files = [item["path"] for item in record["compose_files"]]
     env_files = [item["path"] for item in record["environment_files"]]
     # Explicit /dev/null also prevents Compose loading an unrelated implicit .env.
-    base = compose_command(project, record["working_directory"], files, env_files or ["/dev/null"])
+    env_files = env_files or ["/dev/null"]
+    if supplemental_environment:
+        env_files.append(supplemental_environment["path"])
+    base = compose_command(project, record["working_directory"], files, env_files)
     model = resolved_compose(base)
     name = record["service"]
     require(model.get("name") == project and name in model.get("services", {}),
@@ -472,17 +475,27 @@ def verify_migration_database(service, migration, model, containers):
             "migration_file": migration_file, "migration_sha256": file_digest(migration_file)}
 
 
-def baseline_observation(manifest, project, containers, migration_origins):
+def origin_environment_records(containers, paths):
+    require(type(paths) is dict and set(paths) <= set(containers)
+            and all(type(value) is str for value in paths.values()),
+            "Supplemental environments must name an actually observed service and a private file.")
+    return {name: {"path": str(private_baseline_path(path)), "sha256": file_digest(path)}
+            for name, path in paths.items()}
+
+
+def baseline_observation(manifest, project, containers, migration_origins, origin_environment_paths=None):
     require(type(migration_origins) is dict and set(migration_origins) == set(manifest["migrations"])
             and all(value in containers for value in migration_origins.values()),
             "Each owned migration must select an actually observed service origin.")
     database_id = retained_database_identity()
     database_identity(containers["postgres"], database_id)
+    origin_environment_paths = origin_environment_paths or {}
+    environments = origin_environment_records(containers, origin_environment_paths)
     records, models = {}, {}
     for name, container in sorted(containers.items()):
         record = origin_record(container)
         try:
-            model = render_origin(project, record)
+            model = render_origin(project, record, environments.get(name))
             validate_existing(model, containers, [], only=[name])
         except Refusal as error:
             raise Refusal("Baseline service " + name + ": " + str(error)) from None
@@ -511,9 +524,11 @@ def baseline_observation(manifest, project, containers, migration_origins):
             "The installation changed during baseline verification.")
     require(retained_database_identity() == database_id,
             "The retained database record changed during baseline verification.")
+    require(origin_environment_records(current, origin_environment_paths) == environments,
+            "A supplemental origin environment changed during baseline verification.")
     return {"schema": 1, "release_commit": manifest["commit"], "project": project,
             "database_id": database_id, "origins": records, "migration_origins": migration_origins,
-            "migration_databases": databases}, combined
+            "migration_databases": databases, "origin_environments": environments}, combined
 
 
 def literal_compose(value):
@@ -555,7 +570,13 @@ def capture_service_baseline(args, manifest, project, containers):
                 "Use each --migration-origin once as owned-service=observed-service.")
         seen.add(name)
         migrations[name] = origin
-    record, model = baseline_observation(manifest, project, containers, migrations)
+    environments = {}
+    for item in getattr(args, "origin_env", []):
+        name, separator, path_value = item.partition("=")
+        require(separator and name in containers and name not in environments and path_value,
+                "Use each --origin-env once as observed-service=private-environment-file.")
+        environments[name] = path_value
+    record, model = baseline_observation(manifest, project, containers, migrations, environments)
     created = []
     try:
         with empty_env.open("x", encoding="utf-8"):
@@ -592,13 +613,18 @@ def load_service_baseline(args, manifest, project, containers):
     require(empty_env.read_bytes() == b"", "The baseline's empty interpolation file changed.")
     record = json.loads(path.read_text())
     require(type(record) is dict and set(record) == {"schema", "release_commit", "project", "database_id",
-                                                    "origins", "migration_origins", "migration_databases", "model_sha256"}
+                                                    "origins", "migration_origins", "migration_databases", "origin_environments", "model_sha256"}
             and type(record["schema"]) is int and record["schema"] == 1,
             "The per-service baseline manifest is invalid.")
     require(record["release_commit"] == manifest["commit"] and record["project"] == project,
             "The baseline is for a different release or Compose project.")
     require(file_digest(model_path) == record["model_sha256"], "The private combined baseline model changed.")
-    observed, model = baseline_observation(manifest, project, containers, record["migration_origins"])
+    require(type(record["origin_environments"]) is dict
+            and all(type(value) is dict and set(value) == {"path", "sha256"}
+                    for value in record["origin_environments"].values()),
+            "The supplemental origin environment records are invalid.")
+    observed, model = baseline_observation(manifest, project, containers, record["migration_origins"],
+        {name: value["path"] for name, value in record["origin_environments"].items()})
     require({key: value for key, value in record.items() if key != "model_sha256"} == observed,
             "The reviewed per-service baseline no longer matches the installation.")
     base = compose_command(project, path.parent, [str(model_path)], [str(empty_env)])
@@ -609,6 +635,7 @@ def load_service_baseline(args, manifest, project, containers):
         files.update(item["path"] for item in origin["compose_files"] + origin["environment_files"])
     for database in record["migration_databases"].values():
         files.update(database[key] for key in ("runtime_file", "migration_file"))
+    files.update(value["path"] for value in record["origin_environments"].values())
     args._baseline_record = record
     args._baseline_manifest = manifest
     return path.parent, [str(model_path)], [empty_env], base, model, record["database_id"], sorted(files)
@@ -960,6 +987,8 @@ def remote(args):
 def deploy(args):
     args = copy.copy(args)
     manifest = load_manifest(args.manifest, args.archive)
+    require(getattr(args, "capture_baseline", None) or not getattr(args, "origin_env", []),
+            "Supplemental origin environment selection belongs to baseline capture, not apply or other discovery modes.")
     service_baseline = bool(getattr(args, "baseline", None) or getattr(args, "capture_baseline", None))
     if service_baseline:
         require(not (getattr(args, "baseline", None) and getattr(args, "capture_baseline", None))
@@ -1102,6 +1131,8 @@ def main():
     parser.add_argument("--baseline", help="Use a previously captured per-service baseline on the existing Docker host")
     parser.add_argument("--migration-origin", action="append", default=[],
                         help="Capture only: owned-service=observed-service whose original model contains that migration")
+    parser.add_argument("--origin-env", action="append", default=[],
+                        help="Capture only: append one private supplemental environment file for a named observed service")
     parser.add_argument("--env-file", action="append", default=[], help="Existing absolute path on the Docker host; repeat in original order")
     parser.add_argument("--host", help="Existing OpenSSH alias or user@hostname")
     parser.add_argument("--project", help="Existing Docker Compose project, if discovery is ambiguous")
