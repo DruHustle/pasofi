@@ -70,7 +70,7 @@ Successful capture creates three private files beside one another:
 - `baseline.json.compose.json`: the verified combined model. **It can contain resolved secrets and must remain private.**
 - `baseline.json.empty.env`: an intentionally empty interpolation input, retained so future Compose labels identify an actual file.
 
-Resolved dollar signs are escaped for Compose, and an actual Compose rendering must reproduce the verified values exactly before the files are accepted. Capture prints the baseline's SHA-256 for the operational record. Review the original service mappings and successful capture result, then run the explicit preflight:
+Compose's [JSON serializer](https://github.com/docker/compose/blob/v2.40.3/cmd/compose/config.go) doubles dollar signs for replay, including literal Nginx regular expressions. The coordinator decodes that serialization once before comparing actual runtime values, then escapes values once when writing executable baseline, upgrade and rollback models. It retains exact environment equality and requires an actual Compose rendering to reproduce the verified values before accepting the files. Capture prints the baseline's SHA-256 for the operational record. Review the original service mappings and successful capture result, then run the explicit preflight:
 
 ```sh
 python3 -I -B -S ./release-deploy.py \

@@ -94,23 +94,23 @@ class ServiceBaselineTests(unittest.TestCase):
         self.build = None
 
     def compose_result(self, argv):
+        def decode(value):
+            if isinstance(value, str):
+                return value.replace("$$", "$")
+            if isinstance(value, list):
+                return [decode(item) for item in value]
+            if isinstance(value, dict):
+                return {key: decode(item) for key, item in value.items()}
+            return value
         files = [argv[i + 1] for i, value in enumerate(argv) if value == "-f"]
         first = files[0]
         if first in self.models:
             model = copy.deepcopy(self.models[first])
         else:
             # Simulate Compose JSON interpolation for the retained literal model.
-            def decode(value):
-                if isinstance(value, str):
-                    return value.replace("$$", "$")
-                if isinstance(value, list):
-                    return [decode(item) for item in value]
-                if isinstance(value, dict):
-                    return {key: decode(item) for key, item in value.items()}
-                return value
             model = decode(json.loads(Path(first).read_text()))
         for filename in files[1:]:
-            overlay = json.loads(Path(filename).read_text())
+            overlay = decode(json.loads(Path(filename).read_text()))
             for name, change in overlay["services"].items():
                 service = model["services"][name]
                 if "image" in change:
@@ -119,7 +119,8 @@ class ServiceBaselineTests(unittest.TestCase):
                     replacements = {item["target"]: item for item in change["volumes"]}
                     service["volumes"] = [replacements.get(item["target"], item)
                                           for item in service.get("volumes", [])]
-        return json.dumps(model)
+        # Docker Compose 2.40.3 escapes all dollars after JSON serialization.
+        return json.dumps(model).replace("$", "$$")
 
     def run_command(self, argv, **kwargs):
         f = self.fixture
@@ -415,12 +416,64 @@ class ServiceBaselineTests(unittest.TestCase):
         literal = "literal-$HOME-${TOKEN}-$$already"
         model["services"]["network"]["environment"]["LITERAL_FIXTURE"] = literal
         self.fixture.containers["network"]["Config"]["Env"].append("LITERAL_FIXTURE=" + literal)
+        original_bind = self.fixture.production / "entry-$FIXTURE.mjs"
+        original_bind.write_text("// retained synthetic entrypoint\n")
+        target = "/opt/pamofi/entrypoint.mjs"
+        for volume in model["services"]["network"]["volumes"]:
+            if volume["target"] == target:
+                volume["source"] = str(original_bind)
+        for mount in self.fixture.containers["network"]["Mounts"]:
+            if mount["Destination"] == target:
+                mount["Source"] = str(original_bind)
         self.capture()
         stored = json.loads(Path(str(self.path) + ".compose.json").read_text())
         self.assertEqual(stored["services"]["network"]["environment"]["LITERAL_FIXTURE"], literal.replace("$", "$$"))
         self.assertNotIn(literal, self.output.getvalue())
         with self.operations():
             self.engine.deploy(self.args)
+        self.args.apply = True
+        self.args.release_root = str(self.fixture.root / "release-$FIXTURE")
+        with self.operations():
+            self.engine.deploy(self.args)
+        record_path = next(Path(self.args.release_root).glob("*/record.json"))
+        rollback = json.loads(record_path.with_name("rollback.compose.json").read_text())
+        original = next(item for item in rollback["services"]["network"]["volumes"] if item["target"] == target)
+        self.assertEqual(original["source"], str(original_bind).replace("$", "$$"))
+        overlay = json.loads(record_path.with_name("upgrade.compose.json").read_text())
+        replacement = next(item for item in overlay["services"]["network"]["volumes"] if item["target"] == target)
+        self.assertIn("release-$$FIXTURE", replacement["source"])
+
+    def test_serialized_nginx_filter_is_decoded_but_runtime_environment_equality_stays_strict(self):
+        path, model = self.origin("gateway")
+        key, value = "NGINX_ENVSUBST_FILTER", "^PAMOFI_PUBLIC_HOST$"
+        model["services"]["gateway"]["environment"][key] = value
+        Path(path).write_text(json.dumps(self.engine.literal_compose(model)))
+        environment = self.fixture.containers["gateway"]["Config"]["Env"]
+        environment.append(key + "=" + value)
+        self.capture()
+        stored = json.loads(Path(str(self.path) + ".compose.json").read_text())
+        self.assertEqual(stored["services"]["gateway"]["environment"][key], "^PAMOFI_PUBLIC_HOST$$")
+        with self.operations():
+            self.engine.deploy(self.args)
+        environment[-1] = key + "=" + value + "$"
+        with self.operations(), self.assertRaisesRegex(self.engine.Refusal, "environment differs"):
+            self.engine.deploy(self.args)
+        self.assertFalse(self.mutating_commands())
+
+    def test_compose_json_decoder_inverts_serialization_once_and_rejects_unpaired_dollars(self):
+        model = {"services": {"fixture": {"environment": {
+            "$LITERAL_KEY": "$HOME", "BRACED": "${TOKEN}", "TRAILING": "regex$", "PAIRS": "literal-$$-$$$",
+        }}}}
+        serialized = json.dumps(model).replace("$", "$$")
+        with patch.object(self.engine, "run", return_value=serialized):
+            self.assertEqual(self.engine.resolved_compose(["docker", "compose"]), model)
+        for value in ("$", "$$$", "escaped-$$-then-$TOKEN"):
+            with self.subTest(value=value), patch.object(self.engine, "run", return_value=json.dumps({"value": value})), \
+                    self.assertRaisesRegex(self.engine.Refusal, "unexpected dollar escaping"):
+                self.engine.resolved_compose(["docker", "compose"])
+        encoded = self.engine.literal_compose(model)
+        self.assertIn("$LITERAL_KEY", encoded["services"]["fixture"]["environment"])
+        self.assertEqual(encoded["services"]["fixture"]["environment"]["$LITERAL_KEY"], "$$HOME")
 
     def test_capture_cannot_apply_or_mix_other_discovery_modes(self):
         for change in ({"apply": True}, {"discover_existing": True}, {"host": "existing-alias"},

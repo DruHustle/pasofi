@@ -262,6 +262,17 @@ def compose_command(project, directory, files, env_files):
     return result
 
 
+def resolved_compose(base):
+    # Compose config re-escapes every dollar after JSON serialization, including
+    # keys (Docker Compose v2.40.3 cmd/compose/config.go escapeDollarSign). Decode
+    # that serialization once; Docker inspect and all comparisons use runtime
+    # values. An unexpected format must not silently weaken those comparisons.
+    serialized = run(base + ["config", "--format", "json"])
+    require("$" not in serialized.replace("$$", ""),
+            "Compose JSON has unexpected dollar escaping; configuration cannot be verified.")
+    return json.loads(serialized.replace("$$", "$"))
+
+
 def object_digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -331,7 +342,7 @@ def render_origin(project, record):
     env_files = [item["path"] for item in record["environment_files"]]
     # Explicit /dev/null also prevents Compose loading an unrelated implicit .env.
     base = compose_command(project, record["working_directory"], files, env_files or ["/dev/null"])
-    model = json.loads(run(base + ["config", "--format", "json"]))
+    model = resolved_compose(base)
     name = record["service"]
     require(model.get("name") == project and name in model.get("services", {}),
             "An origin does not describe its observed project and service.")
@@ -506,8 +517,8 @@ def baseline_observation(manifest, project, containers, migration_origins):
 
 
 def literal_compose(value):
-    # Compose interpolates even JSON input. Escape resolved dollar signs exactly
-    # once, and verify a real Compose round trip before retaining the model.
+    # Executable Compose JSON needs exactly one escape of runtime dollar values.
+    # Keys stay literal because Compose interpolates values, not mapping keys.
     if isinstance(value, str):
         return value.replace("$", "$$")
     if isinstance(value, list):
@@ -557,7 +568,7 @@ def capture_service_baseline(args, manifest, project, containers):
             handle.write("\n")
         model_path.chmod(0o600)
         base = compose_command(project, path.parent, [str(model_path)], [str(empty_env)])
-        require(json.loads(run(base + ["config", "--format", "json"])) == model,
+        require(resolved_compose(base) == model,
                 "The combined baseline model did not preserve the verified Compose values.")
         record["model_sha256"] = file_digest(model_path)
         with path.open("x", encoding="utf-8") as handle:
@@ -591,7 +602,7 @@ def load_service_baseline(args, manifest, project, containers):
     require({key: value for key, value in record.items() if key != "model_sha256"} == observed,
             "The reviewed per-service baseline no longer matches the installation.")
     base = compose_command(project, path.parent, [str(model_path)], [str(empty_env)])
-    require(json.loads(run(base + ["config", "--format", "json"])) == model,
+    require(resolved_compose(base) == model,
             "The private combined model differs from its verified service origins.")
     files = {str(path), str(model_path), str(empty_env)}
     for origin in record["origins"].values():
@@ -807,6 +818,10 @@ def write_private(path, data):
     os.chmod(path, 0o600)
 
 
+def write_compose(path, model):
+    write_private(path, literal_compose(model))
+
+
 @contextmanager
 def apply_lock(directory, project):
     import fcntl
@@ -978,7 +993,7 @@ def deploy(args):
         require(all(path.is_file() for path in env_files), "An existing environment file is missing.")
         directory, files = discover_stack(containers)
         base = compose_command(project, directory, files, env_files)
-        model = json.loads(run(base + ["config", "--format", "json"]))
+        model = resolved_compose(base)
         input_files = [*files, *env_files]
     validate_existing(model, containers, manifest["services"])
     database_identity(containers["postgres"], args.expected_database_id)
@@ -988,8 +1003,8 @@ def deploy(args):
         source = extract_source(args.archive, temporary, manifest["commit"])
         overlay, hotspot = plan_overlay(model, source, manifest["services"], manifest["commit"], containers)
         overlay_path = Path(temporary) / "upgrade.compose.json"
-        write_private(overlay_path, overlay)
-        planned = json.loads(run(base + ["-f", str(overlay_path), "config", "--format", "json"]))
+        write_compose(overlay_path, overlay)
+        planned = resolved_compose(base + ["-f", str(overlay_path)])
         verify_delta(model, planned, overlay)
     print("Preflight passed: release " + manifest["commit"] + ".", flush=True)
     print("Existing Compose project: " + project + ".", flush=True)
@@ -1024,14 +1039,14 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
     source = extract_source(args.archive, release, manifest["commit"])
     overlay, hotspot = plan_overlay(model, source, manifest["services"], manifest["commit"], containers)
     overlay_path = release / "upgrade.compose.json"
-    write_private(overlay_path, overlay)
+    write_compose(overlay_path, overlay)
     upgrade = base + ["-f", str(overlay_path)]
     targets = [*manifest["services"], "internal-gateway", "gateway"]
     phases = rollout_phases(manifest["services"])
     rollback = {"services": {name: {"image": containers[name]["Image"],
                                    "volumes": model["services"][name].get("volumes", [])}
                              for name in targets}}
-    write_private(release / "rollback.compose.json", rollback)
+    write_compose(release / "rollback.compose.json", rollback)
     write_private(release / "before.compose.json", model)
     write_private(release / "release.json", manifest)
     write_private(release / "record.json", {"project": project, "compose_files": files,
@@ -1057,7 +1072,7 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
             "The running installation changed during build; stopped before migration.")
     recheck_discovered_inputs(args, current)
     database_identity(current["postgres"], args.expected_database_id)
-    planned = json.loads(run(upgrade + ["config", "--format", "json"]))
+    planned = resolved_compose(upgrade)
     verify_delta(model, planned, overlay)
     for service in manifest["migrations"]:
         print("Applying owned migrations: " + service + ".", flush=True)
