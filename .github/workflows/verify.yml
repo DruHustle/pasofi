@@ -78,6 +78,7 @@ jobs:
             pasofi-backend/infra/production/vercel-config.test.mjs \
             pasofi-backend/infra/production/router-control-config.test.mjs \
             pasofi-backend/infra/production/router-fleet-config.test.mjs \
+            pasofi-backend/infra/production/stripe-config.test.mjs \
             pasofi-backend/infra/site-link/*.test.mjs \
             pasofi-backend/infra/radius-production/*.test.mjs \
             pasofi-backend/infra/pilot-isolation/*.test.mjs \

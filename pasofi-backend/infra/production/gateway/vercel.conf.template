@@ -43,10 +43,27 @@ server {
   add_header Referrer-Policy no-referrer always;
   add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
   add_header Cache-Control no-store always;
-  add_header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://hotspot.pasofi.onesa.eu https://hotspot.pamofi.onesa.eu" always;
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://js.stripe.com https://*.js.stripe.com; connect-src 'self' https://api.stripe.com; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://hotspot.pasofi.onesa.eu https://hotspot.pamofi.onesa.eu" always;
   default_type application/json;
   __PASOFI_HOTSPOT_PORTAL_INCLUDE__
   location = /health/live { return 200 '{"status":"ok","service":"gateway"}'; }
+  # Webhooks authenticate with Stripe's raw-body signature, never customer cookies
+  # or the Vercel browser proxy token. The application route is absent until configured.
+  location = /callbacks/stripe {
+    limit_except POST { deny all; }
+    client_max_body_size 256k;
+    set $web web;
+    proxy_pass http://$web:80/callbacks/stripe;
+    proxy_http_version 1.1;
+    proxy_set_header Stripe-Signature $http_stripe_signature;
+    proxy_set_header Cookie "";
+    proxy_set_header Authorization "";
+    proxy_set_header X-Forwarded-For $realip_remote_addr;
+    proxy_set_header X-PamoFi-Proxy-Token "";
+    proxy_set_header X-PamoFi-Client-IP "";
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 15s;
+  }
   location /api/ {
     if ($pamofi_proxy_authorized = 0) { return 403 '{"error":"proxy_authentication_required"}'; }
     if ($pamofi_client_shape = 0) { return 400 '{"error":"invalid_proxy_client"}'; }

@@ -73,7 +73,7 @@ export async function finishPaymentReconciliation(pool: Pool, lease: Lease, resu
 }
 
 export async function processPaymentReconciliation(pool: Pool, adapter: PaymentAdapter): Promise<boolean> {
- if(!['mock','pesepay'].includes(adapter.provider))throw Error('provider_unavailable');
+ if(!['mock','pesepay','stripe','stripe_test'].includes(adapter.provider))throw Error('provider_unavailable');
  const lease=await claimPaymentReconciliation(pool,30,adapter.provider);
  if (!lease) return false;
  let result: string;

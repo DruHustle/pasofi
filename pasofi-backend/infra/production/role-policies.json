@@ -33,6 +33,7 @@
     "verified_charges": ["SELECT", "INSERT", "UPDATE"],
     "payment_reviews": ["SELECT", "INSERT"],
     "payment_reconciliation_jobs": ["SELECT", "INSERT", "UPDATE"],
+    "stripe_webhook_events": ["SELECT", "INSERT"],
     "sales_locations": ["SELECT", "INSERT", "UPDATE"],
     "agent_site_inventory": ["SELECT", "INSERT", "UPDATE"],
     "inventory_allocations": ["SELECT", "INSERT"],

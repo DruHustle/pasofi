@@ -1,14 +1,17 @@
 // Pesepay remains a historical ledger identity, not a selectable checkout.
 // No direct provider joins this settlement interface until independently
 // verifiable paid terms and its production contract have been qualified.
-export type PaymentProvider='mock'|'pesepay';
+export type PaymentProvider='mock'|'pesepay'|'stripe'|'stripe_test';
 export type MethodEligibility={method:unknown;merchantEnabledCodes:Set<string>;siteQualifiedCodes:Set<string>};
-export type PaymentInput={orderId:string;amountMinor:number;currency:string;methodCode:string;eligibility:MethodEligibility};
-export type PaymentTerms={referenceNumber:string;amountMinor:number;currency:string};
+export type PaymentInput={attemptId:string;orderId:string;customerId:string;siteId:string;amountMinor:number;currency:string;methodCode:string;eligibility:MethodEligibility};
+export type PaymentTerms={referenceNumber:string;amountMinor:number;currency:string;attemptId?:string;orderId?:string;customerId?:string;siteId?:string;methodCode?:string};
 export type VerifiedStatus={state:'verified_success'|'pending'|'failed'|'reversed'|'unknown';providerStatus:string|null};
 export type InitiationResult={state:'initiated';referenceNumber:string;redirectUrl:string}|{state:'unknown';referenceNumber?:string};
 export interface PaymentAdapter {
  readonly provider:PaymentProvider;
+ // Only providers with an independently documented idempotency retention may
+ // opt in. The persisted attempt ID, never a browser-supplied key, is replayed.
+ readonly initiationReplaySeconds?:number;
  initiate(input:PaymentInput):Promise<InitiationResult>;
  check(terms:PaymentTerms):Promise<VerifiedStatus>;
 }

@@ -22,6 +22,19 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.onesa.pasofi.stripe-return</string>
+			<key>CFBundleURLSchemes</key>
+			<array><string>com.onesa.pasofi</string></array>
+		</dict>
+	</array>
+	<key>PasoFiApplePayMerchantIdentifier</key>
+	<string>$(PASOFI_APPLE_PAY_MERCHANT_ID)</string>
+	<key>PasoFiApplePayEntitlements</key>
+	<string>$(PASOFI_APPLE_PAY_ENTITLEMENTS)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

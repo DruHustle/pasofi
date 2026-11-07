@@ -9,6 +9,7 @@ import { PolicyNotice } from './Policies';
 import { InvoiceDeliveryFields, InvoiceDownload, InvoiceHistory } from './InvoiceActions';
 import { type InvoiceDelivery, defaultInvoiceDelivery, invoiceDeliveryError, invoiceDeliveryPayload } from './invoice-delivery';
 import LiveUsage, { dataAmount, useLiveUsage, type UsageSnapshot } from './LiveUsage';
+import StripeCheckout,{type StripePayment} from './StripeCheckout';
 import './customer-premium.css';
 
 type Entitlement = { id: string; bundle_id: string; byte_limit: string; consumed_bytes: string; validity_seconds: number; activated_at: string | null; revoked_at: string | null; start_by: string };
@@ -49,6 +50,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const [methods, setMethods] = useState<PaymentMethod[]>([]), [methodCode, setMethodCode] = useState(''), [methodsLoading, setMethodsLoading] = useState(false);
   const [order, setOrder] = useState<Order | null>(null), [payment, setPayment] = useState<PaymentStatus | null>(null), [redirectUrl, setRedirectUrl] = useState('');
   const [checkoutPending, setCheckoutPending] = useState(false);
+  const [stripePayment,setStripePayment]=useState<StripePayment|null>(null);
   const [invoiceDelivery, setInvoiceDelivery] = useState<InvoiceDelivery>(() => defaultInvoiceDelivery(capabilities));
   const [catalogueLoaded, setCatalogueLoaded] = useState(false), [catalogueLoading, setCatalogueLoading] = useState(true), [catalogueError, setCatalogueError] = useState(false), [catalogueAttempt, setCatalogueAttempt] = useState(0), [recoveryReminder, setRecoveryReminder] = useState(false);
   const restoredMethod = useRef(''), savedOrderLookup = useRef(0), invoiceChoiceExplicit = useRef(false);
@@ -77,7 +79,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   function invalidateAccount(expectedOwner?: string) {
     if (expectedOwner && ownerRef.current !== expectedOwner) return;
     ++generation.current; ownerRef.current = null; lastUsage.current = null; invoiceChoiceExplicit.current = false; clearSessionSecrets();
-    if (live.current) { setOwner(null); setAccess([]); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setReferencePending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setCheckoutPending(false); setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
+    if (live.current) { setOwner(null); setAccess([]); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setReferencePending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setCheckoutPending(false); setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
   }
   function mergeUsage(snapshot: UsageSnapshot) {
     if (snapshot.customerId !== ownerRef.current || !live.current) return;
@@ -248,8 +250,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       setOrder(result.order); setPayment(result);
       if (result.fulfillmentState === 'fulfilled' && result.entitlementId) setRecoveryReminder(true);
       const settled = result.safeToRequote === true || ['fulfilled', 'reversed'].includes(result.fulfillmentState) || (result.fulfillmentState === 'unconfirmed' && result.attempts.length > 0 && result.attempts.every(attempt => ['failed', 'reversed'].includes(attempt.state)));
-      if (settled && ownerRef.current) { finishMutation(`customer:${ownerRef.current}`, `order:${result.order.bundle_id}`); finishMutation(`customer:${ownerRef.current}`, `checkout:${result.order.id}`); finishMutation(`customer:${ownerRef.current}`, 'purchase-details'); setCheckoutPending(false); setRedirectUrl(''); }
-      if (result.entitlementId || result.fulfillmentState === 'reversed' || result.fulfillmentState === 'pending_review') { setRedirectUrl(''); await refreshAccess(); await usage.refresh(); }
+      if (settled && ownerRef.current) { finishMutation(`customer:${ownerRef.current}`, `order:${result.order.bundle_id}`); finishMutation(`customer:${ownerRef.current}`, `checkout:${result.order.id}`); finishMutation(`customer:${ownerRef.current}`, 'purchase-details'); setCheckoutPending(false); setRedirectUrl(''); setStripePayment(null); }
+      if (result.entitlementId || result.fulfillmentState === 'reversed' || result.fulfillmentState === 'pending_review') { setRedirectUrl(''); setStripePayment(null); await refreshAccess(); await usage.refresh(); }
     }
   }
   async function expireUnusedQuote() {
@@ -261,7 +263,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       if (result.orderId !== order.id || result.state !== 'expired_unused' || result.safeToRequote !== true) throw Error('unverified_quote_expiry');
       if (!isCurrent(revision) || ownerRef.current !== id) return;
       finishMutation(`customer:${id}`, `order:${order.bundle_id}`); finishMutation(`customer:${id}`, `checkout:${order.id}`); finishMutation(`customer:${id}`, 'purchase-details');
-      if (isCurrent(revision)) { setCheckoutPending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setAgreed(false); restoredMethod.current = ''; setMessage('The service closed the expired unused quote and verified that no payment attempt exists. Review the current terms before preparing a fresh quote.'); }
+      if (isCurrent(revision)) { setCheckoutPending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setAgreed(false); restoredMethod.current = ''; setMessage('The service closed the expired unused quote and verified that no payment attempt exists. Review the current terms before preparing a fresh quote.'); }
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'Quote closure could not be verified. The original purchase details are preserved; retry this same closure or check payment status.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
@@ -272,7 +274,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       if (error) { setMessage(error); return; }
       if ((invoiceDelivery.channel === 'email' && !capabilities.invoiceEmail) || (invoiceDelivery.channel === 'sms' && !capabilities.invoiceSms)) { setMessage('That invoice delivery method is unavailable. Choose Download PDF or another available method.'); return; }
     }
-    const revision = generation.current; setBusy(true); setMessage(''); setRedirectUrl('');
+    const revision = generation.current; setBusy(true); setMessage(''); setRedirectUrl(''); setStripePayment(null);
     try {
       const id = await identity(true), purchaseOwner = `customer:${id}`;
       // Restore the complete original request, including an omitted legacy invoice
@@ -287,13 +289,16 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       if (!isCurrent(revision)) return;
       setOrder(created.order);
       const checkoutPayload = { siteId: details.siteId, methodCode: details.methodCode }, checkoutKey = mutationIntent(purchaseOwner, `checkout:${created.order.id}`, checkoutPayload);
-      const result = await api<{ attemptId: string; state: string; redirectUrl: string | null; simulation: boolean }>(`/api/orders/${created.order.id}/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': checkoutKey }, body: JSON.stringify(checkoutPayload) });
+      const result = await api<{ attemptId: string; state: string; redirectUrl: string | null; simulation: boolean; stripe?: StripePayment | null }>(`/api/orders/${created.order.id}/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': checkoutKey }, body: JSON.stringify(checkoutPayload) });
       if (result.redirectUrl) {
         const url = new URL(result.redirectUrl);
         if (url.protocol !== 'https:' || url.username || url.password) throw Error('invalid_checkout_url');
         if (isCurrent(revision)) setRedirectUrl(url.href);
       }
-      if (isCurrent(revision)) setMessage(result.simulation ? 'Simulation checkout prepared. No real payment has been taken.' : 'Checkout prepared. Continue on the payment provider page, then check the verified status here.');
+      if (isCurrent(revision)) {
+        setStripePayment(result.stripe??null);
+        setMessage(result.stripe ? 'Your saved checkout is ready. Complete the secure payment below; your bundle is queued only after server verification.' : result.simulation ? 'Simulation checkout prepared. No real payment has been taken.' : 'Check the verified order status before paying again.');
+      }
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'Checkout could not be confirmed. Check the order before starting another payment. Retry uses the same saved request.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
@@ -410,11 +415,12 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       {!capabilities.paymentCheckout ? <><p className="notice">Online checkout is not enabled here. Use a voucher from an authorized agent when available.</p><div className="customer-provider-list" aria-label="Payment integrations awaiting activation"><span>EcoCash<small>Pending</small></span><span>InnBucks<small>Pending</small></span><span>Bank & card<small>Pending</small></span></div></> : <>
         <form className="form-grid" onSubmit={checkout}><fieldset disabled={busy || !!order || checkoutPending || catalogueLoading || catalogueError}><label>Purchase site<select required value={siteId} onChange={event => setSiteId(event.target.value)}><option value="">Choose a site</option>{sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><label>Bundle<select required value={bundleId} onChange={event => { setBundleId(event.target.value); onNavigate?.('purchase', event.target.value); }}><option value="">Choose a bundle</option>{products.map(item => <option key={item.id} value={item.id}>{item.id.toUpperCase()} · {money(item.price_minor, item.currency)}</option>)}</select></label>
           {product && <div className="summary-tile"><strong>{money(product.price_minor, product.currency)}</strong><span>{Number(product.byte_limit) / 1e9} GB · {product.validity_seconds / 86400} days · One active connection</span></div>}
-          <label>Payment method<select required disabled={methodsLoading} value={methodCode} onChange={event => setMethodCode(event.target.value)}><option value="">{methodsLoading ? 'Checking payment methods…' : 'Choose an enabled method'}</option>{methods.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select></label>{method && <small>Provider limits: {money(method.minMinor, method.currency)} to {money(method.maxMinor, method.currency)}.</small>}
+          <label>Payment method<select required disabled={methodsLoading} value={methodCode} onChange={event => setMethodCode(event.target.value)}><option value="">{methodsLoading ? 'Checking payment methods…' : 'Choose an enabled method'}</option>{methods.map(item => <option key={item.code} value={item.code}>{item.code==='STRIPE_CARD'?'Credit or debit card':item.name}</option>)}</select></label>{method && <small>Provider limits: {money(method.minMinor, method.currency)} to {money(method.maxMinor, method.currency)}.</small>}
           {capabilities.invoices && <InvoiceDeliveryFields value={invoiceDelivery} onChange={value => { invoiceChoiceExplicit.current = true; setInvoiceDelivery(value); setAgreed(false); }} disabled={busy || !!order || checkoutPending} emailEnabled={capabilities.invoiceEmail} smsEnabled={capabilities.invoiceSms} />}
         </fieldset><label className="check-label"><input type="checkbox" required checked={agreed} onChange={event => setAgreed(event.target.checked)} disabled={busy} />I have reviewed the price, allowance, and validity. {capabilities.paymentMode === 'mock' ? 'This is a simulation.' : 'Payment confirmation does not mean I am connected.'}</label><button className="primary" disabled={busy || (!order && !checkoutPending && (catalogueLoading || catalogueError || !sites.some(site => site.id === siteId))) || !methodEligible || !agreed || (!!payment && (payment.fulfillmentState !== 'unconfirmed' || payment.safeToRequote === true))}>{order || checkoutPending ? 'Retry this checkout safely' : 'Prepare checkout'}</button></form>
         {!methodsLoading && methods.length === 0 && <p>No configured payment method is available for this bundle and site.</p>}
         {redirectUrl && <a className="primary button-link" href={redirectUrl} target="_blank" rel="noopener noreferrer">Continue to payment provider ↗</a>}
+        {stripePayment && owner && order && <StripeCheckout key={order.id} payment={stripePayment} owner={owner} amount={money(order.price_minor,order.currency)} disabled={busy} verify={identity} onBusy={value=>{if(ownerRef.current===owner)setBusy(value);}} onSubmitted={async()=>{if(ownerRef.current!==owner)return;setStripePayment(null);setMessage('Payment submitted. Waiting for verified confirmation; please do not start another purchase.');await checkPayment();}}/> }
       </>}
       {checkoutPending && !order && <div className="notice customer-saved-order"><h4>Check your saved purchase</h4><p>Its status can be checked even if the bundle or payment method is no longer offered. This check does not start a payment.</p><button className="secondary" disabled={busy} onClick={restoreOrder}>Check saved checkout status</button></div>}
         {order && <div className={`payment-status customer-payment-status ${paymentVerified ? 'is-confirmed' : payment?.fulfillmentState === 'reversed' || paymentFailed ? 'is-reversed' : ''}`}><span className="customer-status-tag">{paymentLabel}</span><h4>Order {order.id.slice(0, 8)}</h4><p>{money(order.price_minor, order.currency)} · Quote expires {localDate(order.quote_expires_at)}</p><button className="secondary" disabled={busy} onClick={check}>Check verified payment status</button>
@@ -422,7 +428,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
           {payment && <p role="status">{payment.safeToRequote === true ? 'Expired unused quote closed. No provider payment was initiated for this order.' : paymentVerified ? `${payment.simulation ? 'Simulated payment' : 'Payment'} verified. Your bundle is queued; internet connection is not yet confirmed.` : payment.fulfillmentState === 'reversed' ? 'Payment reversed. This purchase no longer provides usable access.' : payment.fulfillmentState === 'pending_review' ? 'Payment needs review. Do not pay again while the previous charge and accounted usage are being reconciled.' : `Payment not confirmed. ${payment.attempts.map(attempt => attempt.state.replace(/_/g, ' ')).join(', ') || 'Waiting for a verified provider result.'}`}</p>}
           {owner && capabilities.invoices && paymentVerified && <InvoiceDownload scope="customer" ownerKey={owner} verify={identity} orderId={order.id} disabled={busy} />}
           {(!payment || payment.fulfillmentState === 'unconfirmed') && payment?.safeToRequote !== true && <div className="quote-expiry"><p>If this quote expired before a payment was attempted, the service can close it safely. This does not cancel, reverse or restart an existing provider payment.</p><button className="secondary" disabled={busy} onClick={expireUnusedQuote}>Close an expired unused quote</button></div>}
-          {paymentSettled && <button className="secondary" disabled={busy} onClick={() => { setOrder(null); setPayment(null); setRedirectUrl(''); setAgreed(false); restoredMethod.current = ''; invoiceChoiceExplicit.current = false; setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setMessage('Choose the terms for a new purchase.'); }}>{payment.safeToRequote === true ? 'Review a fresh quote' : 'Review another bundle'}</button>}
+          {paymentSettled && <button className="secondary" disabled={busy} onClick={() => { setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setAgreed(false); restoredMethod.current = ''; invoiceChoiceExplicit.current = false; setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setMessage('Choose the terms for a new purchase.'); }}>{payment.safeToRequote === true ? 'Review a fresh quote' : 'Review another bundle'}</button>}
         </div>}
     </section>}
 
