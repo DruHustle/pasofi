@@ -4,6 +4,59 @@ The mobile source is `pasofi-frontend/mobile`. The checked-in native projects ar
 
 The `Build PasoFi native previews` workflow compiles fresh web assets, runs the pinned Capacitor 8.6.0 synchronization, then independently builds Android and iOS. A successful job uploads its binary, exact source commit, toolchain version and SHA-256 checksum for 14 days. A workflow definition or successful web build alone does not mean a native binary has been built: inspect the native job result and its artifact.
 
+## Native Stripe checkout
+
+The local `PasoFiStripe` Capacitor bridge presents Stripe's native PaymentSheet. It supports cards, Apple Pay on eligible iOS devices and Google Pay on eligible Android devices. It does not depend on a React Native runtime or a Capacitor Stripe package with incompatible React peers.
+
+| Native dependency | Exact version | Source pin |
+| --- | --- | --- |
+| Stripe iOS, `StripePaymentSheet` and `StripePayments` | 26.15.1 | [Official release](https://github.com/stripe/stripe-ios/releases/tag/26.15.1), commit `2f4547639a5aed18d39e4ba44c0ba684dab3161b` |
+| Stripe Android | 23.25.2 | [Official release](https://github.com/stripe/stripe-android/releases/tag/v23.25.2), Maven `com.stripe:stripe-android:23.25.2` |
+| Google Pay Android API | 20.0.0 | Maven `com.google.android.gms:play-services-wallet:20.0.0`, matching the [pinned Stripe dependency](https://github.com/stripe/stripe-android/blob/v23.25.2/dependencies.gradle) |
+
+The iOS Stripe dependency belongs to the app's Xcode target, so `cap sync ios` does not overwrite it when regenerating `CapApp-SPM`. CI verifies the resolved Stripe version and commit alongside the existing Capacitor and Filesystem pins. The Android plugin is registered before `BridgeActivity.onCreate` builds the bridge, so PaymentSheet's activity-result launcher exists before the activity starts. Android CI runs the bridge input-validation unit tests before building the APK.
+
+The JavaScript API is deliberately small:
+
+```ts
+availability({ publishableKey, testMode, merchantCountryCode,
+  applePayMerchantId, googlePay }) // -> { applePay: boolean, googlePay: boolean }
+present({ publishableKey, testMode, merchantCountryCode,
+  applePayMerchantId, googlePay, clientSecret, merchantDisplayName: 'PasoFi' })
+  // -> { status: 'completed' | 'cancelled' | 'failed' }
+```
+
+Both bridges reject a mismatched test/live key, malformed input and concurrent payment presentations. Stripe collects card details; the bridge returns neither card data nor PaymentIntent objects. The bridge does not log arguments, callbacks or SDK errors. Capacitor `loggingBehavior` is `none`, including debug builds, because Android's framework otherwise logs native-call arguments containing the client secret. Android uses the published release Stripe AAR without enabling SDK logging. iOS CI builds the unsigned simulator app in **Release**, and connected iOS device QA must also use Release: the pinned [Stripe analytics client](https://github.com/stripe/stripe-ios/blob/26.15.1/StripeCore/StripeCore/Source/Analytics/STPAnalyticsClient.swift) prints analytics payloads under `DEBUG`, independently of Capacitor logging. This compiles out debug analytics; it does not promise to suppress every SDK warning. Link and delayed payment methods are disabled in this integration. The backend's verified payment event determines fulfillment: a native `completed` result only starts order-status verification.
+
+Wallet checks fall back to card checkout when the device is unavailable or readiness takes more than five seconds. The iOS PassKit check runs on a background queue: the [pinned Stripe API](https://github.com/stripe/stripe-ios/blob/26.15.1/StripeCore/StripeCore/Source/API%20Bindings/StripeAPI.swift) explicitly warns that a synchronous readiness check can stall. No wallet eligibility result qualifies a merchant account, signed build or real payment by itself.
+
+### Apple Pay provisioning and return handling
+
+The default build has no Apple merchant identifier and no Apple Pay entitlement. Do not substitute an invented identifier. For an Apple Pay device release, the operator must register their actual Apple Merchant ID, create the Apple Pay payment-processing certificate through Stripe's CSR flow, and provision the app's Apple Pay capability for that same identifier. See [Stripe's Apple Pay setup](https://docs.stripe.com/payments/accept-a-payment?payment-ui=mobile&platform=ios#enable-apple-pay).
+
+Set these Xcode build settings for the signed configuration:
+
+```text
+PASOFI_APPLE_PAY_MERCHANT_ID = <actual registered Apple Merchant ID>
+PASOFI_APPLE_PAY_ENTITLEMENTS = App/PasoFiStripe.entitlements
+```
+
+`CODE_SIGN_ENTITLEMENTS` references the second setting. The entitlement file and Info.plist receive the merchant identifier from the first. Set the backend's Apple merchant identifier to that same value. The bridge only advertises/configures Apple Pay when the backend identifier matches the installed build's identifier and entitlement setting, and PassKit reports availability. Signing/provisioning and Stripe certificate acceptance still require a real-device test.
+
+iOS uses `com.onesa.pasofi://stripe-return`. Both normal scene callbacks and cold-start callbacks are consumed by Stripe before Capacitor forwards URL information to the WebView; the client-secret query is not sent to JavaScript. An app restarted during authentication recovers the saved order from the backend instead of trusting a return URL as proof of payment. The [official iOS PaymentSheet return-URL guide](https://docs.stripe.com/payments/accept-a-payment?payment-ui=mobile&platform=ios#set-up-a-return-url) explains this SDK callback flow.
+
+### Google Pay provisioning and return handling
+
+The Android manifest enables the Google Pay API. The backend explicitly controls whether Google Pay is offered and supplies the merchant's country. The bridge selects Google's test or production environment from the validated key mode. Google Pay production access requires the operator's real application and signing configuration; use the [Google Pay publication guide](https://developers.google.com/pay/api/android/guides/test-and-deploy/publish-your-integration). Test on a supported physical Android device with Google Wallet; an emulator compile does not verify wallet payment behavior. See [Stripe's Google Pay integration](https://docs.stripe.com/payments/accept-a-payment?payment-ui=mobile&platform=android#enable-google-pay).
+
+Android PaymentSheet owns its SCA return activity and manifest filter, `stripesdk://payment_return_url/com.onesa.pasofi`. It does not expose the iOS `returnURL` configuration. The app retains the [SDK's supported return route](https://github.com/stripe/stripe-android/blob/v23.25.2/payments-core/AndroidManifest.xml), without a competing app filter.
+
+### Acceptance still required for a connected release
+
+Use the exact compiled revision and operator-configured test account on real iOS and Android devices. Verify a card success, decline, SCA challenge and cancellation; eligible/absent wallet behavior; app backgrounding or recreation during authentication; and recovery of the same saved order after an uncertain response. Confirm that entitlement activation occurs only after the backend verifies the payment and that retries cannot double-fulfill an order. Inspect debug device logs to verify that native arguments and payment secrets are absent. Apple Pay and Google Pay must each complete their own device test before being advertised as qualified.
+
+The recorded artifacts below predate this Stripe bridge. Their success does not prove this new native code compiles or that payments work. Consult the payment PR's exact-source Android/iOS results before merging, and retain the separate device, signing and customer-cookie gates.
+
 ## Recorded native checkpoints
 
 Both jobs succeeded in [workflow run 41378312413](https://github.com/DruHustle/pamofi/actions/runs/41378312413) for published head `64277e5e6d5442d3d4e335259a8da816f3ce621f`. GitHub compiled merge source `84a44994c025e625aa3c7ba5b40f8ddfa6a54225`, which is recorded with the artifacts. This checkpoint includes the cash-first customer flow and live usage display.
@@ -29,14 +82,14 @@ These GitHub artifacts expire on **2026-11-16**. The uploaded archive SHA-256 di
 ## What the artifacts are
 
 - Android: a debug APK signed with the disposable Android debug key. It is not a release-signed APK/AAB or a Google Play submission.
-- iOS: an unsigned simulator `App.app` inside a tar archive, preserving executable permissions. It is not a device-installable IPA, TestFlight build or App Store submission. Use an iOS simulator compatible with the artifact's architecture and SDK.
+- iOS: an unsigned Release simulator `App.app` inside a tar archive, preserving executable permissions. It is not a device-installable IPA, TestFlight build or App Store submission. Use an iOS simulator compatible with the artifact's architecture and SDK. New artifacts record the build configuration explicitly; older checkpoints above used the previous simulator configuration.
 - Both are **API-unconfigured previews**. The workflow explicitly leaves `VITE_PAMOFI_API_BASE_URL` empty, so the app cannot submit credentials, perform purchases, send SMS or connect through a backend. No provider or signing secrets are used.
 
 The customer interface supports an explicitly configured HTTPS gateway, but that configuration alone does not qualify secure cross-origin cookies on real iOS/Android WebViews. Backend CORS/session configuration, real-device cookie behavior, recovery, network transitions and accessibility require separate acceptance before building a connected release. The current service capability keeps `mobileCookies` false until that work is qualified.
 
 ## Toolchains and local commands
 
-Capacitor 8 requires Node 22 or later, Xcode 26 or later and an iOS 15 minimum deployment target. The Android project uses Java 21, SDK 36 (minimum device API 24), AGP 8.13.0 and the checked-in Gradle 8.14.3 wrapper. The workflow uses Node 24.22.1, Java 21 and a macOS 26 runner whose Xcode version is checked at runtime.
+Capacitor 8 requires Node 22 or later, Xcode 26 or later and an iOS 15 minimum deployment target. The Android project uses Java 21, SDK 36 (minimum device API 24), AGP 8.13.2 and the checked-in Gradle 8.14.3 wrapper. The workflow uses Node 24.22.1, Java 21 and a macOS 26 runner whose Xcode version is checked at runtime.
 
 From this directory, build Android after installing Java 21 and the Android 36 SDK:
 
@@ -45,17 +98,17 @@ npm ci
 npm run build
 npx --no-install cap sync android
 cd android
-bash ./gradlew --no-daemon :app:assembleDebug
+bash ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
 ```
 
-For the unsigned iOS simulator build on a Mac with Xcode 26 or later:
+For the unsigned iOS Release simulator build on a Mac with Xcode 26 or later:
 
 ```sh
 npm ci
 npm run build
 npx --no-install cap sync ios
 xcodebuild -project ios/App/App.xcodeproj -scheme App \
-  -configuration Debug -sdk iphonesimulator \
+  -configuration Release -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath native-build/ios \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \

@@ -1,0 +1,40 @@
+# Optional, reviewed deployment overlay. Do not add this to the running stack
+# before the isolated acceptance checklist in STRIPE_PAYMENTS.md is complete.
+# Existing base production configuration remains false/disabled.
+services:
+  prepaid-access:
+    environment:
+      PAMOFI_PAYMENTS_ENABLED: '${PAMOFI_PAYMENTS_ENABLED:-false}'
+      PAMOFI_PAYMENT_PROVIDER: stripe
+      PAMOFI_PAYMENT_MODE: production
+      STRIPE_PRODUCTION_QUALIFIED: '${STRIPE_PRODUCTION_QUALIFIED:-false}'
+      STRIPE_ACCOUNT_ID: '${STRIPE_ACCOUNT_ID:?Set the verified merchant account ID}'
+      STRIPE_MERCHANT_COUNTRY: '${STRIPE_MERCHANT_COUNTRY:?Set the actual Stripe merchant country}'
+      STRIPE_PUBLISHABLE_KEY: '${STRIPE_PUBLISHABLE_KEY:?Set the matching live publishable key}'
+      STRIPE_QUALIFIED_SITE_IDS_JSON: '${STRIPE_QUALIFIED_SITE_IDS_JSON:?Set the reviewed site UUID list}'
+      STRIPE_SECRET_KEY_FILE: /run/secrets/stripe_secret_key
+      STRIPE_WEBHOOK_SECRET_FILE: /run/secrets/stripe_webhook_secret
+      STRIPE_APPLE_PAY_ENABLED: '${STRIPE_APPLE_PAY_ENABLED:-false}'
+      STRIPE_APPLE_PAY_MERCHANT_ID: '${STRIPE_APPLE_PAY_MERCHANT_ID:-}'
+      STRIPE_GOOGLE_PAY_ENABLED: '${STRIPE_GOOGLE_PAY_ENABLED:-false}'
+    # Only this opt-in service gets provider egress. Existing internal service
+    # and database networks retain their isolation and no host port is added.
+    networks:
+      services: {}
+      database: {}
+      stripe_egress: {gw_priority: 1}
+    secrets:
+      - stripe_secret_key
+      - stripe_webhook_secret
+secrets:
+  stripe_secret_key:
+    file: '${PAMOFI_SECRETS_DIR:?Set the protected secret directory}/stripe_secret_key'
+  stripe_webhook_secret:
+    file: '${PAMOFI_SECRETS_DIR:?Set the protected secret directory}/stripe_webhook_secret'
+networks:
+  stripe_egress:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: '${PAMOFI_STRIPE_EGRESS_SUBNET:?Set a reviewed non-overlapping private IPv4 Stripe-egress CIDR}'

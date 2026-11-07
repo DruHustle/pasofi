@@ -7,7 +7,8 @@ async function tx<T>(pool:Pool,fn:(client:PoolClient)=>Promise<T>):Promise<T>{co
 // The checkout boundary authenticates ownership and supplies the server's
 // merchant-enabled, site-qualified method and immutable order terms.
 export async function beginProviderPayment(pool:Pool,customerId:string,orderId:string,requestKey:string,siteId:string,methodCode:string,eligibility:Eligibility,adapter:Adapter){
- if(!['mock','pesepay'].includes(adapter.provider))throw new PaymentError('provider_unavailable');
+ if(!['mock','pesepay','stripe','stripe_test'].includes(adapter.provider))throw new PaymentError('provider_unavailable');
+ customerId=customerId.toLowerCase();orderId=orderId.toLowerCase();requestKey=requestKey.toLowerCase();siteId=siteId.toLowerCase();
  const attempt=await tx(pool,async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`${customerId}:${requestKey}`]);
   const order=await client.query('SELECT *,quote_expires_at>now() AS quote_valid FROM purchase_orders WHERE id=$1 AND customer_id=$2 FOR UPDATE',[orderId,customerId]);
@@ -23,9 +24,12 @@ export async function beginProviderPayment(pool:Pool,customerId:string,orderId:s
   const created=await client.query("INSERT INTO provider_payment_attempts(id,order_id,customer_id,request_key,site_id,method_code,provider,state) VALUES ($1,$2,$3,$4,$5,$6,$7,'initiating') RETURNING *",[id,orderId,customerId,requestKey,siteId,methodCode,adapter.provider]);
   return {created:true,row:created.rows[0],order:order.rows[0]};
  });
- if(!attempt.created)return {attemptId:attempt.row.id,state:attempt.row.state,redirectUrl:attempt.row.redirect_url as string|null};
+ const age=(Date.now()-new Date(attempt.row.created_at).getTime())/1000;
+ const replay=!attempt.created && !attempt.row.provider_reference && ['initiating','unknown'].includes(attempt.row.state)
+  && adapter.initiationReplaySeconds!==undefined && Number.isFinite(age) && age>=0 && age<adapter.initiationReplaySeconds;
+ if(!attempt.created&&!replay)return {attemptId:attempt.row.id,state:attempt.row.state,redirectUrl:attempt.row.redirect_url as string|null};
  let initiated:Awaited<ReturnType<Adapter['initiate']>>;
- try{initiated=await adapter.initiate({orderId,amountMinor:attempt.order.price_minor,currency:attempt.order.currency,methodCode,eligibility});}
+ try{initiated=await adapter.initiate({attemptId:attempt.row.id,orderId,customerId,siteId,amountMinor:attempt.order.price_minor,currency:attempt.order.currency,methodCode,eligibility});}
  catch{initiated={state:'unknown'};}
  try {
   const row=await pool.query(`WITH updated AS (
@@ -75,11 +79,12 @@ export async function markStaleInitiationsUnknown(pool:Pool,minimumAgeSeconds:nu
 // Only a direct server-to-server status check may reach the fulfillment transaction.
 // Callback and browser payloads must never be passed as payment evidence.
 export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapter:Adapter){
- const known=await pool.query(`SELECT a.provider,a.provider_reference,a.order_id,o.price_minor,o.currency FROM provider_payment_attempts a JOIN purchase_orders o ON o.id=a.order_id WHERE a.id=$1`,[attemptId]);
+ const known=await pool.query(`SELECT a.provider,a.provider_reference,a.order_id,a.customer_id,a.site_id,a.method_code,o.price_minor,o.currency FROM provider_payment_attempts a JOIN purchase_orders o ON o.id=a.order_id WHERE a.id=$1`,[attemptId]);
  if(!known.rowCount||!known.rows[0].provider_reference)throw new PaymentError('reference_unavailable');
  const initial=known.rows[0];
  if(initial.provider!==adapter.provider)throw new PaymentError('provider_mismatch');
- const status=await adapter.check({referenceNumber:initial.provider_reference,amountMinor:initial.price_minor,currency:initial.currency});
+ const status=await adapter.check({referenceNumber:initial.provider_reference,amountMinor:initial.price_minor,currency:initial.currency,
+  attemptId,orderId:initial.order_id,customerId:initial.customer_id,siteId:initial.site_id,methodCode:initial.method_code});
  if(status.state==='unknown')return {state:'unable_to_verify'};
  if(status.state==='pending')return {state:'pending'};
  if(!['verified_success','failed','reversed'].includes(status.state))return {state:'unable_to_verify'};
@@ -88,7 +93,7 @@ export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapte
     FROM provider_payment_attempts a JOIN purchase_orders o ON o.id=a.order_id WHERE a.id=$1 FOR UPDATE OF a,o`,[attemptId]);
   if(!rows.rowCount)throw new PaymentError('reference_unavailable');
   const a=rows.rows[0];
-  if(a.provider!==adapter.provider||a.provider_reference!==initial.provider_reference||a.price_minor!==initial.price_minor||a.currency!==initial.currency)throw new PaymentError('payment_changed');
+  if(a.provider!==adapter.provider||a.provider_reference!==initial.provider_reference||a.price_minor!==initial.price_minor||a.currency!==initial.currency||a.order_id!==initial.order_id||a.customer_id!==initial.customer_id||a.site_id!==initial.site_id||a.method_code!==initial.method_code)throw new PaymentError('payment_changed');
   const previous=await client.query('SELECT * FROM verified_charges WHERE attempt_id=$1 FOR UPDATE',[attemptId]);
   // The fulfillment belongs to this exact charge, not merely to its order.
   // Preserve a review or reversal on retries and out-of-order provider replies.

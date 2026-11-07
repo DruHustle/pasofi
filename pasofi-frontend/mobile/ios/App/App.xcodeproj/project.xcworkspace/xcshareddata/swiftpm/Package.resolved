@@ -1,5 +1,4 @@
 {
-  "originHash" : "432c065d008a6178461b9be4befe972c1c6bb3bf83cd848b61e28641e8ae1084",
   "pins" : [
     {
       "identity" : "capacitor-swift-pm",
@@ -8,6 +7,24 @@
       "state" : {
         "revision" : "e9e932f7748d3b948bc47f5791c761ac5221ec6a",
         "version" : "8.6.0"
+      }
+    },
+    {
+      "identity" : "ion-ios-filesystem",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ionic-team/ion-ios-filesystem.git",
+      "state" : {
+        "revision" : "549c18ad9d9bb70d05df37cc3f6f7aa7f5d0ee52",
+        "version" : "2.0.1"
+      }
+    },
+    {
+      "identity" : "stripe-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stripe/stripe-ios.git",
+      "state" : {
+        "revision" : "2f4547639a5aed18d39e4ba44c0ba684dab3161b",
+        "version" : "26.15.1"
       }
     }
   ],

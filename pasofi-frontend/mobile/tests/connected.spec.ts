@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { usageSnapshot } from './usage-fixture';
+import {readFile} from 'node:fs/promises';
 
 const apiOrigin = 'https://api.pamofi.test';
 const customerId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -40,6 +41,52 @@ async function mock(page: Page, handle?: (route: Route, path: string, method: st
   });
 }
 async function open(page: Page, origin: string) { await page.goto(origin); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click(); }
+
+test('native bridge argument logging stays disabled even in debug payment builds',async()=>{
+  const configuration=await readFile(new URL('../capacitor.config.ts',import.meta.url),'utf8');
+  expect(configuration).toMatch(/loggingBehavior:\s*'none'/);
+});
+
+for(const platform of ['ios','android'])for(const outcome of ['completed','cancelled']){
+  test(`${platform} payment sheet ${outcome} preserves server-only fulfillment and memory-only client secret`,async({page,configuredBaseURL})=>{
+    const siteId='dddddddd-dddd-4ddd-8ddd-dddddddddddd',orderId='ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const order={id:orderId,bundle_id:'flex',price_minor:100,currency:'USD',status:'awaiting_payment',quote_expires_at:new Date(Date.now()+900000).toISOString()};
+    const clientSecret='pi_SyntheticPayment123_secret_SYNTHETIC';let checkoutCalls=0;
+    await page.addInitScript(({platform,outcome})=>{
+      const runtime=window as any;runtime.CapacitorCustomPlatform={name:platform};runtime.paymentBridgeCalls=[];
+      runtime.Capacitor={PluginHeaders:[{name:'PasoFiStripe',methods:[{name:'availability',rtype:'promise'},{name:'present',rtype:'promise'}]}],
+        nativePromise:async(plugin:string,method:string,options:Record<string,unknown>)=>{
+          if(plugin!=='PasoFiStripe')throw Error('unexpected native plugin');
+          runtime.paymentBridgeCalls.push({method,keys:Object.keys(options).sort()});
+          return method==='availability'?{applePay:platform==='ios',googlePay:platform==='android'}:{status:outcome};
+        }};
+    },{platform,outcome});
+    await mock(page,async(route,path,method,reply)=>{
+      if(path==='/api/capabilities'){await reply({...capabilities,paymentCheckout:true,paymentMode:'sandbox'});return true;}
+      if(path==='/api/sites'){await reply({sites:[{id:siteId,name:'Synthetic payment site'}]});return true;}
+      if(path==='/api/payments/methods'){await reply({enabled:true,methods:[{code:'STRIPE_CARD',name:'Card or mobile wallet',currency:'USD',minMinor:50,maxMinor:99999999}]});return true;}
+      if(path==='/api/orders'&&method==='POST'){await reply({order});return true;}
+      if(path===`/api/orders/${orderId}/checkout`){checkoutCalls++;expect(route.request().postDataJSON()).toEqual({siteId,methodCode:'STRIPE_CARD'});await reply({attemptId:orderId,state:'pending',simulation:true,redirectUrl:null,stripe:{provider:'stripe',clientSecret,publishableKey:['pk','test','SYNTHETIC'].join('_'),testMode:true,merchantCountryCode:'GB',merchantDisplayName:'PasoFi',applePayMerchantId:'merchant.invalid.synthetic',googlePay:true}});return true;}
+      if(path===`/api/orders/${orderId}/status`){await reply({order,attempts:[{id:orderId,state:'pending'}],entitlementId:null,entitlementRevokedAt:null,fulfillmentState:'unconfirmed',simulation:true});return true;}
+      return false;
+    });
+    await open(page,configuredBaseURL);await page.getByRole('button',{name:'Online payment',exact:true}).click();
+    await page.getByRole('checkbox',{name:/reviewed the price/}).check();await page.getByRole('button',{name:'Prepare checkout'}).click();
+    await expect(page.getByRole('heading',{name:`Pay securely with ${platform==='ios'?'Apple Pay':'Google Pay'} or card`})).toBeVisible();
+    await page.getByRole('button',{name:'Pay $1.00',exact:true}).click();
+    await expect(page.getByText(outcome==='cancelled'?'Payment cancelled. You can retry the same saved checkout.':'Payment not confirmed.',{exact:outcome==='cancelled'})).toBeVisible();
+    await expect(page.getByText('Bundle queued',{exact:true})).toHaveCount(0);expect(checkoutCalls).toBe(1);
+    expect(await page.evaluate(()=>JSON.stringify(sessionStorage)+JSON.stringify(localStorage))).not.toContain(clientSecret);
+    const calls=await page.evaluate(()=>(window as any).paymentBridgeCalls) as {method:string;keys:string[]}[];
+    // React StrictMode may replay readiness reads. Only the user's explicit
+    // action can open a payment sheet, and that action must occur exactly once.
+    const readiness=calls.filter(call=>call.method==='availability'),presentations=calls.filter(call=>call.method==='present');
+    expect(readiness.length).toBeGreaterThan(0);expect(presentations).toHaveLength(1);
+    expect(calls).toHaveLength(readiness.length+1);expect(calls.at(-1)?.method).toBe('present');
+    for(const call of readiness)expect(call.keys).not.toContain('clientSecret');
+    expect(presentations[0].keys).toContain('clientSecret');
+  });
+}
 
 test('a configured HTTPS gateway still fails closed until native cookie access is qualified', async ({ page, configuredBaseURL }) => {
   const requested: string[] = [];

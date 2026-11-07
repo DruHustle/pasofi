@@ -71,11 +71,12 @@ jobs:
         run: |
           test "$(sed -n 's/^distributionUrl=//p' gradle/wrapper/gradle-wrapper.properties)" = 'https\://services.gradle.org/distributions/gradle-8.14.3-all.zip'
           printf '%s\n' '7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172  gradle/wrapper/gradle-wrapper.jar' | sha256sum --check
-          bash ./gradlew --no-daemon --stacktrace :app:assembleDebug
+          bash ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug
       - name: Package review artifact and provenance
         run: |
           mkdir -p native-artifacts
           cp android/app/build/outputs/apk/debug/app-debug.apk native-artifacts/pamofi-api-unconfigured-debug.apk
+          cp -R android/app/build/test-results/testDebugUnitTest native-artifacts/android-unit-test-results
           cp NATIVE_BUILDS.md native-artifacts/READ-ME.md
           git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
           sha256sum native-artifacts/pamofi-api-unconfigured-debug.apk > native-artifacts/SHA256SUMS.txt
@@ -89,7 +90,7 @@ jobs:
           retention-days: 14
 
   ios:
-    name: iOS unsigned simulator app (API unconfigured)
+    name: iOS unsigned Release simulator app (API unconfigured)
     # Standard Intel host avoids the ARM runner capacity queue; the Xcode 26+
     # gate and generic simulator build (all supported architectures) stay intact.
     runs-on: macos-26-intel
@@ -146,21 +147,24 @@ jobs:
           import fs from 'node:fs';
           const resolved = JSON.parse(fs.readFileSync('ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'utf8'));
           const expected = [
-            ['capacitor-swift-pm', '8.6.0', 'e9e932f7748d3b948bc47f5791c761ac5221ec6a'],
-            ['ion-ios-filesystem', '2.0.1', '549c18ad9d9bb70d05df37cc3f6f7aa7f5d0ee52'],
+            ['capacitor-swift-pm', 'https://github.com/ionic-team/capacitor-swift-pm.git', '8.6.0', 'e9e932f7748d3b948bc47f5791c761ac5221ec6a'],
+            ['ion-ios-filesystem', 'https://github.com/ionic-team/ion-ios-filesystem.git', '2.0.1', '549c18ad9d9bb70d05df37cc3f6f7aa7f5d0ee52'],
+            ['stripe-ios', 'https://github.com/stripe/stripe-ios.git', '26.15.1', '2f4547639a5aed18d39e4ba44c0ba684dab3161b'],
           ];
           if (!Array.isArray(resolved.pins) || resolved.pins.length !== expected.length) throw Error('Unexpected Swift package dependencies');
-          for (const [identity, version, revision] of expected) {
+          for (const [identity, location, version, revision] of expected) {
             const pin = resolved.pins.find(value => value.identity === identity);
-            if (pin?.kind !== 'remoteSourceControl' || pin.location !== `https://github.com/ionic-team/${identity}.git` || pin.state?.version !== version || pin.state.revision !== revision) throw Error(`Unexpected ${identity} package resolution`);
+            if (pin?.kind !== 'remoteSourceControl' || pin.location !== location || pin.state?.version !== version || pin.state.revision !== revision) throw Error(`Unexpected ${identity} package resolution`);
           }
           JS
           mkdir -p native-build
           cp ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved native-build/ios-package-resolved.json
-      - name: Compile unsigned simulator app
+      - name: Compile unsigned Release simulator app
         run: |
+          # Stripe's source package prints analytics payloads under DEBUG.
+          # Compile the tested simulator build in Release, with API still unconfigured.
           xcodebuild -project ios/App/App.xcodeproj -scheme App \
-            -configuration Debug -sdk iphonesimulator \
+            -configuration Release -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath native-build/ios \
             -clonedSourcePackagesDirPath "$PASOFI_SWIFTPM_DIRECTORY/SourcePackages" \
@@ -174,12 +178,13 @@ jobs:
         run: |
           mkdir -p native-artifacts
           tar -czf native-artifacts/pamofi-api-unconfigured-ios-simulator.tar.gz \
-            -C native-build/ios/Build/Products/Debug-iphonesimulator App.app
+            -C native-build/ios/Build/Products/Release-iphonesimulator App.app
           cp NATIVE_BUILDS.md native-artifacts/READ-ME.md
           cp native-build/ios-package-resolved.json native-artifacts/Package.resolved
           git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
           shasum -a 256 native-artifacts/pamofi-api-unconfigured-ios-simulator.tar.gz > native-artifacts/SHA256SUMS.txt
           xcodebuild -version > native-artifacts/XCODE_VERSION.txt
+          printf '%s\n' 'Release; API unconfigured; unsigned simulator' > native-artifacts/BUILD_CONFIGURATION.txt
       - name: Upload iOS simulator preview
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

@@ -21,6 +21,16 @@ server {
   location /internal/ { default_type application/json; return 404 '{"error":"not_found"}'; }
   location /v1/ { default_type application/json; return 404 '{"error":"not_found"}'; }
   location = /health/live { default_type application/json; return 200 '{"status":"ok","service":"gateway"}'; }
+  location = /callbacks/stripe {
+    limit_except POST { deny all; }
+    client_max_body_size 256k;
+    set $web web;
+    proxy_pass http://$web:80/callbacks/stripe;
+    proxy_set_header Stripe-Signature $http_stripe_signature;
+    proxy_set_header Cookie "";
+    proxy_set_header Authorization "";
+    proxy_set_header X-Forwarded-For $remote_addr;
+  }
   location / {
     set $web web;
     proxy_pass http://$web:80;
