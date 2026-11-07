@@ -8,6 +8,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -43,17 +44,17 @@ class ReleaseSafetyTests(unittest.TestCase):
             path.write_text("// fixture\n")
         self.model = {"name": "existing", "services": {}, "volumes": {"database": {"name": "existing-data", "external": True}},
                       "networks": {"services": {"name": "existing-services"}}, "secrets": {}}
-        names = ["prepaid-access", "notification", "web", "gateway", "internal-gateway", "postgres", "radius", "radius-api",
-                 "prepaid-access-migrate", "notification-migrate"]
+        names = ["network", "prepaid-access", "notification", "web", "gateway", "internal-gateway", "postgres", "radius", "radius-api",
+                 "network-migrate", "prepaid-access-migrate", "notification-migrate"]
         self.containers = {}
         for name in names:
             service = {"image": "original/" + name + ":qualified", "environment": {"EXISTING_GATE": "false"},
                        "networks": {"services": None}}
-            if name in ("prepaid-access", "notification", "gateway"):
+            if name in ("network", "prepaid-access", "notification", "gateway"):
                 service["tmpfs"] = ["/tmp"]
             if name == "gateway":
                 service["tmpfs"].append("/run/secrets:mode=0700")
-            if name in ("prepaid-access", "notification") or name.endswith("-migrate"):
+            if name in ("network", "prepaid-access", "notification") or name.endswith("-migrate"):
                 service["volumes"] = [{"type": "bind", "source": str(self.production / "entrypoint.mjs"),
                                        "target": "/opt/pamofi/entrypoint.mjs", "read_only": True}]
             if name.endswith("-migrate"):
@@ -95,8 +96,8 @@ class ReleaseSafetyTests(unittest.TestCase):
         self.write_archive()
         self.manifest = {"schema": 1, "commit": COMMIT,
                          "archive_sha256": hashlib.sha256(self.archive.read_bytes()).hexdigest(),
-                         "services": ["prepaid-access", "notification", "web"],
-                         "migrations": ["prepaid-access", "notification"]}
+                         "services": ["prepaid-access", "notification", "web", "network"],
+                         "migrations": ["prepaid-access", "notification", "network"]}
         self.manifest_file = self.root / "release.json"
         self.manifest_file.write_text(json.dumps(self.manifest))
         self.args = argparse.Namespace(manifest=str(self.manifest_file), archive=str(self.archive),
@@ -142,8 +143,13 @@ class ReleaseSafetyTests(unittest.TestCase):
         if argv[-3:] == ["config", "--format", "json"]:
             return self.compose_result(argv)
         if "up" in argv:
-            for name in self.manifest["services"]:
-                self.containers[name]["Image"] = NEW_IMAGE
+            targets = argv[argv.index("--wait-timeout") + 2:]
+            for name in targets:
+                if name in self.manifest["services"]:
+                    self.containers[name]["Image"] = NEW_IMAGE
+                    self.containers[name]["State"]["Health"] = {"Status": "healthy"}
+            return ""
+        if argv[:2] == ["docker", "exec"] and "/health/ready" in argv[-1]:
             return ""
         if "run" in argv:
             return ""
@@ -253,20 +259,132 @@ class ReleaseSafetyTests(unittest.TestCase):
     def test_apply_only_migrates_owned_services_and_updates_explicit_unprotected_targets(self):
         self.run_plan(apply=True)
         migrations = [cmd[-1] for cmd in self.commands if "run" in cmd]
-        self.assertEqual(migrations, ["prepaid-access-migrate", "notification-migrate"])
+        self.assertEqual(migrations, ["prepaid-access-migrate", "notification-migrate", "network-migrate"])
         updates = [cmd for cmd in self.commands if "up" in cmd]
-        self.assertEqual(len(updates), 1)
-        self.assertEqual(updates[0][-5:], ["prepaid-access", "notification", "web", "internal-gateway", "gateway"])
-        self.assertIn("--no-deps", updates[0])
-        self.assertIn("--no-build", updates[0])
-        self.assertNotIn("--remove-orphans", updates[0])
+        phases = [cmd[cmd.index("--wait-timeout") + 2:] for cmd in updates]
+        self.assertEqual(phases, [["network"], ["prepaid-access"], ["notification", "web", "internal-gateway", "gateway"]])
+        probes = [cmd for cmd in self.commands if cmd[:2] == ["docker", "exec"] and "/health/ready" in cmd[-1]]
+        self.assertEqual([cmd[2] for cmd in probes], [self.containers["network"]["Id"], self.containers["prepaid-access"]["Id"]])
+        self.assertLess(self.commands.index(updates[0]), self.commands.index(probes[0]))
+        self.assertLess(self.commands.index(probes[0]), self.commands.index(updates[1]))
+        self.assertLess(self.commands.index(updates[1]), self.commands.index(probes[1]))
+        self.assertLess(self.commands.index(probes[1]), self.commands.index(updates[2]))
+        for update in updates:
+            self.assertIn("--no-deps", update)
+            self.assertIn("--no-build", update)
+            self.assertEqual(update[update.index("--wait-timeout") + 1], "180")
+            self.assertNotIn("--remove-orphans", update)
         self.assertFalse(any("down" in cmd for cmd in self.commands))
         records = list(Path(self.args.release_root).glob("*/record.json"))
         self.assertEqual(len(records), 1)
         record = json.loads(records[0].read_text())
         self.assertEqual(set(record["protected"]), {"postgres", "radius", "radius-api"})
+        self.assertEqual(record["rollout_phases"], phases)
         self.assertEqual(records[0].stat().st_mode & 0o777, 0o600)
         self.assertTrue(records[0].with_name("completed.json").is_file())
+
+    def test_partial_manifests_cannot_skip_required_network_dependencies(self):
+        for selected in (["prepaid-access"], ["notification", "web"], ["network", "web"], ["prepaid-access", "web"]):
+            manifest = {**self.manifest, "services": selected,
+                        "migrations": [name for name in selected if name in DEPLOY.APPS]}
+            self.manifest_file.write_text(json.dumps(manifest))
+            with self.subTest(selected=selected), self.assertRaisesRegex(DEPLOY.Refusal, "requires the selected"):
+                DEPLOY.load_manifest(self.manifest_file, self.archive)
+        for selected in (["identity"], ["network"], ["network", "prepaid-access"]):
+            manifest = {**self.manifest, "services": selected, "migrations": selected}
+            self.manifest_file.write_text(json.dumps(manifest))
+            self.assertEqual(DEPLOY.load_manifest(self.manifest_file, self.archive)["services"], selected)
+
+    def test_failed_dependency_health_wait_stops_all_downstream_updates(self):
+        for failed in ("network", "prepaid-access"):
+            with self.subTest(failed=failed):
+                original_run = self.fake_run
+                def fail_wait(argv, **kwargs):
+                    if "up" in argv and argv[argv.index("--wait-timeout") + 2:] == [failed]:
+                        self.commands.append(argv)
+                        raise DEPLOY.Refusal("Synthetic dependency health wait failure")
+                    return original_run(argv, **kwargs)
+                self.fake_run = fail_wait
+                try:
+                    with self.assertRaisesRegex(DEPLOY.Refusal, "health wait failure"):
+                        self.run_plan(apply=True)
+                    updates = [cmd for cmd in self.commands if "up" in cmd]
+                    self.assertEqual([cmd[-1] for cmd in updates], ["network"] if failed == "network" else ["network", "prepaid-access"])
+                    self.assertFalse(list(Path(self.args.release_root).glob("*/completed.json")))
+                finally:
+                    self.fake_run = original_run
+
+    def test_wrong_dependency_image_stops_before_downstream_updates(self):
+        for failed in ("network", "prepaid-access"):
+            with self.subTest(failed=failed):
+                original_run = self.fake_run
+                def wrong_image(argv, **kwargs):
+                    result = original_run(argv, **kwargs)
+                    if "up" in argv and argv[argv.index("--wait-timeout") + 2:] == [failed]:
+                        self.containers[failed]["Image"] = OLD_IMAGE
+                    return result
+                self.fake_run = wrong_image
+                try:
+                    with self.assertRaisesRegex(DEPLOY.Refusal, "runtime image"):
+                        self.run_plan(apply=True)
+                    updates = [cmd for cmd in self.commands if "up" in cmd]
+                    self.assertEqual([cmd[-1] for cmd in updates], ["network"] if failed == "network" else ["network", "prepaid-access"])
+                    self.assertFalse(list(Path(self.args.release_root).glob("*/completed.json")))
+                finally:
+                    self.fake_run = original_run
+
+    def test_unhealthy_dependency_or_failed_ready_probe_cannot_activate_clients(self):
+        for failed, failure in ((name, mode) for name in ("network", "prepaid-access") for mode in ("unhealthy", "probe")):
+            with self.subTest(failed=failed, failure=failure):
+                original_run = self.fake_run
+                def failed_readiness(argv, **kwargs):
+                    result = original_run(argv, **kwargs)
+                    if failure == "unhealthy" and "up" in argv and argv[argv.index("--wait-timeout") + 2:] == [failed]:
+                        self.containers[failed]["State"]["Health"] = {"Status": "unhealthy"}
+                    if failure == "probe" and argv[:3] == ["docker", "exec", self.containers[failed]["Id"]] and "/health/ready" in argv[-1]:
+                        raise DEPLOY.Refusal("Synthetic readiness probe failure")
+                    return result
+                self.fake_run = failed_readiness
+                try:
+                    with self.assertRaises(DEPLOY.Refusal):
+                        self.run_plan(apply=True)
+                    self.assertEqual([cmd[-1] for cmd in self.commands if "up" in cmd], ["network"] if failed == "network" else ["network", "prepaid-access"])
+                    self.assertFalse(list(Path(self.args.release_root).glob("*/completed.json")))
+                finally:
+                    self.fake_run = original_run
+
+    def test_dependency_probe_requires_exact_service_and_ready_payloads(self):
+        self.run_plan(apply=True)
+        probes = [cmd[-1] for cmd in self.commands if cmd[:2] == ["docker", "exec"] and "/health/ready" in cmd[-1]]
+        driver = r"""
+import vm from 'node:vm';
+let input='';for await(const chunk of process.stdin)input+=chunk;
+const probes=JSON.parse(input),results=[];
+for(const [index,script] of probes.entries())for(const kind of ['valid','wrong-service','not-ready','bad-live-status','invalid-json','missing-ready-status','request-failed']){
+  const service=index===0?'network':'prepaid-access',urls=[];let code;
+  await vm.runInNewContext(script,{Promise,AbortSignal,process:{exit(value){code=value;}},fetch:async(url,options)=>{
+    urls.push(url);
+    if(!['http://127.0.0.1:3000/health/live','http://127.0.0.1:3000/health/ready'].includes(url)||options.redirect!=='error'||!(options.signal instanceof AbortSignal))throw Error('unexpected request');
+    if(kind==='request-failed')throw Error('synthetic transport failure');
+    const live=url.endsWith('/live');
+    return {status:kind==='not-ready'&&!live?503:200,json:async()=>{
+      if(kind==='invalid-json')throw Error('synthetic JSON failure');
+      if(live)return {status:kind==='bad-live-status'?'unexpected':'ok',service:kind==='wrong-service'?'other':service};
+      return kind==='missing-ready-status'?{}:{status:'ready'};
+    }};
+  }});
+  results.push({service,kind,code,requests:urls.length});
+}
+process.stdout.write(JSON.stringify(results));
+"""
+        result = subprocess.run(["node", "--input-type=module", "-e", driver], input=json.dumps(probes),
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=True)
+        cases = json.loads(result.stdout)
+        self.assertEqual(len(cases), 14)
+        for case in cases:
+            with self.subTest(service=case["service"], kind=case["kind"]):
+                self.assertEqual(case["code"], 0 if case["kind"] == "valid" else 1)
+                self.assertEqual(case["requests"], 2)
 
     def test_apply_lock_prevents_overlapping_deployments(self):
         with DEPLOY.apply_lock(self.root, "existing"):

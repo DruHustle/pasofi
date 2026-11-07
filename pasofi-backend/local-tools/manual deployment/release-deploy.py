@@ -82,12 +82,47 @@ def load_manifest(path, archive):
             "Every migration must belong to an updated application service.")
     require(set(data["services"]) & set(APPS) == set(data["migrations"]),
             "Each updated application must run its owned migration service.")
+    rollout_phases(data["services"])
     digest = hashlib.sha256()
     with open(archive, "rb") as handle:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     require(digest.hexdigest() == data["archive_sha256"], "Release archive hash mismatch.")
     return data
+
+
+def rollout_phases(services):
+    """The manifest has no proof that an unselected dependency is compatible."""
+    require("prepaid-access" not in services or "network" in services,
+            "Updating prepaid-access requires the selected network dependency.")
+    require("web" not in services or {"network", "prepaid-access"} <= set(services),
+            "Updating web requires the selected network and prepaid-access dependencies.")
+    phases = [[name] for name in ("network", "prepaid-access") if name in services]
+    phases.append([name for name in services if name not in ("network", "prepaid-access")]
+                  + ["internal-gateway", "gateway"])
+    return phases
+
+
+def verify_rollout_phase(containers, completed, phase, expected_images, log):
+    for name in completed:
+        container = containers.get(name, {})
+        require(container.get("Image") == expected_images[name],
+                "A selected runtime image differs from the pinned build; stopped before downstream updates.")
+        state = container.get("State") or {}
+        require(state.get("Running"), "An updated runtime stopped; stopped before downstream updates.")
+        if name in UPDATABLE:
+            require((state.get("Health") or {}).get("Status") == "healthy",
+                    "An updated application is not healthy; stopped before downstream updates.")
+    for name in phase:
+        if name not in ("network", "prepaid-access"):
+            continue
+        # Probe the exact inspected container, never a caller-selected URL or a public router.
+        script = ("Promise.all([['/health/live','ok'],['/health/ready','ready']].map(async ([path,status])=>{"
+                  "const response=await fetch('http://127.0.0.1:3000'+path,{redirect:'error',signal:AbortSignal.timeout(2500)});"
+                  "if(response.status!==200)throw new Error();const value=await response.json();"
+                  "if(value.status!==status||(path==='/health/live'&&value.service!==" + json.dumps(name) + "))throw new Error();"
+                  "})).then(()=>process.exit(0)).catch(()=>process.exit(1));")
+        run(["docker", "exec", containers[name]["Id"], "node", "-e", script], log=log)
 
 
 def extract_source(archive, destination, commit):
@@ -586,6 +621,7 @@ def deploy(args):
     print("Existing ordered Compose overlays, protected secrets and external database volume verified.", flush=True)
     print("Update: " + ", ".join(manifest["services"]) + "; gateways; owned migrations: "
           + ", ".join(manifest["migrations"]) + ("; existing captive portal assets." if hotspot else "."), flush=True)
+    print("Runtime order: " + " -> ".join(", ".join(phase) for phase in rollout_phases(manifest["services"])) + ".", flush=True)
     print("Postgres and RADIUS containers are excluded; all current delivery and launch gates are retained.", flush=True)
     if not args.apply:
         print("No runtime changes made. Run the same command with --apply after reviewing this plan.")
@@ -607,6 +643,7 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
     write_private(overlay_path, overlay)
     upgrade = base + ["-f", str(overlay_path)]
     targets = [*manifest["services"], "internal-gateway", "gateway"]
+    phases = rollout_phases(manifest["services"])
     rollback = {"services": {name: {"image": containers[name]["Image"],
                                    "volumes": model["services"][name].get("volumes", [])}
                              for name in targets}}
@@ -615,7 +652,7 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
     write_private(release / "release.json", manifest)
     write_private(release / "record.json", {"project": project, "compose_files": files,
                   "env_files": [str(path) for path in env_files], "file_hashes": file_hashes,
-                  "protected": old_protected, "targets": targets,
+                  "protected": old_protected, "targets": targets, "rollout_phases": phases,
                   "rollback_command": base + ["-f", str(release / "rollback.compose.json"), "up", "-d",
                                                "--no-deps", "--no-build", "--pull", "never", *targets],
                   "database_rollback": "None: additive migrations are retained. Never restore an older database over new sales."})
@@ -625,6 +662,8 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
         prepare_automatic_backup(containers["postgres"], args.expected_database_id, source, release)
     print("Building pinned application images and existing captive assets; private build log is in the record directory.", flush=True)
     built_images = build_release(source, manifest["services"], manifest["commit"], hotspot, log)
+    expected_images = {**built_images, **{name: containers[name]["Image"] for name in ("gateway", "internal-gateway")}}
+    require(set(expected_images) == set(targets), "Pinned builds must cover exactly the selected runtime targets.")
     # Recheck immediately before the first database/runtime mutation.
     require(all(hashlib.sha256(Path(path).read_bytes()).hexdigest() == digest
                 for path, digest in file_hashes.items()), "Compose/environment files changed during build; stopped before migration.")
@@ -638,14 +677,15 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
     for service in manifest["migrations"]:
         print("Applying owned migrations: " + service + ".", flush=True)
         run(upgrade + ["run", "--rm", "--no-deps", "--pull", "never", service + "-migrate"], log=log)
-    print("Updating selected application containers and gateways.", flush=True)
-    run(upgrade + ["up", "-d", "--no-deps", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "180", *targets], log=log)
-    _, after = inspect_project(project)
-    require(protected_snapshot(after) == old_protected, "Protected container state changed; investigate using the private record.")
-    expected_images = {**built_images, **{name: containers[name]["Image"] for name in ("gateway", "internal-gateway")}}
-    require(all(after.get(name, {}).get("Image") == image_id for name, image_id in expected_images.items()),
-            "A selected runtime image differs from the pinned build; no successful completion was recorded.")
-    database_identity(after["postgres"], args.expected_database_id)
+    completed = []
+    for phase in phases:
+        print("Updating runtime phase: " + ", ".join(phase) + ".", flush=True)
+        run(upgrade + ["up", "-d", "--no-deps", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "180", *phase], log=log)
+        completed.extend(phase)
+        _, after = inspect_project(project)
+        require(protected_snapshot(after) == old_protected, "Protected container state changed; investigate using the private record.")
+        verify_rollout_phase(after, completed, phase, expected_images, log)
+        database_identity(after["postgres"], args.expected_database_id)
     write_private(release / "completed.json", {"commit": manifest["commit"], "completed_at_unix": int(time.time()),
                   "images": {name: after[name]["Image"] for name in targets}})
     print("Rollout completed and container health checks passed. Complete the physical/payment acceptance checks in the operator guide.")
