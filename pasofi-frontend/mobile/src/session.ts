@@ -1,4 +1,5 @@
 import { api, ApiError } from './api';
+import { clearNetworkRequest } from './network-request';
 
 // A retry secret can recreate its session cookie. Never put it in a URL or localStorage.
 const storageKey = 'pamofi.sessionCreationRetry';
@@ -41,6 +42,7 @@ export function ensureSession(): Promise<string> {
 type SessionChange = 'signed_out' | 'recovered';
 const channel = (() => { try { return typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pamofi.session') : null; } catch { return null; } })();
 export function clearSessionSecrets() {
+  clearNetworkRequest();
   try {
     for (const key of Object.keys(sessionStorage)) {
       if (key === storageKey || key.startsWith('pamofi.orderRetry:') || key.startsWith('pamofi.operation:customer:')) sessionStorage.removeItem(key);

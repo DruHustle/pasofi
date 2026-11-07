@@ -228,3 +228,118 @@ for (const mismatch of ['router', 'login URL'] as const) {
     await expect(page.getByRole('link', { name: /registered hotspot sign-in/ })).toHaveCount(0);
   });
 }
+
+const preparedRequestStorage = 'pamofi.networkRequest.v1';
+type RecoveryRequest = { siteId: string; nasId: string; requestKey: string };
+async function mockNetworkRecovery(page: Page) {
+  const points = [accessPoint(nasId, 'Router A'), accessPoint(secondNasId, 'Router B', 'second.example.test')];
+  const state = { owner: customerId, pending: false, networkEnabled: true, points, requests: [] as RecoveryRequest[], expiresAt: new Date(Date.now() + 120_000).toISOString() };
+  await mock(page, async (route, path) => {
+    if (path === '/api/capabilities') { await json(route, { demo: true, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: state.networkEnabled, mobileCookies: false }); return true; }
+    if (path === '/api/session') { await json(route, { customerId: state.owner }); return true; }
+    if (path === '/api/access') { await json(route, { customerId: state.owner, entitlements: [entitlement()], hasMore: false, nextOffset: null }); return true; }
+    if (path === '/api/network/sites') { await json(route, { accessPoints: state.points }); return true; }
+    if (path === '/api/usage') {
+      const snapshot = usageSnapshot('0', { customerId: state.owner, queuedBytes: '5000000000' });
+      if (state.pending) {
+        snapshot.connectivity = 'pending';
+        snapshot.session = { grantId: entitlementId, entitlementId, siteId, nasId: secondNasId, state: 'pending', connected: false, issuedAt: new Date().toISOString(), deadline: future(), lastAccountingAt: null, reservedBytes: '5000000000', chargedBytes: '0', reservationOutstandingBytes: '5000000000', disconnectRequested: false, accountingStale: false, accountingAnomaly: false };
+      }
+      await json(route, snapshot); return true;
+    }
+    if (path === '/api/network/credentials') {
+      const input = route.request().postDataJSON() as RecoveryRequest; state.requests.push(input);
+      // A pending server reservation allows only its original browser key/NAS.
+      if (state.pending && JSON.stringify(input) !== JSON.stringify(state.requests[0])) { await json(route, { error: 'network_unavailable' }, 503); return true; }
+      const point = state.points.find(item => item.nasId === input.nasId);
+      await json(route, { ...input, username: 'test-only-hotspot-user', password: 'test-only-hotspot-password', expiresAt: state.expiresAt, loginUrl: point!.loginUrl });
+      return true;
+    }
+    return false;
+  });
+  return state;
+}
+async function prepareRecoveryRequest(page: Page) {
+  await page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' }).selectOption(secondNasId);
+  await page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true }).click();
+  await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('test-only-hotspot-password');
+}
+for (const transition of ['page reload', 'workspace remount'] as const) {
+  test('pending hotspot preparation survives ' + transition + ' with its original router request', async ({ page }) => {
+    const state = await mockNetworkRecovery(page); await open(page); await prepareRecoveryRequest(page);
+    state.pending = true; await page.getByRole('button', { name: 'Check connection', exact: true }).click();
+    await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
+    if (transition === 'page reload') await page.reload();
+    else await page.getByRole('button', { name: 'Close customer workspace' }).click();
+    await page.getByRole('button', { name: 'Customer tools' }).click();
+    await expect(page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' })).toHaveValue(secondNasId);
+    const retry = page.getByRole('button', { name: 'Retry connection', exact: true }); await expect(retry).toBeEnabled(); await retry.click();
+    await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('test-only-hotspot-password');
+    expect(state.requests).toHaveLength(2); expect(state.requests[1]).toEqual(state.requests[0]);
+    const stored = await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)!), preparedRequestStorage);
+    expect(stored).toEqual({ customerId, siteId, nasId: secondNasId, key: state.requests[0].requestKey, expiresAt: expect.any(Number) });
+    expect(stored.expiresAt).toBeLessThanOrEqual(Date.parse(state.expiresAt));
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/test-only-hotspot-(user|password)/);
+  });
+}
+
+for (const invalid of ['malformed', 'expired', 'future expiry', 'different owner', 'invalid key', 'extra credential'] as const) {
+  test('invalid saved hotspot preparation: ' + invalid, async ({ page }) => {
+    const state = await mockNetworkRecovery(page); state.pending = true;
+    const saved: Record<string, unknown> = { customerId, siteId: siteId, nasId: secondNasId, key: '44444444-4444-4444-8444-444444444444', expiresAt: Date.now() + 120_000 };
+    if (invalid === 'expired') saved.expiresAt = Date.now() - 1;
+    if (invalid === 'future expiry') saved.expiresAt = Date.now() + 300_000;
+    if (invalid === 'different owner') saved.customerId = '99999999-9999-4999-8999-999999999999';
+    if (invalid === 'invalid key') saved.key = 'invalid';
+    if (invalid === 'extra credential') saved.password = 'test-only-forbidden-field';
+    await page.addInitScript(({ key, value }) => sessionStorage.setItem(key, value), { key: preparedRequestStorage, value: invalid === 'malformed' ? '{invalid-json' : JSON.stringify(saved) });
+    await open(page);
+    await expect(page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toHaveCount(0);
+    await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), preparedRequestStorage)).toBeNull();
+    expect(state.requests).toHaveLength(0);
+  });
+}
+for (const change of ['removed router', 'changed site', 'paused network'] as const) {
+  test('restored hotspot preparation respects a ' + change, async ({ page }) => {
+    const state = await mockNetworkRecovery(page); await open(page); await prepareRecoveryRequest(page);
+    state.pending = true;
+    if (change === 'removed router') state.points = state.points.filter(point => point.nasId !== secondNasId);
+    if (change === 'changed site') state.points = state.points.map(point => point.nasId === secondNasId ? { ...point, siteId: '99999999-9999-4999-8999-999999999999' } : point);
+    if (change === 'paused network') state.networkEnabled = false;
+    await page.reload(); await page.getByRole('button', { name: 'Customer tools' }).click();
+    await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toHaveCount(0);
+    if (change === 'paused network') await expect(page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true })).toHaveCount(0);
+    else await expect(page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true })).toBeDisabled();
+    await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), preparedRequestStorage)).toBeNull();
+    expect(state.requests).toHaveLength(1);
+  });
+}
+for (const change of ['signed_out', 'recovered'] as const) {
+  test('saved hotspot preparation is cleared after ' + change + ' and cannot follow another customer', async ({ page }) => {
+    const state = await mockNetworkRecovery(page); await open(page); await prepareRecoveryRequest(page);
+    const firstKey = state.requests[0].requestKey;
+    state.owner = '99999999-9999-4999-8999-999999999999';
+    await page.evaluate(change => { const channel = new BroadcastChannel('pamofi.session'); channel.postMessage(change); channel.close(); }, change);
+    await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), preparedRequestStorage)).toBeNull();
+    await page.getByRole('button', { name: 'Customer tools' }).click();
+    await expect(page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' })).toHaveValue('');
+    await prepareRecoveryRequest(page);
+    expect(state.requests).toHaveLength(2); expect(state.requests[1].requestKey).not.toBe(firstKey);
+    expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)!).customerId, preparedRequestStorage)).toBe(state.owner);
+  });
+}
+test('hotspot preparation handles unavailable tab storage without issuing a replacement for a pending session', async ({ page }) => {
+  await page.addInitScript(() => { Object.defineProperty(window, 'sessionStorage', { configurable: true, get() { throw new DOMException('Storage unavailable', 'SecurityError'); } }); });
+  const state = await mockNetworkRecovery(page); await open(page); await prepareRecoveryRequest(page);
+  await page.getByRole('button', { name: 'Hide connection details' }).click();
+  state.pending = true; await page.getByRole('button', { name: 'Check connection', exact: true }).click();
+  await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
+  await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('test-only-hotspot-password');
+  expect(state.requests).toHaveLength(2); expect(state.requests[1]).toEqual(state.requests[0]);
+  await page.reload(); await page.getByRole('button', { name: 'Customer tools' }).click();
+  await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true })).toBeDisabled();
+  expect(state.requests).toHaveLength(2);
+});
