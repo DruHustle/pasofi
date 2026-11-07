@@ -132,6 +132,11 @@ Stripe or database errors return a retryable error to Stripe.
 The app identifier remains `com.onesa.pasofi`. See
 `pasofi-frontend/mobile/NATIVE_BUILDS.md` for the exact SDK pins, return URL,
 entitlement/build setting and native signing requirements added with this change.
+The apps also require the separately qualified [native customer connection](NATIVE_CUSTOMER_CONNECTION.md)
+through the public Vercel proxy. Its private cookie and session-retry transport is
+implemented behind default-off deployment gates; merchant credentials alone do
+not enable it. A true mobile capability records configured proxy qualification,
+not proof of the current device's session or wallet acceptance.
 
 Apple's account owner or an authorized developer must provision the actual
 merchant ID, create/upload the Stripe payment processing certificate, enable

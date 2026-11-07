@@ -52,17 +52,31 @@ for(const platform of ['ios','android'])for(const outcome of ['completed','cance
     const siteId='dddddddd-dddd-4ddd-8ddd-dddddddddddd',orderId='ffffffff-ffff-4fff-8fff-ffffffffffff';
     const order={id:orderId,bundle_id:'flex',price_minor:100,currency:'USD',status:'awaiting_payment',quote_expires_at:new Date(Date.now()+900000).toISOString()};
     const clientSecret='pi_SyntheticPayment123_secret_SYNTHETIC';let checkoutCalls=0;
-    await page.addInitScript(({platform,outcome})=>{
+    await page.addInitScript(({platform,outcome,apiOrigin})=>{
       const runtime=window as any;runtime.CapacitorCustomPlatform={name:platform};runtime.paymentBridgeCalls=[];
-      runtime.Capacitor={PluginHeaders:[{name:'PasoFiStripe',methods:[{name:'availability',rtype:'promise'},{name:'present',rtype:'promise'}]}],
+      runtime.Capacitor={PluginHeaders:[{name:'PasoFiStripe',methods:[{name:'availability',rtype:'promise'},{name:'present',rtype:'promise'}]},
+        {name:'PasoFiCustomerApi',methods:['availability','request','cancel'].map(name=>({name,rtype:'promise'}))}],
         nativePromise:async(plugin:string,method:string,options:Record<string,unknown>)=>{
+          if(plugin==='PasoFiCustomerApi'){
+            if(method==='availability')return {requestId:options.requestId,configured:true,origin:apiOrigin,protocol:1};
+            if(method==='cancel')return {requestId:options.requestId};
+            if(method!=='request')throw Error('unexpected customer API method');
+            // Synthetic bridge transport reuses this test's routed API fixtures.
+            // Production native transports never use browser fetch or its jar.
+            const headers:Record<string,string>={};
+            if(options.data!==undefined)headers['Content-Type']='application/json';
+            if(typeof options.idempotencyKey==='string')headers['Idempotency-Key']=options.idempotencyKey;
+            const response=await fetch(new URL(String(options.path),apiOrigin),{method:String(options.method),headers,
+              body:typeof options.data==='string'?options.data:undefined,credentials:'include',mode:'cors',redirect:'error'});
+            return {requestId:options.requestId,status:response.status,data:response.status===204?null:await response.json(),contentType:'application/json'};
+          }
           if(plugin!=='PasoFiStripe')throw Error('unexpected native plugin');
           runtime.paymentBridgeCalls.push({method,keys:Object.keys(options).sort()});
           return method==='availability'?{applePay:platform==='ios',googlePay:platform==='android'}:{status:outcome};
         }};
-    },{platform,outcome});
+    },{platform,outcome,apiOrigin});
     await mock(page,async(route,path,method,reply)=>{
-      if(path==='/api/capabilities'){await reply({...capabilities,paymentCheckout:true,paymentMode:'sandbox'});return true;}
+      if(path==='/api/capabilities'){await reply({...capabilities,paymentCheckout:true,paymentMode:'sandbox',nativeCustomerApiVersion:1});return true;}
       if(path==='/api/sites'){await reply({sites:[{id:siteId,name:'Synthetic payment site'}]});return true;}
       if(path==='/api/payments/methods'){await reply({enabled:true,methods:[{code:'STRIPE_CARD',name:'Card or mobile wallet',currency:'USD',minMinor:50,maxMinor:99999999}]});return true;}
       if(path==='/api/orders'&&method==='POST'){await reply({order});return true;}
@@ -268,18 +282,34 @@ test('mobile paid invoices stay compact and download over the configured credent
 test('native invoice export uses a cache file and system share only on click, then cleans its temporary files', async ({ page, configuredBaseURL }) => {
   const token = 'C'.repeat(43);
   await page.clock.install();
-  await page.addInitScript(() => {
+  await page.addInitScript(({ apiOrigin }) => {
     const state = window as any;
     state.androidBridge = {};
     state.invoiceNativeCalls = [];
+    state.invoiceApiCalls = [];
     const expired = `${Date.now() - 700_000}-11111111-1111-4111-8111-111111111111-PasoFi-old.pdf`;
     const files = new Set([expired, 'unrelated-cache-file.txt']);
     state.Capacitor = {
       PluginHeaders: [
         { name: 'Filesystem', methods: ['readdir', 'writeFile', 'getUri', 'deleteFile'].map(name => ({ name, rtype: 'promise' })) },
         { name: 'Share', methods: ['canShare', 'share'].map(name => ({ name, rtype: 'promise' })) },
+        { name: 'PasoFiCustomerApi', methods: ['availability', 'request', 'cancel'].map(name => ({ name, rtype: 'promise' })) },
       ],
       nativePromise: async (plugin: string, method: string, options: any) => {
+        if (plugin === 'PasoFiCustomerApi') {
+          if (method === 'availability') return { requestId: options.requestId, configured: true, origin: apiOrigin, protocol: 1 };
+          if (method === 'cancel') return { requestId: options.requestId };
+          if (method !== 'request') throw new Error('Unexpected customer API method');
+          state.invoiceApiCalls.push({ method: options.method, path: options.path, responseType: options.responseType });
+          // The synthetic native boundary reuses this test's routed PDF fixture.
+          const headers: Record<string, string> = {};
+          if (options.data !== undefined) headers['Content-Type'] = 'application/json';
+          const response = await fetch(new URL(options.path, apiOrigin), { method: options.method, headers, body: options.data,
+            credentials: 'include', mode: 'cors', redirect: 'error' });
+          const data = response.ok && options.responseType === 'pdf'
+            ? btoa(String.fromCharCode(...new Uint8Array(await response.arrayBuffer()))) : await response.json();
+          return { requestId: options.requestId, status: response.status, data, contentType: response.headers.get('content-type') || '' };
+        }
         state.invoiceNativeCalls.push({ plugin, method, options });
         if (plugin === 'Filesystem') {
           if (method === 'readdir') return { files: [...files].map(name => ({ name, type: 'file', size: 100, mtime: 0 })) };
@@ -292,7 +322,7 @@ test('native invoice export uses a cache file and system share only on click, th
         throw new Error('Unexpected native call');
       },
     };
-  });
+  }, { apiOrigin });
   await mock(page, async (route, path, method) => {
     if (path === '/api/invoice-downloads') {
       expect(method).toBe('POST'); expect(route.request().postDataJSON()).toEqual({ token });
@@ -306,6 +336,7 @@ test('native invoice export uses a cache file and system share only on click, th
   expect(await page.evaluate(() => (window as any).invoiceNativeCalls.filter((call: any) => call.method === 'writeFile' || call.method === 'share'))).toEqual([]);
   await link.getByRole('button', { name: 'Save or share PDF', exact: true }).click();
   await expect(link).toContainText('PDF opened in your device’s share controls.');
+  expect(await page.evaluate(() => (window as any).invoiceApiCalls)).toEqual([{ method: 'POST', path: '/api/invoice-downloads', responseType: 'pdf' }]);
   const calls = await page.evaluate(() => (window as any).invoiceNativeCalls);
   const write = calls.find((call: any) => call.method === 'writeFile');
   expect(write.options.directory).toBe('CACHE'); expect(write.options.path).toMatch(/^pasofi-invoice-exports\/\d+-[0-9a-f-]+-PasoFi-paid-invoice\.pdf$/);

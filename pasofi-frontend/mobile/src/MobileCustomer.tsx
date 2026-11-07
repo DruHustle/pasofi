@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, mobileApiOrigin } from './api';
+import { api, mobileApiOrigin, usesNativeCustomerApi } from './api';
 import type { Capabilities } from './business';
 import { messageFor } from './business';
 import CustomerAccess, { type CustomerTab } from './CustomerAccess';
@@ -20,7 +20,7 @@ export default function MobileCustomer({ close, initialTab = 'access' }: { close
     if (!mobileApiOrigin) { setLoading(false); setMessage('A valid HTTPS PasoFi gateway is required. This build is still an offline preview.'); return () => { live.current = false; }; }
     api<Capabilities>('/api/capabilities', { signal: controller.signal }).then(value => {
       if (!live.current || controller.signal.aborted) return;
-      if (value.mobileCookies !== true) { setMessage('Mobile account access is not enabled by this deployment yet. You can continue using the offline preview.'); return; }
+      if (value.mobileCookies !== true || (usesNativeCustomerApi && value.nativeCustomerApiVersion !== 1)) { setMessage('Mobile account access is not enabled by this deployment yet. You can continue using the offline preview.'); return; }
       setCapabilities(value);
     }).catch(error => { if (live.current && !controller.signal.aborted) setMessage(messageFor(error, 'The configured PasoFi service could not be reached. Your offline preview is still available.')); }).finally(() => { if (live.current && !controller.signal.aborted) setLoading(false); });
     const unsubscribe = onSessionChange(() => { controller.abort(); setCapabilities(null); setMessage('Your account changed in another window. Reconnect to load the current account.'); });

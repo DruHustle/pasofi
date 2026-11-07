@@ -99,6 +99,15 @@ The handler preserves status, public query strings, JSON bytes, Origin, idempote
 
 ### Vercel qualification
 
+The optional [native customer connection](../../NATIVE_CUSTOMER_CONNECTION.md)
+uses this same public frontend origin with a private native cookie transport.
+It requires both server-only `PAMOFI_NATIVE_CUSTOMER_ENABLED=true` and
+`PAMOFI_NATIVE_CUSTOMER_QUALIFIED=true`; both default false. The public native
+protocol marker narrows access to customer routes and the customer session cookie.
+It never grants staff authority, changes CORS/CSRF policy, or exposes the Oracle
+proxy credential. Only marked capability responses advertise this configured
+qualification, and signed-device acceptance is still required.
+
 `npm run test:proxy` starts isolated loopback HTTP/TLS listeners and verifies routing, empty-body session idempotency, cookie issuance/clearing, origin/host enforcement, spoofed and duplicate headers, client IP normalization, byte limits, deadline cancellation, TLS trust and hostname failures, redirect refusal, and private errors. It also exercises both original and rewritten URL forms. The Oracle overlay lab then runs this actual handler against the full TLS gateway and services.
 
 Before accepting a real deployment, verify the function is present in Vercel's build output, then run the documented production smoke checks on the configured frontend host: anonymous cookie creation/read, staff authentication, a nonfinancial usage read, logout clearing, and rejection of direct Oracle requests without the shared secret. Confirm an API-unconfigured preview returns private JSON errors and never reaches production. Those checks require actual deployment configuration; local proxy/stack tests do not claim that a Vercel project, Oracle host, DNS or TLS certificate has been provisioned.

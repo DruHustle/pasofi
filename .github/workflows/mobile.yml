@@ -20,7 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 # These artifacts deliberately have no API endpoint or signing secrets.
-# A native compile does not qualify cross-origin customer cookies or devices.
+# Native policy tests and compilation do not qualify device cookie persistence,
+# merchant provisioning or actual wallet transactions.
 env:
   VITE_PAMOFI_API_BASE_URL: ''
 
@@ -112,6 +113,14 @@ jobs:
           xcode_major=$(xcodebuild -version | awk '/^Xcode / {split($2, version, "."); print version[1]}')
           test "$xcode_major" -ge 26
           xcrun --sdk iphonesimulator --show-sdk-version
+      - name: Verify native customer request and session policy
+        run: |
+          mkdir -p native-build
+          xcrun swiftc -parse-as-library \
+            ios/App/App/CustomerApiPolicy.swift \
+            ios/Tests/CustomerApiPolicyTests.swift \
+            -o "$RUNNER_TEMP/pasofi-customer-policy-tests"
+          "$RUNNER_TEMP/pasofi-customer-policy-tests" | tee native-build/customer-policy-results.txt
       - name: Install locked web and Capacitor dependencies
         run: npm ci --no-audit --no-fund
       - name: Build and sync fresh iOS assets
@@ -181,6 +190,7 @@ jobs:
             -C native-build/ios/Build/Products/Release-iphonesimulator App.app
           cp NATIVE_BUILDS.md native-artifacts/READ-ME.md
           cp native-build/ios-package-resolved.json native-artifacts/Package.resolved
+          cp native-build/customer-policy-results.txt native-artifacts/ios-customer-policy-results.txt
           git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
           shasum -a 256 native-artifacts/pamofi-api-unconfigured-ios-simulator.tar.gz > native-artifacts/SHA256SUMS.txt
           xcodebuild -version > native-artifacts/XCODE_VERSION.txt

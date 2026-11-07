@@ -1,4 +1,4 @@
-import { api, ApiError } from './api';
+import { api, ApiError, usesNativeCustomerApi } from './api';
 import { clearNetworkRequest } from './network-request';
 
 // A retry secret can recreate its session cookie. Never put it in a URL or localStorage.
@@ -28,9 +28,12 @@ let creating: Promise<string> | null = null;
 export function ensureSession(): Promise<string> {
   if (creating) return creating;
   creating = (async () => {
+    // The native transport privately persists its own creation retry credential,
+    // including across an ambiguous response or process restart.
+    if (usesNativeCustomerApi) clearCreationKey();
     try { const id = await currentSession(); clearCreationKey(); return id; }
-    catch (error) { if (!(error instanceof ApiError) || error.status !== 401) throw error; }
-    const created = validSession(await api<Session>('/api/session', { method: 'POST', headers: { 'Idempotency-Key': retryKey() } }));
+    catch (error) { if (!(error instanceof ApiError) || error.status !== 401 || error.code !== 'not_authenticated') throw error; }
+    const created = validSession(await api<Session>('/api/session', usesNativeCustomerApi ? { method: 'POST' } : { method: 'POST', headers: { 'Idempotency-Key': retryKey() } }));
     const confirmed = await currentSession();
     if (confirmed !== created) throw Error('session_changed');
     clearCreationKey();
