@@ -52,17 +52,31 @@ for(const platform of ['ios','android'])for(const outcome of ['completed','cance
     const siteId='dddddddd-dddd-4ddd-8ddd-dddddddddddd',orderId='ffffffff-ffff-4fff-8fff-ffffffffffff';
     const order={id:orderId,bundle_id:'flex',price_minor:100,currency:'USD',status:'awaiting_payment',quote_expires_at:new Date(Date.now()+900000).toISOString()};
     const clientSecret='pi_SyntheticPayment123_secret_SYNTHETIC';let checkoutCalls=0;
-    await page.addInitScript(({platform,outcome})=>{
+    await page.addInitScript(({platform,outcome,apiOrigin})=>{
       const runtime=window as any;runtime.CapacitorCustomPlatform={name:platform};runtime.paymentBridgeCalls=[];
-      runtime.Capacitor={PluginHeaders:[{name:'PasoFiStripe',methods:[{name:'availability',rtype:'promise'},{name:'present',rtype:'promise'}]}],
+      runtime.Capacitor={PluginHeaders:[{name:'PasoFiStripe',methods:[{name:'availability',rtype:'promise'},{name:'present',rtype:'promise'}]},
+        {name:'PasoFiCustomerApi',methods:['availability','request','cancel'].map(name=>({name,rtype:'promise'}))}],
         nativePromise:async(plugin:string,method:string,options:Record<string,unknown>)=>{
+          if(plugin==='PasoFiCustomerApi'){
+            if(method==='availability')return {requestId:options.requestId,configured:true,origin:apiOrigin,protocol:1};
+            if(method==='cancel')return {requestId:options.requestId};
+            if(method!=='request')throw Error('unexpected customer API method');
+            // Synthetic bridge transport reuses this test's routed API fixtures.
+            // Production native transports never use browser fetch or its jar.
+            const headers:Record<string,string>={};
+            if(options.data!==undefined)headers['Content-Type']='application/json';
+            if(typeof options.idempotencyKey==='string')headers['Idempotency-Key']=options.idempotencyKey;
+            const response=await fetch(new URL(String(options.path),apiOrigin),{method:String(options.method),headers,
+              body:typeof options.data==='string'?options.data:undefined,credentials:'include',mode:'cors',redirect:'error'});
+            return {requestId:options.requestId,status:response.status,data:response.status===204?null:await response.json(),contentType:'application/json'};
+          }
           if(plugin!=='PasoFiStripe')throw Error('unexpected native plugin');
           runtime.paymentBridgeCalls.push({method,keys:Object.keys(options).sort()});
           return method==='availability'?{applePay:platform==='ios',googlePay:platform==='android'}:{status:outcome};
         }};
-    },{platform,outcome});
+    },{platform,outcome,apiOrigin});
     await mock(page,async(route,path,method,reply)=>{
-      if(path==='/api/capabilities'){await reply({...capabilities,paymentCheckout:true,paymentMode:'sandbox'});return true;}
+      if(path==='/api/capabilities'){await reply({...capabilities,paymentCheckout:true,paymentMode:'sandbox',nativeCustomerApiVersion:1});return true;}
       if(path==='/api/sites'){await reply({sites:[{id:siteId,name:'Synthetic payment site'}]});return true;}
       if(path==='/api/payments/methods'){await reply({enabled:true,methods:[{code:'STRIPE_CARD',name:'Card or mobile wallet',currency:'USD',minMinor:50,maxMinor:99999999}]});return true;}
       if(path==='/api/orders'&&method==='POST'){await reply({order});return true;}

@@ -137,6 +137,7 @@ public final class PasoFiStripePlugin: CAPPlugin, CAPBridgedPlugin {
 
 final class PasoFiBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(PasoFiCustomerApiPlugin())
         bridge?.registerPluginInstance(PasoFiStripePlugin())
     }
 }

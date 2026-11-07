@@ -4,7 +4,7 @@ export type Capabilities = {
   demo: boolean; paymentMode: 'disabled' | 'mock' | 'sandbox' | 'production';
   paymentCheckout: boolean; vouchers: boolean; receiptPairing: boolean;
   invoices?: boolean; invoiceEmail?: boolean; invoiceSms?: boolean;
-  staffSales: boolean; deliverySms: boolean; networkAccess: boolean; mobileCookies: boolean;
+  staffSales: boolean; deliverySms: boolean; networkAccess: boolean; mobileCookies: boolean; nativeCustomerApiVersion?: number;
 };
 export type Product = { id: string; price_minor: number; currency: string; byte_limit: string; validity_seconds: number };
 export type Site = { id: string; name: string };
@@ -23,10 +23,15 @@ export const money = (minor: number, currency = 'USD') => new Intl.NumberFormat(
 export const localDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 export function messageFor(error: unknown, fallback = 'This request could not be completed. Please try again.') {
   if (!(error instanceof ApiError)) return fallback;
+  if (error.code === 'session_changed') return 'Your account changed. Close My PasoFi and reopen it before continuing.';
   if (error.status === 401) return 'Your session or verification has expired. Sign in again to continue.';
   if (error.status === 403) return 'This action is not available for your account or assigned site. Refresh your account permissions.';
   if (error.status === 429) return 'Too many attempts. Wait a minute before trying again.';
   const messages: Record<string, string> = {
+    logout_pending: 'Sign-out is waiting for confirmation. Reconnect, then close My PasoFi and reopen it to finish signing out.',
+    session_retry_expired: 'That unfinished account setup has expired. Recover your existing account if you saved recovery details, or choose Start a new customer account again.',
+    native_session_storage_unavailable: 'PasoFi could not open private account storage on this device. Close and reopen the app, then retry.',
+    native_customer_disabled: 'Account access is paused for this app. Check the service connection again.',
     cookie_not_kept: 'This browser did not keep the account cookie. Allow cookies for the configured PasoFi service, then retry. No voucher or payment was submitted.',
     version_conflict: 'This record changed while you were reviewing it. Refresh and review the current details.',
     staff_changed: 'This staff record changed. Refresh and review the latest details.',

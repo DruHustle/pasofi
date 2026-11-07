@@ -9,7 +9,7 @@
     "test": "tsc -b --pretty false",
     "preview": "vite preview --host 0.0.0.0",
     "test:browser": "playwright test",
-    "test:proxy": "node --test server/oracle-proxy.test.mjs"
+    "test:proxy": "node --test server/*.test.mjs"
   },
   "dependencies": {
     "@stripe/stripe-js": "10.2.1",

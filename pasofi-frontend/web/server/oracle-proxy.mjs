@@ -46,9 +46,29 @@ const rules = [
   [/^\/api\/network\/(sites|session)$/, ['GET']],
   [/^\/api\/network\/(credentials|disconnect)$/, ['POST']],
 ];
+// The native marker selects a narrower public customer protocol. It is not an
+// authentication credential and cannot grant staff or service authority.
+const nativeCustomerRules = [
+  [/^\/api\/(bundles|capabilities|sites|access|usage|help|payments\/methods)$/, ['GET']],
+  [/^\/api\/orders$/, ['GET', 'POST']],
+  [new RegExp(`^/api/orders/${UUID}/status$`), ['GET']],
+  [new RegExp(`^/api/orders/${UUID}/(checkout|mock-payment|expire-unused)$`), ['POST']],
+  [/^\/api\/session$/, ['GET', 'POST', 'DELETE']],
+  [/^\/api\/recovery\/status$/, ['GET']],
+  [/^\/api\/(recovery(?:\/(setup|rotate))?|handoff(?:\/redeem)?)$/, ['POST']],
+  [new RegExp(`^/api/customer/invoices(?:/${UUID}(?:/pdf)?)?$`), ['GET']],
+  [/^\/api\/invoice-downloads$/, ['POST']],
+  [/^\/api\/receipt-pairings$/, ['POST']],
+  [new RegExp(`^/api/receipt-pairings/${UUID}/cancel$`), ['POST']],
+  [new RegExp(`^/api/receipt-pairings/${UUID}$`), ['GET']],
+  [/^\/api\/vouchers\/redeem$/, ['POST']],
+  [/^\/api\/network\/(sites|session)$/, ['GET']],
+  [/^\/api\/network\/(credentials|disconnect)$/, ['POST']],
+];
 const BODY_LIMIT = 32 * 1024;
 const RESPONSE_LIMIT = 1024 * 1024;
 const cookieNames = new Set(['__Host-pamofi_session', '__Host-pamofi_staff_session', '__Host-pamofi_staff_challenge']);
+const nativeCookieNames = new Set(['__Host-pamofi_session']);
 
 class ProxyError extends Error {
   constructor(status, code) { super(code); this.status = status; this.code = code; }
@@ -75,7 +95,8 @@ function configuration(env) {
   if (!Array.isArray(aliases) || aliases.length > 3) throw new ProxyError(503, 'api_unconfigured');
   const frontends = [frontend, ...aliases.map(origin)];
   if (frontends.some(value => upstream.origin === value.origin)) throw new ProxyError(503, 'api_unconfigured');
-  return { upstream, frontends, token: env.PAMOFI_VERCEL_PROXY_TOKEN };
+  return { upstream, frontends, token: env.PAMOFI_VERCEL_PROXY_TOKEN,
+    nativeCustomerEnabled: env.PAMOFI_NATIVE_CUSTOMER_ENABLED === 'true' && env.PAMOFI_NATIVE_CUSTOMER_QUALIFIED === 'true' };
 }
 
 function header(req, name, limit = 8192) {
@@ -138,6 +159,32 @@ export function publicRoute(rawUrl, method) {
   return { path, target: `${path}${remaining.length ? `?${remaining.join('&')}` : ''}` };
 }
 
+export function nativeCustomerRoute(path, method) {
+  return nativeCustomerRules.some(([pattern, methods]) => pattern.test(path) && methods.includes(method));
+}
+
+function validateNativeQuery(route, method) {
+  const query = new URL(route.target, 'https://native.invalid').searchParams;
+  if ([...query].length === 0) return;
+  if (method !== 'GET') throw new ProxyError(400, 'invalid_request');
+  const uuid = new RegExp(`^${UUID}$`), limit = /^(?:[1-9][0-9]?|100)$/, offset = /^(?:0|[1-9][0-9]{0,5}|1000000)$/;
+  const pagination = [['limit', limit], ['offset', offset]];
+  const allowed = new Map([
+    ['/api/access', pagination],
+    ['/api/usage', [['entitlementIds', new RegExp(`^${UUID}(,${UUID}){0,99}$`)]]],
+    ['/api/orders', [['requestKey', /^[A-Za-z0-9_-]{16,128}$/]]],
+    ['/api/payments/methods', [['siteId', uuid], ['bundleId', /^[a-z][a-z0-9-]{0,39}$/]]],
+    ['/api/customer/invoices', [...pagination, ['saleId', uuid], ['orderId', uuid]]],
+    ['/api/help', [['q', /^[^\x00-\x1f\x7f]{0,200}$/]]],
+  ]);
+  const fields = new Map(allowed.get(route.path) || []), seen = new Set();
+  for (const [name, value] of query) {
+    const pattern = fields.get(name);
+    if (seen.has(name) || !pattern?.test(value)) throw new ProxyError(400, 'invalid_request');
+    seen.add(name);
+  }
+}
+
 function readBody(req, signal, method) {
   const length = header(req, 'content-length', 16), encoding = header(req, 'content-encoding', 32);
   if (length !== undefined && (!/^(0|[1-9][0-9]*)$/.test(length) || Number(length) > BODY_LIMIT)) throw new ProxyError(413, 'request_too_large');
@@ -182,26 +229,27 @@ function privateHeaders(res) {
   res.setHeader('Referrer-Policy', 'no-referrer');
 }
 
-function publicCookies(value) {
+function publicCookies(value, allowedNames = cookieNames) {
   if (value === undefined) return undefined;
   const kept = [], seen = new Set();
   for (const part of value.split(';')) {
     const trimmed = part.trim(), equals = trimmed.indexOf('='), name = trimmed.slice(0, equals);
-    if (equals < 1 || !cookieNames.has(name)) continue;
+    if (equals < 1 || !allowedNames.has(name)) continue;
     if (seen.has(name)) throw new ProxyError(400, 'invalid_request');
     seen.add(name); kept.push(trimmed);
   }
   return kept.length ? kept.join('; ') : undefined;
 }
 
-function validateCookies(cookies) {
-  if (!Array.isArray(cookies) || cookies.length > 8) throw new ProxyError(502, 'upstream_unavailable');
+function validateCookies(cookies, nativeCustomer = false) {
+  if (!Array.isArray(cookies) || cookies.length > (nativeCustomer ? 1 : 8)) throw new ProxyError(502, 'upstream_unavailable');
+  const allowedNames = nativeCustomer ? nativeCookieNames : cookieNames;
   for (const cookie of cookies) {
     if (typeof cookie !== 'string' || cookie.length > 8192 || /[\r\n\0]/.test(cookie)) throw new ProxyError(502, 'upstream_unavailable');
     const parts = cookie.split(';').map(part => part.trim()), name = parts[0].split('=', 1)[0];
     const attributes = parts.slice(1).map(part => part.toLowerCase());
     const keys = attributes.map(part => part.split('=', 1)[0].trim());
-    if (!cookieNames.has(name) || !attributes.includes('secure') || !attributes.includes('httponly') ||
+    if (!allowedNames.has(name) || !attributes.includes('secure') || !attributes.includes('httponly') ||
         !attributes.includes('path=/') || !attributes.includes('samesite=lax') || keys.includes('domain') || new Set(keys).size !== keys.length) {
       throw new ProxyError(502, 'upstream_unavailable');
     }
@@ -209,7 +257,26 @@ function validateCookies(cookies) {
   return cookies;
 }
 
-function oracleRequest(request, url, options, body, signal, allowPdf = false) {
+function validateNativeCookieTransition(path, method, response) {
+  if (!response.cookies.length) return;
+  const creating = method === 'POST' && ((path === '/api/session' && [200, 201].includes(response.status)) ||
+    (['/api/recovery', '/api/handoff/redeem'].includes(path) && response.status === 200));
+  const clearing = method === 'DELETE' && path === '/api/session' && response.status === 204;
+  const parts = response.cookies[0].split(';').map(part => part.trim());
+  if (!parts[0].startsWith('__Host-pamofi_session=')) throw new ProxyError(502, 'upstream_unavailable');
+  const value = parts[0].slice('__Host-pamofi_session='.length);
+  if (creating && /^[A-Za-z0-9_-]{43}$/.test(value)) return;
+  if (clearing && value === '') {
+    const attributes = parts.slice(1).map(part => part.toLowerCase());
+    const maxAge = attributes.find(part => part.startsWith('max-age='));
+    const expires = attributes.find(part => part.startsWith('expires='));
+    if ((maxAge === undefined || maxAge === 'max-age=0') &&
+        (maxAge === 'max-age=0' || (expires !== undefined && Date.parse(expires.slice('expires='.length)) <= Date.now()))) return;
+  }
+  throw new ProxyError(502, 'upstream_unavailable');
+}
+
+function oracleRequest(request, url, options, body, signal, allowPdf = false, nativeCustomer = false) {
   return new Promise((resolve, reject) => {
     let upstream, incoming, settled = false;
     const cleanup = () => signal.removeEventListener('abort', abort);
@@ -233,7 +300,7 @@ function oracleRequest(request, url, options, body, signal, allowPdf = false) {
         if (pdf && (typeof disposition !== 'string' || !/^attachment; filename="[A-Za-z0-9-]{1,80}\.pdf"$/.test(disposition))) return fail(new ProxyError(502, 'upstream_unavailable'));
         if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') return fail(new ProxyError(502, 'upstream_unavailable'));
         let cookies;
-        try { cookies = validateCookies(response.headers['set-cookie'] || []); } catch (error) { return fail(error); }
+        try { cookies = validateCookies(response.headers['set-cookie'] || [], nativeCustomer); } catch (error) { return fail(error); }
         let size = 0; const chunks = [];
         response.on('data', chunk => {
           size += chunk.length;
@@ -270,26 +337,42 @@ export function createProxyHandler({ env = process.env, request = httpsRequest, 
       const config = configuration(env);
       const method = req.method || '';
       const route = publicRoute(req.url, method);
+      const nativeMarker = header(req, 'x-pasofi-native-customer', 16);
+      if (nativeMarker !== undefined && nativeMarker !== '1') throw new ProxyError(400, 'invalid_request');
+      const nativeCustomer = nativeMarker === '1';
       const host = header(req, 'host', 253), sourceOrigin = header(req, 'origin', 253);
       const frontend = host && config.frontends.find(value => value.host === host.toLowerCase());
       if (!frontend) throw new ProxyError(403, 'origin_not_allowed');
       if ((sourceOrigin !== undefined && sourceOrigin !== frontend.origin) ||
-          (!['GET', 'HEAD'].includes(method) && sourceOrigin !== frontend.origin)) throw new ProxyError(403, 'origin_not_allowed');
+          ((nativeCustomer || !['GET', 'HEAD'].includes(method)) && sourceOrigin !== frontend.origin)) throw new ProxyError(403, 'origin_not_allowed');
+      if (nativeCustomer && !nativeCustomerRoute(route.path, method)) throw new ProxyError(404, 'not_found');
+      if (nativeCustomer) validateNativeQuery(route, method);
+      if (nativeCustomer && !config.nativeCustomerEnabled && route.path !== '/api/capabilities') throw new ProxyError(503, 'native_customer_disabled');
       const clientIp = canonicalClientIp(header(req, 'x-vercel-forwarded-for', 45));
       const body = await readBody(req, controller.signal, method);
       const allowPdf = route.path === '/api/invoice-downloads' || new RegExp(`^/api/(customer|staff)/invoices/${UUID}/pdf$`).test(route.path);
       const headers = { accept: allowPdf ? 'application/pdf, application/json' : 'application/json', 'accept-encoding': 'identity', 'x-pamofi-proxy-token': config.token, 'x-pamofi-client-ip': clientIp };
       for (const name of ['content-type', 'idempotency-key']) {
         const value = header(req, name);
+        if (nativeCustomer && name === 'idempotency-key' && value !== undefined && !/^[A-Za-z0-9_-]{16,128}$/.test(value)) throw new ProxyError(400, 'invalid_request');
         if (value !== undefined) headers[name] = value;
       }
-      const cookies = publicCookies(header(req, 'cookie'));
+      const cookies = publicCookies(header(req, 'cookie'), nativeCustomer ? nativeCookieNames : cookieNames);
       if (cookies !== undefined) headers.cookie = cookies;
       if (sourceOrigin !== undefined) headers.origin = sourceOrigin;
       if (body.length || ['POST', 'PATCH', 'DELETE'].includes(method)) headers['content-length'] = String(body.length);
-      const response = await oracleRequest(request, new URL(route.target, config.upstream), { method, headers }, body, controller.signal, allowPdf);
+      const response = await oracleRequest(request, new URL(route.target, config.upstream), { method, headers }, body, controller.signal, allowPdf, nativeCustomer);
       if (response.body.includes(Buffer.from(config.token)) || response.cookies.some(cookie => cookie.includes(config.token)) ||
           (typeof response.retryAfter === 'string' && response.retryAfter.includes(config.token))) throw new ProxyError(502, 'upstream_unavailable');
+      if (nativeCustomer) validateNativeCookieTransition(route.path, method, response);
+      if (nativeCustomer && route.path === '/api/capabilities' && response.status === 200) {
+        let capabilities;
+        try { capabilities = JSON.parse(response.body.toString('utf8')); } catch { throw new ProxyError(502, 'upstream_unavailable'); }
+        if (!capabilities || Array.isArray(capabilities) || typeof capabilities !== 'object' || typeof capabilities.mobileCookies !== 'boolean') throw new ProxyError(502, 'upstream_unavailable');
+        // Only this deployed edge can qualify its native cookie transport. The
+        // owning backend retains every payment/commerce/network capability.
+        response.body = Buffer.from(JSON.stringify({ ...capabilities, mobileCookies: config.nativeCustomerEnabled, nativeCustomerApiVersion: 1 }));
+      }
       res.statusCode = response.status;
       if (response.type) res.setHeader('Content-Type', response.type);
       if (response.disposition) {

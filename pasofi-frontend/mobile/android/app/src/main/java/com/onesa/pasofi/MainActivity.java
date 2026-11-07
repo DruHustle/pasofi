@@ -7,6 +7,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(PasoFiStripePlugin.class);
+        registerPlugin(PasoFiCustomerApiPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

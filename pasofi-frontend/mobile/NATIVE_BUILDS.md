@@ -4,6 +4,20 @@ The mobile source is `pasofi-frontend/mobile`. The checked-in native projects ar
 
 The `Build PasoFi native previews` workflow compiles fresh web assets, runs the pinned Capacitor 8.6.0 synchronization, then independently builds Android and iOS. A successful job uploads its binary, exact source commit, toolchain version and SHA-256 checksum for 14 days. A workflow definition or successful web build alone does not mean a native binary has been built: inspect the native job result and its artifact.
 
+## Private native customer API
+
+The local `PasoFiCustomerApi` plugin connects installed iOS/Android apps to the public Vercel API through a customer-only protocol. It is separate from Stripe's PaymentSheet: a compiled payment UI also needs an authenticated customer, owned order and backend checkout response before it can present a payment. The default CI builds leave the API origin empty and both server native flags remain off.
+
+Build and sync with the same public HTTPS setting, for example `VITE_PAMOFI_API_BASE_URL=https://public.example.invalid npm run mobile:sync`. `capacitor.config.ts` embeds that origin in the native plugin configuration. JavaScript must match the installed origin and protocol1; missing/mismatched configuration never falls back to browser HTTP. No Oracle proxy token or signing secret belongs in this setting. [The connection guide](../../NATIVE_CUSTOMER_CONNECTION.md) specifies server enablement, qualification and rollback.
+
+The bridge exposes `availability`, `request` and `cancel`. Requests accept an exact customer path/method, bounded JSON body, operation idempotency key and response type. The native code fixes the HTTPS origin, Origin header and public protocol marker. It refuses staff/admin/internal routes, duplicate or unexpected query keys, redirects and arbitrary request headers. Only validated JSON or bounded PDF data, HTTP status and retry timing are returned. Set-Cookie, Cookie and the private account-creation retry key never cross the JavaScript bridge.
+
+iOS uses an isolated ephemeral URLSession with shared cookie, cache and credential stores disabled, and persists private state in origin-scoped Keychain data protected by `WhenUnlockedThisDeviceOnly`. Android uses an isolated HTTP client with private encrypted state protected by Android Keystore and AtomicFile in its no-backup directory. Neither implementation synchronizes credentials into WebView cookies or Capacitor's shared HTTP/cookie stores. A malformed or unavailable private store fails closed.
+
+Account creation persists a native-generated retry key before sending; a matching GET/session must confirm the customer before that key is cleared. Explicit recovery/handoff and successful logout replace or clear the relevant state. Exact terminal `session_retry_expired`409 clears only the obsolete creation retry and does not start another request. Identity changes fence prior in-flight work and reject new work until completion. A persisted interrupted logout is resumed once by the next session read; another failure retains the pending state for a later deliberate retry.
+
+CI runs Java policy/state tests and a pure Foundation Swift policy/state executable before building the actual plugins. Those tests cover route/query/authority-header limits, cookie transition validation, private creation confirmation, terminal retry handling and durable logout semantics. The iOS artifact includes the pure-test result. Device acceptance still must verify OS credential persistence and relaunch, interrupted requests, genuine TLS/redirect handling, no private cookie or retry material in bridge/log output, and customer identity throughout recovery/logout. A simulator build or synthetic bridge response does not establish these properties on a physical device.
+
 ## Native Stripe checkout
 
 The local `PasoFiStripe` Capacitor bridge presents Stripe's native PaymentSheet. It supports cards, Apple Pay on eligible iOS devices and Google Pay on eligible Android devices. It does not depend on a React Native runtime or a Capacitor Stripe package with incompatible React peers.
@@ -85,7 +99,7 @@ These GitHub artifacts expire on **2026-11-16**. The uploaded archive SHA-256 di
 - iOS: an unsigned Release simulator `App.app` inside a tar archive, preserving executable permissions. It is not a device-installable IPA, TestFlight build or App Store submission. Use an iOS simulator compatible with the artifact's architecture and SDK. New artifacts record the build configuration explicitly; older checkpoints above used the previous simulator configuration.
 - Both are **API-unconfigured previews**. The workflow explicitly leaves `VITE_PAMOFI_API_BASE_URL` empty, so the app cannot submit credentials, perform purchases, send SMS or connect through a backend. No provider or signing secrets are used.
 
-The customer interface supports an explicitly configured HTTPS gateway, but that configuration alone does not qualify secure cross-origin cookies on real iOS/Android WebViews. Backend CORS/session configuration, real-device cookie behavior, recovery, network transitions and accessibility require separate acceptance before building a connected release. The current service capability keeps `mobileCookies` false until that work is qualified.
+The customer interface supports the private native HTTPS transport above. Configuration alone does not qualify physical-device storage, relaunch, session recovery, network transitions or accessibility. The server keeps `mobileCookies` false until both native flags are explicitly enabled; physical-device acceptance must be recorded separately from that configured gate and from native compilation.
 
 ## Toolchains and local commands
 

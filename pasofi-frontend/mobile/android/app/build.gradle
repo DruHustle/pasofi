@@ -38,6 +38,8 @@ dependencies {
     implementation project(':capacitor-android')
     implementation 'com.stripe:stripe-android:23.25.2'
     implementation 'com.google.android.gms:play-services-wallet:20.0.0'
+    // Isolated customer HTTP client; never consults Capacitor's global CookieHandler.
+    implementation 'com.squareup.okhttp3:okhttp:4.12.1'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

@@ -1,3 +1,6 @@
+import { NativeApiError, nativeApiResponse, usesNativeCustomerApi } from './native-api';
+export { usesNativeCustomerApi } from './native-api';
+
 export class ApiError extends Error {
   constructor(public status: number, public code: string, public retryAfterMs?: number) { super(code); }
 }
@@ -12,15 +15,29 @@ export const mobileApiOrigin = (() => {
 })();
 export const mobileApiConfigured = !!import.meta.env.VITE_PAMOFI_API_BASE_URL?.trim();
 
-// Only the configured HTTPS gateway receives API calls and credentialed cookies.
-// No session or recovery credential is stored in native preferences or localStorage.
-async function request<T>(path: string, init: RequestInit | undefined, read: (response: Response) => Promise<T>): Promise<T> {
+// Native sessions use a separate private cookie transport. Browser previews keep
+// their existing credentialed fetch contract and never fall back from native HTTP.
+async function request<T>(path: string, init: RequestInit | undefined, read: (response: Response) => Promise<T>, responseType: 'json' | 'pdf' = 'json'): Promise<T> {
   if (!mobileApiOrigin || !path.startsWith('/api/')) throw new ApiError(503, 'mobile_api_not_configured');
   const controller = new AbortController(), source = init?.signal;
   const abort = () => controller.abort();
   if (source?.aborted) abort(); else source?.addEventListener('abort', abort, { once: true });
   const timer = setTimeout(abort, 10_000);
   try {
+    if (usesNativeCustomerApi) {
+      const response = await nativeApiResponse(mobileApiOrigin, path, init, responseType, controller.signal);
+      if (response.status >= 300) {
+        const body = response.data as { error?: unknown } | null;
+        const delay = response.retryAfterMs;
+        throw new ApiError(response.status, typeof body?.error === 'string' && /^[a-z][a-z0-9_]{0,79}$/.test(body.error) ? body.error : 'request_failed', typeof delay === 'number' && Number.isFinite(delay) && delay > 0 ? Math.min(delay, 300_000) : undefined);
+      }
+      if (responseType === 'json') return (response.status === 204 ? undefined : response.data) as T;
+      if (response.contentType !== 'application/pdf' || typeof response.data !== 'string' || response.data.length > 4 * Math.ceil((2 * 1024 * 1024) / 3) || !/^[A-Za-z0-9+/]*={0,2}$/.test(response.data)) throw new ApiError(502, 'invalid_invoice_pdf');
+      let decoded: string;
+      try { decoded = atob(response.data); } catch { throw new ApiError(502, 'invalid_invoice_pdf'); }
+      if (decoded.length > 2 * 1024 * 1024 || !decoded.startsWith('%PDF-')) throw new ApiError(502, 'invalid_invoice_pdf');
+      return new Blob([Uint8Array.from(decoded, value => value.charCodeAt(0))], { type: 'application/pdf' }) as T;
+    }
     const response = await fetch(new URL(path, mobileApiOrigin), { ...init, mode: 'cors', credentials: 'include', cache: 'no-store', redirect: 'error', signal: controller.signal });
     if (!response.ok) {
       const body = await response.json().catch(() => null);
@@ -29,6 +46,9 @@ async function request<T>(path: string, init: RequestInit | undefined, read: (re
       throw new ApiError(response.status, typeof body?.error === 'string' ? body.error : 'request_failed', Number.isFinite(delay) && delay > 0 ? Math.min(delay, 300_000) : undefined);
     }
     return await read(response);
+  } catch (error) {
+    if (error instanceof NativeApiError) throw new ApiError(error.code === 'session_changed' ? 401 : error.code === 'logout_pending' ? 409 : 503, error.code);
+    throw error;
   } finally { clearTimeout(timer); source?.removeEventListener('abort', abort); }
 }
 
@@ -49,5 +69,5 @@ export function apiPdf(path: string, init?: RequestInit): Promise<Blob> {
     const blob = new Blob(chunks, { type: 'application/pdf' });
     if (await blob.slice(0, 5).text() !== '%PDF-') throw new ApiError(502, 'invalid_invoice_pdf');
     return blob;
-  });
+  }, 'pdf');
 }

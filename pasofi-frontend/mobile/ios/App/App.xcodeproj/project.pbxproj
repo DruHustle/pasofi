@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        A20000000000000000000001 /* CustomerApiPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* CustomerApiPolicy.swift */; };
+        A20000000000000000000003 /* PasoFiCustomerApiPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* PasoFiCustomerApiPlugin.swift */; };
 		A10000000000000000000001 /* PasoFiStripePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* PasoFiStripePlugin.swift */; };
 		A10000000000000000000003 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000004 /* StripePaymentSheet */; };
 		A10000000000000000000007 /* StripePayments in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000008 /* StripePayments */; };
@@ -23,6 +25,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        A20000000000000000000002 /* CustomerApiPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomerApiPolicy.swift; sourceTree = "<group>"; };
+        A20000000000000000000004 /* PasoFiCustomerApiPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasoFiCustomerApiPlugin.swift; sourceTree = "<group>"; };
 		A10000000000000000000002 /* PasoFiStripePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasoFiStripePlugin.swift; sourceTree = "<group>"; };
 		A10000000000000000000006 /* PasoFiStripe.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PasoFiStripe.entitlements; sourceTree = "<group>"; };
 		1A23456789ABCDEF01234568 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -74,6 +78,8 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000002 /* PasoFiStripePlugin.swift */,
+                A20000000000000000000002 /* CustomerApiPolicy.swift */,
+                A20000000000000000000004 /* PasoFiCustomerApiPlugin.swift */,
 				A10000000000000000000006 /* PasoFiStripe.entitlements */,
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
@@ -175,6 +181,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000001 /* PasoFiStripePlugin.swift in Sources */,
+                A20000000000000000000001 /* CustomerApiPolicy.swift in Sources */,
+                A20000000000000000000003 /* PasoFiCustomerApiPlugin.swift in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 			);

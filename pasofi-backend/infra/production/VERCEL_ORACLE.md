@@ -84,6 +84,13 @@ both origins and rollback before changing the canonical hostname.
 
 The function requires the request Host to equal the configured frontend host. Preview aliases therefore cannot use production API authority automatically. A separate preview/staging deployment needs its own browser origin, backend, secrets and database rather than reuse production cookies/authority.
 
+The optional [native customer connection](../../../NATIVE_CUSTOMER_CONNECTION.md)
+reuses that public Vercel origin through an app-owned private cookie transport.
+Its two default-off gates belong only to the Vercel server environment. It does
+not require an Oracle origin, secret or CORS change; existing backend capability
+and ownership checks remain in force. The native marker is public and grants no
+authority. Complete its signed-device qualification before enabling production.
+
 Vercel-to-Oracle requests verify the public certificate and use one fixed HTTPS destination; the function never follows redirects, chooses an upstream from a browser header or query, or retries a mutation automatically. Requests and responses are bounded. Configure public DNS and Oracle ingress so the API hostname reaches only this gateway's HTTPS listener. Certificate issuance/renewal and any HTTP redirect port policy remain explicit operator responsibilities.
 
 ## Monitoring and live acceptance
