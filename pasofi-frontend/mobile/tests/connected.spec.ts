@@ -77,9 +77,14 @@ for(const platform of ['ios','android'])for(const outcome of ['completed','cance
     await expect(page.getByText(outcome==='cancelled'?'Payment cancelled. You can retry the same saved checkout.':'Payment not confirmed.',{exact:outcome==='cancelled'})).toBeVisible();
     await expect(page.getByText('Bundle queued',{exact:true})).toHaveCount(0);expect(checkoutCalls).toBe(1);
     expect(await page.evaluate(()=>JSON.stringify(sessionStorage)+JSON.stringify(localStorage))).not.toContain(clientSecret);
-    const calls=await page.evaluate(()=>(window as any).paymentBridgeCalls);
-    expect(calls.map((call:{method:string})=>call.method)).toEqual(['availability','present']);
-    expect(calls[0].keys).not.toContain('clientSecret');expect(calls[1].keys).toContain('clientSecret');
+    const calls=await page.evaluate(()=>(window as any).paymentBridgeCalls) as {method:string;keys:string[]}[];
+    // React StrictMode may replay readiness reads. Only the user's explicit
+    // action can open a payment sheet, and that action must occur exactly once.
+    const readiness=calls.filter(call=>call.method==='availability'),presentations=calls.filter(call=>call.method==='present');
+    expect(readiness.length).toBeGreaterThan(0);expect(presentations).toHaveLength(1);
+    expect(calls).toHaveLength(readiness.length+1);expect(calls.at(-1)?.method).toBe('present');
+    for(const call of readiness)expect(call.keys).not.toContain('clientSecret');
+    expect(presentations[0].keys).toContain('clientSecret');
   });
 }
 

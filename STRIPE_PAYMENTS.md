@@ -167,6 +167,12 @@ in the record.
 - Confirm the reviewed egress CIDR overlaps no host/Docker/site/Tailscale route,
   DNS and HTTPS work from prepaid, no additional service gained provider egress,
   and the base configuration stays closed when the optional overlay is absent.
+- Complete checkout from an actual unpaid HotSpot guest, including Stripe.js or
+  native Stripe endpoints and the card issuer's 3DS/SCA challenge and return path.
+  Backend egress does not prove that a captive customer can reach those services.
+  If the supported flow uses another available internet connection, document and
+  test that customer path explicitly. Any exact router walled-garden exception
+  requires its own qualification; this change does not broaden router access.
 - Exactly one entitlement and invoice after verified payment; test invoice marked
   simulated. Existing voucher, cash, session and quota behavior remains intact.
 - Refund/dispute of unused access and review of consumed access. Verify that

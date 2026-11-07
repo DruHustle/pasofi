@@ -19,7 +19,7 @@ export default function StripeCheckout({payment,owner,amount,disabled,verify,onB
    if(!client)throw Error('stripe_unavailable');
    stripe.current=client;
    elements.current=client.elements({clientSecret:payment.clientSecret,appearance:{theme:'stripe',variables:{colorPrimary:'#146e60'}}});
-   element=elements.current.create('payment',{layout:'tabs',wallets:{applePay:'never',googlePay:'never'}});
+   element=elements.current.create('payment',{layout:'tabs',wallets:{applePay:'never',googlePay:'never',link:'never'}});
    element.on('ready',()=>{if(current)setReady(true);});
    element.on('loaderror',()=>{if(current)setMessage('The secure card form could not load. Retry this saved checkout.');});
    element.mount(host.current);

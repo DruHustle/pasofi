@@ -9,7 +9,8 @@ async function fixture(page:Page){
  const order={id:orderId,bundle_id:'flex',price_minor:500,currency:'USD',status:'awaiting_payment',quote_expires_at:new Date(Date.now()+900000).toISOString(),purchase_mode:'checkout'};
  await page.addInitScript(()=>{
   const runtime=window as any;runtime.stripeConfirmCount=0;runtime.stripeDecline=false;
-  runtime.Stripe=()=>({_registerWrapper(){},registerAppInfo(){},elements:()=>({create:()=>{
+  runtime.Stripe=()=>({_registerWrapper(){},registerAppInfo(){},elements:()=>({create:(_kind:string,options:Record<string,unknown>)=>{
+   runtime.stripeWallets=options.wallets;
    const callbacks:Record<string,()=>void>={};let node:HTMLElement;
    return {on:(name:string,callback:()=>void)=>{callbacks[name]=callback;},mount:(target:HTMLElement)=>{node=document.createElement('div');node.textContent='Synthetic secure card iframe';target.append(node);queueMicrotask(()=>callbacks.ready?.());},destroy:()=>node?.remove()};
   }}),confirmPayment:async()=>{runtime.stripeConfirmCount++;return runtime.stripeDecline?{error:{type:'card_error',message:'Your card was declined.'}}:{paymentIntent:{id:'pi_SyntheticPayment123',status:'succeeded'}};}});
@@ -43,6 +44,7 @@ async function fixture(page:Page){
 
 test('Stripe completion cannot grant access until the server verifies the saved order',async({page})=>{
  const f=await fixture(page);
+ expect(await page.evaluate(()=>(window as any).stripeWallets)).toEqual({applePay:'never',googlePay:'never',link:'never'});
  await page.getByRole('button',{name:'Pay $5.00',exact:true}).click();
  await expect(page.getByText('Payment not confirmed.',{exact:false})).toBeVisible();
  await expect(page.getByRole('form',{name:'Secure card payment'})).toHaveCount(0);
