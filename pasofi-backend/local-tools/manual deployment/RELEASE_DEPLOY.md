@@ -46,8 +46,12 @@ Preflight verifies the manifest hash and archive's Git commit, reads the current
 2. Extracts the exact qualified source, installs locked dependencies inside the repository's Node builder image, and builds the manifest's selected application images. It builds the web image; when a captive portal is already mounted, it also builds its separate `VITE_PASOFI_HOTSPOT_PORTAL=1` assets and retains that existing mount destination.
 3. Rechecks the original Compose/environment files, container identities and database identifier. If the installation changed during the build, it stops before migration.
 4. Runs only the matching owned migration services with the new image and updated entrypoint, grant script and role policies. The invoice release includes prepaid migration `030` and notification migration `005`; the services' normal migration ledger determines what is pending.
-5. Updates only the named application services, web and the two gateways, using `--no-deps --no-build --pull never`. The existing gateway image IDs are retained while their reviewed configuration binds move to the pinned source. Compose waits for container health checks.
-6. Rechecks the database identity and the protected Postgres/RADIUS container IDs, images, mounts and host settings, then records completion.
+5. Updates the selected `network` service first, then `prepaid-access`, then the remaining selected applications, web and the two gateways. Each phase uses `--no-deps --no-build --pull never` and the existing 180-second Compose health wait. Before a downstream phase starts, the updated dependency must run its exact built image, be healthy, and pass fixed local live/service-identity and readiness HTTP checks. A failure stops the remaining phases. The existing gateway image IDs are retained while their reviewed configuration binds move to the pinned source.
+6. After every phase, rechecks the updated image identities, health, database identity and protected Postgres/RADIUS container IDs, images, mounts and host settings. Completion is recorded only after all phases pass.
+
+Custom manifests selecting `prepaid-access` must also select `network`; manifests selecting `web` must include both. The manifest carries no compatibility evidence for an omitted dependency, so a healthy older container cannot satisfy that requirement. The full automatic package already selects these services and their owned migrations. Preflight displays the phase order before application changes.
+
+The updated hotspot clients require the backend's explicit access-point and site/NAS response fields. This coordinator updates the Compose web/captive target. Vercel and mobile releases remain separate: activate them only after the network and prepaid backend release is verified. Keep the existing launch and payment gates unchanged during the rollout.
 
 It never calls `down`, removes orphans, prunes images, recreates Postgres/RADIUS, modifies existing secret/environment files or changes feature gates. The new network image is scoped to `network` and `network-migrate`; the existing RADIUS authority keeps its exact image and mounts. Optional `invoice-delivery.compose.yaml` and `invoice-sms.compose.yaml` are **not added automatically**. Issuing an invoice and enabling a qualified external email/SMS provider are separate operations. Existing provider settings are retained; a previously disabled channel stays disabled.
 
@@ -55,7 +59,7 @@ The command stopping is not proof that nothing changed: builds, completed migrat
 
 ## Rollback and evidence
 
-The command prints the private `record.json` location. The directory contains the manifest, original resolved Compose model, original Compose/env file paths and hashes, exact old image IDs, original managed bind sources, protected-container snapshot, private operation log, and a `rollback.compose.json` plus argument-array `rollback_command`. Successful deployments also create `completed.json` with actual images.
+The command prints the private `record.json` location. The directory contains the manifest, planned runtime phases, original resolved Compose model, original Compose/env file paths and hashes, exact old image IDs, original managed bind sources, protected-container snapshot, private operation log, and a `rollback.compose.json` plus argument-array `rollback_command`. Successful deployments also create `completed.json` with actual images.
 
 These files may contain resolved configuration. They are mode `0600` inside a mode `0700` directory. **Keep them private.** Review logs locally; redact any provider credentials, tokens, subscriber data and private paths before sharing excerpts. The tool does not print Docker/Compose command output.
 
