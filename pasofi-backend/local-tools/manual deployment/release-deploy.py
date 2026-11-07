@@ -284,11 +284,25 @@ def file_digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def canonical_mounts(container):
+    # Docker can enumerate its MountPoints map in a different order on each
+    # inspect. Bind every mount attribute, but not that incidental list order.
+    mounts = container.get("Mounts")
+    require(type(mounts) is list and all(type(mount) is dict
+            and type(mount.get("Destination")) is str and mount["Destination"] for mount in mounts),
+            "Docker mount observations need complete destinations.")
+    destinations = [mount["Destination"] for mount in mounts]
+    require(len(destinations) == len(set(destinations)),
+            "Docker mount observations contain duplicate destinations.")
+    return copy.deepcopy(sorted(mounts, key=lambda mount: mount["Destination"]))
+
+
 def runtime_digest(container):
     # Hashes bind a private observation without copying environment values into
     # the provenance manifest. This also detects docker-update/network drift.
-    return object_digest({key: container.get(key) for key in
-                          ("Id", "Image", "Config", "Mounts", "HostConfig", "NetworkSettings")})
+    return object_digest({**{key: container.get(key) for key in
+                           ("Id", "Image", "Config", "HostConfig", "NetworkSettings")},
+                          "Mounts": canonical_mounts(container)})
 
 
 def origin_record(container):
@@ -835,7 +849,8 @@ def verify_delta(before, after, overlay):
 
 
 def protected_snapshot(containers):
-    return {name: {**{key: containers[name].get(key) for key in ("Id", "Image", "Mounts", "HostConfig", "NetworkSettings")},
+    return {name: {**{key: containers[name].get(key) for key in ("Id", "Image", "HostConfig", "NetworkSettings")},
+                   "Mounts": canonical_mounts(containers[name]),
                    "running": containers[name].get("State", {}).get("Running")}
             for name in PROTECTED if name in containers}
 

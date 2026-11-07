@@ -219,6 +219,61 @@ class ServiceBaselineTests(unittest.TestCase):
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         self.assertFalse(Path(self.args.release_root).exists())
 
+    def test_capture_and_preflight_accept_only_mount_enumeration_permutations(self):
+        observations = 0
+        def alternating_inspect(project=None):
+            nonlocal observations
+            observations += 1
+            containers = copy.deepcopy(self.fixture.containers)
+            if observations % 2:
+                for container in containers.values():
+                    container["Mounts"].reverse()
+            return "existing", containers
+        original = copy.deepcopy(self.fixture.containers)
+        with self.operations(), patch.object(self.engine, "inspect_project", side_effect=alternating_inspect):
+            self.engine.deploy(self.args)
+            self.args.capture_baseline = None
+            self.args.baseline = str(self.path)
+            self.args.migration_origin = []
+            self.engine.deploy(self.args)
+        self.assertGreaterEqual(observations, 4)
+        self.assertEqual(self.fixture.containers, original)
+        self.assertTrue(self.path.is_file())
+        self.assertFalse(self.mutating_commands())
+        self.backup.assert_not_called()
+        self.build.assert_not_called()
+
+    def test_real_mount_drift_during_capture_cannot_create_a_baseline(self):
+        for change in ({"Source": "/changed/source"}, {"RW": True}, {"Mode": "changed"},
+                       {"Propagation": "shared"}, {"FutureAttribute": {"changed": True}}):
+            with self.subTest(attribute=next(iter(change))):
+                observations = 0
+                def drifting_inspect(project=None):
+                    nonlocal observations
+                    observations += 1
+                    containers = copy.deepcopy(self.fixture.containers)
+                    if observations > 1:
+                        containers["network"]["Mounts"][0].update(change)
+                        containers["network"]["Mounts"].reverse()
+                    return "existing", containers
+                with self.operations(), patch.object(self.engine, "inspect_project", side_effect=drifting_inspect), \
+                        self.assertRaisesRegex(self.engine.Refusal, "installation changed during baseline verification"):
+                    self.engine.deploy(self.args)
+                self.assertFalse(self.path.exists())
+                self.backup.assert_not_called()
+                self.build.assert_not_called()
+        self.assertFalse(self.mutating_commands())
+
+    def test_protected_mount_attribute_drift_after_capture_stops_before_backup(self):
+        self.capture()
+        self.args.apply = True
+        self.fixture.containers["postgres"]["Mounts"][0]["Propagation"] = "shared"
+        with self.operations(), self.assertRaisesRegex(self.engine.Refusal, "no longer matches"):
+            self.engine.deploy(self.args)
+        self.backup.assert_not_called()
+        self.build.assert_not_called()
+        self.assertFalse(self.mutating_commands())
+
     def test_missing_env_labels_on_yaml_and_unrecorded_json_env_files_are_refused(self):
         labels = self.fixture.containers["network"]["Config"]["Labels"]
         environment = labels.pop(self.engine.LABEL + "project.environment_file")
