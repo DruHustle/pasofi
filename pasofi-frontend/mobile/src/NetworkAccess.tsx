@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from './api';
 import { currentSession } from './session';
+import { clearNetworkRequest, networkRequestLifetimeMs, readNetworkRequest, saveNetworkRequest, type NetworkRequest } from './network-request';
 import { type Capabilities, localDate, messageFor } from './business';
 import { type UsageSnapshot, dataAmount } from './LiveUsage';
 
@@ -24,16 +25,19 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
   const [credentials, setCredentials] = useState<Credential | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
-  const request = useRef<{ siteId: string; nasId: string; key: string } | null>(null), live = useRef(false), generation = useRef(0);
+  const request = useRef<NetworkRequest | null>(null), live = useRef(false), generation = useRef(0);
   const validity = useRef({ customerId, fresh, revision: 0 });
   if (validity.current.customerId !== customerId || (validity.current.fresh && !fresh)) ++validity.current.revision;
   validity.current.customerId = customerId; validity.current.fresh = fresh;
   const session = usage?.customerId === customerId ? usage.session : null;
   const isCurrent = (revision: number) => live.current && generation.current === revision && validity.current.customerId === customerId;
+  function clearRequest() { request.current = null; clearNetworkRequest(); }
   async function verifyOwner() { if (await currentSession() !== customerId) throw new ApiError(401, 'session_changed'); }
   useEffect(() => {
     live.current = true; ++generation.current;
-    setCredentials(null); setShowPassword(false); setBusy(false); setMessage(''); request.current = null; setSites([]); setNasId('');
+    request.current = capabilities.networkAccess ? readNetworkRequest(customerId) : null;
+    if (!capabilities.networkAccess) clearNetworkRequest();
+    setCredentials(null); setShowPassword(false); setBusy(false); setMessage(''); setSites([]); setNasId(request.current?.nasId ?? '');
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => { live.current = false; ++generation.current; clearInterval(timer); };
   }, [customerId, capabilities.networkAccess]);
@@ -48,12 +52,18 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
           if (!site || typeof site.nasId !== 'string' || !uuid.test(site.nasId) || typeof site.siteId !== 'string' || !uuid.test(site.siteId) || typeof site.siteName !== 'string' || !site.siteName || typeof site.name !== 'string' || !site.name || typeof site.loginUrl !== 'string') return false;
           const url = new URL(site.loginUrl); return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash && url.pathname === '/login';
         })) throw Error('invalid_hotspot_locations');
-        if (current()) { setSites(result.accessPoints); setNasId(value => result.accessPoints.some(site => site.nasId === value) ? value : result.accessPoints.length === 1 ? result.accessPoints[0].nasId : ''); }
+        if (current()) {
+          const saved = request.current;
+          const removed = !!saved && !result.accessPoints.some(site => site.nasId === saved.nasId && site.siteId === saved.siteId);
+          if (removed) clearRequest();
+          setSites(result.accessPoints); setNasId(value => !removed && result.accessPoints.some(site => site.nasId === value) ? value : result.accessPoints.length === 1 ? result.accessPoints[0].nasId : '');
+        }
       }).catch(() => { if (current()) setSitesError(true); }).finally(() => { if (current()) setSitesLoading(false); });
     }
     return () => controller.abort();
   }, [customerId, capabilities.networkAccess, sitesAttempt]);
-  useEffect(() => { if (credentials && Date.parse(credentials.expiresAt) <= now) { setCredentials(null); request.current = null; } }, [now, credentials]);
+  useEffect(() => { if (credentials && Date.parse(credentials.expiresAt) <= now) { setCredentials(null); clearRequest(); } }, [now, credentials]);
+  useEffect(() => { if (session && (session.state !== 'pending' || session.disconnectRequested)) clearRequest(); }, [session?.state, session?.disconnectRequested]);
   async function prepare(event: React.FormEvent) {
     event.preventDefault();
     const selected = sites.find(site => site.nasId === nasId);
@@ -63,19 +73,26 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
     try {
       await verifyOwner();
       if (!isCurrent(revision)) return;
-      if (!request.current || request.current.siteId !== selected.siteId || request.current.nasId !== selected.nasId) request.current = { siteId: selected.siteId, nasId: selected.nasId, key: crypto.randomUUID() };
+      if (!request.current || request.current.customerId !== customerId || request.current.siteId !== selected.siteId || request.current.nasId !== selected.nasId) {
+        request.current = { customerId, siteId: selected.siteId, nasId: selected.nasId, key: crypto.randomUUID(), expiresAt: Date.now() + networkRequestLifetimeMs };
+        saveNetworkRequest(request.current);
+      }
       const result = await api<Credential>('/api/network/credentials', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteId: selected.siteId, nasId: selected.nasId, requestKey: request.current.key }) });
       if (!isCurrent(revision)) return;
       if (!validity.current.fresh || validity.current.revision !== verifiedRevision) { setMessage('Account status changed while preparing sign-in. Check the connection, then retry the prepared request safely.'); return; }
       const url = new URL(result.loginUrl);
       if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/login' || result.siteId !== selected.siteId || result.nasId !== selected.nasId || result.loginUrl !== selected.loginUrl || typeof result.username !== 'string' || typeof result.password !== 'string' || !Number.isFinite(Date.parse(result.expiresAt))) throw Error('invalid_connection_details');
+      if (request.current) {
+        request.current = { ...request.current, expiresAt: Math.min(request.current.expiresAt, Date.parse(result.expiresAt)) };
+        saveNetworkRequest(request.current);
+      }
       if (isCurrent(revision)) { setCredentials(result); setMessage('Your connection is ready to start. Continue below; the hotspot will confirm when you’re online.'); await refresh(); }
     } catch (error) {
       if (isCurrent(revision)) {
         const expired = error instanceof ApiError && error.status === 409 && error.code === 'credential_expired';
         // A lost response must retry the same preparation. Rotate only after
         // the credential authority confirms it is no longer usable.
-        if (expired) request.current = null;
+        if (expired) clearRequest();
         setMessage(expired ? 'Your prepared hotspot sign-in expired. Choose Connect to Wi-Fi again to get fresh details.' : messageFor(error, 'Connection details could not be verified. Check status before retrying.'));
         await refresh();
       }
@@ -87,11 +104,11 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
     try {
       await verifyOwner(); if (!isCurrent(revision)) return;
       await api('/api/network/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ grantId: session.grantId }) });
-      if (isCurrent(revision)) { setCredentials(null); setMessage('Disconnect requested. Wait for confirmed final status before switching to another hotspot.'); await refresh(); }
+      if (isCurrent(revision)) { setCredentials(null); clearRequest(); setMessage('Disconnect requested. Wait for confirmed final status before switching to another hotspot.'); await refresh(); }
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error)); }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
-  const retryPending = !!request.current && !credentials && session?.state === 'pending' && session.siteId === request.current.siteId && session.nasId === request.current.nasId && !session.disconnectRequested;
+  const retryPending = !!request.current && request.current.customerId === customerId && !credentials && session?.state === 'pending' && session.siteId === request.current.siteId && session.nasId === request.current.nasId && !session.disconnectRequested;
   const connected = fresh && session?.connected === true && session.state === 'active';
   return <section className="workspace-card"><div className="workspace-section-head"><h3>Hotspot connection</h3><button className="secondary" disabled={busy || refreshing} onClick={refresh}>Check connection</button></div>
     <p className={`connection-state ${connected ? 'connected' : ''}`} role="status">{!fresh ? 'Connection status not verified' : usage?.hold.active ? 'Connection needs review' : !session ? 'No active hotspot session' : session.disconnectRequested ? 'Disconnect awaiting confirmation' : connected ? 'Connected · recent router report' : session.state === 'uncertain' ? 'Checking an interrupted connection' : usage?.connectivity === 'stale' ? 'Router report delayed · connection not verified' : 'Sign-in pending · not confirmed connected'}</p>
@@ -102,7 +119,7 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
     {capabilities.networkAccess && !credentials && sitesError && <div className="notice"><p role="alert">Hotspot locations could not be loaded. Try again to choose where to connect.</p><button className="secondary" disabled={busy || sitesLoading} onClick={() => setSitesAttempt(value => value + 1)}>Retry locations</button></div>}
     {capabilities.networkAccess && !credentials && !sitesLoading && !sitesError && sites.length === 0 && <div className="notice"><p role="status">No hotspot locations are available yet. Ask your PasoFi agent for help or check again.</p><button className="secondary" disabled={busy} onClick={() => setSitesAttempt(value => value + 1)}>Refresh locations</button></div>}
     {capabilities.networkAccess && !credentials && !sitesLoading && !sitesError && sites.length > 0 && <form className="form-grid" onSubmit={prepare}>
-      {sites.length === 1 ? <p>Connecting at <strong>{sites[0].siteName} · {sites[0].name}</strong>. No Wi-Fi name to enter.</p> : <label>Choose your PasoFi hotspot<select required value={nasId} onChange={event => { setNasId(event.target.value); setCredentials(null); }} disabled={busy || !!session}><option value="">Select a hotspot</option>{sites.map(site => <option value={site.nasId} key={site.nasId}>{site.siteName} · {site.name}</option>)}</select></label>}
+      {sites.length === 1 ? <p>Connecting at <strong>{sites[0].siteName} · {sites[0].name}</strong>. No Wi-Fi name to enter.</p> : <label>Choose your PasoFi hotspot<select required value={nasId} onChange={event => { setNasId(event.target.value); setCredentials(null); clearRequest(); }} disabled={busy || !!session}><option value="">Select a hotspot</option>{sites.map(site => <option value={site.nasId} key={site.nasId}>{site.siteName} · {site.name}</option>)}</select></label>}
       <button className="primary" disabled={busy || !fresh || !!usage?.hold.active || !nasId || (!!session && !retryPending)}>{busy ? 'Getting your connection ready…' : retryPending ? 'Retry connection' : 'Connect to Wi-Fi'}</button>
     </form>}
     {capabilities.networkAccess && credentials && fresh && <div className="private-value">
