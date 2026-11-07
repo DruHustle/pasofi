@@ -5,6 +5,7 @@ Called by deployment-backup.py. The caller supplies the immutable running image,
 exact backup label, retained system identifier and pre-backup migration ledgers.
 No production data volume, host port or mutable image tag is used here.
 """
+import hashlib
 import ipaddress
 import json
 import re
@@ -17,6 +18,7 @@ PURPOSE = 'automatic-deployment-restore'
 ROOT = '/home/ubuntu/pamofi/production'
 PGDATA = '/var/lib/postgresql/data/pgdata'
 CONFIG = '/run/pgbackrest/pgbackrest.conf'
+BUCKET_SHA256 = 'bb211da03962e46e1e2597137b4fb176aca1ce71668088dea69bc7a95eefd869'
 LABEL_PATTERN = r'[0-9]{8}-[0-9]{6}F(?:_[0-9]{8}-[0-9]{6}[DI])?'
 LEDGER_SQL = "SELECT coalesce(json_agg(json_build_object('name',name,'checksum',checksum) ORDER BY name),'[]'::json) FROM schema_migrations"
 PGOPTIONS = '-c default_transaction_read_only=on -c statement_timeout=5000 -c lock_timeout=3000'
@@ -82,8 +84,12 @@ def check_subnet(runner):
 
 
 class Resources:
-    def __init__(self, runner):
+    def __init__(self, runner, bucket):
         self.runner = runner
+        require(type(bucket) is str and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,254}', bucket)
+                and hashlib.sha256(bucket.encode()).hexdigest() == BUCKET_SHA256,
+                'The isolated restore bucket differs from the retained approved repository.')
+        self.bucket = bucket
         self.token = secrets.token_hex(16)
         self.name = 'pasofi-deploy-restore-' + self.token
         self.names = {'container': {self.name + '-init', self.name + '-fetch', self.name + '-server'},
@@ -113,7 +119,7 @@ class Resources:
             argv += ['--user', 'root', '--entrypoint', '/bin/sh']
         else:
             argv += ['--tmpfs', '/run/pgbackrest:rw,noexec,nosuid,size=1m', '--env', 'PGDATA=' + PGDATA,
-                     '--env', 'PGBACKREST_CONFIG=' + CONFIG, '--env', 'B2_BUCKET=pamofi-b2-blazebucket',
+                     '--env', 'PGBACKREST_CONFIG=' + CONFIG, '--env', 'B2_BUCKET=' + self.bucket,
                      '--env', 'B2_REGION=eu-central-003', '--env', 'BACKUP_REPOSITORY_PREFIX=/pamofi-production',
                      '--env', 'B2_KEY_ID_FILE=/run/secrets/b2_key_id',
                      '--env', 'B2_APPLICATION_KEY_FILE=/run/secrets/b2_application_key',
@@ -161,7 +167,7 @@ class Resources:
         require(not failed, 'Isolated restore cleanup could not be confirmed; deployment has not started.')
 
 
-def restore_exact(runner, *, image, backup_label, expected_id, expected_ledgers):
+def restore_exact(runner, *, image, backup_label, expected_id, expected_ledgers, bucket):
     require(type(image) is str and re.fullmatch(r'sha256:[0-9a-f]{64}', image), 'An immutable restore image is required.')
     require(type(backup_label) is str and re.fullmatch(LABEL_PATTERN, backup_label), 'An exact backup label is required.')
     require(type(expected_id) is str and re.fullmatch(r'[0-9]{10,30}', expected_id), 'The retained cluster identifier is required.')
@@ -169,8 +175,8 @@ def restore_exact(runner, *, image, backup_label, expected_id, expected_ledgers)
     for rows in expected_ledgers.values():
         require(type(rows) is dict and ledger(json.dumps([{'name': k, 'checksum': v} for k, v in rows.items()])) == rows,
                 'A reference migration ledger is invalid.')
+    resources = Resources(runner, bucket)
     check_subnet(runner)
-    resources = Resources(runner)
     try:
         runner(['docker', 'volume', 'create', *resources.labels, resources.name])
         resources.inspect('volume', resources.name)
@@ -207,4 +213,5 @@ def restore_exact(runner, *, image, backup_label, expected_id, expected_ledgers)
         resources.cleanup()
     return {'status': 'passed', 'backup_label': backup_label, 'image_id': image, 'cluster_identity': 'matched',
             'migration_ledgers': 'matched_all_five', 'cleanup': 'passed', 'host_ports': 'none',
-            'restore_scope': 'new_disposable_volume_on_existing_host', 'off_host_recovery_tested': False}
+            'restore_scope': 'new_disposable_volume_on_existing_host', 'off_host_recovery_tested': False,
+            'repository_bucket_sha256': BUCKET_SHA256}

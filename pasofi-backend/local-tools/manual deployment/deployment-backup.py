@@ -16,8 +16,12 @@ PRODUCTION_ROOT = Path('/home/ubuntu/pamofi/production')
 BACKUP_CONFIG = '/run/pgbackrest/pgbackrest.conf'
 HELPER_PATH = 'pasofi-backend/local-tools/manual deployment/'
 MAX_OUTPUT = 2 * 1024 * 1024
+# Bound to the retained operator environment and independently installed restore
+# job, then checked against the active configuration. Never adopt a new bucket
+# from a live observation or caller argument.
+BUCKET_SHA256 = 'bb211da03962e46e1e2597137b4fb176aca1ce71668088dea69bc7a95eefd869'
 KNOWN_CONFIG = {
-    'B2_BUCKET': 'pamofi-b2-blazebucket', 'B2_REGION': 'eu-central-003',
+    'B2_REGION': 'eu-central-003',
     'BACKUP_REPOSITORY_PREFIX': '/pamofi-production', 'PGDATA': '/var/lib/postgresql/data/pgdata',
     'PGBACKREST_CONFIG': BACKUP_CONFIG, 'B2_KEY_ID_FILE': '/run/secrets/b2_key_id',
     'B2_APPLICATION_KEY_FILE': '/run/secrets/b2_application_key', 'BACKUP_CIPHER_FILE': '/run/secrets/backup_cipher',
@@ -79,7 +83,7 @@ f=/run/pgbackrest/pgbackrest.conf
 [ "$(stat -c %u "$f")" = "$(id -u)" ]
 awk '
 BEGIN {
-  expect["repo1-type"]="s3"; expect["repo1-s3-bucket"]="pamofi-b2-blazebucket";
+  expect["repo1-type"]="s3"; expect["repo1-s3-bucket"]=ENVIRON["B2_BUCKET"];
   expect["repo1-s3-endpoint"]="s3.eu-central-003.backblazeb2.com";
   expect["repo1-s3-region"]="eu-central-003"; expect["repo1-s3-uri-style"]="path";
   expect["repo1-storage-verify-tls"]="y"; expect["repo1-path"]="/pamofi-production";
@@ -129,6 +133,10 @@ def configuration(container):
                 'A pgBackRest environment override prevents backup qualification.')
     require(all(values.get(key) == value for key, value in KNOWN_CONFIG.items()),
             'The existing backup configuration differs from the qualified restore procedure; deployment has not started.')
+    bucket = values.get('B2_BUCKET')
+    require(type(bucket) is str and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,254}', bucket)
+            and hashlib.sha256(bucket.encode()).hexdigest() == BUCKET_SHA256,
+            'The existing backup bucket differs from the retained approved repository; deployment has not started.')
     mounts = container.get('Mounts')
     require(type(mounts) is list and len(mounts) <= 100, 'The protected backup credential mounts are invalid.')
     for secret in ('b2_key_id', 'b2_application_key', 'backup_cipher'):
@@ -141,7 +149,7 @@ def configuration(container):
     # The exact supported sections/keys below exclude stanza/command overrides.
     require(command(['docker', 'exec', '--user', 'postgres', container['Id'], 'sh', '-c', CONFIGURATION_CHECK]).strip()
             == 'qualified-encrypted-backup', 'The encrypted backup configuration could not be verified.')
-    return image
+    return image, bucket
 
 
 def backup_info(raw, expected_id, *, now=None, exact_label=None):
@@ -216,7 +224,8 @@ def prepare_backup(container, expected_database_id, source, release):
     require(type(expected_database_id) is str and re.fullmatch(r'[0-9]{10,30}', expected_database_id),
             'An independently retained database identity is required before backup qualification.')
     restore, program_hash = restore_module(source)
-    image = configuration(container)
+    require(restore.BUCKET_SHA256 == BUCKET_SHA256, 'The backup and restore repository identities differ.')
+    image, bucket = configuration(container)
     postgres = container['Id']
     base = ['docker', 'exec', '--user', 'postgres', postgres, 'pgbackrest', '--config=' + BACKUP_CONFIG, '--stanza=pamofi']
     selected_repo = base + ['--repo=1']
@@ -233,10 +242,10 @@ def prepare_backup(container, expected_database_id, source, release):
         fresh = backup_info(command(selected_repo + info, timeout=90), expected_database_id)
         require(fresh['label'] != before['label'] and fresh['completed'] >= started - 5,
                 'A newly completed backup was not established; deployment has not started.')
-        require(configuration(container) == image, 'The immutable restore image changed during backup qualification.')
+        require(configuration(container) == (image, bucket), 'The immutable restore image or approved repository changed during backup qualification.')
         print('Restoring the captured backup label into a separate volume and checking all five migration ledgers.', flush=True)
         restored = restore.restore_exact(command, image=image, backup_label=fresh['label'],
-                                         expected_id=expected_database_id, expected_ledgers=ledgers)
+                                         expected_id=expected_database_id, expected_ledgers=ledgers, bucket=bucket)
         # Do not silently accept a replacement latest backup or a disappeared set.
         require(backup_info(command(selected_repo + info, timeout=90), expected_database_id, exact_label=fresh['label']) == fresh,
                 'The captured backup metadata changed during restore qualification.')
@@ -245,13 +254,15 @@ def prepare_backup(container, expected_database_id, source, release):
     require(restored == {'status': 'passed', 'backup_label': fresh['label'], 'image_id': image,
                          'cluster_identity': 'matched', 'migration_ledgers': 'matched_all_five', 'cleanup': 'passed',
                          'host_ports': 'none', 'restore_scope': 'new_disposable_volume_on_existing_host',
-                         'off_host_recovery_tested': False}, 'The exact isolated restore evidence is incomplete.')
+                         'off_host_recovery_tested': False, 'repository_bucket_sha256': BUCKET_SHA256},
+            'The exact isolated restore evidence is incomplete.')
     evidence = {
         'schema': 1, 'status': 'passed', 'encrypted_backup': 'passed', 'fresh_backup': 'passed',
         'isolated_restore': 'passed', 'cluster_identity': 'matched',
         'completed_at_utc': datetime.now(timezone.utc).isoformat(), 'backup_label': fresh['label'],
         'backup_completed_at_unix': fresh['completed'], 'restore_scope': 'new_disposable_volume_on_existing_host',
         'restore_program_sha256': program_hash, 'restore_image_id': image, 'restored_backup_label': fresh['label'],
+        'repository_bucket_sha256': BUCKET_SHA256,
         'migration_ledgers': 'matched_all_five', 'cleanup': 'passed', 'off_host_recovery_tested': False,
     }
     descriptor = os.open(Path(release) / 'backup-evidence.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)

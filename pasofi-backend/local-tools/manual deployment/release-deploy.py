@@ -2,7 +2,7 @@
 """Pinned PasoFi upgrade of an existing Compose installation; preflight by default."""
 import argparse
 import copy
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
@@ -18,6 +18,7 @@ import sys
 import tarfile
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 APPS = ("identity", "prepaid-access", "network", "notification", "assistant")
 UPDATABLE = (*APPS, "web")
@@ -204,8 +205,15 @@ def retained_database_identity():
         descriptor = os.open(RETAINED_ID, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(descriptor, "rb") as handle:
             info = os.fstat(handle.fileno())
+            owners = {0, os.geteuid()}
+            # A privileged operator can read the existing installation owner's
+            # private record without changing its ownership or adopting a live ID.
+            if os.geteuid() == 0:
+                parent = RETAINED_ID.parent.lstat()
+                require(stat.S_ISDIR(parent.st_mode) and parent.st_mode & 0o022 == 0, message)
+                owners.add(parent.st_uid)
             require(stat.S_ISREG(info.st_mode) and info.st_size <= 128
-                    and info.st_mode & 0o022 == 0 and info.st_uid in (0, os.geteuid()), message)
+                    and info.st_mode & 0o022 == 0 and info.st_uid in owners, message)
             value = handle.read(129).decode("ascii").strip()
             require(re.fullmatch(r"[0-9]{10,30}", value) is not None, message)
             return value
@@ -233,7 +241,12 @@ def discover_existing_inputs(containers):
 
 
 def recheck_discovered_inputs(args, containers):
-    if getattr(args, "discover_existing", False):
+    if getattr(args, "baseline", None):
+        before = args._baseline_record
+        loaded = load_service_baseline(args, args._baseline_manifest, before["project"], containers)
+        require(args._baseline_record == before and loaded[5] == args.expected_database_id,
+                "The reviewed per-service baseline changed during deployment.")
+    elif getattr(args, "discover_existing", False):
         environment_files, database_id = discover_existing_inputs(containers)
         require(environment_files == args.env_file and database_id == args.expected_database_id,
                 "The retained installation inputs changed during deployment; stopped before migration.")
@@ -247,6 +260,399 @@ def compose_command(project, directory, files, env_files):
     for path in files:
         result.extend(["-f", str(path)])
     return result
+
+
+def resolved_compose(base):
+    # Compose config re-escapes every dollar after JSON serialization, including
+    # keys (Docker Compose v2.40.3 cmd/compose/config.go escapeDollarSign). Decode
+    # that serialization once; Docker inspect and all comparisons use runtime
+    # values. An unexpected format must not silently weaken those comparisons.
+    serialized = run(base + ["config", "--format", "json"])
+    require("$" not in serialized.replace("$$", ""),
+            "Compose JSON has unexpected dollar escaping; configuration cannot be verified.")
+    return json.loads(serialized.replace("$$", "$"))
+
+
+def object_digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def file_digest(path):
+    path = Path(path)
+    require(path.is_file() and not path.is_symlink() and path.stat().st_size <= 8 * 1024 * 1024,
+            "A recorded baseline input is missing, linked or too large.")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def canonical_mounts(container):
+    # Docker can enumerate its MountPoints map in a different order on each
+    # inspect. Bind every mount attribute, but not that incidental list order.
+    mounts = container.get("Mounts")
+    require(type(mounts) is list and all(type(mount) is dict
+            and type(mount.get("Destination")) is str and mount["Destination"] for mount in mounts),
+            "Docker mount observations need complete destinations.")
+    destinations = [mount["Destination"] for mount in mounts]
+    require(len(destinations) == len(set(destinations)),
+            "Docker mount observations contain duplicate destinations.")
+    return copy.deepcopy(sorted(mounts, key=lambda mount: mount["Destination"]))
+
+
+def runtime_digest(container):
+    # Hashes bind a private observation without copying environment values into
+    # the provenance manifest. This also detects docker-update/network drift.
+    return object_digest({**{key: container.get(key) for key in
+                           ("Id", "Image", "Config", "HostConfig", "NetworkSettings")},
+                          "Mounts": canonical_mounts(container)})
+
+
+def origin_record(container):
+    labels = container["Config"]["Labels"]
+    service = labels.get(LABEL + "service")
+    require(type(service) is str and re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,100}", service),
+            "A baseline service has an invalid recorded name.")
+    directory = labels.get(LABEL + "project.working_dir", "")
+    config = labels.get(LABEL + "project.config_files", "")
+    environment = labels.get(LABEL + "project.environment_file")
+    config_hash = labels.get(LABEL + "config-hash", "")
+    require(re.fullmatch(r"[0-9a-f]{64}", config_hash or "") is not None,
+            "Every baseline service needs its recorded Compose configuration hash.")
+    require(Path(directory).is_absolute() and Path(directory).is_dir(),
+            "A baseline service has no existing absolute working directory.")
+
+    def paths(value):
+        require(type(value) is str and 0 < len(value) <= 32768,
+                "A baseline service has incomplete ordered file labels.")
+        items = value.split(",")
+        require(0 < len(items) <= 32 and len(items) == len(set(items))
+                and all(Path(item).is_absolute() and not {".", ".."}.intersection(item.split("/"))
+                        and all(character.isprintable() for character in item) for item in items),
+                "A baseline service has invalid ordered file labels.")
+        return [{"path": item, "sha256": file_digest(item)} for item in items]
+
+    files = paths(config)
+    if environment:
+        env_files, mode = paths(environment), "recorded-files"
+    else:
+        # Historical isolated updates used complete JSON models. No .env file
+        # is guessed: the exact rendered hash and all runtime checks must match.
+        require(len(files) == 1 and Path(files[0]["path"]).suffix == ".json",
+                "Missing environment labels require one existing self-contained JSON model.")
+        raw = json.loads(Path(files[0]["path"]).read_text())
+        require(type(raw) is dict and type(raw.get("services")) is dict,
+                "The historical JSON model is not a complete Compose model.")
+        require(not any(key in raw for key in ("include", "extends"))
+                and all(type(value) is dict and not any(key in value for key in ("env_file", "extends"))
+                        for value in raw["services"].values()),
+                "A self-contained JSON origin cannot load unrecorded configuration files.")
+        env_files, mode = [], "self-contained-json"
+    return {"service": service, "container_id": container["Id"], "image_id": container["Image"],
+            "config_hash": config_hash, "runtime_sha256": runtime_digest(container),
+            "working_directory": directory, "compose_files": files,
+            "environment_files": env_files, "environment_mode": mode}
+
+
+def render_origin(project, record, supplemental_environment=None):
+    files = [item["path"] for item in record["compose_files"]]
+    env_files = [item["path"] for item in record["environment_files"]]
+    # Explicit /dev/null also prevents Compose loading an unrelated implicit .env.
+    env_files = env_files or ["/dev/null"]
+    if supplemental_environment:
+        env_files.append(supplemental_environment["path"])
+    base = compose_command(project, record["working_directory"], files, env_files)
+    model = resolved_compose(base)
+    name = record["service"]
+    require(model.get("name") == project and name in model.get("services", {}),
+            "An origin does not describe its observed project and service.")
+    hashes = run(base + ["config", "--hash", name]).strip().splitlines()
+    require(hashes == [name + " " + record["config_hash"]],
+            "An origin's rendered service hash differs from its running Compose label.")
+    image = model["services"][name].get("image")
+    require(type(image) is str and image, "An origin has no recorded application image.")
+    require(run(["docker", "image", "inspect", "--format", "{{.Id}}", image]).strip() == record["image_id"],
+            "An origin's image reference no longer identifies its running image.")
+    return model
+
+
+def merge_baseline_service(combined, model, name):
+    require(name in model.get("services", {}) and name not in combined["services"],
+            "A baseline service definition is missing or duplicated.")
+    service = copy.deepcopy(model["services"][name])
+    combined["services"][name] = service
+    references = {"networks": list(service.get("networks", {})),
+                  "volumes": [item["source"] for item in service.get("volumes", []) if item["type"] == "volume"],
+                  "secrets": [item["source"] for item in service.get("secrets", [])],
+                  "configs": [item["source"] for item in service.get("configs", [])]}
+    for category, names in references.items():
+        for key in names:
+            require(key in model.get(category, {}), "A baseline resource definition is missing.")
+            value = model[category][key]
+            existing = combined.setdefault(category, {})
+            require(key not in existing or existing[key] == value,
+                    "Observed service origins disagree about a shared resource; baseline refused.")
+            existing[key] = copy.deepcopy(value)
+
+
+def verify_migration_database(service, migration, model, containers):
+    """A borrowed job must use this live app's database and separate owner role."""
+    message = "The selected migration does not match its live service database authority."
+    require(migration.get("entrypoint") == ["node", "/opt/pamofi/entrypoint.mjs"],
+            "A selected migration must execute the pinned production entrypoint.")
+    for target in ("/opt/pamofi/entrypoint.mjs", "/opt/pamofi/apply-grants.mjs", "/opt/pamofi/role-policies.json"):
+        mounts = [item for item in migration.get("volumes", []) if item.get("target") == target]
+        require(len(mounts) == 1 and mounts[0].get("type") == "bind" and mounts[0].get("read_only") is True,
+                "A selected migration is missing a required read-only pinned configuration bind.")
+    # The URL's hostname must resolve through the retained Docker network. A
+    # borrowed job cannot redirect it with a hosts file, link or custom resolver.
+    require(not any(migration.get(key) for key in
+                    ("extra_hosts", "network_mode", "links", "external_links", "dns", "dns_search", "dns_opt")),
+            "A selected migration overrides retained database hostname resolution.")
+    resolver_paths = ("/etc/hosts", "/etc/resolv.conf", "/etc/nsswitch.conf")
+    for category in ("volumes", "secrets", "configs"):
+        for item in migration.get(category, []):
+            target = item.get("target", item.get("source", ""))
+            if category == "secrets" and not target.startswith("/"):
+                target = "/run/secrets/" + target
+            require(not any(target == path or path.startswith(target.rstrip("/") + "/")
+                            for path in resolver_paths),
+                    "A selected migration mounts a database hostname resolution override.")
+    current = containers[service]
+    environment = runtime_env(current)
+    migrate_env = migration.get("environment", {})
+    prefix = environment.get("PAMOFI_ROLE_PREFIX", "pamofi")
+    suffix = service.replace("-", "_")
+    require(re.fullmatch(r"[a-z][a-z0-9_]{0,24}", prefix or "")
+            and migrate_env.get("PAMOFI_ROLE_PREFIX", "pamofi") == prefix
+            and all(environment.get(key) == migrate_env.get(key) == "production" for key in ("APP_ENV", "NODE_ENV"))
+            and environment.get("PAMOFI_SERVICE") == migrate_env.get("PAMOFI_SERVICE") == service, message)
+    runtime_target = environment.get("DATABASE_URL_FILE")
+    migration_target = migrate_env.get("MIGRATION_DATABASE_URL_FILE")
+    require(type(runtime_target) is str and type(migration_target) is str
+            and not environment.get("DATABASE_URL") and not migrate_env.get("MIGRATION_DATABASE_URL"), message)
+    runtime_mounts = [item for item in current.get("Mounts", []) if item["Destination"] == runtime_target]
+    require(len(runtime_mounts) == 1 and not runtime_mounts[0].get("RW"), message)
+    runtime_file = runtime_mounts[0]["Source"]
+    migration_files = []
+    for item in migration.get("secrets", []):
+        target = item.get("target", item["source"])
+        if not target.startswith("/"):
+            target = "/run/secrets/" + target
+        if target == migration_target:
+            migration_files.append(model.get("secrets", {}).get(item["source"], {}).get("file"))
+    require(len(migration_files) == 1 and type(migration_files[0]) is str, message)
+    migration_file = migration_files[0]
+
+    def database_url(filename, role):
+        try:
+            path = Path(filename)
+            require(path.is_file() and not path.is_symlink() and path.stat().st_size <= 65536, message)
+            value = re.sub(r"\r?\n$", "", path.read_bytes().decode("utf-8"))
+            require(value and not any(character in value for character in ("\0", "\r", "\n")), message)
+            parsed = urlsplit(value)
+            require(parsed.scheme in ("postgres", "postgresql") and parsed.username == role
+                    and parsed.password and parsed.hostname and not parsed.query and not parsed.fragment
+                    and parsed.path == "/" + prefix + "_" + suffix, message)
+            return parsed.hostname, parsed.port or 5432, parsed.path
+        except (OSError, ValueError, UnicodeError):
+            raise Refusal(message) from None
+
+    runtime_role, migrate_role, owner = (prefix + "_" + suffix + ending for ending in ("_runtime", "_migrate", "_owner"))
+    endpoint = database_url(runtime_file, runtime_role)
+    require(database_url(migration_file, migrate_role) == endpoint and endpoint[1] == 5432, message)
+    postgres = containers["postgres"]
+    runtime_networks = set(current.get("NetworkSettings", {}).get("Networks", {}))
+    migration_networks = {model.get("networks", {}).get(key, {}).get("name") for key in migration.get("networks", {})}
+    postgres_networks = postgres.get("NetworkSettings", {}).get("Networks", {})
+    reachable = runtime_networks & migration_networks & set(postgres_networks)
+    hosts = set()
+    for network in reachable:
+        observed = postgres_networks[network]
+        hosts.update(observed.get("Aliases") or [])
+        hosts.update(filter(None, (observed.get("IPAddress"), observed.get("GlobalIPv6Address"))))
+    require(endpoint[0] in hosts, message)
+    bootstrap = runtime_env(postgres).get("POSTGRES_USER", "")
+    require(re.fullmatch(r"[a-z][a-z0-9_]{0,62}", bootstrap) is not None, message)
+    database = prefix + "_" + suffix
+    # All SQL identifiers here are derived from validated service/prefix values;
+    # no URL, credential or user-supplied SQL is passed to the command line.
+    sql = ("SELECT CASE WHEN pg_get_userbyid(d.datdba)='" + owner + "' "
+           "AND NOT o.rolcanlogin AND NOT o.rolsuper AND m.rolcanlogin AND NOT m.rolsuper "
+           "AND NOT m.rolcreatedb AND NOT m.rolcreaterole AND r.rolcanlogin AND NOT r.rolsuper "
+           "AND NOT r.rolcreatedb AND NOT r.rolcreaterole AND pg_has_role(m.oid,o.oid,'MEMBER') "
+           "THEN 'matched' ELSE 'mismatch' END FROM pg_database d "
+           "JOIN pg_roles o ON o.rolname='" + owner + "' "
+           "JOIN pg_roles m ON m.rolname='" + migrate_role + "' "
+           "JOIN pg_roles r ON r.rolname='" + runtime_role + "' "
+           "WHERE d.datname='" + database + "'")
+    require(run(["docker", "exec", "--user", "postgres", postgres["Id"], "psql", "-X", "-U", bootstrap,
+                 "-d", "postgres", "-At", "-v", "ON_ERROR_STOP=1", "-c", sql]).strip() == "matched", message)
+    return {"runtime_file": runtime_file, "runtime_sha256": file_digest(runtime_file),
+            "migration_file": migration_file, "migration_sha256": file_digest(migration_file)}
+
+
+def origin_environment_records(containers, paths):
+    require(type(paths) is dict and set(paths) <= set(containers)
+            and all(type(value) is str for value in paths.values()),
+            "Supplemental environments must name an actually observed service and a private file.")
+    return {name: {"path": str(private_baseline_path(path)), "sha256": file_digest(path)}
+            for name, path in paths.items()}
+
+
+def baseline_observation(manifest, project, containers, migration_origins, origin_environment_paths=None):
+    require(type(migration_origins) is dict and set(migration_origins) == set(manifest["migrations"])
+            and all(value in containers for value in migration_origins.values()),
+            "Each owned migration must select an actually observed service origin.")
+    database_id = retained_database_identity()
+    database_identity(containers["postgres"], database_id)
+    origin_environment_paths = origin_environment_paths or {}
+    environments = origin_environment_records(containers, origin_environment_paths)
+    records, models = {}, {}
+    for name, container in sorted(containers.items()):
+        record = origin_record(container)
+        try:
+            model = render_origin(project, record, environments.get(name))
+            validate_existing(model, containers, [], only=[name])
+        except Refusal as error:
+            raise Refusal("Baseline service " + name + ": " + str(error)) from None
+        records[name], models[name] = record, model
+    combined = {"name": project, "services": {}}
+    for name in sorted(containers):
+        merge_baseline_service(combined, models[name], name)
+    databases = {}
+    for service in manifest["migrations"]:
+        model = models[migration_origins[service]]
+        name = service + "-migrate"
+        require(name in model.get("services", {}),
+                "An owned migration is absent from its selected origin; review --migration-origin mappings.")
+        migration = model["services"][name]
+        require(migration.get("command") == ["migrate"]
+                and migration.get("environment", {}).get("PAMOFI_SERVICE") == service,
+                "A selected migration is not the matching service-owned migration command.")
+        databases[service] = verify_migration_database(service, migration, model, containers)
+        merge_baseline_service(combined, model, name)
+    validate_existing(combined, containers, manifest["services"])
+    # Inputs or container identity changing while models are rendered cannot
+    # produce a reviewable baseline, even if the last service rendered cleanly.
+    _, current = inspect_project(project)
+    require(set(current) == set(containers)
+            and all(origin_record(current[name]) == record for name, record in records.items()),
+            "The installation changed during baseline verification.")
+    require(retained_database_identity() == database_id,
+            "The retained database record changed during baseline verification.")
+    require(origin_environment_records(current, origin_environment_paths) == environments,
+            "A supplemental origin environment changed during baseline verification.")
+    return {"schema": 1, "release_commit": manifest["commit"], "project": project,
+            "database_id": database_id, "origins": records, "migration_origins": migration_origins,
+            "migration_databases": databases, "origin_environments": environments}, combined
+
+
+def literal_compose(value):
+    # Executable Compose JSON needs exactly one escape of runtime dollar values.
+    # Keys stay literal because Compose interpolates values, not mapping keys.
+    if isinstance(value, str):
+        return value.replace("$", "$$")
+    if isinstance(value, list):
+        return [literal_compose(item) for item in value]
+    if isinstance(value, dict):
+        return {key: literal_compose(item) for key, item in value.items()}
+    return value
+
+
+def private_baseline_path(path, *, new=False):
+    path = Path(path).absolute()
+    parent = path.parent.lstat()
+    require(stat.S_ISDIR(parent.st_mode) and parent.st_mode & 0o077 == 0
+            and parent.st_uid in (0, os.geteuid()), "Use an existing private baseline directory (mode 0700).")
+    if new:
+        require(not path.exists() and not path.is_symlink(), "A baseline output already exists; do not overwrite it.")
+    else:
+        info = path.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_mode & 0o077 == 0
+                and info.st_uid in (0, os.geteuid()) and info.st_size <= 8 * 1024 * 1024,
+                "The baseline input must be a private regular file.")
+    return path
+
+
+def capture_service_baseline(args, manifest, project, containers):
+    path = private_baseline_path(args.capture_baseline, new=True)
+    model_path = private_baseline_path(str(path) + ".compose.json", new=True)
+    empty_env = private_baseline_path(str(path) + ".empty.env", new=True)
+    migrations = {name: name for name in manifest["migrations"]}
+    seen = set()
+    for item in getattr(args, "migration_origin", []):
+        name, separator, origin = item.partition("=")
+        require(separator and name in migrations and name not in seen and origin in containers,
+                "Use each --migration-origin once as owned-service=observed-service.")
+        seen.add(name)
+        migrations[name] = origin
+    environments = {}
+    for item in getattr(args, "origin_env", []):
+        name, separator, path_value = item.partition("=")
+        require(separator and name in containers and name not in environments and path_value,
+                "Use each --origin-env once as observed-service=private-environment-file.")
+        environments[name] = path_value
+    record, model = baseline_observation(manifest, project, containers, migrations, environments)
+    created = []
+    try:
+        with empty_env.open("x", encoding="utf-8"):
+            pass
+        created.append(empty_env)
+        empty_env.chmod(0o600)
+        with model_path.open("x", encoding="utf-8") as handle:
+            created.append(model_path)
+            json.dump(literal_compose(model), handle, indent=2)
+            handle.write("\n")
+        model_path.chmod(0o600)
+        base = compose_command(project, path.parent, [str(model_path)], [str(empty_env)])
+        require(resolved_compose(base) == model,
+                "The combined baseline model did not preserve the verified Compose values.")
+        record["model_sha256"] = file_digest(model_path)
+        with path.open("x", encoding="utf-8") as handle:
+            created.append(path)
+            json.dump(record, handle, indent=2)
+            handle.write("\n")
+        path.chmod(0o600)
+    except Exception:
+        for created_path in reversed(created):
+            created_path.unlink(missing_ok=True)
+        raise
+    print("Per-service baseline captured after configuration and runtime verification.", flush=True)
+    print("Baseline SHA-256: " + file_digest(path) + ".", flush=True)
+    print("No application, database or protected service was changed.", flush=True)
+
+
+def load_service_baseline(args, manifest, project, containers):
+    path = private_baseline_path(args.baseline)
+    model_path = private_baseline_path(str(path) + ".compose.json")
+    empty_env = private_baseline_path(str(path) + ".empty.env")
+    require(empty_env.read_bytes() == b"", "The baseline's empty interpolation file changed.")
+    record = json.loads(path.read_text())
+    require(type(record) is dict and set(record) == {"schema", "release_commit", "project", "database_id",
+                                                    "origins", "migration_origins", "migration_databases", "origin_environments", "model_sha256"}
+            and type(record["schema"]) is int and record["schema"] == 1,
+            "The per-service baseline manifest is invalid.")
+    require(record["release_commit"] == manifest["commit"] and record["project"] == project,
+            "The baseline is for a different release or Compose project.")
+    require(file_digest(model_path) == record["model_sha256"], "The private combined baseline model changed.")
+    require(type(record["origin_environments"]) is dict
+            and all(type(value) is dict and set(value) == {"path", "sha256"}
+                    for value in record["origin_environments"].values()),
+            "The supplemental origin environment records are invalid.")
+    observed, model = baseline_observation(manifest, project, containers, record["migration_origins"],
+        {name: value["path"] for name, value in record["origin_environments"].items()})
+    require({key: value for key, value in record.items() if key != "model_sha256"} == observed,
+            "The reviewed per-service baseline no longer matches the installation.")
+    base = compose_command(project, path.parent, [str(model_path)], [str(empty_env)])
+    require(resolved_compose(base) == model,
+            "The private combined model differs from its verified service origins.")
+    files = {str(path), str(model_path), str(empty_env)}
+    for origin in record["origins"].values():
+        files.update(item["path"] for item in origin["compose_files"] + origin["environment_files"])
+    for database in record["migration_databases"].values():
+        files.update(database[key] for key in ("runtime_file", "migration_file"))
+    files.update(value["path"] for value in record["origin_environments"].values())
+    args._baseline_record = record
+    args._baseline_manifest = manifest
+    return path.parent, [str(model_path)], [empty_env], base, model, record["database_id"], sorted(files)
 
 
 def runtime_env(container):
@@ -292,9 +698,11 @@ def validate_tmpfs(configured, container):
     require(expected == actual, "Recorded stack differs from running tmpfs paths or permissions.")
 
 
-def validate_existing(model, containers, selected):
+def validate_existing(model, containers, selected, *, only=None):
     services = model.get("services", {})
-    for name in set(selected) | {"postgres", "gateway", "internal-gateway"} | (set(PROTECTED) & set(containers)):
+    names = set(only) if only is not None else (
+        set(selected) | {"postgres", "gateway", "internal-gateway"} | (set(PROTECTED) & set(containers)))
+    for name in names:
         require(name in services and name in containers, "An expected existing service is missing.")
         container = containers[name]
         require(container.get("State", {}).get("Running"), "An expected service is stopped; resolve it before upgrade.")
@@ -356,6 +764,8 @@ def validate_existing(model, containers, selected):
                         for target, bindings in (container.get("HostConfig", {}).get("PortBindings") or {}).items()
                         for binding in (bindings or [])}
         require(actual_ports == expected_ports, "Recorded stack differs from the running published ports.")
+    if "postgres" not in names:
+        return
     postgres = containers["postgres"]
     data = [m for m in postgres["Mounts"] if m["Destination"] == "/var/lib/postgresql/data"]
     require(len(data) == 1 and data[0]["Type"] == "volume", "Postgres must use its existing named data volume.")
@@ -426,6 +836,7 @@ def plan_overlay(model, source, selected, commit, containers):
 
 def verify_delta(before, after, overlay):
     expected = copy.deepcopy(before)
+    comparable = copy.deepcopy(after)
     for name, change in overlay["services"].items():
         service = expected["services"][name]
         if "image" in change:
@@ -434,12 +845,25 @@ def verify_delta(before, after, overlay):
         service["volumes"] = [replacements.get(v["target"], v) for v in service.get("volumes", [])]
         if not service["volumes"]:
             del service["volumes"]
-    require(expected == after,
+        for volume in comparable.get("services", {}).get(name, {}).get("volumes", []):
+            replacement = replacements.get(volume.get("target"))
+            if (replacement and replacement.get("type") == "bind"
+                    and replacement.get("bind", {}).get("create_host_path") is False):
+                bind = volume.get("bind")
+                if type(bind) is dict:
+                    # Compose's typed JSON omits this false boolean. Restore
+                    # only that representation on an approved replacement;
+                    # the emitted overlay must retain its explicit false.
+                    require("create_host_path" not in bind or bind["create_host_path"] is False,
+                            "Compose changed managed bind path creation; rollout refused.")
+                    bind.setdefault("create_host_path", False)
+    require(expected == comparable,
             "Compose merge changed more than selected images and approved configuration binds; rollout refused.")
 
 
 def protected_snapshot(containers):
-    return {name: {**{key: containers[name].get(key) for key in ("Id", "Image", "Mounts", "HostConfig")},
+    return {name: {**{key: containers[name].get(key) for key in ("Id", "Image", "HostConfig", "NetworkSettings")},
+                   "Mounts": canonical_mounts(containers[name]),
                    "running": containers[name].get("State", {}).get("Running")}
             for name in PROTECTED if name in containers}
 
@@ -447,6 +871,10 @@ def protected_snapshot(containers):
 def write_private(path, data):
     Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     os.chmod(path, 0o600)
+
+
+def write_compose(path, model):
+    write_private(path, literal_compose(model))
 
 
 @contextmanager
@@ -587,7 +1015,19 @@ def remote(args):
 def deploy(args):
     args = copy.copy(args)
     manifest = load_manifest(args.manifest, args.archive)
-    if getattr(args, "discover_existing", False):
+    require(getattr(args, "capture_baseline", None) or not getattr(args, "origin_env", []),
+            "Supplemental origin environment selection belongs to baseline capture, not apply or other discovery modes.")
+    service_baseline = bool(getattr(args, "baseline", None) or getattr(args, "capture_baseline", None))
+    if service_baseline:
+        require(not (getattr(args, "baseline", None) and getattr(args, "capture_baseline", None))
+                and not args.host and not getattr(args, "discover_existing", False)
+                and not args.env_file and args.expected_database_id is None,
+                "Per-service baselines are direct-server operations and cannot mix manual or automatic discovery inputs.")
+        require(not getattr(args, "capture_baseline", None) or not args.apply,
+                "Baseline capture never applies a release.")
+        require(getattr(args, "capture_baseline", None) or not getattr(args, "migration_origin", []),
+                "Migration-origin selection belongs to baseline capture, not apply.")
+    elif getattr(args, "discover_existing", False):
         require(not args.env_file and args.expected_database_id is None,
                 "Automatic discovery cannot be combined with manually supplied environment files or database identity.")
     else:
@@ -597,28 +1037,35 @@ def deploy(args):
         return remote(args)
     require(os.name == "posix", "Run via --host from Windows, or run on the existing Linux Docker host.")
     project, containers = inspect_project(args.project)
-    if getattr(args, "discover_existing", False):
-        args.env_file, args.expected_database_id = discover_existing_inputs(containers)
-    require(args.env_file, "Supply the existing protected Compose --env-file; do not create or guess one.")
-    env_files = [Path(path).resolve() for path in args.env_file]
-    require(all(path.is_file() for path in env_files), "An existing environment file is missing.")
-    directory, files = discover_stack(containers)
-    base = compose_command(project, directory, files, env_files)
-    model = json.loads(run(base + ["config", "--format", "json"]))
+    if getattr(args, "capture_baseline", None):
+        return capture_service_baseline(args, manifest, project, containers)
+    if getattr(args, "baseline", None):
+        directory, files, env_files, base, model, args.expected_database_id, input_files = load_service_baseline(
+            args, manifest, project, containers)
+    else:
+        if getattr(args, "discover_existing", False):
+            args.env_file, args.expected_database_id = discover_existing_inputs(containers)
+        require(args.env_file, "Supply the existing protected Compose --env-file; do not create or guess one.")
+        env_files = [Path(path).resolve() for path in args.env_file]
+        require(all(path.is_file() for path in env_files), "An existing environment file is missing.")
+        directory, files = discover_stack(containers)
+        base = compose_command(project, directory, files, env_files)
+        model = resolved_compose(base)
+        input_files = [*files, *env_files]
     validate_existing(model, containers, manifest["services"])
     database_identity(containers["postgres"], args.expected_database_id)
     old_protected = protected_snapshot(containers)
-    file_hashes = {str(path): hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in [*files, *env_files]}
+    file_hashes = {str(path): hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in input_files}
     with tempfile.TemporaryDirectory(prefix="pasofi-preflight-") as temporary:
         source = extract_source(args.archive, temporary, manifest["commit"])
         overlay, hotspot = plan_overlay(model, source, manifest["services"], manifest["commit"], containers)
         overlay_path = Path(temporary) / "upgrade.compose.json"
-        write_private(overlay_path, overlay)
-        planned = json.loads(run(base + ["-f", str(overlay_path), "config", "--format", "json"]))
+        write_compose(overlay_path, overlay)
+        planned = resolved_compose(base + ["-f", str(overlay_path)])
         verify_delta(model, planned, overlay)
     print("Preflight passed: release " + manifest["commit"] + ".", flush=True)
     print("Existing Compose project: " + project + ".", flush=True)
-    print("Existing ordered Compose overlays, protected secrets and external database volume verified.", flush=True)
+    print("Existing service provenance, ordered configuration, protected secrets and external database volume verified.", flush=True)
     print("Update: " + ", ".join(manifest["services"]) + "; gateways; owned migrations: "
           + ", ".join(manifest["migrations"]) + ("; existing captive portal assets." if hotspot else "."), flush=True)
     print("Runtime order: " + " -> ".join(", ".join(phase) for phase in rollout_phases(manifest["services"])) + ".", flush=True)
@@ -626,7 +1073,16 @@ def deploy(args):
     if not args.apply:
         print("No runtime changes made. Run the same command with --apply after reviewing this plan.")
         return
-    with apply_lock(directory, project):
+    lock_directories = {str(directory)}
+    if getattr(args, "baseline", None):
+        lock_directories.update(origin["working_directory"] for origin in args._baseline_record["origins"].values())
+    with ExitStack() as locks:
+        for lock_directory in sorted(lock_directories):
+            locks.enter_context(apply_lock(Path(lock_directory), project))
+        # Recheck the captured snapshot after acquiring all historical locks.
+        if getattr(args, "baseline", None):
+            _, current = inspect_project(project)
+            recheck_discovered_inputs(args, current)
         apply_release(args, manifest, project, containers, directory, files, env_files, base,
                       model, old_protected, file_hashes)
 
@@ -640,25 +1096,26 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
     source = extract_source(args.archive, release, manifest["commit"])
     overlay, hotspot = plan_overlay(model, source, manifest["services"], manifest["commit"], containers)
     overlay_path = release / "upgrade.compose.json"
-    write_private(overlay_path, overlay)
+    write_compose(overlay_path, overlay)
     upgrade = base + ["-f", str(overlay_path)]
     targets = [*manifest["services"], "internal-gateway", "gateway"]
     phases = rollout_phases(manifest["services"])
     rollback = {"services": {name: {"image": containers[name]["Image"],
                                    "volumes": model["services"][name].get("volumes", [])}
                              for name in targets}}
-    write_private(release / "rollback.compose.json", rollback)
+    write_compose(release / "rollback.compose.json", rollback)
     write_private(release / "before.compose.json", model)
     write_private(release / "release.json", manifest)
     write_private(release / "record.json", {"project": project, "compose_files": files,
                   "env_files": [str(path) for path in env_files], "file_hashes": file_hashes,
                   "protected": old_protected, "targets": targets, "rollout_phases": phases,
+                  **({"service_baseline": args._baseline_record} if getattr(args, "baseline", None) else {}),
                   "rollback_command": base + ["-f", str(release / "rollback.compose.json"), "up", "-d",
                                                "--no-deps", "--no-build", "--pull", "never", *targets],
                   "database_rollback": "None: additive migrations are retained. Never restore an older database over new sales."})
     log = release / "operations.log"
     print("Private rollback record: " + str(release / "record.json"), flush=True)
-    if getattr(args, "discover_existing", False):
+    if getattr(args, "discover_existing", False) or getattr(args, "baseline", None):
         prepare_automatic_backup(containers["postgres"], args.expected_database_id, source, release)
     print("Building pinned application images and existing captive assets; private build log is in the record directory.", flush=True)
     built_images = build_release(source, manifest["services"], manifest["commit"], hotspot, log)
@@ -672,7 +1129,7 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
             "The running installation changed during build; stopped before migration.")
     recheck_discovered_inputs(args, current)
     database_identity(current["postgres"], args.expected_database_id)
-    planned = json.loads(run(upgrade + ["config", "--format", "json"]))
+    planned = resolved_compose(upgrade)
     verify_delta(model, planned, overlay)
     for service in manifest["migrations"]:
         print("Applying owned migrations: " + service + ".", flush=True)
@@ -698,6 +1155,12 @@ def main():
     parser.add_argument("--expected-database-id", help="Independently retained production PostgreSQL system identifier")
     parser.add_argument("--discover-existing", action="store_true",
                         help="Read complete ordered environment-file labels and the retained installation database record on the server")
+    parser.add_argument("--capture-baseline", help="Verify mixed service origins and write a new private baseline; no runtime changes")
+    parser.add_argument("--baseline", help="Use a previously captured per-service baseline on the existing Docker host")
+    parser.add_argument("--migration-origin", action="append", default=[],
+                        help="Capture only: owned-service=observed-service whose original model contains that migration")
+    parser.add_argument("--origin-env", action="append", default=[],
+                        help="Capture only: append one private supplemental environment file for a named observed service")
     parser.add_argument("--env-file", action="append", default=[], help="Existing absolute path on the Docker host; repeat in original order")
     parser.add_argument("--host", help="Existing OpenSSH alias or user@hostname")
     parser.add_argument("--project", help="Existing Docker Compose project, if discovery is ambiguous")

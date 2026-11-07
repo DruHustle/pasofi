@@ -1,8 +1,10 @@
 """Isolated exact-restore protocol checks using an in-memory Docker boundary."""
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('restore_under_test', Path(__file__).with_name('deployment-restore.py'))
 RESTORE = importlib.util.module_from_spec(spec)
@@ -12,6 +14,8 @@ DATABASE_ID = '1234567890123456789'
 BACKUP_LABEL = '20261106-000001F_20261106-140001D'
 LEDGER_ROWS = [{'name': '001_initial.sql', 'checksum': 'b' * 64}]
 LEDGERS = {name: {'001_initial.sql': 'b' * 64} for name in RESTORE.DATABASES}
+FIXTURE_BUCKET = 'pasofi-disposable-repository-fixture'
+FIXTURE_BUCKET_SHA256 = hashlib.sha256(FIXTURE_BUCKET.encode()).hexdigest()
 
 
 class DockerBoundary:
@@ -89,8 +93,12 @@ class DockerBoundary:
 
 
 class ExactRestoreTests(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(patch.object(RESTORE, 'BUCKET_SHA256', FIXTURE_BUCKET_SHA256))
+
     def invoke(self, docker, **overrides):
-        args = dict(image=IMAGE, backup_label=BACKUP_LABEL, expected_id=DATABASE_ID, expected_ledgers=LEDGERS)
+        args = dict(image=IMAGE, backup_label=BACKUP_LABEL, expected_id=DATABASE_ID, expected_ledgers=LEDGERS,
+                    bucket=FIXTURE_BUCKET)
         args.update(overrides)
         return RESTORE.restore_exact(docker, **args)
 
@@ -101,8 +109,12 @@ class ExactRestoreTests(unittest.TestCase):
         self.assertEqual(result['image_id'], IMAGE)
         self.assertEqual(result['migration_ledgers'], 'matched_all_five')
         self.assertFalse(result['off_host_recovery_tested'])
+        self.assertEqual(result['repository_bucket_sha256'], FIXTURE_BUCKET_SHA256)
         creates = [argv for argv in docker.calls if argv[:2] == ['docker', 'create']]
         self.assertEqual(len(creates), 3)
+        repository_creates = [argv for argv in creates if '--tmpfs' in argv]
+        self.assertEqual(len(repository_creates), 2)
+        self.assertTrue(all(argv.count('B2_BUCKET=' + FIXTURE_BUCKET) == 1 for argv in repository_creates))
         self.assertTrue(all(IMAGE in argv and '--pull=never' in argv for argv in creates))
         restore = next(argv for argv in creates if any('--set=' in item for item in argv))
         self.assertIn('--set=' + BACKUP_LABEL, restore[-1])
@@ -137,7 +149,9 @@ class ExactRestoreTests(unittest.TestCase):
         self.assertTrue(docker.resources['volume'])
 
     def test_mutable_image_bad_label_missing_ledgers_and_route_overlap_stop_before_creation(self):
-        for overrides in ({'image': 'postgres:latest'}, {'backup_label': BACKUP_LABEL + ';touch bad'}, {'expected_ledgers': {}}):
+        for overrides in ({'image': 'postgres:latest'}, {'backup_label': BACKUP_LABEL + ';touch bad'}, {'expected_ledgers': {}},
+                          {'bucket': 'unapproved-repository'}, {'bucket': None},
+                          {'bucket': FIXTURE_BUCKET + '\nrepo1-path=/elsewhere'}):
             docker = DockerBoundary()
             with self.subTest(overrides=overrides), self.assertRaises(RESTORE.RestoreError):
                 self.invoke(docker, **overrides)
@@ -150,7 +164,7 @@ class ExactRestoreTests(unittest.TestCase):
 
     def test_ownership_mismatch_cannot_delete_foreign_resource(self):
         docker = DockerBoundary()
-        resources = RESTORE.Resources(docker)
+        resources = RESTORE.Resources(docker, FIXTURE_BUCKET)
         foreign = 'f' * 64
         docker.resources['container'][foreign] = {'Id': foreign, 'Name': '/production-postgres',
             'Config': {'Labels': {'pasofi.restore.run': resources.token, 'pasofi.purpose': RESTORE.PURPOSE}}}

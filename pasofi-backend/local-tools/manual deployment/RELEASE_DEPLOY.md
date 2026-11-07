@@ -40,6 +40,58 @@ Repeat with `--apply` after reviewing preflight. To run directly on the existing
 
 Preflight verifies the manifest hash and archive's Git commit, reads the current stack and cluster identity, and checks the proposed Compose merge. It creates temporary staging files but makes **no changes to running containers, images, database contents, secrets or persistent volumes**. No production host is contacted until the operator actually runs the entry point with `--host`.
 
+## Existing services with different Compose origins
+
+Some installations contain independently deployed applications, a separately retained PostgreSQL definition and protected RADIUS services. Their original working directories and overlay lists can legitimately differ. Ordinary automatic discovery still refuses that layout; never relabel or recreate a protected container to make the labels agree.
+
+The direct-server `--capture-baseline` operation verifies those origins separately and prepares a private combined model. It does not apply a release. Run it with the qualified package on the existing Docker host, using an account able to read its protected configuration and database records. Create a new private directory for this operation:
+
+```sh
+mkdir -m 700 baseline-review
+python3 -I -B -S ./release-deploy.py \
+  --manifest ./release.json --archive ./source.tar.gz \
+  --capture-baseline ./baseline-review/baseline.json
+```
+
+Capture checks every current service's exact container/image identity, recorded Compose configuration hash, ordered input files and file hashes. It renders each origin with its own recorded environment files and retains the existing environment, mount, secret, tmpfs, network, DNS-alias and port checks. A missing environment-file label is accepted only for an existing complete staged JSON model; an empty interpolation environment is used, and both its actual rendered hash and runtime configuration must agree. No historical `.env` file is guessed.
+
+An original shared environment file may have changed after an independent service deployment, or its launch may have supplied additional shell variables. After recovering the specific historical values from the observed service and retained installation evidence, an operator can add one explicit private supplemental file for that service during capture:
+
+```sh
+  --origin-env network=/absolute/private/historical-network.env
+```
+
+The file is appended after that service's recorded environment files. It must be mode `0600` inside a private `0700` directory. Capture still requires the exact original recorded Compose service hash, immutable image and all runtime checks to match; this option cannot accept a new configuration. It applies only to the named service's origin, so protected RADIUS qualification inputs cannot change the selected network or prepaid origins. The baseline records both the original input hashes and the supplemental file hash, and rechecks them after locking and before migration. Keep the supplemental file private and unchanged through acceptance and rollback. Neither the existing environment files nor running containers are edited.
+
+A staged JSON runtime definition can omit its migration profile. In that case, explicitly select another **observed and verified** origin that contains the same service's original migration definition. For example, if the current network origin contains both original jobs, add:
+
+```sh
+  --migration-origin identity=network \
+  --migration-origin prepaid-access=network
+```
+
+These options belong to capture only. Each selected job must still be that application's `migrate` command, with the production Node entrypoint, all three required read-only configuration binds, matching production settings and role prefix. The migration URL must identify the same database and retained PostgreSQL endpoint as the current application's mounted runtime URL, using the distinct service-specific migration role. Custom hosts, DNS, links and resolver mounts cannot redirect that endpoint. A read-only query verifies the database owner and the migrator's owner-role membership. Both credential-file hashes are retained privately. No password, resolved environment value or URL is printed. Conflicting shared resource definitions stop capture instead of allowing one service's model to overwrite another.
+
+Successful capture creates three private files beside one another:
+
+- `baseline.json`: per-service provenance, retained database identity and hashes; the source release is fixed.
+- `baseline.json.compose.json`: the verified combined model. **It can contain resolved secrets and must remain private.**
+- `baseline.json.empty.env`: an intentionally empty interpolation input, retained so future Compose labels identify an actual file.
+
+Compose's [JSON serializer](https://github.com/docker/compose/blob/v2.40.3/cmd/compose/config.go) doubles dollar signs for replay, including literal Nginx regular expressions. The coordinator decodes that serialization once before comparing actual runtime values, then escapes values once when writing executable baseline, upgrade and rollback models. It retains exact environment equality and requires an actual Compose rendering to reproduce the verified values before accepting the files. Capture prints the baseline's SHA-256 for the operational record. Review the original service mappings and successful capture result, then run the explicit preflight:
+
+```sh
+python3 -I -B -S ./release-deploy.py \
+  --manifest ./release.json --archive ./source.tar.gz \
+  --baseline ./baseline-review/baseline.json
+```
+
+Repeat that exact command with `--apply` after the preflight passes and the existing release records show no uncertain earlier operation. Baseline mode always qualifies the fresh encrypted backup and exact-label isolated restore before building or migrating, just like `--discover-existing`. It locks every observed working directory, revalidates all service origins after taking the locks and immediately before migration, and preserves the existing phased rollout and protected-container checks. It cannot be combined with `--host`, `--discover-existing`, manually supplied environment files or a caller-supplied database ID.
+
+Both automatic backup helpers pin the approved repository bucket by SHA-256. The existing environment must match that identity before any pgBackRest command, and the active private configuration must match the validated bucket and every other required setting. The same validated bucket is passed to the isolated restore and its SHA-256 is retained in the backup evidence. Changing the repository requires independently reviewed operator provenance; a newly observed bucket or a caller-supplied destination cannot qualify itself. Keep the original backup configuration, credentials and recovery records when correcting stale deployment-tool expectations.
+
+Keep all three baseline files, the original referenced files and the private release record through acceptance and rollback. The record includes the original service provenance. A changed file, credential, image, container or runtime configuration invalidates the captured baseline. Do not edit its hashes to retry an uncertain release: inspect the retained operation record and actual running state. The existing Mac launcher is unchanged; this explicit mode is for an operator already connected to the Docker host.
+
 ## What apply does
 
 1. Repeats preflight and creates a private release/rollback record on the server.
@@ -92,7 +144,7 @@ The placeholders intentionally fail validation. The manifest must come from the 
 ## Local safety tests
 
 ```sh
-python3 -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_release_deploy.py' -v
+python3 -B -m unittest discover -s 'pasofi-backend/local-tools/manual deployment' -p 'test_*.py' -v
 ```
 
-The tests use synthetic archives, Compose models and command mocks. They require no Docker daemon, server connection, credentials or database. They verify refusal paths and the explicit mutation scope; hosted release checks and the operator's production preflight remain required.
+The tests use synthetic archives, Compose models and command mocks. They require no Docker daemon, server connection, credentials or database. The baseline cases exercise independently recorded origins, migration database authority, configuration and credential drift, backup failures, project locks and protected-service preservation. The tests verify refusal paths and the explicit mutation scope; actual Compose rendering, the live database checks and the operator's production preflight remain required.

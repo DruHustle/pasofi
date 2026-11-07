@@ -27,6 +27,8 @@ CONFIG = '/etc/pgbackrest/pgbackrest.conf'
 PGDATA = '/var/lib/postgresql/data/pgdata'
 HELPERS = Path('pasofi-backend/local-tools/manual deployment')
 MARKER = '999_exact_deployment_restore_lab.sql'
+FIXTURE_BUCKET = 'pasofi-owned-posix-repository-fixture'
+FIXTURE_BUCKET_SHA256 = hashlib.sha256(FIXTURE_BUCKET.encode()).hexdigest()
 
 
 class LabError(Exception):
@@ -126,7 +128,7 @@ class Fixture:
                 'The actual fixture configuration is not the inspected encrypted pamofi POSIX configuration.')
         version = self.real(['docker', 'exec', row['Id'], 'pgbackrest', 'version']).strip()
         require(re.fullmatch(r'pgBackRest 2\.57(?:\.0)?', version), 'The lab must exercise pgBackRest 2.57 metadata.')
-        return row['Image']
+        return row['Image'], FIXTURE_BUCKET
 
     def pgbackrest(self, *args):
         # In 2.57, --repo is invalid for the local main role of check. This
@@ -193,7 +195,8 @@ class Fixture:
                 value = options[index + 1]
                 key, _, setting = value.partition('=')
                 if key in production_env:
-                    require(setting == self.backup.KNOWN_CONFIG[key] and key not in dropped_env, 'Unexpected production repository environment in fixture adapter.')
+                    expected = FIXTURE_BUCKET if key == 'B2_BUCKET' else self.backup.KNOWN_CONFIG[key]
+                    require(setting == expected and key not in dropped_env, 'Unexpected production repository environment in fixture adapter.')
                     dropped_env.add(key)
                 else:
                     require((key, setting) in {('PGDATA', PGDATA), ('PGBACKREST_CONFIG', CONFIG)}, 'Unexpected restore environment in fixture adapter.')
@@ -254,10 +257,12 @@ def main():
     def load_fixture_restore(path):
         module, digest = original_loader(path)  # Keep exact pinned helper-byte verification.
         module.CONFIG = CONFIG
+        module.BUCKET_SHA256 = FIXTURE_BUCKET_SHA256
         fixture.restore = module
         return module, digest
 
     backup.BACKUP_CONFIG = CONFIG
+    backup.BUCKET_SHA256 = FIXTURE_BUCKET_SHA256
     backup.configuration = fixture.configuration
     backup.command = fixture.run
     backup.restore_module = load_fixture_restore
@@ -276,6 +281,7 @@ def main():
                     and evidence['backup_label'] != fixture.newer['label'], 'Restore evidence did not retain the captured earlier diff.')
             require(evidence['restore_image_id'] == fixture.image and evidence['cluster_identity'] == 'matched'
                     and evidence['migration_ledgers'] == 'matched_all_five' and evidence['cleanup'] == 'passed'
+                    and evidence['repository_bucket_sha256'] == FIXTURE_BUCKET_SHA256
                     and evidence['off_host_recovery_tested'] is False, 'The real helper evidence is incomplete.')
             require(json.loads((release / 'backup-evidence.json').read_text()) == evidence
                     and (release / 'backup-evidence.json').stat().st_mode & 0o777 == 0o600, 'Captured restore evidence was not written privately.')
