@@ -836,6 +836,7 @@ def plan_overlay(model, source, selected, commit, containers):
 
 def verify_delta(before, after, overlay):
     expected = copy.deepcopy(before)
+    comparable = copy.deepcopy(after)
     for name, change in overlay["services"].items():
         service = expected["services"][name]
         if "image" in change:
@@ -844,7 +845,19 @@ def verify_delta(before, after, overlay):
         service["volumes"] = [replacements.get(v["target"], v) for v in service.get("volumes", [])]
         if not service["volumes"]:
             del service["volumes"]
-    require(expected == after,
+        for volume in comparable.get("services", {}).get(name, {}).get("volumes", []):
+            replacement = replacements.get(volume.get("target"))
+            if (replacement and replacement.get("type") == "bind"
+                    and replacement.get("bind", {}).get("create_host_path") is False):
+                bind = volume.get("bind")
+                if type(bind) is dict:
+                    # Compose's typed JSON omits this false boolean. Restore
+                    # only that representation on an approved replacement;
+                    # the emitted overlay must retain its explicit false.
+                    require("create_host_path" not in bind or bind["create_host_path"] is False,
+                            "Compose changed managed bind path creation; rollout refused.")
+                    bind.setdefault("create_host_path", False)
+    require(expected == comparable,
             "Compose merge changed more than selected images and approved configuration binds; rollout refused.")
 
 
