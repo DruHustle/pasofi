@@ -22,6 +22,10 @@ and supporting accents. Mint actions on dark branded panels are an intentional
 contrast variant. Keep warning/error colors and meanings distinct. Do not use
 purple or neon lime as unrelated brand accents.
 
+Hero emphasis on a blue surface uses the light green `#E9F7EF`, which keeps
+the existing 4.5:1 text-contrast requirement. Soft mint remains a surface
+color paired with dark teal text, rather than small text on primary blue.
+
 The palette is repeated within independently buildable packages; there is no
 cross-repository runtime import. Typography, spacing, responsive breakpoints,
 control dimensions and information architecture remain product-specific.

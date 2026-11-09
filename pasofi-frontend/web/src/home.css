@@ -7,7 +7,7 @@
 .pasofi-home-hero-copy { padding: 17px 12px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; position: relative; z-index: 1; color: #fff; }
 .pasofi-home-hero-copy .pasofi-home-kicker { color: #fff; font-size: 8px; letter-spacing: .5px; margin-bottom: 8px; }
 .pasofi-home-hero h1 { font-size: clamp(25px,6.3vw,38px); line-height: 1.04; letter-spacing: -1px; margin: 0 0 12px; font-weight: 820; color: #fff; }
-.pasofi-home-hero h1 em { font-style: normal; color: var(--home-lime); }
+.pasofi-home-hero h1 em { font-style: normal; color: #e9f7ef; }
 .pasofi-home-hero-copy > p { display: none; }
 .pasofi-home-hero-copy > .pf-button { min-height: 44px; padding: 9px 9px; gap: 6px; max-width: 100%; background: var(--home-lime); border: 1px solid var(--home-lime); color: var(--home-navy); font-size: 11px; line-height: 1.4; border-radius: 8px; white-space: normal; text-align: left; }
 .pasofi-home-hero-copy > .pf-button .pf-icon { width: 14px; height: 14px; flex-shrink: 0; }
