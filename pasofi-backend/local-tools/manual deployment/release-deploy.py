@@ -284,6 +284,24 @@ def file_digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def verify_explicit_empty_environment():
+    # Compose records an explicit --env-file /dev/null in its origin labels.
+    # It is not a regular configuration file and must not select an implicit
+    # .env. Verify only this fixed, root-owned empty device; other paths keep
+    # the existing regular-file hashing and integrity requirements.
+    try:
+        descriptor = os.open("/dev/null", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            metadata = os.fstat(descriptor)
+            require(stat.S_ISCHR(metadata.st_mode) and metadata.st_uid == 0
+                    and os.read(descriptor, 1) == b"",
+                    "The explicit /dev/null environment input is not the expected empty device.")
+        finally:
+            os.close(descriptor)
+    except OSError:
+        raise Refusal("The explicit /dev/null environment input cannot be verified.") from None
+
+
 def canonical_mounts(container):
     # Docker can enumerate its MountPoints map in a different order on each
     # inspect. Bind every mount attribute, but not that incidental list order.
@@ -330,7 +348,10 @@ def origin_record(container):
         return [{"path": item, "sha256": file_digest(item)} for item in items]
 
     files = paths(config)
-    if environment:
+    if environment == "/dev/null":
+        verify_explicit_empty_environment()
+        env_files, mode = [], "explicit-empty-device"
+    elif environment:
         env_files, mode = paths(environment), "recorded-files"
     else:
         # Historical isolated updates used complete JSON models. No .env file

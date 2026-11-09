@@ -6,6 +6,8 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import stat
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -242,6 +244,70 @@ class ServiceBaselineTests(unittest.TestCase):
         self.assertFalse(self.mutating_commands())
         self.backup.assert_not_called()
         self.build.assert_not_called()
+
+    def test_explicit_dev_null_origin_retains_full_capture_and_preflight_checks(self):
+        labels = self.fixture.containers["network"]["Config"]["Labels"]
+        labels[self.engine.LABEL + "project.environment_file"] = "/dev/null"
+        # The synthetic host owns its standard device; the test runner may
+        # itself be inside a user namespace with different device ownership.
+        with patch.object(self.engine, "verify_explicit_empty_environment") as empty_device:
+            self.capture()
+            with self.operations():
+                self.engine.deploy(self.args)
+        self.assertTrue(empty_device.called)
+        record = json.loads(self.path.read_text())["origins"]["network"]
+        self.assertEqual(record["environment_mode"], "explicit-empty-device")
+        self.assertEqual(record["environment_files"], [])
+        source, _ = self.origin("network")
+        commands = [command for command in self.fixture.commands
+                    if "--hash" in command and command[command.index("-f") + 1] == source]
+        self.assertTrue(commands)
+        self.assertTrue(all(command[command.index("--env-file") + 1] == "/dev/null"
+                            for command in commands))
+        self.assertFalse(self.mutating_commands())
+        self.backup.assert_not_called()
+        self.build.assert_not_called()
+
+    def test_explicit_dev_null_does_not_accept_unrecorded_runtime_environment(self):
+        runtime = self.fixture.containers["network"]
+        runtime["Config"]["Labels"][self.engine.LABEL + "project.environment_file"] = "/dev/null"
+        runtime["Config"]["Env"].append("UNRECORDED_RUNTIME_SETTING=synthetic")
+        with self.operations(), patch.object(self.engine, "verify_explicit_empty_environment"), \
+                self.assertRaisesRegex(self.engine.Refusal, "environment differs"):
+            self.engine.deploy(self.args)
+        self.assertFalse(self.path.exists())
+        self.assertFalse(self.mutating_commands())
+        self.backup.assert_not_called()
+
+    def test_explicit_empty_device_verifies_fixed_nofollow_empty_character_device(self):
+        with patch.object(self.engine.os, "open", return_value=77) as opened, \
+                patch.object(self.engine.os, "fstat", return_value=SimpleNamespace(st_mode=stat.S_IFCHR | 0o666, st_uid=0)), \
+                patch.object(self.engine.os, "read", return_value=b"") as read, \
+                patch.object(self.engine.os, "close") as close:
+            self.engine.verify_explicit_empty_environment()
+        opened.assert_called_once_with("/dev/null", self.engine.os.O_RDONLY | self.engine.os.O_NOFOLLOW | self.engine.os.O_NONBLOCK)
+        read.assert_called_once_with(77, 1)
+        close.assert_called_once_with(77)
+
+    def test_explicit_empty_device_refuses_wrong_type_owner_or_nonempty_read(self):
+        for mode, owner, body in ((stat.S_IFREG | 0o600, 0, b""),
+                                  (stat.S_IFCHR | 0o666, 1001, b""),
+                                  (stat.S_IFCHR | 0o666, 0, b"x")):
+            with self.subTest(mode=mode, owner=owner, body_length=len(body)), \
+                    patch.object(self.engine.os, "open", return_value=77), \
+                    patch.object(self.engine.os, "fstat", return_value=SimpleNamespace(st_mode=mode, st_uid=owner)), \
+                    patch.object(self.engine.os, "read", return_value=body), \
+                    patch.object(self.engine.os, "close") as close, \
+                    self.assertRaisesRegex(self.engine.Refusal, "expected empty device"):
+                self.engine.verify_explicit_empty_environment()
+            close.assert_called_once_with(77)
+
+    def test_only_exact_single_dev_null_label_uses_empty_device_mode(self):
+        labels = self.fixture.containers["network"]["Config"]["Labels"]
+        for value in ("/dev/null,/unrecorded.env", "/dev/zero", "/dev/./null"):
+            labels[self.engine.LABEL + "project.environment_file"] = value
+            with self.subTest(label=value), self.assertRaises(self.engine.Refusal):
+                self.engine.origin_record(self.fixture.containers["network"])
 
     def test_real_mount_drift_during_capture_cannot_create_a_baseline(self):
         for change in ({"Source": "/changed/source"}, {"RW": True}, {"Mode": "changed"},
