@@ -91,3 +91,23 @@ enablement flags remain unchanged. See [native connection](../NATIVE_CUSTOMER_CO
 
 Completion requires actual provider and application readbacks. Source changes
 alone do not establish that a domain, origin configuration or session has moved.
+
+## Preserve the accepted origin in later releases
+
+The 2026-11-09 origin handoff left the five application services on their same
+qualified images with the new primary. Identity/prepaid retain both earlier
+websites and the observed `https://api.pasofi.onesa.eu` gateway alias. Preserve
+the current private Compose input copies and candidate overlay referenced by
+the running containers' labels; they are current deployment inputs, not
+disposable staging files. Do not overwrite the historical baseline or deploy
+from it alone, because it contains the earlier per-service primary values.
+
+Before a later application release, use the maintained per-service
+`--capture-baseline` path to verify and record the actual current inputs into a
+new private baseline. It supports the explicit `/dev/null` environment-file
+label as a verified empty device, while retaining exact Compose hashes and
+full runtime-environment, mount, network and database identity checks. It does
+not treat an absent or arbitrary environment file as empty. Baseline capture
+does not apply a release, and an old baseline or recovery receipt is not
+relabelled as current acceptance. Keep the canonical primary and the complete
+bounded alias list through the next normal release plan.
