@@ -1,14 +1,14 @@
 /* Native account primitives. Keep all rules scoped so loading an account cannot
    change the offline preview, global navigation, or the independent web app. */
 .mobile-customer {
-  color: #102b29;
+  color: #103c35;
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   line-height: 1.6;
 }
 .mobile-customer :where(button, input, select, textarea) { font: inherit; }
 .mobile-customer :where(button, a, summary, input, select, textarea):focus-visible { outline: 3px solid #bc780c; outline-offset: 4px; }
 .mobile-customer :where(button:disabled) { opacity: .55; cursor: not-allowed; }
-.mobile-customer :where(h2, h3, h4) { color: #102b29; font-family: inherit; line-height: 1.3; }
+.mobile-customer :where(h2, h3, h4) { color: #103c35; font-family: inherit; line-height: 1.3; }
 .mobile-customer :where(h2) { margin: 0 0 15px; font-size: 27px; font-weight: 750; letter-spacing: -.9px; }
 .mobile-customer :where(h2[tabindex='-1']):focus { outline: none; }
 .mobile-customer :where(h3) { margin: 0 0 13px; font-size: 19px; font-weight: 700; letter-spacing: -.4px; }
@@ -19,21 +19,21 @@
 .mobile-customer :where(.purchase-head > div, .workspace-section-head > div) { min-width: 0; }
 .mobile-customer :where(.eyebrow) { font-size: 10px; line-height: 1.6; letter-spacing: 1.3px; font-weight: 750; color: #4e7169; }
 .mobile-customer :where(.close-button) { display: grid; place-items: center; width: 44px; height: 44px; min-width: 44px; padding: 0; flex-shrink: 0; border: 1px solid #dce7e0; border-radius: 50%; background: #f9fcfa; color: #244f3f; font-size: 25px; }
-.mobile-customer :where(.primary, .secondary) { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 12px 17px; border: 1px solid #00b894; border-radius: 13px; background: #00b894; color: #102b29; font-size: 13px; font-weight: 750; text-align: center; text-decoration: none; line-height: 1.5; }
+.mobile-customer :where(.primary, .secondary) { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 12px 17px; border: 1px solid #075cf5; border-radius: 13px; background: #075cf5; color: #fff; font-size: 13px; font-weight: 750; text-align: center; text-decoration: none; line-height: 1.5; }
 .mobile-customer :where(.secondary) { background: #f5faf7; border-color: #ccded3; color: #275c47; }
 .mobile-customer :where(.text-button) { min-height: 44px; padding: 9px 0; border: 0; background: none; color: #0b7056; font-size: 12px; font-weight: 700; }
 .mobile-customer :where(.purchase-actions) { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }
 .mobile-customer :where(.form-grid, .recovery-form) { display: grid; gap: 19px; margin: 20px 0 0; width: 100%; min-width: 0; }
 .mobile-customer :where(.form-grid fieldset) { display: grid; gap: 18px; min-width: 0; padding: 0; margin: 0; border: 0; }
 .mobile-customer :where(label) { display: grid; gap: 8px; min-width: 0; font-size: 13px; font-weight: 600; color: #36594a; line-height: 1.6; }
-.mobile-customer :where(input, select, textarea) { width: 100%; min-width: 0; max-width: 100%; min-height: 49px; padding: 12px 14px; border: 1px solid #d2e0d7; border-radius: 12px; background: #fbfdfc; color: #102b29; font-size: 16px; }
+.mobile-customer :where(input, select, textarea) { width: 100%; min-width: 0; max-width: 100%; min-height: 49px; padding: 12px 14px; border: 1px solid #d2e0d7; border-radius: 12px; background: #fbfdfc; color: #103c35; font-size: 16px; }
 .mobile-customer :where(input[type='checkbox']) { flex: 0 0 20px; width: 20px; min-width: 20px; height: 20px; min-height: 20px; margin: 2px 0 0; accent-color: #087b5a; }
 .mobile-customer :where(.check-label) { display: flex; align-items: flex-start; gap: 12px; font-weight: 450; font-size: 13px; }
 .mobile-customer :where(.workspace-card) { min-width: 0; padding: 22px; margin-bottom: 20px; border: 1px solid #e0e9e3; border-radius: 20px; background: white; }
 .mobile-customer :where(.workspace-columns) { display: grid; grid-template-columns: 1fr; gap: 20px; }
 .mobile-customer :where(.workspace-tabs) { display: flex; gap: 7px; min-width: 0; }
 .mobile-customer :where(.workspace-tabs button) { flex-shrink: 0; min-height: 44px; padding: 11px 14px; border: 1px solid #dce7e0; border-radius: 23px; background: white; color: #416252; font-size: 12px; font-weight: 650; }
-.mobile-customer :where(.workspace-tabs .selected) { background: #102b29; color: white; border-color: #102b29; }
+.mobile-customer :where(.workspace-tabs .selected) { background: #103c35; color: white; border-color: #103c35; }
 .mobile-customer :where(.notice, .feedback) { margin: 16px 0; padding: 15px 17px; background: #edf6ef; border: 1px solid #d2e6d6; border-radius: 13px; color: #2b5b41; font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
 .mobile-customer :where([role='alert']) { color: #8a3429; }
 .mobile-customer :where(.recovery-box) { min-width: 0; }
