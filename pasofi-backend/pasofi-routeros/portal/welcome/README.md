@@ -1,6 +1,6 @@
-# PasoFi welcome connection
+# Pasofi welcome connection
 
-These small RouterOS templates use the vivid blue PasoFi theme, a local
+These small RouterOS templates use the vivid blue Pasofi theme, a local
 stylesheet and inline Wi-Fi artwork. They require no Internet assets before
 sign-in. When RouterOS reports an eligible trial, `login.html` automatically
 POSTs the standard trial identity to the exact HTTPS hotspot origin. A button
@@ -10,7 +10,7 @@ and paid credentials are never added to external URLs.
 `status.html` displays the router's remaining time. Its countdown returns to the
 login page after expiry, including when a backgrounded browser resumes. The
 router, not JavaScript, must enforce all time/rate limits. After the welcome
-period, the normal screen offers PasoFi; technical login is a collapsed
+period, the normal screen offers Pasofi; technical login is a collapsed
 fallback. `alogin.html` uses a fixed status destination, avoiding arbitrary
 incoming redirect destinations. The same styling covers logout.
 

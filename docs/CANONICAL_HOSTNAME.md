@@ -1,9 +1,9 @@
-# Canonical PasoFi website
+# Canonical Pasofi website
 
 The selected main website is **https://pasofi.mobile.onesa.eu**. It uses the
 existing Vercel `pasofi` project and independent `pasofi-frontend/web` build.
 The existing Onesa API remains **https://api.pasofi.onesa.eu**. This is a
-hostname handoff; it does not integrate PasoFi into Onesa Mobile or change
+hostname handoff; it does not integrate Pasofi into Onesa Mobile or change
 payment, customer-network, native-qualification or staff-access gates.
 
 ## Exact existing configuration contract

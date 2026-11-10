@@ -1,4 +1,4 @@
-# PasoFi native build previews
+# Pasofi native build previews
 
 The mobile source is `pasofi-frontend/mobile`. The checked-in native projects are `android` and `ios`; the Capacitor application ID is `com.onesa.pasofi`. There is no separate `pamofi-mobile` source folder.
 

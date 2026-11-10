@@ -1,4 +1,4 @@
-# PamoFi help
+# Pasofi help
 
 The assistant provides reviewed public guidance with no model dependency. It explains bundle timing/data accounting, pending payments, top-ups, voucher use, recovery, key replacement, shared-browser sign-out and preview limits.
 

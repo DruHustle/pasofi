@@ -1,8 +1,8 @@
-# Check PasoFi remote access from a Mac
+# Check Pasofi remote access from a Mac
 
 `Check_PasoFi_Remote.command` checks the **explicit devices in a private owner-management manifest**. It helps establish whether your Mac can reach their management ports through the intended Tailscale hub. Use the normal WebFig, WinBox, Tenda or Mercusys interface to sign in, troubleshoot and manage firmware.
 
-This is separate from `Start_PasoFi.command`. It does not deploy PasoFi, contact the Onesa SSH aliases, install or configure a VPN, change a router, or perform upgrades. The site tunnel, hub, approved routes and owner access policy must already be in place. The [network planner](../network/README.md) prepares those changes for review; it does not make them live.
+This is separate from `Start_PasoFi.command`. It does not deploy Pasofi, contact the Onesa SSH aliases, install or configure a VPN, change a router, or perform upgrades. The site tunnel, hub, approved routes and owner access policy must already be in place. The [network planner](../network/README.md) prepares those changes for review; it does not make them live.
 
 ## Run it
 
@@ -22,7 +22,7 @@ For an actual test from another network, unplug Ethernet and connect your Mac to
 ./Check_PasoFi_Remote.command "/path/to/owner-targets.json" --different-wifi
 ```
 
-The checker observes the active network interfaces and default route. **Wi-Fi with no Ethernet does not prove you are outside the PasoFi site.** `--different-wifi` is recorded as your report, not independent location verification.
+The checker observes the active network interfaces and default route. **Wi-Fi with no Ethernet does not prove you are outside the Pasofi site.** `--different-wifi` is recorded as your report, not independent location verification.
 
 Optional actions are explicit:
 

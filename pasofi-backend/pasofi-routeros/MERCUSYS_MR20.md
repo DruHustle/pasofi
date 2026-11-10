@@ -1,4 +1,4 @@
-# Mercusys MR20 access points behind a PasoFi gateway
+# Mercusys MR20 access points behind a Pasofi gateway
 
 Use the MR20 as an access point on an inspected MikroTik customer network.
 The MikroTik remains responsible for captive login, RADIUS and quota enforcement.
@@ -27,7 +27,7 @@ instructions that match the inspected hardware and firmware.
 | --- | --- |
 | MikroTik gateway | Customer addressing, HotSpot, trusted HTTPS login, private RADIUS transport, metering and enforcement |
 | MR20 access point | Forward each wireless client's traffic onto the selected customer network |
-| PasoFi backend | Customer identity, paid entitlement, accounting ledger and authorized operations |
+| Pasofi backend | Customer identity, paid entitlement, accounting ledger and authorized operations |
 
 An extra NAT layer between phones and their HotSpot gateway can conceal
 individual downstream clients. Verify transparent forwarding with two actual

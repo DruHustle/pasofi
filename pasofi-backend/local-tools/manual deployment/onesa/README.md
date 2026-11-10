@@ -1,4 +1,4 @@
-# Onesa PamoFi backup operations
+# Onesa Pasofi backup operations
 
 These scripts record the PamoFi-specific scheduler installed on the owner's Onesa UG Backend. They require Linux, Docker, systemd, passwordless sudo, the existing `pamofi-production-postgres-1` container, and the protected production configuration under `/home/ubuntu/pamofi/production`. They do not initialize the database, create credentials, activate the backup overlay, or configure the public API.
 
@@ -17,7 +17,9 @@ The script uses a fixed private drill subnet `10.245.244.0/24` and refuses an ov
 
 ## HTTPS and operational alerts
 
-The PamoFi deployment uses a Vercel frontend at `https://pamofi.onesa.eu` and an API at `https://api.pamofi.onesa.eu`, with the API DNS-only record pointing to Onesa UG Backend. The public gateway uses the static private address `10.245.242.10` and publishes TCP 443 only. Oracle's PamoFi-specific security group permits TCP 80 for certificate validation and TCP 443 for the authenticated gateway. The host firewall accepts port 443 only for that gateway address; TCP 80 is opened temporarily by the certificate scripts during validation. These scripts do not attach the Oracle security group or alter unrelated Onesa firewall rules.
+The following domain and provisioned-name references describe the original installation retained by these scripts. The current customer website is `https://pasofi.mobile.onesa.eu`; its current gateway origin is `https://api.pasofi.onesa.eu`. Confirm the installed lineage and scheduler before applying these historical installers; a product-name correction does not migrate certificates, DNS, firewall rules or existing unit names.
+
+The original deployment used a Vercel frontend at `https://pamofi.onesa.eu` and an API at `https://api.pamofi.onesa.eu`, with the API DNS-only record pointing to Onesa UG Backend. The public gateway uses the static private address `10.245.242.10` and publishes TCP 443 only. Oracle's PamoFi-specific security group permits TCP 80 for certificate validation and TCP 443 for the authenticated gateway. The host firewall accepts port 443 only for that gateway address; TCP 80 is opened temporarily by the certificate scripts during validation. These scripts do not attach the Oracle security group or alter unrelated Onesa firewall rules.
 
 `issue-certificate.sh` records the historical initial, root-run, one-time certificate issuance procedure. `issue-api-certificate.sh` records the subsequent API-only certificate issuance; use the API-only lineage for renewals because the website hostname points to Vercel. It refuses existing certificate files and requires the DNS record and Oracle security group to be configured first. `install-https-operations.sh` installs the PamoFi firewall rule and daily renewal timer, refusing to overwrite existing units. Its renewal procedure checks the exact hostname and certificate/key match and recreates only the PamoFi gateway when the certificate changes. The operator must separately verify public DNS, certificate trust, authenticated-proxy denial, and a staging renewal before go-live. The certificate, ACME account key, and app secrets belong in an encrypted independent recovery copy; never include the one-time administrator password.
 

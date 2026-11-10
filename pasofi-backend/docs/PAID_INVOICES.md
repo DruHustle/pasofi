@@ -1,4 +1,4 @@
-# PasoFi paid invoices
+# Pasofi paid invoices
 
 ## What this release adds
 

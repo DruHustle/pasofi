@@ -21,7 +21,7 @@ Do not paste a generic router setup or apply public demo credentials to the live
 
 ## HotSpot authentication contract
 
-PasoFi's current RADIUS authority accepts `User-Name`, `User-Password` (PAP) and `Acct-Session-Id`. The production FreeRADIUS client also requires `Message-Authenticator`, a source-matched NAS `/32` and that NAS's independent shared secret. RADIUS travels inside the private encrypted site tunnel; FreeRADIUS then uses mutually authenticated TLS to reach the authority. CHAP, EAP and MSCHAP are unsupported and must fail closed.
+Pasofi's current RADIUS authority accepts `User-Name`, `User-Password` (PAP) and `Acct-Session-Id`. The production FreeRADIUS client also requires `Message-Authenticator`, a source-matched NAS `/32` and that NAS's independent shared secret. RADIUS travels inside the private encrypted site tunnel; FreeRADIUS then uses mutually authenticated TLS to reach the authority. CHAP, EAP and MSCHAP are unsupported and must fail closed.
 
 Prepare a **trusted HTTPS-only paid customer login** for the later hardware test: the selected HotSpot profile must include `https` in `login-by`, its matching `ssl-certificate`, `use-radius=yes` and the exact registered HTTPS `/login` address. Keep customer credentials in the HTTPS POST body. The web and mobile clients either open that registered page for manual entry or, when separately allowed, POST the same username/password fields directly. They do not calculate a CHAP response. RouterOS's default `http-chap,cookie` profile does not match this contract; plaintext `http-pap` is not an acceptable substitute. MAC-based and automatic cookie login must not bypass the qualified paid credential flow.
 

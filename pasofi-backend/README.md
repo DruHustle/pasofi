@@ -1,6 +1,6 @@
-# PasoFi backend
+# Pasofi backend
 
-PasoFi Wi-Fi Hotspot by Onesa. Five independent services implement customer identity, staff/MFA, site-scoped commerce, prepaid accounting, delivery and network lifecycle authority. **The source and isolated journeys are implemented; live service activation still requires provider, router and deployment qualification.**
+Pasofi Wi-Fi Hotspot by Onesa. Five independent services implement customer identity, staff/MFA, site-scoped commerce, prepaid accounting, delivery and network lifecycle authority. **The source and isolated journeys are implemented; live service activation still requires provider, router and deployment qualification.**
 
 The web application exposes customer vouchers/private receipts, gated checkout and verified status, recovery/handoff, staff password/MFA and pending approval, assigned-site agent stock/sales, and administrator catalogue/allocation/audit/network review. The strict browser gate exercises a real isolated administrator-to-agent-to-customer sale and redemption journey, alongside failure mocks. Network disconnect/reconciliation and delivery workers have independent service tests. Actual payment, SMS and physical hotspot acceptance remain disabled until explicitly qualified; no source change creates a merchant account, public host or live customer connection.
 

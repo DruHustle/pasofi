@@ -1,4 +1,4 @@
-# Upgrade an existing PasoFi Oracle installation
+# Upgrade an existing Pasofi Oracle installation
 
 This tool upgrades the existing Docker Compose installation from a qualified, pinned source archive. Run preflight first, review its service list, and repeat the same command with `--apply`. It does not install a new database or choose new credentials, ports, domains, delivery providers, or launch gates.
 
@@ -12,7 +12,7 @@ This tool upgrades the existing Docker Compose installation from a qualified, pi
 - The independently retained PostgreSQL **system identifier** from the installation/backup record. This identifies the cluster, not a database name or container ID. If that record is missing, independently establish the correct production cluster before deployment; do not copy whatever ID an unfamiliar server happens to return.
 - A recent successful protected database backup and enough free disk space for the source, locked dependency installs, new images and old rollback images. Keep the backup and restore evidence with normal operations records.
 
-The script discovers the actual project, working directory and ordered Compose files from existing Docker labels. If more than one PasoFi project exists, add `--project EXISTING_PROJECT`. It retains every overlay, including RADIUS, router control, captive portal, mail and other existing qualified configuration. It stops when labels are missing, paths no longer exist, overlay orders conflict, or the rendered configuration differs from running mounts, environment, networks or ports. Resolve that specific installation mismatch rather than replacing the stack with a base Compose file.
+The script discovers the actual project, working directory and ordered Compose files from existing Docker labels. If more than one Pasofi project exists, add `--project EXISTING_PROJECT`. It retains every overlay, including RADIUS, router control, captive portal, mail and other existing qualified configuration. It stops when labels are missing, paths no longer exist, overlay orders conflict, or the rendered configuration differs from running mounts, environment, networks or ports. Resolve that specific installation mismatch rather than replacing the stack with a base Compose file.
 
 ## Windows CMD
 

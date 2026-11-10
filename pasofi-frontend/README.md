@@ -1,4 +1,4 @@
-# PasoFi frontends
+# Pasofi frontends
 
 The web and mobile applications are independent projects with separate dependencies, source and builds:
 

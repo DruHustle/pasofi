@@ -1,4 +1,4 @@
-# Load the PasoFi router scripts with WinBox
+# Load the Pasofi router scripts with WinBox
 
 These files prepare and inspect the two routers. **They do not enable prepaid
 Wi-Fi or complete a sale.** Customer access must stay disabled until the actual
@@ -28,13 +28,13 @@ IPv4/IPv6 forwarding drops. The correction has not yet been syntax-checked or
 run on the router. A configured walled-garden entry can allow the local proxy
 to reach destinations through the router, so do not add such entries during
 this isolated test. The correction does not fix certificates or install the
-PasoFi welcome page. See MikroTik's [HotSpot customization documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/87162881/Hotspot+customisation).
+Pasofi welcome page. See MikroTik's [HotSpot customization documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/87162881/Hotspot+customisation).
 
 The temporary pilot was subsequently rolled back: inspection showed only the
 earlier inactive isolation rules, and the short check again reported that the
 pilot bridge, Wi-Fi, DHCP, HotSpot and RADIUS client were disabled. Do not run
 the incremental captive-detection correction against this state. The prepared
-[PasoFi hostname pilot](site-01/pasofi-kuwadzana-pilot-v2.rsc) requires the
+[Pasofi hostname pilot](site-01/pasofi-kuwadzana-pilot-v2.rsc) requires the
 reviewed transition certificate and private key to be imported on the router
 first. On the owner's Mac, `python3 pasofi-backend/pasofi-routeros/site-01/prepare-pasofi-certificate.py`
 creates a password-encrypted bundle in a private temporary directory using the
@@ -71,7 +71,7 @@ FastTrack. It does not open guest internet, publish vouchers, or enable cash
 sales; pilot DNS queries can still be resolved through the router. The HotSpot
 still uses the previously installed `pamofi` certificate and
 hostname; replacing them requires installing the transition certificate and
-requalifying the client flow. The PasoFi welcome handoff is not installed.
+requalifying the client flow. The Pasofi welcome handoff is not installed.
 Press Ctrl+D in the same Safe Mode terminal after the test to roll it back. On
 error, press Ctrl+D; if the terminal disconnects or stops responding, do not
 retry before inspecting the router. A dry run validates syntax only, and the
@@ -86,7 +86,7 @@ been inspected**. Its individual HotSpot and torrent components were previously
 imported on Site 1. The Lawfield script has not yet been dry-run on its router.
 Don't run the Lawfield file on the Kuwadzana router.
 
-After that restart, a read-only WebFig inspection found the PamoFi WireGuard
+After that restart, a read-only WebFig inspection found the Pasofi WireGuard
 interface running; the pilot bridge, radio, DHCP server, HotSpot and RADIUS
 client were disabled. The two common-port torrent rules and four IPv4 pilot
 drop rules were present but inactive while the pilot bridge was disabled. The
@@ -121,7 +121,7 @@ but does not change or repair them.
    password securely, and download the backup to a separate device. Keep an
    independent way to reconnect. Do not reset the router.
 3. Confirm that the proposed script is appropriate for the router's current
-   state. The Kuwadzana file expects its existing PamoFi tunnel, disabled
+   state. The Kuwadzana file expects its existing Pasofi tunnel, disabled
    pilot bridge and radio, gateway, disabled DHCP and RADIUS client, and the
    reviewed certificate. It fails rather than create missing prerequisites.
    The Lawfield file refuses either an existing `pamofi-service` or `pasofi-service` interface, or a

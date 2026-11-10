@@ -6,18 +6,18 @@ rechecked before purchasing, resizing, deleting or migrating resources.
 
 ## Current deployment
 
-PamoFi production runs on the shared **Onesa UG Backend** alongside other Onesa
+Pasofi production runs on the shared **Onesa UG Backend** alongside other Onesa
 services. Its frontend remains on Vercel. Oracle currently has these instances:
 
 | Instance | Shape | Allocated compute | Boot volume | Network |
 | --- | --- | --- | --- | --- |
 | Onesa UG Backend | ARM A1 Flex | 1 OCPU, 6 GB RAM | 100 GB | `onesa-portal-worker-vcn` |
 | Software Engineering Backend | ARM A1 Flex | 1 OCPU, 6 GB RAM | 50 GB | `software-engineering-backend-vcn` |
-| PamoFi Backend | AMD E2.1.Micro | Micro, 1 GB RAM | 50 GB | `software-engineering-backend-vcn` |
+| `PamoFi Backend` | AMD E2.1.Micro | Micro, 1 GB RAM | 50 GB | `software-engineering-backend-vcn` |
 
-The separate PamoFi Backend instance is not the current PamoFi production
+The separate `PamoFi Backend` instance is not the current Pasofi production
 host. OCI allows more than one instance per VCN; dedicated VCNs are an isolation
-choice, not a requirement. The owner asked to keep PamoFi production on the
+choice, not a requirement. The owner asked to keep Pasofi production on the
 Onesa VM and not to rename the VCN. Its hostname, VCN and subnet names may
 still reference the older portal-worker purpose; changing those names requires
 separate impact review because other Onesa services use the same host.
@@ -37,7 +37,7 @@ The two existing ARM instances together allocate 2 OCPUs and 12 GB, matching
 the documented continuous Free Tier ARM allowance. The three identified boot
 volumes total 200 GB, and the regional Always Free storage quota reported zero
 remaining. Oracle reported one additional AMD Micro slot in the
-PamoFi VM's availability domain, but another VM also needs a boot volume and
+`PamoFi Backend` VM's availability domain, but another VM also needs a boot volume and
 physical capacity. A general service quota being available is not evidence
 that additional usage would be free. Do not terminate an instance or delete a
 volume merely to reclaim quota without a separately reviewed recovery plan.

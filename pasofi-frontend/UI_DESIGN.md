@@ -1,6 +1,6 @@
-# PasoFi mobile-first customer experience
+# Pasofi mobile-first customer experience
 
-The customer interface uses PasoFi's identity across the independent web and native mobile projects. The first layout is a phone screen; wider screens expand the same navigation and content rather than introducing a separate customer journey.
+The customer interface uses Pasofi's identity across the independent web and native mobile projects. The first layout is a phone screen; wider screens expand the same navigation and content rather than introducing a separate customer journey.
 
 ## Design system
 

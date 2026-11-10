@@ -1,6 +1,6 @@
 # Operations, release and rollback
 
-These tools operate only on a deliberately configured PamoFi environment. No host, scheduler, alert destination or production deployment is selected by checking them in. Keep the [production role/secret instructions](../production/README.md), [independent backup procedure](../backup-production/README.md) and actual site acceptance record with the release record.
+These tools operate only on a deliberately configured Pasofi environment. No host, scheduler, alert destination or production deployment is selected by checking them in. Keep the [production role/secret instructions](../production/README.md), [independent backup procedure](../backup-production/README.md) and actual site acceptance record with the release record.
 
 For the ordered cash-only opening sequence and current pending physical evidence, use [CASH_HOTSPOT_LAUNCH.md](../../docs/CASH_HOTSPOT_LAUNCH.md). It separates the protected RADIUS authority/ensure timer from the Mac application upgrade, requires real HTTPS session reconciliation and cash-to-reconnect tests, and documents location pause → network issuance pause → accounting/absence drain before transport shutdown.
 

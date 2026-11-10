@@ -1,6 +1,6 @@
 # Architecture
 
-PamoFi separates its independent web and mobile applications from five independently deployable backend services. Each project owns its dependencies and build. Services communicate through scoped APIs and reference-only events; application code never imports another service's implementation or queries its operational database.
+Pasofi separates its independent web and mobile applications from five independently deployable backend services. Each project owns its dependencies and build. Services communicate through scoped APIs and reference-only events; application code never imports another service's implementation or queries its operational database.
 
 ## Service boundaries
 

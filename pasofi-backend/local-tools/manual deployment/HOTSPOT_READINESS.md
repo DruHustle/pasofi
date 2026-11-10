@@ -1,4 +1,4 @@
-# Read the existing PasoFi installation from your Mac
+# Read the existing Pasofi installation from your Mac
 
 Double-click **`hotspot-readiness.command`** in the extracted package. It automatically tries the existing aliases in `mac-connection.json`: `onesa-portal-worker`, then the provided public fallback `onesa-portal-worker-public` if needed. There are no connection prompts.
 
@@ -15,7 +15,7 @@ Python 3.9+, OpenSSH, an available SSH key/agent and trusted server host records
 | Section | Recorded evidence |
 | --- | --- |
 | Connection | Which provided alias connected; fixed sanitized failure categories |
-| Project and stack | Unambiguous existing PasoFi project, working directory and complete ordered Compose files |
+| Project and stack | Unambiguous existing Pasofi project, working directory and complete ordered Compose files |
 | Environment references | Ordered environment-file paths only when all containers carry a consistent record |
 | Database identity | Independently retained identifier compared with the running cluster |
 | Services | Presence, running/health state and recorded source revisions |

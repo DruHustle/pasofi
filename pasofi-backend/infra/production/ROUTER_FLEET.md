@@ -1,10 +1,10 @@
-# One PasoFi administrator login for your routers
+# One Pasofi administrator login for your routers
 
-The **Staff → Admin → Routers** workspace lists the registered PasoFi routers across sites. An approved administrator signs in once, completes the existing MFA step, selects a router, reads its managed settings, previews a change, and applies that saved change. Agent and support accounts cannot use this workspace.
+The **Staff → Admin → Routers** workspace lists the registered Pasofi routers across sites. An approved administrator signs in once, completes the existing MFA step, selects a router, reads its managed settings, previews a change, and applies that saved change. Agent and support accounts cannot use this workspace.
 
-The network service reaches each router through its reviewed private management route. Routers do not need to share a customer LAN, and their local administrator passwords are not copied between devices or delivered to the browser. This feature is central PasoFi administration; it does not make a local RouterOS login a universal password or embed WinBox.
+The network service reaches each router through its reviewed private management route. Routers do not need to share a customer LAN, and their local administrator passwords are not copied between devices or delivered to the browser. This feature is central Pasofi administration; it does not make a local RouterOS login a universal password or embed WinBox.
 
-The implemented device adapter manages **MikroTik RouterOS hotspot gateways**. A Mercusys MR20 used as a downstream access point keeps its separate manufacturer administration interface; its Wi-Fi configuration is not changed through this RouterOS adapter. See [MR20 commissioning](../../pasofi-routeros/MERCUSYS_MR20.md). The gateway can still enforce the PasoFi customer service behind that access point.
+The implemented device adapter manages **MikroTik RouterOS hotspot gateways**. A Mercusys MR20 used as a downstream access point keeps its separate manufacturer administration interface; its Wi-Fi configuration is not changed through this RouterOS adapter. See [MR20 commissioning](../../pasofi-routeros/MERCUSYS_MR20.md). The gateway can still enforce the Pasofi customer service behind that access point.
 
 ## What the first release can change
 

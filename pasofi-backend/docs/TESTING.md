@@ -1,4 +1,4 @@
-# Testing PamoFi
+# Testing Pasofi
 
 The repository has seven independent Node projects: five backend services, the web interface, and the mobile application. Run the repository verification tool from any directory; it resolves all project paths relative to its own file. It never imports application code across project boundaries.
 
@@ -20,7 +20,7 @@ Add `--install` to either integration command when dependencies have not yet bee
 
 ## Create disposable databases
 
-Use a separate local PostgreSQL cluster that contains only synthetic PamoFi test data. Never use a live, staging, shared development, or SSH-forwarded production database. Tests create synthetic customer sessions, purchases, and delivery records. Some tests deliberately terminate their own uniquely named idle database connections to verify recovery. The runner does not drop databases or clear existing application data.
+Use a separate local PostgreSQL cluster that contains only synthetic Pasofi test data. Never use a live, staging, shared development, or SSH-forwarded production database. Tests create synthetic customer sessions, purchases, and delivery records. Some tests deliberately terminate their own uniquely named idle database connections to verify recovery. The runner does not drop databases or clear existing application data.
 
 One example with Docker, from the repository root:
 

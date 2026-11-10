@@ -1,6 +1,6 @@
-# PasoFi Home lifestyle assets
+# Pasofi Home lifestyle assets
 
-Created for the PasoFi home-page redesign on 2026-11-05 using the built-in image-generation tool. These are illustrative fictional lifestyle scenes, not customer testimonials or documentary photographs. No input images, third-party logos, or Vodacom assets were used.
+Created for the Pasofi home-page redesign on 2026-11-05 using the built-in image-generation tool. These are illustrative fictional lifestyle scenes, not customer testimonials or documentary photographs. No input images, third-party logos, or Vodacom assets were used.
 
 The deployed WebP files preserve the complete 1536 × 1024 generated compositions. Conversion used quality 84, method 6, with no crop or content edits. The two delivered web images total less than 330 KB.
 
