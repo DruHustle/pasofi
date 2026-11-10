@@ -7,13 +7,13 @@ let customerOrigin = '';
 if (configured) {
   const url = new URL(configured);
   if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || url.hash || url.pathname !== '/' ||
-      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(url.hostname) || url.hostname.endsWith('.local') || url.hostname.endsWith('.localhost')) throw Error('PasoFi native customer API requires a public HTTPS origin.');
+      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(url.hostname) || url.hostname.endsWith('.local') || url.hostname.endsWith('.localhost')) throw Error('Pasofi native customer API requires a public HTTPS origin.');
   customerOrigin = url.origin;
 }
 
 const config: CapacitorConfig = {
   appId: 'com.onesa.pasofi',
-  appName: 'PasoFi',
+  appName: 'Pasofi',
   webDir: 'dist',
   // Capacitor debug logs otherwise include native call arguments, including a
   // payment's client secret. Keep bridge argument logging disabled in all builds.

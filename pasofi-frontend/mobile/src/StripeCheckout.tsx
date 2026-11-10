@@ -15,7 +15,7 @@ export default function StripeCheckout({payment,owner,amount,disabled,verify,onB
  const [wallet,setWallet]=useState('');
  useEffect(()=>{
   mounted.current=true;generation.current+=1;let current=true;setReady(false);setMessage('');setWallet('');
-  if(!Capacitor.isNativePlatform()||!Capacitor.isPluginAvailable('PasoFiStripe'))setMessage('Secure app payments are available in the installed PasoFi app. Your saved order is unchanged.');
+  if(!Capacitor.isNativePlatform()||!Capacitor.isPluginAvailable('PasoFiStripe'))setMessage('Secure app payments are available in the installed Pasofi app. Your saved order is unchanged.');
   else{
    const {publishableKey,testMode,merchantCountryCode,applePayMerchantId,googlePay}=payment;
    void native.availability({publishableKey,testMode,merchantCountryCode,applePayMerchantId,googlePay}).then(result=>{

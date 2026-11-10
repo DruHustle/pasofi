@@ -12,7 +12,7 @@ const changeId = 'c3333333-3333-4333-8333-333333333333';
 const requestKey = 'd4444444-4444-4444-8444-444444444444';
 const origin = 'https://pasofi.example.test';
 const secret = 'test_private_network_signing_secret_32bytes';
-const preview = {targetKey: 'identity', expectedRevision: 'a'.repeat(64), values: {name: 'PasoFi Central'}, reason: 'Reviewed identity label change'};
+const preview = {targetKey: 'identity', expectedRevision: 'a'.repeat(64), values: {name: 'Pasofi Central'}, reason: 'Reviewed identity label change'};
 
 async function fixture(fn) {
   const saved = {...process.env}; const events = []; let networkBehavior;

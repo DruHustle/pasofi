@@ -86,7 +86,7 @@ public final class PasoFiStripePlugin: CAPPlugin, CAPBridgedPlugin {
                 // Use a per-presentation API client, not mutable shared key state.
                 var configuration = PaymentSheet.Configuration()
                 configuration.apiClient = STPAPIClient(publishableKey: options.publishableKey)
-                configuration.merchantDisplayName = "PasoFi"
+                configuration.merchantDisplayName = "Pasofi"
                 configuration.returnURL = Self.returnURL
                 configuration.allowsDelayedPaymentMethods = false
                 configuration.link = .init(display: .never)

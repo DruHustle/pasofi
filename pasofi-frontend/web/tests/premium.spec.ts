@@ -163,7 +163,7 @@ test('cross-tab sign-out returns private History to usable Home without silently
 test('the captive entry is lightweight and reaches voucher redemption without registration', async ({ page }, testInfo) => {
   const state = await fixture(page, { guest: true, queued: true });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/connect');
-  await expect(page.getByRole('heading', { name: 'Connect to PasoFi' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connect to Pasofi' })).toBeVisible();
   await expect(page.locator('img[src*="pamofi-everyday-connection"]')).toHaveCount(0);
   expect(state.sessionCreates).toBe(0); await noOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('captive-390.png'), fullPage: true });

@@ -204,7 +204,7 @@ test('network credentials are private and prepared access stays unconnected unti
 test('handoff requires explicit consent and refuses a mismatched or blocked resulting cookie', async ({ page }) => {
   const code = 'h'.repeat(43); let requests = 0;
   await mock(page, async (route, path) => { if (path === '/api/handoff/redeem') { requests++; expect(route.request().postDataJSON()).toEqual({ handoffCode: code }); await json(route, { customerId: agentId }); return true; } return false; });
-  await page.goto('/handoff'); await page.getByLabel('One-time handoff code').fill(code); await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled(); expect(requests).toBe(0); await page.getByRole('checkbox', { name: /my own PasoFi account/ }).check(); await page.getByRole('button', { name: 'Accept account handoff' }).click(); await expect(page.getByRole('alert')).toContainText('did not keep the transferred session'); expect(page.url()).not.toContain(code);
+  await page.goto('/handoff'); await page.getByLabel('One-time handoff code').fill(code); await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled(); expect(requests).toBe(0); await page.getByRole('checkbox', { name: /my own Pasofi account/ }).check(); await page.getByRole('button', { name: 'Accept account handoff' }).click(); await expect(page.getByRole('alert')).toContainText('did not keep the transferred session'); expect(page.url()).not.toContain(code);
 });
 
 for (const phase of ['initial session', 'MFA confirmation'] as const) {
@@ -558,7 +558,7 @@ test('an approved agent can inspect assigned stock before sales are enabled', as
   expect(writes).toEqual([]);
 });
 
-test('registered PasoFi hotspot connects by HTTPS POST without retyping a network name or exposing secrets in URLs', async ({ page }) => {
+test('registered Pasofi hotspot connects by HTTPS POST without retyping a network name or exposing secrets in URLs', async ({ page }) => {
   const loginUrl = 'https://hotspot.pasofi.onesa.eu/login';
   await mock(page, async (route, path) => {
     if (path === '/api/capabilities') { await json(route, { ...capabilities, networkAccess: true }); return true; }

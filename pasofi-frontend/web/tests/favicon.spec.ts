@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 for (const entry of ['/', '/connect']) {
-  test(`PasoFi icons load without an account or working API at ${entry}`, async ({ page }) => {
+  test(`Pasofi icons load without an account or working API at ${entry}`, async ({ page }) => {
     await page.route('**/api/**', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"unavailable"}' }));
     await page.goto(entry);
     await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href', '/favicon.svg');

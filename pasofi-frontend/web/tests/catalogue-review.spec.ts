@@ -95,7 +95,7 @@ test('catalogue refresh preserves sorting and a valid duration, then safely fall
   state.products = []; await refresh(page);
   await expect(count(page)).toHaveText('Showing 0 of 0 bundles');
   await expect(sort(page)).toBeDisabled();
-  await expect(page.getByText('No bundles are published yet. Check back when PasoFi launches.', { exact: true })).toBeVisible();
+  await expect(page.getByText('No bundles are published yet. Check back when Pasofi launches.', { exact: true })).toBeVisible();
   await expect(names(page)).toHaveCount(0);
 
   state.products = [day, month]; await page.getByRole('button', { name: 'Refresh availability', exact: true }).click();

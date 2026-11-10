@@ -91,7 +91,7 @@ test('concurrent workers deliver one exact PDF or invoice link to the mock sink 
 });
 
 test('live email uses one provider send, reconciles by ID, and never resends an ambiguous or crashed submission', { skip: !database }, async () => {
-  const restore = environment({ APP_ENV: 'production', NODE_ENV: 'production', PREPAID_URL: 'https://prepaid.example.test', INVOICE_EMAIL_MODE: 'resend', INVOICE_EMAIL_QUALIFIED: 'true', INVOICE_EMAIL_FROM: 'PasoFi <invoice@example.test>', RESEND_API_KEY: 'synthetic-test-key', INVOICE_SMS_MODE: 'disabled' });
+  const restore = environment({ APP_ENV: 'production', NODE_ENV: 'production', PREPAID_URL: 'https://prepaid.example.test', INVOICE_EMAIL_MODE: 'resend', INVOICE_EMAIL_QUALIFIED: 'true', INVOICE_EMAIL_FROM: 'Pasofi <invoice@example.test>', RESEND_API_KEY: 'synthetic-test-key', INVOICE_SMS_MODE: 'disabled' });
   const pool = new pg.Pool({ connectionString: database, max: 5 }), originalFetch = globalThis.fetch, fixtures = []; let sends = 0, polls = 0, selected, ambiguous = false;
   try {
     globalThis.fetch = async (url, options) => {
