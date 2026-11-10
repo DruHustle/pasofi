@@ -1,4 +1,4 @@
-# PasoFi web frontend
+# Pasofi web frontend
 
 This is the independent React/Vite customer and staff web application. It has its own dependencies and build; it imports no backend source or mobile package. Node.js 22 or newer is required.
 
@@ -97,7 +97,7 @@ Configure Oracle with the [Vercel/Oracle production overlay](../../pasofi-backen
 
 The proxy derives a single canonical IPv4/IPv6 address exclusively from Vercel's [platform `x-vercel-forwarded-for` header](https://vercel.com/docs/headers/request-headers#x-vercel-forwarded-for), sends it as `X-PamoFi-Client-IP`, and replaces all inbound trust headers. It never trusts browser-supplied `X-Forwarded-For`, `X-Real-IP`, authorization or internal service headers. IPv4-mapped IPv6 becomes dotted IPv4 so the Oracle gateway uses the same identity representation. Adding another proxy in front of Vercel or changing Vercel's Trusted Proxy settings requires a new client-identity qualification; the tested topology is browser directly to Vercel.
 
-The handler preserves status, public query strings, JSON bytes, Origin, idempotency keys, and separate `Set-Cookie` headers including expiry/clearing. Only the three production PasoFi cookies pass through. Each returned session cookie must remain host-only `Secure; HttpOnly; SameSite=Lax; Path=/`; no cross-origin CORS or cookie-domain relaxation is introduced. Every proxy response and error carries `no-store` for browsers and CDNs. Requests are limited to 32 KiB, upstream responses to 1 MiB, and the complete operation to eight seconds within a ten-second Vercel function limit. TLS validation remains enabled; redirects are not followed and mutations are never retried by the proxy. A timeout may leave an operation's result unknown, so existing client workflows retain their original idempotency key for an explicit retry.
+The handler preserves status, public query strings, JSON bytes, Origin, idempotency keys, and separate `Set-Cookie` headers including expiry/clearing. Only the three production Pasofi cookies pass through. Each returned session cookie must remain host-only `Secure; HttpOnly; SameSite=Lax; Path=/`; no cross-origin CORS or cookie-domain relaxation is introduced. Every proxy response and error carries `no-store` for browsers and CDNs. Requests are limited to 32 KiB, upstream responses to 1 MiB, and the complete operation to eight seconds within a ten-second Vercel function limit. TLS validation remains enabled; redirects are not followed and mutations are never retried by the proxy. A timeout may leave an operation's result unknown, so existing client workflows retain their original idempotency key for an explicit retry.
 
 ### Vercel qualification
 
@@ -118,7 +118,7 @@ Before accepting a real deployment, verify the function is present in Vercel's b
 
 The default sign-in flow links to the registered HTTPS hotspot page and lets the customer copy short-lived credentials manually. Credentials are never put in a link, URL fragment, browser storage, or query parameter.
 
-The qualified router page must use HTTPS credential login and produce the RADIUS `User-Password` (PAP) contract that PasoFi implements, with RADIUS carried inside the private encrypted site tunnel. The optional form below sends the same username/password fields over HTTPS; it does not perform CHAP. RouterOS's default `http-chap,cookie` profile is therefore not a supported setup. Prepare the trusted-certificate `login-by=https` profile and verify its actual request attributes before enabling customer sign-in; plaintext `http-pap`, CHAP, EAP and MSCHAP are outside the supported flow. See the [RouterOS preparation contract](../../pasofi-backend/pasofi-routeros/README.md#hotspot-authentication-contract).
+The qualified router page must use HTTPS credential login and produce the RADIUS `User-Password` (PAP) contract that Pasofi implements, with RADIUS carried inside the private encrypted site tunnel. The optional form below sends the same username/password fields over HTTPS; it does not perform CHAP. RouterOS's default `http-chap,cookie` profile is therefore not a supported setup. Prepare the trusted-certificate `login-by=https` profile and verify its actual request attributes before enabling customer sign-in; plaintext `http-pap`, CHAP, EAP and MSCHAP are outside the supported flow. See the [RouterOS preparation contract](../../pasofi-backend/pasofi-routeros/README.md#hotspot-authentication-contract).
 
 Optional form POST is disabled unless the build provides an exact JSON array of qualified HTTPS origins, for example:
 
@@ -126,7 +126,7 @@ Optional form POST is disabled unless the build provides an exact JSON array of 
 VITE_PAMOFI_ROUTER_FORM_ORIGINS='["https://hotspot.example.invalid"]' npm run build
 ```
 
-The returned login URL must match the selected registered site's URL, and its origin must match the array before a form appears. The deployment's CSP `form-action` must separately permit the same exact origin. The checked-in Nginx and Vercel CSPs permit `'self'` and the two explicitly registered PasoFi hotspot origins (`https://hotspot.pasofi.onesa.eu` and its legacy `pamofi` hostname); they do not allow arbitrary `https:` form targets. Those same two origins are the UI defaults. A single registered site is displayed without asking the customer to select it again, and the main connection action posts the temporary credentials over HTTPS. Manual copying remains inside a collapsed fallback. This is a public origin allowlist, never a place for a router password or service secret.
+The returned login URL must match the selected registered site's URL, and its origin must match the array before a form appears. The deployment's CSP `form-action` must separately permit the same exact origin. The checked-in Nginx and Vercel CSPs permit `'self'` and the two explicitly registered Pasofi hotspot origins (`https://hotspot.pasofi.onesa.eu` and its legacy `pamofi` hostname); they do not allow arbitrary `https:` form targets. Those same two origins are the UI defaults. A single registered site is displayed without asking the customer to select it again, and the main connection action posts the temporary credentials over HTTPS. Manual copying remains inside a collapsed fallback. This is a public origin allowlist, never a place for a router password or service secret.
 
 ## Verification
 

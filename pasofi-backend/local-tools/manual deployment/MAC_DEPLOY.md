@@ -1,4 +1,4 @@
-# PasoFi automatic Mac deployment
+# Pasofi automatic Mac deployment
 
 **When you are ready to deploy, extract the ZIP and double-click `Start_PasoFi.command`.**
 
@@ -36,7 +36,7 @@ If the SSH key is encrypted, unlock it through your normal Mac SSH agent before 
 
 ## Automatic steps
 
-1. **Check the package and server.** Verify the source checksum and Git commit, discover the single recorded PasoFi project and complete overlay/environment order, and compare the retained database identifier with the running cluster.
+1. **Check the package and server.** Verify the source checksum and Git commit, discover the single recorded Pasofi project and complete overlay/environment order, and compare the retained database identifier with the running cluster.
 2. **Check the proposed deployment.** Verify that the rendered configuration agrees with the existing mounts, networks, ports, environment and protected containers.
 3. **Prove the fresh backup can be restored.** Validate the known encrypted repository and reject pgBackRest environment/include overrides. Create a fresh backup without expiring older sets. Restore that exact captured label, using the running database's immutable image, into a new temporary volume. Verify the retained cluster identity and all five captured migration ledgers. Remove only resources carrying this operation's unique ownership label and expected names. Failure or unconfirmed cleanup stops deployment.
 4. **Build and deploy.** Build from the pinned archive and run the applications' owned pending migrations. Update network first, then prepaid access, then the remaining applications, web and gateways. Each dependency must run its exact built image and pass health and local readiness checks before the next phase starts. Preserve the existing ordered overlays, provider/feature gates, protected PostgreSQL and RADIUS containers, and optional fleet overlay. A mounted captive portal is rebuilt in its dedicated mode.

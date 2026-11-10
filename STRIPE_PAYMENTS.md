@@ -1,6 +1,6 @@
 # Stripe cards, Apple Pay and Google Pay
 
-This integration extends the existing PasoFi checkout, order, reconciliation and
+This integration extends the existing Pasofi checkout, order, reconciliation and
 invoice ledger. It does not enable payments in any running environment. Base
 production Compose still sets `PAMOFI_PAYMENTS_ENABLED=false` and
 `PAMOFI_PAYMENT_MODE=disabled`.
@@ -20,7 +20,7 @@ production Compose still sets `PAMOFI_PAYMENTS_ENABLED=false` and
 3. The web app mounts Stripe's Payment Element for cards. Native apps present
    Stripe PaymentSheet for cards and the available, configured platform wallet.
    Stripe owns card collection and authentication. No raw card number, CVC or
-   wallet token passes through PasoFi's API.
+   wallet token passes through Pasofi's API.
 4. Only the authenticated owner receives the original intent's client secret.
    It remains in component/native-call memory, not URLs, browser storage, database
    rows or logs. Reloading restores the original checkout key and asks the server

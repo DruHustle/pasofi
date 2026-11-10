@@ -1,4 +1,4 @@
-# PamoFi site locations
+# Pasofi site locations
 
 Owner-provided details, recorded 3 November 2026:
 

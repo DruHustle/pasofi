@@ -1,4 +1,4 @@
-# Commission the PasoFi hotspot for cash customers
+# Commission the Pasofi hotspot for cash customers
 
 This is the ordered handoff from the prepared Mac/backend/router software to an observed customer service. Complete it for each actual site. A deployed website, running RADIUS process, sales-location record or passing laboratory test does not establish that a customer can buy, connect, use the purchased allowance, disconnect and reconnect.
 

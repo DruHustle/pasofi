@@ -1,6 +1,6 @@
 # Lawfield Farm router preparation
 
-The Lawfield Farm location exists in PasoFi as an inactive site. The router's
+The Lawfield Farm location exists in Pasofi as an inactive site. The router's
 model, current configuration and uplink have not yet been inspected. Do not
 reuse site 1's router private key, shared RADIUS secret, tunnel address or
 assumptions about its network.

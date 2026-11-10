@@ -40,7 +40,7 @@ The owner has reported **no always-on site helper**. SMIPS hAP lite cannot run a
 
 A dynamic-DNS hostname follows an address change; it does not create inbound reachability or bypass carrier-grade NAT. A DNS name must resolve to the selected public address family. Mixed A/AAAA records can send a client to an unreachable family. Check the real client behavior and re-test after an ISP address/prefix change.
 
-**Scope:** this is owner access to the router. It does not replace PamoFi's backend, databases, payment processing, private RADIUS path or separately scoped service credentials. A successful phone-to-router VPN does not demonstrate that the backend can reach the NAS or that paid hotspot service is deployed.
+**Scope:** this is owner access to the router. It does not replace Pasofi's backend, databases, payment processing, private RADIUS path or separately scoped service credentials. A successful phone-to-router VPN does not demonstrate that the backend can reach the NAS or that paid hotspot service is deployed.
 
 ## Assess the observations without inventing a result
 

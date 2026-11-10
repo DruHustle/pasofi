@@ -1,7 +1,7 @@
 # Hotspot certificate host-copy monitoring
 
 `check.sh` validates the Oracle-hosted public certificate's hostname and warns
-at 30 days to expiry. The service uses the existing PamoFi `OnFailure` alert
+at 30 days to expiry. The service uses the existing Pasofi `OnFailure` alert
 path, and its timer checks daily. Install the script root-owned and executable
 at `/usr/local/sbin/pamofi-hotspot-cert-check` and install the two units under
 `/etc/systemd/system` only after reviewing their paths and the alert service.

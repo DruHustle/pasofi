@@ -185,7 +185,7 @@ Docker networks and tunnel. The check refuses changed definitions, requires
 the site guard and WireGuard services, checks the private RADIUS certificates
 for 30 days' remaining life, starts stopped reviewed containers and confirms
 the authority's health and exact UDP listeners. Failures use the existing
-PamoFi alert service. It does not test a NAS packet or customer access.
+Pasofi alert service. It does not test a NAS packet or customer access.
 
 The timer intentionally restarts those exact stopped containers every five
 minutes. Disable and stop the timer before planned RADIUS shutdown or rollback.
