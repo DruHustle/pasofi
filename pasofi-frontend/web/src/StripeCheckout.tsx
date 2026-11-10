@@ -33,7 +33,7 @@ export default function StripeCheckout({payment,owner,amount,disabled,verify,onB
   setBusy(true);onBusy(true);setMessage('');
   try{
    const id=await verify();if(!current()||id!==owner)return;
-   // Stripe's iframe owns card collection and 3DS. No card data reaches PasoFi.
+   // Stripe's iframe owns card collection and 3DS. No card data reaches Pasofi.
    // Client completion never grants access; read the authoritative order next.
    const result=await client.confirmPayment({elements:form,redirect:'if_required'});
    if(!current())return;

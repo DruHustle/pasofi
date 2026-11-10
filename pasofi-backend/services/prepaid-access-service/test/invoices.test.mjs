@@ -7,7 +7,7 @@ import {normalizeInvoiceDelivery,invoiceDeliveryDetails,invoiceTokenHash} from '
 import {seal} from '../dist/delivery-crypto.js';
 
 export const sampleInvoice={schemaVersion:1,number:'PFI-0000000042',issuedAt:'2026-11-06T12:30:00.000Z',paidAt:'2026-11-06T12:29:55.000Z',
- operator:{name:'Onesa',brand:'PasoFi',address:'3964 98th Crescent Kuwadzana 5',supportPhone:'+263 715 092 221'},
+ operator:{name:'Onesa',brand:'Pasofi',address:'3964 98th Crescent Kuwadzana 5',supportPhone:'+263 715 092 221'},
  source:{type:'cash',id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',siteName:'Sample location'},
  line:{bundleId:'month-100gb-v2',description:'Prepaid Wi-Fi data',quantity:1,byteLimit:'100000000000',validitySeconds:2592000,unitAmountMinor:1000,totalMinor:1000},
  payment:{method:'cash',evidence:'agent_attestation',reference:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',provider:null},currency:'USD',totalMinor:1000,simulation:false,notice:'Not a ZIMRA fiscal tax invoice.'};
@@ -37,7 +37,7 @@ test('invoice contacts are optional, bounded and normalized without allowing hea
 });
 test('PDF stores the invoice number, exact payment and allowance with fiscal and credential boundaries',async()=>{
  const bytes=await renderInvoicePdf(sampleInvoice),doc=await PDFDocument.load(bytes);
- assert.equal(bytes.subarray(0,5).toString(),'%PDF-');assert.equal(doc.getPageCount(),1);assert.equal(doc.getTitle(),'PFI-0000000042 - PasoFi paid invoice');
+ assert.equal(bytes.subarray(0,5).toString(),'%PDF-');assert.equal(doc.getPageCount(),1);assert.equal(doc.getTitle(),'PFI-0000000042 - Pasofi paid invoice');
  assert.equal(doc.getCreationDate().toISOString(),sampleInvoice.issuedAt);
  const {words,content}=renderedText(doc);
  for(const expected of ['PAID INVOICE','PFI-0000000042','Onesa','3964 98th Crescent Kuwadzana 5','USD 10.00','100 GB - 30 days','Cash received and confirmed','Not a ZIMRA fiscal tax invoice.'])assert.ok(words.includes(expected),expected);

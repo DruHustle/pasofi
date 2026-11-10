@@ -53,7 +53,7 @@ test('Onesa sender examples remain disabled and preserve the existing qualified 
       await delivery.send('staff@example.test', 'A'.repeat(43));
       assert.equal(messages.at(-1).from, sender);
       assert.equal(messages.at(-1).requireTLSExtensionEnabled, true);
-      assert.equal(messages.at(-1).subject, 'PasoFi staff password recovery');
+      assert.equal(messages.at(-1).subject, 'Pasofi staff password recovery');
       assert.ok(messages.at(-1).text.includes(`Your single-use code is: ${'A'.repeat(43)}`));
       assert.ok(messages.at(-1).html.includes('Recover your staff account'));
       assert.ok(messages.at(-1).html.includes('href="https://pasofi.example.test/#staff"'));

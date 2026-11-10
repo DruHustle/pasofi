@@ -8,7 +8,7 @@ import {validateFleetRows} from '../dist/fleet-routeros.js';
 export async function fleetFixture(nasId='11111111-1111-4111-8111-111111111111'){
  const dir=mkdtempSync(join(tmpdir(),'pasofi-fleet-')),file=name=>join(dir,name);
  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',file('key'),'-out',file('cert'),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=IP:127.0.0.1'],{stdio:'ignore'});
- const state={serial:'TEST-SERIAL-123',identity:'PasoFi test',model:'hAP lite',version:'7.25.1',comment:'Customer access point',ssid:'PasoFi',wifiSsid:'PasoFi modern',disabled:false,rate:'5M/5M',idle:'5m',keepalive:'2m',mode:'normal',pending:null,pendingCompletion:null,cancelPending:null,requests:[],writes:0};
+ const state={serial:'TEST-SERIAL-123',identity:'Pasofi test',model:'hAP lite',version:'7.25.1',comment:'Customer access point',ssid:'Pasofi',wifiSsid:'Pasofi modern',disabled:false,rate:'5M/5M',idle:'5m',keepalive:'2m',mode:'normal',pending:null,pendingCompletion:null,cancelPending:null,requests:[],writes:0};
  const server=https.createServer({key:readFileSync(file('key')),cert:readFileSync(file('cert'))},async(request,response)=>{
   const path=new URL(request.url,'https://router.invalid');
   const entry={method:request.method,path:path.pathname,query:Object.fromEntries(path.searchParams),authorization:request.headers.authorization,body:null};state.requests.push(entry);

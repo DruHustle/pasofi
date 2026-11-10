@@ -24,8 +24,8 @@ export class ResendInvoiceAdapter {
       const response = await this.fetcher('https://api.resend.com/emails', {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(8000),
         headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json', 'idempotency-key': `pasofi-invoice/${input.id}` },
-        body: JSON.stringify({ from: input.from, to: [input.to], subject: `PasoFi paid invoice ${input.number}`,
-          text: `Thank you for your payment. Your PasoFi paid invoice ${input.number} is attached. Keep it for your records. This payment record is not a ZIMRA fiscal tax invoice.`,
+        body: JSON.stringify({ from: input.from, to: [input.to], subject: `Pasofi paid invoice ${input.number}`,
+          text: `Thank you for your payment. Your Pasofi paid invoice ${input.number} is attached. Keep it for your records. This payment record is not a ZIMRA fiscal tax invoice.`,
           attachments: [{ filename: input.filename, content: input.pdf.toString('base64') }],
           tags: [{ name: 'category', value: 'paid-invoice' }],
         }),

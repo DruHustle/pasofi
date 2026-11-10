@@ -18,20 +18,20 @@ const routers = [
   { id: unconfiguredId, siteId, siteName: 'Market Square', clientName: 'New router', customerNetworkEnabled: false, configured: false, writesEnabled: false },
 ];
 const fields = [{ key: 'name', label: 'Router name', type: 'text', maxLength: 64, help: '1–64 UTF-8 bytes.' }];
-function snapshot(id = routerId, name = id === routerId ? 'PasoFi Market' : 'PasoFi College') {
+function snapshot(id = routerId, name = id === routerId ? 'Pasofi Market' : 'Pasofi College') {
   return { router: routers.find(router => router.id === id)!, device: { identity: name, model: 'hAP ax²', version: '7.20', serial: 'DEVICE-EXAMPLE' },
-    targets: [{ key: 'identity', kind: 'identity', values: { name }, revision: name === 'PasoFi Market' ? revision : revised, fields }], observedAt: date() };
+    targets: [{ key: 'identity', kind: 'identity', values: { name }, revision: name === 'Pasofi Market' ? revision : revised, fields }], observedAt: date() };
 }
 function change(overrides: Record<string, unknown> = {}) {
   return { id: changeId, nasId: routerId, actorId: staffId, actorVersion: '1', targetKey: 'identity', targetKind: 'identity',
-    before: { name: 'PasoFi Market' }, after: { name: 'PasoFi Market East' }, beforeRevision: revision, afterRevision: revised,
+    before: { name: 'Pasofi Market' }, after: { name: 'Pasofi Market East' }, beforeRevision: revision, afterRevision: revised,
     status: 'prepared', reason: 'Make the site name easier to identify.', createdAt: date(), updatedAt: date(), expiresAt: date(600),
     appliedAt: null, parentChangeId: null, errorCode: null, reconcileAfter: null, ...overrides };
 }
 const json = (route: Route, value: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
 type Handler = (route: Route, path: string, method: string) => Promise<boolean>;
 async function mock(page: Page, handler?: Handler) {
-  const state = { session: { ...staff }, caps: { ...capabilities } as Record<string, unknown>, name: 'PasoFi Market', changes: [] as ReturnType<typeof change>[],
+  const state = { session: { ...staff }, caps: { ...capabilities } as Record<string, unknown>, name: 'Pasofi Market', changes: [] as ReturnType<typeof change>[],
     posts: [] as { path: string; body: unknown; key: string | undefined }[] };
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname, method = route.request().method();
@@ -77,10 +77,10 @@ async function open(page: Page) {
 }
 async function selectMarket(page: Page) {
   await page.getByRole('button', { name: 'Manage Market router at Market Square', exact: true }).click();
-  await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('PasoFi Market');
+  await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('Pasofi Market');
 }
 async function preview(page: Page) {
-  await page.getByLabel('Router name', { exact: false }).fill('PasoFi Market East');
+  await page.getByLabel('Router name', { exact: false }).fill('Pasofi Market East');
   await page.getByLabel('Change reason', { exact: true }).fill('Make the site name easier to identify.');
   await page.getByRole('button', { name: 'Review change', exact: true }).click();
   await expect(page.getByTestId('router-change-review')).toBeVisible();
@@ -96,7 +96,7 @@ for (const width of [320, 390, 768, 1280]) test(`router selection and review fit
   await expect(page.getByRole('button', { name: 'Manage Market router at Market Square' })).toContainText('Not checked');
   await selectMarket(page); await preview(page);
   await expect(page.getByRole('button', { name: 'Apply reviewed change' })).toBeDisabled();
-  await expect(page.getByTestId('router-change-review')).toContainText('PasoFi Market East');
+  await expect(page.getByTestId('router-change-review')).toContainText('Pasofi Market East');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath(`router-review-${width}.png`), fullPage: true });
 });
@@ -105,18 +105,18 @@ test('one admin session previews, confirms and verifies a revision-bound change 
   const state = await mock(page); await open(page); await selectMarket(page);
   await expect(page.getByText('Customer access paused', { exact: true })).toBeVisible();
   await preview(page);
-  expect(state.posts).toHaveLength(1); expect(state.posts[0].body).toEqual({ targetKey: 'identity', expectedRevision: revision, values: { name: 'PasoFi Market East' }, reason: 'Make the site name easier to identify.' });
+  expect(state.posts).toHaveLength(1); expect(state.posts[0].body).toEqual({ targetKey: 'identity', expectedRevision: revision, values: { name: 'Pasofi Market East' }, reason: 'Make the site name easier to identify.' });
   expect(state.posts[0].key).toMatch(/^[0-9a-f-]{36}$/);
   const stored = await page.evaluate(() => Object.entries(sessionStorage).filter(([key]) => key.includes(':router-')));
   expect(stored.map(([, value]) => value)).toEqual([changeId]);
   await apply(page); await expect(page.getByTestId('router-change-review')).toContainText('Applied and verified');
   expect(state.posts[1]).toEqual({ path: `/api/admin/routers/${routerId}/changes/${changeId}/apply`, body: {}, key: undefined });
   await page.getByRole('button', { name: 'Refresh and edit settings' }).click();
-  await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('PasoFi Market East');
+  await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('Pasofi Market East');
   await page.getByLabel('Router site').selectOption(otherSiteId);
   await expect(page.getByRole('button', { name: 'Manage Market router at Market Square' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Manage College router at College Road' }).click();
-  await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('PasoFi College');
+  await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('Pasofi College');
   await expect(page.getByRole('button', { name: 'Review change', exact: true })).toBeDisabled();
   await expect(page.locator('.router-fleet')).not.toContainText('password');
 });
@@ -148,11 +148,11 @@ test('unreachable routers can be retried and a late prior selection cannot repla
   await expect(page.getByRole('alert').filter({ hasText: 'private connection' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Manage Market router at Market Square' })).toContainText('Unreachable');
   unavailable = false; await page.getByRole('button', { name: 'Refresh router', exact: true }).click();
-  await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('PasoFi Market');
+  await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('Pasofi Market');
   delay = true; await page.getByRole('button', { name: 'Refresh router', exact: true }).click();
   await page.getByRole('button', { name: 'Manage College router at College Road' }).click();
-  await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('PasoFi College');
-  release!(); await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('PasoFi College');
+  await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('Pasofi College');
+  release!(); await expect(page.getByLabel('Router name', { exact: false })).toHaveValue('Pasofi College');
   await expect(page.locator('.router-detail h4').first()).toHaveText('College router');
 });
 
@@ -163,7 +163,7 @@ test('an interrupted preview retries only its original idempotency key and froze
     return false;
   });
   await open(page); await selectMarket(page);
-  await page.getByLabel('Router name', { exact: false }).fill('PasoFi Market East');
+  await page.getByLabel('Router name', { exact: false }).fill('Pasofi Market East');
   await page.getByLabel('Change reason', { exact: true }).fill('Make the site name easier to identify.');
   await page.getByRole('button', { name: 'Review change', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Retry saved preview' })).toBeVisible();
@@ -239,7 +239,7 @@ test('a stale revision requires a fresh inspection before a new preview', async 
     return false;
   });
   await open(page); await selectMarket(page);
-  await page.getByLabel('Router name', { exact: false }).fill('PasoFi Market East');
+  await page.getByLabel('Router name', { exact: false }).fill('Pasofi Market East');
   await page.getByLabel('Change reason', { exact: true }).fill('Make the site name easier to identify.');
   await page.getByRole('button', { name: 'Review change', exact: true }).click();
   await expect(page.getByText('The router settings changed after this view was captured.', { exact: false })).toBeVisible();

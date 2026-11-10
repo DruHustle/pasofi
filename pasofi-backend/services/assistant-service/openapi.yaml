@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: PasoFi assistant service
+  title: Pasofi assistant service
   version: 0.1.0
 paths:
   /health/live:

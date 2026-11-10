@@ -62,7 +62,7 @@ async function issue(client:PoolClient,source:InvoiceSource,delivery:InvoiceDeli
  const clock=(await client.query("SELECT nextval('paid_invoice_number_seq')::text AS serial,now() AS issued_at")).rows[0];
  const id=randomUUID(),number=`PFI-${clock.serial.padStart(10,'0')}`,issuedAt=(clock.issued_at as Date).toISOString();
  const snapshot:InvoiceSnapshot={schemaVersion:1,number,issuedAt,paidAt:source.paidAt.toISOString(),
-  operator:{name:'Onesa',brand:'PasoFi',address:'3964 98th Crescent Kuwadzana 5',supportPhone:'+263 715 092 221'},
+  operator:{name:'Onesa',brand:'Pasofi',address:'3964 98th Crescent Kuwadzana 5',supportPhone:'+263 715 092 221'},
   source:{type:source.type,id:source.id,siteName:source.siteName},
   line:{bundleId:source.bundleId,description:'Prepaid Wi-Fi data',quantity:1,byteLimit:source.byteLimit,validitySeconds:source.validitySeconds,unitAmountMinor:source.priceMinor,totalMinor:source.priceMinor},
   payment:source.payment,currency:source.currency,totalMinor:source.priceMinor,simulation:source.simulation,notice:'Not a ZIMRA fiscal tax invoice.'};

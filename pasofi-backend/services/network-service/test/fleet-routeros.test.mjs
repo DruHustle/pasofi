@@ -11,8 +11,8 @@ test('fleet adapter verifies the enrolled serial and writes only exact allowlist
   assert.equal(before.device.serial,config.expectedSerial);assert.equal(before.targets.length,5);
   for(const target of before.targets){assert.match(target.target.revision,/^[a-f0-9]{64}$/);assert.equal(target.target.fields.length,Object.keys(target.target.values).length);}
   const identity=before.targets.find(t=>t.target.key==='identity');
-  await router.write(identity,{name:'PasoFi branch'});
-  assert.equal(state.identity,'PasoFi branch');
+  await router.write(identity,{name:'Pasofi branch'});
+  assert.equal(state.identity,'Pasofi branch');
   assert.equal(state.requests.at(-1).method,'POST');assert.equal(state.requests.at(-1).path,'/rest/system/identity/set');
   const comment=before.targets.find(t=>t.target.key==='ap-comment');
   await router.write(comment,{comment:'Reviewed customer access point'});
@@ -23,7 +23,7 @@ test('fleet adapter verifies the enrolled serial and writes only exact allowlist
    await router.write(snapshot,snapshot.target.values);
    assert.equal(state.requests.at(-1).method,'PATCH');
   }
-  const after=await router.snapshot(['identity']);assert.equal(after.targets[0].target.values.name,'PasoFi branch');assert.notEqual(after.targets[0].target.revision,identity.target.revision);
+  const after=await router.snapshot(['identity']);assert.equal(after.targets[0].target.values.name,'Pasofi branch');assert.notEqual(after.targets[0].target.revision,identity.target.revision);
   for(const request of state.requests)assert.equal(request.authorization,'Basic '+Buffer.from(`${config.username}:${config.password}`).toString('base64'));
   state.serial='FOREIGN-DEVICE';const writes=state.writes;
   await assert.rejects(router.snapshot(),{message:'device_mismatch'});assert.equal(state.writes,writes);
@@ -59,7 +59,7 @@ test('fleet registry and values reject arbitrary endpoints, targets, scripts, ex
   assert.throws(()=>normalizeValues({key:'identity',kind:'identity'},{name:'a\n/system/reset'}),{message:'invalid_values'});
   assert.throws(()=>normalizeValues({key:'identity',kind:'identity'},{name:'good',url:'https://evil.example'}),{message:'invalid_values'});
   assert.throws(()=>normalizeValues({key:'ap',kind:'wireless',name:'wlan1'},{ssid:'🛜'.repeat(9),disabled:false}),{message:'invalid_values'});
-  assert.throws(()=>normalizeValues({key:'ap',kind:'wireless',name:'wlan1'},{ssid:'PasoFi',disabled:'false'}),{message:'invalid_values'});
+  assert.throws(()=>normalizeValues({key:'ap',kind:'wireless',name:'wlan1'},{ssid:'Pasofi',disabled:'false'}),{message:'invalid_values'});
   assert.throws(()=>normalizeValues({key:'profile',kind:'hotspot-profile',name:'customer'},{'rate-limit':'5M; /system/reset','idle-timeout':'5m','keepalive-timeout':'2m'}),{message:'invalid_values'});
   assert.deepEqual(normalizeValues({key:'profile',kind:'hotspot-profile',name:'customer'},{'rate-limit':'5M/10M 6M/12M 4M/8M 10/10 8 1M/2M','idle-timeout':'00:05:00','keepalive-timeout':'none'}),{'rate-limit':'5M/10M 6M/12M 4M/8M 10/10 8 1M/2M','idle-timeout':'00:05:00','keepalive-timeout':'none'});
   Object.assign(process.env,{ROUTEROS_FLEET_FILE:fixture.registry,APP_ENV:'demo',NODE_ENV:'development'});

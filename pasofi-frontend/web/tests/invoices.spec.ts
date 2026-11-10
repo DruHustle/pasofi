@@ -110,7 +110,7 @@ test('cash invoice delivery remains exact across a lost response and a paused em
   expect(writes[0].body).toMatchObject({ invoiceDelivery: { channel: 'email', recipient: 'buyer@example.com' } });
   const file = page.waitForEvent('download');
   await page.getByRole('row').filter({ hasText: saleId }).getByRole('button', { name: 'Invoice PDF', exact: true }).click();
-  expect((await file).suggestedFilename()).toBe('PasoFi-PF-000001.pdf');
+  expect((await file).suggestedFilename()).toBe('Pasofi-PF-000001.pdf');
 });
 
 test('checkout preserves the chosen invoice recipient through an unresolved order retry', async ({ page }) => {
@@ -169,7 +169,7 @@ test('paid invoice history stays compact and usable while purchase and delivery 
   delivered = true; await history.getByRole('button', { name: 'Delivery status for invoice PF-000001' }).click();
   await expect(history).toContainText('Mail server confirmed delivery.'); await expect(history).toContainText('Confirmed at'); expect(statusReads).toBe(2);
   const file = page.waitForEvent('download'); await history.getByRole('button', { name: 'Download invoice PF-000001' }).click();
-  expect((await file).suggestedFilename()).toBe('PasoFi-PF-000001.pdf');
+  expect((await file).suggestedFilename()).toBe('Pasofi-PF-000001.pdf');
 });
 
 test('older deployments hide invoice preferences and missing invoice routes degrade without blocking history', async ({ page }) => {
@@ -201,7 +201,7 @@ test('private SMS links remove the fragment and download only through an explici
   await expect(page).not.toHaveURL(/invoice=/); expect(requests).toBe(0);
   expect(await page.evaluate(() => [...Object.values(localStorage), ...Object.values(sessionStorage)].some(value => value.includes('A'.repeat(43))))).toBe(false);
   const file = page.waitForEvent('download'); await link.getByRole('button', { name: 'Download PDF', exact: true }).click();
-  expect((await file).suggestedFilename()).toBe('PasoFi-paid-invoice.pdf'); expect(requests).toBe(1);
+  expect((await file).suggestedFilename()).toBe('Pasofi-paid-invoice.pdf'); expect(requests).toBe(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 

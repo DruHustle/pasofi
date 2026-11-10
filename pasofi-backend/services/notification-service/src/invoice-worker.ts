@@ -89,7 +89,7 @@ export async function processInvoiceDelivery(pool: Pool, demo: boolean, config =
     const provider = details.channel === 'email' ? config.email : config.sms;
     if (provider === 'disabled') { await release(`${details.channel}_delivery_disabled`, 300); return true; }
     const pdf = details.channel === 'email' ? await source(job.invoice_id, '/pdf', demo) as Buffer : null;
-    const message = details.channel === 'sms' ? `PasoFi paid invoice ${details.invoiceNumber}: ${details.link} Valid until ${details.expiresAt!.slice(0, 16).replace('T', ' ')} UTC. Keep private.` : null;
+    const message = details.channel === 'sms' ? `Pasofi paid invoice ${details.invoiceNumber}: ${details.link} Valid until ${details.expiresAt!.slice(0, 16).replace('T', ' ')} UTC. Keep private.` : null;
     const ready = await pool.query("UPDATE invoice_jobs SET state='submitting',channel=$3,provider=$4,attempted_at=now(),last_error=NULL,lookup_attempts=0,updated_at=now() WHERE id=$1 AND lease_token=$2 AND lease_until>now() AND state='queued' RETURNING id", [job.id, lease, details.channel, provider]);
     if (!ready.rowCount) return true;
     let result: InvoiceSendResult;

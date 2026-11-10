@@ -33,13 +33,13 @@ export async function renderInvoicePdf(snapshot:InvoiceSnapshot):Promise<Buffer>
  const font=await document.embedFont(regularBytes,{subset:true}),bold=await document.embedFont(boldBytes,{subset:true});
  const blue=rgb(0.08,0.22,0.87),ink=rgb(0.10,0.15,0.23),muted=rgb(0.33,0.39,0.48),pale=rgb(0.94,0.96,1),lime=rgb(0.83,0.98,0.28);
  const page=document.addPage([595.28,841.89]),left=44,right=551.28,width=right-left;
- document.setTitle(`${snapshot.number} - PasoFi paid invoice`);document.setAuthor(snapshot.operator.name);document.setCreator('PasoFi');document.setProducer('PasoFi invoice renderer v1');
+ document.setTitle(`${snapshot.number} - Pasofi paid invoice`);document.setAuthor(snapshot.operator.name);document.setCreator('Pasofi');document.setProducer('Pasofi invoice renderer v1');
  document.setCreationDate(new Date(snapshot.issuedAt));document.setModificationDate(new Date(snapshot.issuedAt));document.setLanguage('en');
  const text=(value:string,x:number,y:number,size=10,strong=false,color=ink)=>page.drawText(printable(value,strong?bold:font),{x,y,size,font:strong?bold:font,color});
  const paragraph=(value:string,y:number,size=10,color=muted,maxWidth=width)=>{for(const line of lines(value,font,size,maxWidth)){text(line,left,y,size,false,color);y-=size+5;}return y;};
  const amount=`${snapshot.currency} ${(snapshot.totalMinor/100).toFixed(2)}`;
  page.drawRectangle({x:0,y:729,width:595.28,height:113,color:blue});
- text('PasoFi',left,788,29,true,rgb(1,1,1));text('by Onesa',left,768,10,false,rgb(1,1,1));
+ text('Pasofi',left,788,29,true,rgb(1,1,1));text('by Onesa',left,768,10,false,rgb(1,1,1));
  page.drawRectangle({x:397,y:771,width:154,height:27,color:lime});text(snapshot.simulation?'SIMULATED INVOICE':'PAID INVOICE',408,780,11,true,blue);
  text(snapshot.number,left,707,15,true);text(`Issued ${snapshot.issuedAt.replace('T',' ').slice(0,19)} UTC`,left,686,9,false,muted);
  text(snapshot.operator.name,left,654,12,true);text(snapshot.operator.address,left,635,10);text(`Support ${snapshot.operator.supportPhone}`,left,617,10,false,muted);
@@ -64,6 +64,6 @@ export async function renderInvoicePdf(snapshot:InvoiceSnapshot):Promise<Buffer>
  paragraph(snapshot.notice,144,10,ink);
  paragraph('This records the original payment. Any later refund or reversal is recorded separately.',121,9,muted);
  paragraph('Keep this invoice for support. It contains no voucher or Wi-Fi access credentials.',91,9,muted);
- text('PasoFi - Wi-Fi for your everyday.',left,47,8,false,muted);text('1 / 1',right-19,47,8,false,muted);
+ text('Pasofi - Wi-Fi for your everyday.',left,47,8,false,muted);text('1 / 1',right-19,47,8,false,muted);
  return Buffer.from(await document.save({useObjectStreams:false}));
 }

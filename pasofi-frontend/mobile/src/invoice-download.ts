@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 export type InvoiceExportResult = 'download' | 'shared' | 'canceled';
 export function invoiceExportAction(): 'Download' | 'Save or share' { return Capacitor.isNativePlatform() ? 'Save or share' : 'Download'; }
 const cacheFolder = 'pasofi-invoice-exports', cacheLifetime = 10 * 60_000;
-const cacheName = /^(\d{13})-[0-9a-f-]{36}-PasoFi-[A-Za-z0-9_-]+\.pdf$/;
+const cacheName = /^(\d{13})-[0-9a-f-]{36}-Paso[Ff]i-[A-Za-z0-9_-]+\.pdf$/;
 let nativeSharing = false;
 
 // Only our temporary invoice files are eligible. Interrupted exports are removed
@@ -53,13 +53,13 @@ export async function exportInvoicePdf(blob: Blob, filename: string, signal?: Ab
     await cleanupInvoiceExports();
     const data = await base64(blob, signal);
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    const safeName = /^PasoFi-[A-Za-z0-9_-]+\.pdf$/.test(filename) ? filename : 'PasoFi-invoice.pdf';
+    const safeName = /^Pasofi-[A-Za-z0-9_-]+\.pdf$/.test(filename) ? filename : 'Pasofi-invoice.pdf';
     const path = `${cacheFolder}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
     cleanup = async () => { await Filesystem.deleteFile({ path, directory: Directory.Cache }); };
     await Filesystem.writeFile({ path, data, directory: Directory.Cache, recursive: true });
     const { uri } = await Filesystem.getUri({ path, directory: Directory.Cache });
     if (signal?.aborted) { await cleanup().catch(() => {}); cleanup = null; throw new DOMException('Aborted', 'AbortError'); }
-    await Share.share({ title: 'PasoFi paid invoice', dialogTitle: 'Save or share invoice PDF', files: [uri] });
+    await Share.share({ title: 'Pasofi paid invoice', dialogTitle: 'Save or share invoice PDF', files: [uri] });
     return 'shared';
   } catch (error) {
     if (error instanceof Error && /cancel(?:led|ed|ation)?/i.test(error.message)) return 'canceled';

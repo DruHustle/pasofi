@@ -104,7 +104,7 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
   test(`native account UI requires qualified cookie protocol version1 ${JSON.stringify(patch)}`, async ({ page, configuredBaseURL }) => {
     const requests: NativeRequest[] = [];
     await nativeBridge(page, request => { requests.push(request); return reply({ ...capabilities, ...patch }); });
-    await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+    await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My Pasofi', exact: true }).click();
     await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
     expect(requests.length).toBeGreaterThan(0); expect(new Set(requests.map(request => request.path))).toEqual(new Set(['/api/capabilities']));

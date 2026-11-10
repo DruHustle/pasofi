@@ -99,7 +99,7 @@ public final class PasoFiStripePlugin extends Plugin {
             try {
                 PaymentConfiguration.init(getContext(), options.publishableKey);
                 PaymentSheet.Companion.resetCustomer(getContext());
-                PaymentSheet.Configuration.Builder builder = new PaymentSheet.Configuration.Builder("PasoFi")
+                PaymentSheet.Configuration.Builder builder = new PaymentSheet.Configuration.Builder("Pasofi")
                     .allowsDelayedPaymentMethods(false)
                     .link(new PaymentSheet.LinkConfiguration(PaymentSheet.LinkConfiguration.Display.Never));
                 if (options.googlePay) {

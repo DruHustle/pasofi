@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {EcoCashSandboxAdapter,prepareEcoCashPayment,prepareEcoCashAdjustment} from '../dist/ecocash.js';
 
-const config={environment:'sandbox',username:'synthetic-user',password:'synthetic-password',merchantCode:'001535',merchantPin:'0000',merchantNumber:'263788732685',terminalID:'UAT00003',location:'Synthetic site',superMerchantName:'ECOCASH',merchantName:'PasoFi sandbox fixture'};
+const config={environment:'sandbox',username:'synthetic-user',password:'synthetic-password',merchantCode:'001535',merchantPin:'0000',merchantNumber:'263788732685',terminalID:'UAT00003',location:'Synthetic site',superMerchantName:'ECOCASH',merchantName:'Pasofi sandbox fixture'};
 const prepared=()=>prepareEcoCashPayment({attemptId:randomUUID(),orderId:randomUUID(),customerMsisdn:'263773047653',amountMinor:125,currency:'USD'});
 const success=p=>({clientCorrelator:p.clientCorrelator,referenceCode:p.referenceCode,endUserId:p.endUserId,ecocashReference:'MP260508.1439.T0782584',transactionOperationStatus:'Charged',responseCode:'00'});
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}});
@@ -15,7 +15,7 @@ test('direct EcoCash sandbox preparation uses the official Online Payments reque
   assert.equal(request.headers.authorization,`Basic ${Buffer.from('synthetic-user:synthetic-password').toString('base64')}`);
   assert.equal(request.redirect,'error');assert.ok(request.signal instanceof AbortSignal);
   const body=JSON.parse(request.body);assert.equal(body.clientCorrelator,p.attemptId);assert.equal(body.referenceCode,p.attemptId);assert.equal(body.endUserId,'773047653');assert.equal(body.tranType,'MER');
-  assert.deepEqual(body.paymentAmount.charginginformation,{amount:1.25,currency:'USD',description:`PasoFi order ${p.orderId}`});
+  assert.deepEqual(body.paymentAmount.charginginformation,{amount:1.25,currency:'USD',description:`Pasofi order ${p.orderId}`});
   assert.equal(body.merchantPin,config.merchantPin);assert.equal(body.merchantNumber,'788732685');assert.equal(body.terminalID,config.terminalID);
   assert.equal(body.notifyUrl,undefined);assert.equal(body.pin,undefined);assert.equal(request.headers['X-Client-Id'],undefined);assert.equal(body.serviceType,undefined);
   return json(success(p));

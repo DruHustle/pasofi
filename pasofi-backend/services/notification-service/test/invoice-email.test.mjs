@@ -4,7 +4,7 @@ import { ResendInvoiceAdapter, invoiceSender } from '../dist/invoice-email.js';
 import { invoiceDeliveryConfiguration } from '../dist/invoice-worker.js';
 
 const id = '0f9c1b3a-6d2e-4a1b-9c3d-7e5f2a8b4c10';
-const input = { id, to: 'customer@example.test', from: 'PasoFi <invoice@example.test>', number: 'PFI-000001', filename: 'PFI-000001.pdf', pdf: Buffer.from('%PDF-1.7\nsynthetic attachment\n%%EOF') };
+const input = { id, to: 'customer@example.test', from: 'Pasofi <invoice@example.test>', number: 'PFI-000001', filename: 'PFI-000001.pdf', pdf: Buffer.from('%PDF-1.7\nsynthetic attachment\n%%EOF') };
 const response = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 
 test('invoice email attaches the exact PDF, uses stable idempotency and awaits provider delivery evidence', async () => {
@@ -43,16 +43,16 @@ test('email ambiguity is never delivery and only an explicit rate rejection perm
 test('invalid recipients, header injection, remote filenames and non-PDF content never reach the provider', async () => {
   let sends = 0;
   const adapter = new ResendInvoiceAdapter('synthetic', async () => { sends++; return response({ id }); });
-  for (const patch of [{ to: 'one@example.test,two@example.test' }, { to: 'one@example.test\r\nBcc: other@example.test' }, { from: 'PasoFi\r\nBcc: other@example.test' }, { filename: '../private.pdf' }, { pdf: Buffer.from('<html>') }, { pdf: Buffer.alloc(1048577) }, { number: 'PFI\n1' }]) {
+  for (const patch of [{ to: 'one@example.test,two@example.test' }, { to: 'one@example.test\r\nBcc: other@example.test' }, { from: 'Pasofi\r\nBcc: other@example.test' }, { filename: '../private.pdf' }, { pdf: Buffer.from('<html>') }, { pdf: Buffer.alloc(1048577) }, { number: 'PFI\n1' }]) {
     await assert.rejects(adapter.send({ ...input, ...patch }), /invalid_invoice_email/);
   }
   assert.equal(sends, 0);
-  assert.equal(invoiceSender('PasoFi <invoice@example.test>'), true);
+  assert.equal(invoiceSender('Pasofi <invoice@example.test>'), true);
   assert.equal(invoiceSender('invoice@example.test'), true);
 });
 
 test('invoice capabilities require explicit production qualification and cannot be enabled by demo provider settings', () => {
-  const settings = { INVOICE_DELIVERY_WORKER_ENABLED: 'true', INVOICE_EMAIL_MODE: 'resend', INVOICE_EMAIL_QUALIFIED: 'true', INVOICE_EMAIL_FROM: input.from, RESEND_API_KEY: 'synthetic', INVOICE_SMS_MODE: 'sendai', INVOICE_SMS_QUALIFIED: 'true', INVOICE_SMS_FROM: 'PasoFi', SENDAI_LIVE_ENABLED: 'true', SENDAI_QUALIFIED: 'true', SENDAI_API_KEY: 'synthetic', APP_ENV: 'production', NODE_ENV: 'production', PREPAID_URL: 'https://prepaid.internal', PUBLIC_ORIGIN: 'https://pasofi.example.test', INTERNAL_DELIVERY_SECRET: 'synthetic_delivery_secret_at_least_32_bytes' };
+  const settings = { INVOICE_DELIVERY_WORKER_ENABLED: 'true', INVOICE_EMAIL_MODE: 'resend', INVOICE_EMAIL_QUALIFIED: 'true', INVOICE_EMAIL_FROM: input.from, RESEND_API_KEY: 'synthetic', INVOICE_SMS_MODE: 'sendai', INVOICE_SMS_QUALIFIED: 'true', INVOICE_SMS_FROM: 'Pasofi', SENDAI_LIVE_ENABLED: 'true', SENDAI_QUALIFIED: 'true', SENDAI_API_KEY: 'synthetic', APP_ENV: 'production', NODE_ENV: 'production', PREPAID_URL: 'https://prepaid.internal', PUBLIC_ORIGIN: 'https://pasofi.example.test', INTERNAL_DELIVERY_SECRET: 'synthetic_delivery_secret_at_least_32_bytes' };
   const saved = Object.fromEntries(Object.keys(settings).map(key => [key, process.env[key]]));
   try {
     for (const key of Object.keys(settings)) delete process.env[key];

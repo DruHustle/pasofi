@@ -50,8 +50,8 @@ test('fleet preview/apply/rollback has durable authorization, idempotency, drift
   assert.equal((await read(`/internal/v1/router-fleet/routers/${unconfigured}`)).json().error,'router_not_configured');
   const calls=fixture.state.requests.length;
   assert.equal((await read(`/internal/v1/router-fleet/routers/${randomUUID()}`)).statusCode,404);assert.equal(fixture.state.requests.length,calls);
-  const first=await preview('PasoFi changed');assert.equal(first.change.status,'prepared');assert.equal(fixture.state.writes,0);
-  assert.equal(first.change.before.name,'PasoFi test');assert.equal(first.change.after.name,'PasoFi changed');
+  const first=await preview('Pasofi changed');assert.equal(first.change.status,'prepared');assert.equal(fixture.state.writes,0);
+  assert.equal(first.change.before.name,'Pasofi test');assert.equal(first.change.after.name,'Pasofi changed');
   assert.ok(Date.parse(first.change.expiresAt)-Date.parse(first.change.createdAt)>=599000);
   assert.equal((await read()).headers['cache-control'],'no-store');
   const retry=await post(`${base}/changes`,first.payload);assert.deepEqual(retry.json().change,first.change);
@@ -67,13 +67,13 @@ test('fleet preview/apply/rollback has durable authorization, idempotency, drift
   const concurrent=await Promise.all([apply(first.change.id),apply(first.change.id)]);
   assert.ok(concurrent.some(c=>c.status==='applied'));assert.equal(fixture.state.writes,1);
   assert.equal((await apply(first.change.id)).status,'applied');assert.equal(fixture.state.writes,1);
-  assert.equal(fixture.state.identity,'PasoFi changed');
+  assert.equal(fixture.state.identity,'Pasofi changed');
   const immutable=await pool.connect();try{await assert.rejects(immutable.query("UPDATE router_fleet_changes SET reason='replaced audit reason' WHERE id=$1",[first.change.id]),/router_fleet_plan_immutable/);}finally{immutable.release();}
   const rollbackPayload={reason:'Restore reviewed original name',requestKey:randomUUID()};
   const inverseResponse=await post(`${base}/changes/${first.change.id}/rollback`,rollbackPayload);assert.equal(inverseResponse.statusCode,200,inverseResponse.body);
-  const inverse=inverseResponse.json().change;assert.equal(inverse.status,'prepared');assert.equal(inverse.parentChangeId,first.change.id);assert.equal(inverse.before.name,'PasoFi changed');assert.equal(inverse.after.name,'PasoFi test');assert.equal(fixture.state.writes,1);
+  const inverse=inverseResponse.json().change;assert.equal(inverse.status,'prepared');assert.equal(inverse.parentChangeId,first.change.id);assert.equal(inverse.before.name,'Pasofi changed');assert.equal(inverse.after.name,'Pasofi test');assert.equal(fixture.state.writes,1);
   assert.equal((await post(`${base}/changes/${first.change.id}/rollback`,rollbackPayload)).json().change.id,inverse.id);
-  assert.equal((await apply(inverse.id)).status,'applied');assert.equal(fixture.state.identity,'PasoFi test');assert.equal(fixture.state.writes,2);
+  assert.equal((await apply(inverse.id)).status,'applied');assert.equal(fixture.state.identity,'Pasofi test');assert.equal(fixture.state.writes,2);
   assert.equal((await post(`${base}/changes/${first.change.id}/rollback`,{...rollbackPayload,requestKey:randomUUID()})).json().error,'revision_conflict');
   const stale=await preview('Should never be written');fixture.state.identity='Independent operator change';
   assert.equal((await apply(stale.change.id)).status,'diverged');assert.equal(fixture.state.writes,2);

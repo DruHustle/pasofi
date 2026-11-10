@@ -34,7 +34,7 @@ test('welcome auto-connects only when trial is eligible, with manual fallback an
     assert.doesNotMatch(render(source, vars), /<script>/);
   }
   assert.doesNotMatch(render(source, { trial: 'no' }), /id="welcome"/);
-  assert.match(render(source, { trial: 'no' }), /Continue to PasoFi/);
+  assert.match(render(source, { trial: 'no' }), /Continue to Pasofi/);
   assert.doesNotMatch(source, /\$\((?:link-orig|error|username)\)/);
 });
 test('countdown uses router time and returns to login at expiry even after a background pause', async () => {

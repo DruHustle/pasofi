@@ -8,7 +8,7 @@ const statuses=new Set(['INITIATED','PROCESSING','PENDING','PARTIALLY_PAID','SUC
 function obj(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw Error('invalid_response');return value as Record<string,unknown>;}
 function keyBytes(key:string){const b=Buffer.from(key,'utf8');if(b.length!==32)throw Error('invalid_encryption_key');return b;}
 // Fixed IV is required for compatibility with Pesepay's documented protocol.
-// Never reuse this format for PasoFi's own data encryption.
+// Never reuse this format for Pasofi's own data encryption.
 export function encryptPesepay(data:unknown,key:string):string {const k=keyBytes(key),cipher=createCipheriv('aes-256-cbc',k,k.subarray(0,16));return Buffer.concat([cipher.update(JSON.stringify(data),'utf8'),cipher.final()]).toString('base64');}
 export function decryptPesepay(payload:string,key:string):unknown {
  if(payload.length>100000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(payload))throw Error('invalid_payload');
@@ -44,7 +44,7 @@ export class PesepayAdapter {
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.orderId)||!Number.isSafeInteger(input.amountMinor)||input.amountMinor<=0||input.amountMinor>1000000000||input.currency!=='USD'||!/^[A-Z0-9]{3,20}$/.test(input.methodCode))throw Error('invalid_order');
   const method=obj(input.eligibility?.method);
   if(method.code!==input.methodCode || !eligibleMethod(method,input.currency,input.amountMinor,input.eligibility.merchantEnabledCodes,input.eligibility.siteQualifiedCodes))throw Error('method_not_qualified');
-  const body={amountDetails:{amount:Number((input.amountMinor/100).toFixed(2)),currencyCode:input.currency},reasonForPayment:`PasoFi order ${input.orderId}`,merchantReference:input.orderId,resultUrl:this.config.resultUrl,returnUrl:this.config.returnUrl,paymentMethodCode:input.methodCode};
+  const body={amountDetails:{amount:Number((input.amountMinor/100).toFixed(2)),currencyCode:input.currency},reasonForPayment:`Pasofi order ${input.orderId}`,merchantReference:input.orderId,resultUrl:this.config.resultUrl,returnUrl:this.config.returnUrl,paymentMethodCode:input.methodCode};
   let referenceNumber:string|undefined;
   try{const response=await this.fetcher(`${this.base}/v1/payments/initiate`,{method:'POST',headers:{authorization:this.config.integrationKey,'content-type':'application/json'},body:JSON.stringify({payload:encryptPesepay(body,this.config.encryptionKey)}),signal:AbortSignal.timeout(8000),redirect:'error'});
    if(!response.ok)return {state:'unknown'};const outer=obj(await readJson(response));if(typeof outer.payload!=='string')return {state:'unknown'};const result=obj(decryptPesepay(outer.payload,this.config.encryptionKey));

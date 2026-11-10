@@ -15,7 +15,7 @@ const attr=value=>({value:[value]});
 const run=(args)=>execFileSync('openssl',args,{stdio:'ignore'});
 function certs(dir){
  const p=name=>join(dir,name);
- run(['req','-x509','-newkey','rsa:2048','-nodes','-keyout',p('ca.key'),'-out',p('ca.crt'),'-days','1','-subj','/CN=PamoFi lab CA']);
+ run(['req','-x509','-newkey','rsa:2048','-nodes','-keyout',p('ca.key'),'-out',p('ca.crt'),'-days','1','-subj','/CN=Pasofi lab CA']);
  for(const name of ['server','radius','other']) {
   run(['req','-newkey','rsa:2048','-nodes','-keyout',p(`${name}.key`),'-out',p(`${name}.csr`),'-subj',`/CN=${name}`]);
   writeFileSync(p(`${name}.ext`),name==='server'?'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n':'extendedKeyUsage=clientAuth\n');

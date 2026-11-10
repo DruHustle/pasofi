@@ -15,7 +15,7 @@ const database=process.env.PAMOFI_TEST_NETWORK_DATABASE_URL;
 const attr=value=>({value:[value]});
 function certificates(dir){
   const file=name=>join(dir,name),run=args=>execFileSync('openssl',args,{stdio:'ignore'});
-  run(['req','-x509','-newkey','rsa:2048','-nodes','-keyout',file('ca.key'),'-out',file('ca.crt'),'-days','1','-subj','/CN=PamoFi fencing test CA']);
+  run(['req','-x509','-newkey','rsa:2048','-nodes','-keyout',file('ca.key'),'-out',file('ca.crt'),'-days','1','-subj','/CN=Pasofi fencing test CA']);
   for(const name of ['server','radius']){
     run(['req','-newkey','rsa:2048','-nodes','-keyout',file(`${name}.key`),'-out',file(`${name}.csr`),'-subj',`/CN=${name}`]);
     writeFileSync(file(`${name}.ext`),name==='server'?'subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\n':'extendedKeyUsage=clientAuth\n');
