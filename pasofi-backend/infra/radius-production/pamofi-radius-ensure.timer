@@ -1,5 +1,5 @@
 [Unit]
-Description=Check PamoFi private RADIUS transport at boot and every five minutes
+Description=Check pasofi private RADIUS transport at boot and every five minutes
 
 [Timer]
 OnBootSec=2min

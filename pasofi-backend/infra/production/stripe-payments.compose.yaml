@@ -33,6 +33,8 @@ secrets:
     file: '${PAMOFI_SECRETS_DIR:?Set the protected secret directory}/stripe_webhook_secret'
 networks:
   stripe_egress:
+    labels:
+      eu.onesa.product: pasofi
     driver: bridge
     internal: false
     ipam:

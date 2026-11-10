@@ -14,6 +14,8 @@ x-app: &app
     start_period: 15s
 services:
   postgres:
+    labels:
+      eu.onesa.product: pasofi
     image: postgres:17.11-alpine3.23
     restart: unless-stopped
     mem_limit: 192m
@@ -38,6 +40,8 @@ services:
       retries: 30
     networks: [private]
   identity:
+    labels:
+      eu.onesa.product: pasofi
     <<: *app
     image: pamofi-staging-identity:${PAMOFI_RELEASE:?required}
     environment:
@@ -50,6 +54,8 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
   prepaid-access:
+    labels:
+      eu.onesa.product: pasofi
     <<: *app
     image: pamofi-staging-prepaid-access:${PAMOFI_RELEASE:?required}
     environment:
@@ -61,6 +67,8 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
   network:
+    labels:
+      eu.onesa.product: pasofi
     <<: *app
     image: pamofi-staging-network:${PAMOFI_RELEASE:?required}
     environment:
@@ -70,6 +78,8 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
   notification:
+    labels:
+      eu.onesa.product: pasofi
     <<: *app
     image: pamofi-staging-notification:${PAMOFI_RELEASE:?required}
     environment:
@@ -80,6 +90,8 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
   assistant:
+    labels:
+      eu.onesa.product: pasofi
     <<: *app
     image: pamofi-staging-assistant:${PAMOFI_RELEASE:?required}
     environment:
@@ -90,6 +102,10 @@ services:
       postgres: {condition: service_healthy}
 networks:
   private:
+    labels:
+      eu.onesa.product: pasofi
     internal: true
 volumes:
   database:
+    labels:
+      eu.onesa.product: pasofi

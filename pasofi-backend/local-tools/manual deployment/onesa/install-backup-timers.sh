@@ -21,7 +21,7 @@ fi
 EOF
 cat > "$tmp/pamofi-backup@.service" <<'EOF'
 [Unit]
-Description=PamoFi encrypted backup %i
+Description=pasofi encrypted backup %i
 After=docker.service network-online.target
 Wants=network-online.target
 [Service]
@@ -33,7 +33,7 @@ NoNewPrivileges=yes
 EOF
 cat > "$tmp/pamofi-backup-full.timer" <<'EOF'
 [Unit]
-Description=PamoFi weekly full backup
+Description=pasofi weekly full backup
 [Timer]
 OnCalendar=Sun *-*-* 01:15:00 UTC
 RandomizedDelaySec=15m
@@ -44,7 +44,7 @@ WantedBy=timers.target
 EOF
 cat > "$tmp/pamofi-backup-diff.timer" <<'EOF'
 [Unit]
-Description=PamoFi daily differential backup
+Description=pasofi daily differential backup
 [Timer]
 OnCalendar=Mon..Sat *-*-* 02:15:00 UTC
 RandomizedDelaySec=15m
@@ -55,7 +55,7 @@ WantedBy=timers.target
 EOF
 cat > "$tmp/pamofi-backup-check.timer" <<'EOF'
 [Unit]
-Description=PamoFi hourly backup health check
+Description=pasofi hourly backup health check
 [Timer]
 OnCalendar=*-*-* *:10:00 UTC
 RandomizedDelaySec=5m

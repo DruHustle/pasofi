@@ -34,14 +34,14 @@ expected_id=$(cat "$root/cluster-system-id")
 [[ "$expected_id" =~ ^[0-9]+$ ]]
 docker network inspect $(docker network ls -q) --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' | python3 -c 'import ipaddress,sys; n=ipaddress.ip_network("10.245.244.0/24"); assert all(not n.overlaps(ipaddress.ip_network(x.strip())) for x in sys.stdin if x.strip()), "Restore drill subnet overlaps an existing network"'
 ip -j -4 route show table all | python3 -c 'import ipaddress,json,sys; n=ipaddress.ip_network("10.245.244.0/24"); assert all(not n.overlaps(ipaddress.ip_network(r["dst"],strict=False)) for r in json.load(sys.stdin) if r.get("dst","default") != "default"), "Restore drill subnet overlaps a host route"'
-docker volume create --label pamofi.purpose=monthly-restore-drill "$volume" >/dev/null
+docker volume create --label eu.onesa.product=pasofi --label pamofi.purpose=monthly-restore-drill "$volume" >/dev/null
 volume_created=true
-docker network create --label pamofi.purpose=monthly-restore-drill --subnet 10.245.244.0/24 "$network" >/dev/null
+docker network create --label eu.onesa.product=pasofi --label pamofi.purpose=monthly-restore-drill --subnet 10.245.244.0/24 "$network" >/dev/null
 network_created=true
-docker run --rm --network none --user root --mount "type=volume,source=$volume,target=/var/lib/postgresql/data" --entrypoint sh "$image" -c 'chown postgres:postgres /var/lib/postgresql/data'
+docker run --label eu.onesa.product=pasofi --rm --network none --user root --mount "type=volume,source=$volume,target=/var/lib/postgresql/data" --entrypoint sh "$image" -c 'chown postgres:postgres /var/lib/postgresql/data'
 common=(--network "$network" --cpus 0.35 --memory 512m --pids-limit 150 --tmpfs /run/pgbackrest -e B2_BUCKET=pamofi-b2-blazebucket -e B2_REGION=eu-central-003 -e BACKUP_REPOSITORY_PREFIX=/pamofi-production -e B2_KEY_ID_FILE=/run/secrets/b2_key_id -e B2_APPLICATION_KEY_FILE=/run/secrets/b2_application_key -e BACKUP_CIPHER_FILE=/run/secrets/backup_cipher -e PGDATA=/var/lib/postgresql/data/pgdata --mount "type=bind,source=$creds/b2_key_id,target=/run/secrets/b2_key_id,readonly" --mount "type=bind,source=$creds/b2_application_key,target=/run/secrets/b2_application_key,readonly" --mount "type=bind,source=$creds/backup_cipher,target=/run/secrets/backup_cipher,readonly" --mount "type=volume,source=$volume,target=/var/lib/postgresql/data")
-docker run --rm --name "$restore" "${common[@]}" "$image" su postgres -s /bin/sh -c 'pgbackrest --stanza=pamofi restore'
-docker run -d --name "$server" "${common[@]}" "$image" postgres -c archive_mode=off -c listen_addresses= >/dev/null
+docker run --label eu.onesa.product=pasofi --rm --name "$restore" "${common[@]}" "$image" su postgres -s /bin/sh -c 'pgbackrest --stanza=pamofi restore'
+docker run --label eu.onesa.product=pasofi -d --name "$server" "${common[@]}" "$image" postgres -c archive_mode=off -c listen_addresses= >/dev/null
 ready=false
 for ((i=0; i<180; i++)); do if docker exec "$server" pg_isready -U pamofi_bootstrap -d postgres >/dev/null 2>&1; then ready=true; break; fi; sleep 1; done
 [ "$ready" = true ] || { echo 'Restore drill database did not become ready.' >&2; exit 1; }
@@ -54,7 +54,7 @@ printf 'PASS: remote backup restored into a disposable volume with the expected 
 EOF
 cat > "$tmp/pamofi-restore-drill.service" <<'EOF'
 [Unit]
-Description=PamoFi isolated backup restore drill
+Description=pasofi isolated backup restore drill
 After=docker.service network-online.target
 Wants=network-online.target
 [Service]
@@ -66,7 +66,7 @@ NoNewPrivileges=yes
 EOF
 cat > "$tmp/pamofi-restore-drill.timer" <<'EOF'
 [Unit]
-Description=PamoFi monthly isolated backup restore drill
+Description=pasofi monthly isolated backup restore drill
 [Timer]
 OnCalendar=*-*-08 04:30:00 UTC
 RandomizedDelaySec=15m

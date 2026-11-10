@@ -22,6 +22,8 @@ services:
     networks: [services, database, router_control]
 networks:
   router_control:
+    labels:
+      eu.onesa.product: pasofi
     driver: bridge
     driver_opts:
       com.docker.network.bridge.gateway_mode_ipv4: nat

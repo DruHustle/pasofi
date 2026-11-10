@@ -1,6 +1,8 @@
 # Explicit one-time overlay. Do not include this in ordinary application startup.
 services:
   identity-bootstrap:
+    labels:
+      eu.onesa.product: pasofi
     profiles: [bootstrap]
     image: ${PAMOFI_IDENTITY_IMAGE:?Set the qualified identity image}
     restart: 'no'

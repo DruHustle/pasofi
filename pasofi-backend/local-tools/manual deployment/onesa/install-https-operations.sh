@@ -35,7 +35,7 @@ iptables -I ONESA_WORKER_INPUT 1 -i enp0s6 -p tcp --dport 80 -m comment --commen
 opened=true
 args=(renew --quiet --non-interactive --no-random-sleep-on-renew --cert-name "$cert_name")
 [ "$dry" = false ] || args+=(--dry-run)
-docker run --rm --network host --memory 256m --pids-limit 100 --mount "type=bind,source=$root/acme/config,target=/etc/letsencrypt" --mount "type=bind,source=$root/acme/log,target=/var/log/letsencrypt" --mount "type=bind,source=$root/acme/work,target=/var/lib/letsencrypt" "$image" "${args[@]}"
+docker run --label eu.onesa.product=pasofi --rm --network host --memory 256m --pids-limit 100 --mount "type=bind,source=$root/acme/config,target=/etc/letsencrypt" --mount "type=bind,source=$root/acme/log,target=/var/log/letsencrypt" --mount "type=bind,source=$root/acme/work,target=/var/lib/letsencrypt" "$image" "${args[@]}"
 if [ "$dry" = true ]; then echo 'Certificate renewal dry run passed.'; exit 0; fi
 cert="$root/acme/config/live/$cert_name/fullchain.pem"
 key="$root/acme/config/live/$cert_name/privkey.pem"
@@ -55,7 +55,7 @@ echo 'PamoFi certificate is valid and up to date.'
 EOF
 cat > "$tmp/pamofi-https-firewall.service" <<'EOF'
 [Unit]
-Description=PamoFi HTTPS gateway firewall rule
+Description=pasofi HTTPS gateway firewall rule
 Requires=docker.service
 After=docker.service
 [Service]
@@ -68,7 +68,7 @@ WantedBy=multi-user.target
 EOF
 cat > "$tmp/pamofi-cert-renew.service" <<'EOF'
 [Unit]
-Description=PamoFi public certificate renewal
+Description=pasofi public certificate renewal
 After=docker.service network-online.target
 Wants=network-online.target
 [Service]
@@ -79,7 +79,7 @@ NoNewPrivileges=yes
 EOF
 cat > "$tmp/pamofi-cert-renew.timer" <<'EOF'
 [Unit]
-Description=PamoFi daily public certificate renewal check
+Description=pasofi daily public certificate renewal check
 [Timer]
 OnCalendar=*-*-* 04:10:00 UTC
 RandomizedDelaySec=30m

@@ -14,6 +14,8 @@ services:
     # The worker remains disabled in the base until independently qualified.
     networks: [services, database, router_control]
   radius-api:
+    labels:
+      eu.onesa.product: pasofi
     profiles: [radius-qualified]
     image: ${PAMOFI_NETWORK_IMAGE:?Set the immutable network image}
     restart: unless-stopped
@@ -53,6 +55,8 @@ services:
       timeout: 3s
       retries: 4
   radius:
+    labels:
+      eu.onesa.product: pasofi
     profiles: [radius-qualified]
     image: freeradius/freeradius-server:3.2.9-alpine@sha256:9e860a6d14ecbccc97448da1d0c5dd15b5e7e6b64777cea21b57e832187a2057
     restart: unless-stopped
@@ -89,13 +93,19 @@ services:
       radius-api: {condition: service_healthy}
 networks:
   radius_transport:
+    labels:
+      eu.onesa.product: pasofi
     internal: true
   radius_ingress:
+    labels:
+      eu.onesa.product: pasofi
     driver: bridge
     driver_opts:
       com.docker.network.bridge.gateway_mode_ipv4: nat
       com.docker.network.bridge.enable_ip_masquerade: 'true'
   router_control:
+    labels:
+      eu.onesa.product: pasofi
     driver: bridge
     driver_opts:
       com.docker.network.bridge.gateway_mode_ipv4: nat

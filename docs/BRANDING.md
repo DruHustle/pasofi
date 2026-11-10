@@ -8,6 +8,23 @@ Current web and mobile screens, launch names, page metadata, captive portal
 templates, help, receipts, invoice presentation and transactional message text use
 this spelling. The blue/green visual identity is unchanged.
 
+## Infrastructure labels
+
+Use the lowercase value `pasofi` for operational metadata. Pasofi-owned
+containers, networks, new managed volumes and first-party production images use
+`eu.onesa.product=pasofi`. The Onesa installers use `pasofi` in systemd
+descriptions and operational alerts. For an existing independently managed
+resource, keep its working identity and record its product association.
+
+Docker cannot update native labels on an existing standalone object. These
+declarations take effect when a reviewed release creates an object. Do not
+recreate or copy a production database, change image pins, or move a backup
+repository solely to apply the label. The external database volume and external
+provider networks retain their existing names. Owner-created RADIUS containers
+use the same label when next created and keep their original names, private
+bindings and owner-verified pins. Shared Onesa infrastructure can host Pasofi
+without belonging exclusively to it.
+
 ## Compatibility exceptions
 
 The following established identifiers are deliberately retained. They are not

@@ -14,7 +14,7 @@ cleanup() { result=$?; trap - EXIT; if [ "$opened" = true ]; then iptables -D ON
 trap cleanup EXIT
 iptables -I ONESA_WORKER_INPUT 1 -i enp0s6 -p tcp --dport 80 -m comment --comment pamofi-acme-temporary -j ACCEPT
 opened=true
-docker run --rm --network host --memory 256m --pids-limit 100 --mount "type=bind,source=$root/acme/config,target=/etc/letsencrypt" --mount "type=bind,source=$root/acme/log,target=/var/log/letsencrypt" --mount "type=bind,source=$root/acme/work,target=/var/lib/letsencrypt" "$image" certonly --standalone --non-interactive --agree-tos --no-eff-email --email andrewgotora@yahoo.com --preferred-challenges http --cert-name pamofi-api-onesaeu -d api.pamofi.onesa.eu
+docker run --label eu.onesa.product=pasofi --rm --network host --memory 256m --pids-limit 100 --mount "type=bind,source=$root/acme/config,target=/etc/letsencrypt" --mount "type=bind,source=$root/acme/log,target=/var/log/letsencrypt" --mount "type=bind,source=$root/acme/work,target=/var/lib/letsencrypt" "$image" certonly --standalone --non-interactive --agree-tos --no-eff-email --email andrewgotora@yahoo.com --preferred-challenges http --cert-name pamofi-api-onesaeu -d api.pamofi.onesa.eu
 cert="$root/acme/config/live/pamofi-api-onesaeu/fullchain.pem"
 key="$root/acme/config/live/pamofi-api-onesaeu/privkey.pem"
 openssl x509 -in "$cert" -noout -checkhost api.pamofi.onesa.eu -checkend 86400 >/dev/null
