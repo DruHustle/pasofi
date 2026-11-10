@@ -28,6 +28,14 @@ export async function beginProviderPayment(pool:Pool,customerId:string,orderId:s
  const replay=!attempt.created && !attempt.row.provider_reference && ['initiating','unknown'].includes(attempt.row.state)
   && adapter.initiationReplaySeconds!==undefined && Number.isFinite(age) && age>=0 && age<adapter.initiationReplaySeconds;
  if(!attempt.created&&!replay)return {attemptId:attempt.row.id,state:attempt.row.state,redirectUrl:attempt.row.redirect_url as string|null};
+  // A lost response may mean Stripe never received the original request. Reusing
+  // its idempotency key can therefore create a new intent, so an ambiguous retry
+  // must still satisfy today's merchant/method/site qualification. A known
+  // reference remains readable above and can always reconcile existing money.
+  if(replay){
+   const method=eligibility?.method as {code?:unknown}|undefined;
+   if(method?.code!==methodCode||!eligibleMethod(method,attempt.order.currency,attempt.order.price_minor,eligibility.merchantEnabledCodes,eligibility.siteQualifiedCodes))throw new PaymentError('method_not_qualified');
+  }
  let initiated:Awaited<ReturnType<Adapter['initiate']>>;
  try{initiated=await adapter.initiate({attemptId:attempt.row.id,orderId,customerId,siteId,amountMinor:attempt.order.price_minor,currency:attempt.order.currency,methodCode,eligibility});}
  catch{initiated={state:'unknown'};}
