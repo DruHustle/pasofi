@@ -62,6 +62,29 @@ jobs:
           for project in pasofi-backend/services/*-service pasofi-frontend/web pasofi-frontend/mobile; do
             (cd "$project" && npm ci --no-audit --no-fund)
           done
+      - name: Recover the hosted browser runner's Ubuntu mirror when archive DNS is unavailable
+        if: runner.environment == 'github-hosted'
+        shell: bash
+        run: |
+          mirrors=/etc/apt/apt-mirrors.txt
+          test -f "$mirrors" || exit 0
+          . /etc/os-release
+          [[ "$ID" == ubuntu && "$VERSION_CODENAME" == resolute ]] || exit 0
+          for host in archive.ubuntu.com azure.archive.ubuntu.com security.ubuntu.com; do
+            if timeout 4 getent ahosts "$host" >/dev/null; then exit 0; fi
+          done
+          # Only the transport changes. APT keeps its original suites, package and key policy.
+          mirror=https://mirrors.edge.kernel.org/ubuntu
+          receipt=$(mktemp "$RUNNER_TEMP/ubuntu-inrelease.XXXXXX")
+          trap 'rm -f "$receipt"' EXIT
+          for suite in "$VERSION_CODENAME" "$VERSION_CODENAME-updates" "$VERSION_CODENAME-backports" "$VERSION_CODENAME-security"; do
+            curl --fail --silent --show-error --proto '=https' --connect-timeout 5 --max-time 15 \
+              "$mirror/dists/$suite/InRelease" -o "$receipt"
+            gpgv --keyring /usr/share/keyrings/ubuntu-archive-keyring.gpg "$receipt"
+            grep -Fxq 'Origin: Ubuntu' "$receipt"
+            grep -Fxq "Suite: $suite" "$receipt"
+          done
+          sudo sed -E -i "s#https?://(azure\.archive|archive|security)\.ubuntu\.com/ubuntu#${mirror}#g" "$mirrors"
       - name: Install Chromium and its runtime dependencies
         working-directory: pasofi-frontend/web
         run: npx --no-install playwright install --with-deps chromium

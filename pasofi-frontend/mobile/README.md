@@ -81,3 +81,5 @@ The repository's strict `local-tools/verify.mjs --integration --browser` runs bo
 ## Development dependency override
 
 The lockfile keeps Capacitor at 8.6.0 and narrowly overrides its CLI's `rimraf` dependency to use `glob` 14.0.3 with patched `minimatch`. This addresses [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4) and [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) in development tooling. Keep the override until the upstream CLI resolves patched dependencies without it. Verify updates with `npm ci`, `npm audit`, the frontend build, and Capacitor sync in disposable native-project copies. Do not downgrade Capacitor to satisfy an audit suggestion.
+
+See [mobile distribution](DISTRIBUTION.md) for owner-signed Android APKs and physical-device App Store Connect archives.
