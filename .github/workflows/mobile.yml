@@ -101,12 +101,13 @@ jobs:
     # Standard Intel host avoids the ARM runner capacity queue; the Xcode 26+
     # gate and generic simulator build (all supported architectures) stay intact.
     runs-on: macos-26-intel
-    timeout-minutes: 35
+    timeout-minutes: 55
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 2
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -194,6 +195,46 @@ jobs:
           executable=native-build/ios/Build/Products/Release-iphonesimulator/App.app/App
           test -x "$executable"
           shasum -a 256 "$executable" >> "$GITHUB_STEP_SUMMARY"
+      - name: Select physical-device archive qualification
+        id: device_archive
+        run: |
+          paths=$(git -C ../.. diff --name-only HEAD^1 HEAD -- .github/workflows/mobile.yml pasofi-frontend/mobile/ios pasofi-frontend/mobile/src pasofi-frontend/mobile/package-lock.json)
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch || -n "$paths" ]]; then
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Archive unsigned iPhoneOS Release with production web assets
+        if: steps.device_archive.outputs.required == 'true'
+        env:
+          VITE_PAMOFI_API_BASE_URL: https://pasofi.mobile.onesa.eu
+        run: |
+          npm run build
+          npx --no-install cap copy ios
+          xcodebuild -project ios/App/App.xcodeproj -scheme App \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Pasofi.xcarchive" -derivedDataPath "$RUNNER_TEMP/pasofi-device-build" \
+            -clonedSourcePackagesDirPath "$PASOFI_SWIFTPM_DIRECTORY/SourcePackages" \
+            -packageCachePath "$PASOFI_SWIFTPM_DIRECTORY/Cache" -disablePackageRepositoryCache \
+            -disableAutomaticPackageResolution -scmProvider system ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM= archive
+          cmp native-build/ios-package-resolved.json ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+      - name: Verify physical iOS archive identity and architecture
+        if: steps.device_archive.outputs.required == 'true'
+        run: |
+          archive="$RUNNER_TEMP/Pasofi.xcarchive"
+          app="$archive/Products/Applications/App.app"
+          info="$app/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info")" = 'com.onesa.pasofi'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$info")" = iphoneos
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$info")" = iPhoneOS
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$info")
+          test -x "$app/$executable"
+          xcrun lipo -verify_arch arm64 "$app/$executable"
+          xcrun vtool -arch arm64 -show-build "$app/$executable" | grep -Eq 'platform[[:space:]]+IOS$'
+          test ! -e "$app/embedded.mobileprovision"
+          /usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:ApplicationPath' "$archive/Info.plist"
+          xcrun lipo -archs "$app/$executable" >> "$GITHUB_STEP_SUMMARY"
+          shasum -a 256 "$app/$executable" >> "$GITHUB_STEP_SUMMARY"
+          echo 'com.onesa.pasofi, generic physical iOS, Release, no distribution signature' >> "$GITHUB_STEP_SUMMARY"
       - name: Package simulator app without losing executable permissions
         if: github.event_name != 'pull_request'
         run: |
