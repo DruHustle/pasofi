@@ -245,6 +245,32 @@ for (const phase of ['initial session', 'MFA confirmation'] as const) {
   });
 }
 
+test('staff can filter and page open shifts and pending refunds', async ({ page }) => {
+  const shift = (id:string) => ({id,agentId:staffId,siteId,currency:'USD',openingMinor:'0',openedAt:future(),closedAt:null,countedMinor:null,expectedMinor:'0',differenceMinor:null,saleCount:'0',salesMinor:'0',commissionMinor:'0',refundsMinor:'0',commissionReversedMinor:'0'});
+  const refund = (id:string) => ({id,saleId:id,siteName:site.name,bundleId:'mini',amountMinor:50,currency:'USD',reason:'Controlled refund history',state:'paying',requestedAt:future(),events:[]});
+  await mock(page, async (route,path) => {
+    if(path==='/api/staff/session'){await json(route,staff());return true;}
+    if(path==='/api/staff/inventory'){await json(route,{inventory:[]});return true;}
+    if(path==='/api/staff/sales'){await json(route,{sales:[],hasMore:false});return true;}
+    if(path!=='/api/staff/cash-shifts' && path!=='/api/staff/cash-refunds')return false;
+    const query=new URL(route.request().url()).searchParams, before=query.get('before');
+    if(before)expect(query.get('active')).toBe('true');
+    const id=before?orderId:saleId;
+    const nextCursor=query.get('active')==='true'&&!before?saleId:null;
+    await json(route,path.endsWith('shifts')?{shifts:[shift(id)],currencies:['USD'],nextCursor}:{refunds:[refund(id)],nextCursor});
+    return true;
+  });
+  await openStaff(page);
+  await page.getByLabel('Open shifts only').check();
+  await page.getByRole('button',{name:'Load more shifts'}).click();
+  await expect(page.getByRole('button',{name:'Count and close'})).toHaveCount(2);
+  await expect(page.getByRole('button',{name:'Load more shifts'})).toHaveCount(0);
+  await page.getByLabel('Pending refunds only').check();
+  await page.getByRole('button',{name:'Load more refunds'}).click();
+  await expect(page.getByRole('button',{name:'Record returned cash'})).toHaveCount(2);
+  await expect(page.getByRole('button',{name:'Load more refunds'})).toHaveCount(0);
+});
+
 test('only a serialized rolled-back sale rejection unlocks the form; ambiguous gateway errors retain its key', async ({ page }) => {
   const keys: string[] = []; let attempts = 0, sold = false;
   await mock(page, async (route, path, method) => {

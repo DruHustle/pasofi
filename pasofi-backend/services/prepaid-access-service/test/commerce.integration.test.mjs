@@ -749,6 +749,52 @@ test('cash shifts enforce opening, retain immutable counts, and recover sales af
  }finally{await f.cleanup();}
 });
 
+test('open shifts and pending refunds remain reachable beyond fifty rows with staff-scoped cursors', {skip:!url}, async()=>{
+ const f=await setup({shifts:false});
+ try {
+  // Make the open shifts share their timestamp to exercise the UUID tiebreaker.
+  await f.pool.query(`INSERT INTO cash_shifts(id,agent_id,site_id,currency,request_key,opening_minor)
+   SELECT gen_random_uuid(),$1,$2,'X'||chr(65+n/26)||chr(65+n%26),gen_random_uuid(),0
+   FROM generate_series(0,51) AS n`,[f.agent,f.site]);
+  const opening={siteId:f.site,currency:'USD',openingMinor:0};
+  const shift=(await f.call('POST','/v1/staff/cash-shifts',opening,'agent')).json().shift;
+  const sales=await f.pool.query(`INSERT INTO agent_sales
+    (id,agent_id,site_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,start_by,payment_method,cash_received_minor,cash_confirmed_at,shift_id)
+    SELECT gen_random_uuid(),$1,$2,gen_random_uuid(),'mini',50,'USD',2000000000,259200,now()+interval '30 days','cash',50,now(),$3
+    FROM generate_series(1,53) RETURNING id`,[f.agent,f.site,shift.id]);
+  await f.pool.query(`WITH inserted AS (
+    INSERT INTO cash_refunds(id,sale_id,requested_by,request_key,reason)
+    SELECT gen_random_uuid(),id,$2,gen_random_uuid(),'Controlled cash refund history' FROM unnest($1::uuid[]) AS id RETURNING id
+   ), entries AS (
+    SELECT id,json_build_object('refundId',id,'sequence',1,'actorId',$2::uuid,'state','requested','recordedAt',now(),'details',json_build_object())::text AS payload FROM inserted
+   ) INSERT INTO cash_refund_events(refund_id,sequence,payload,previous_hash,entry_hash)
+    SELECT id,1,payload,repeat('0',64),encode(sha256(convert_to(repeat('0',64)||chr(10)||payload,'UTF8')),'hex') FROM entries`,[sales.rows.map(row=>row.id),f.agent]);
+  const close=await f.call('POST',`/v1/staff/cash-shifts/${shift.id}/close`,{countedMinor:2650,note:'Counted the full test drawer'},'agent');
+  assert.equal(close.statusCode,200);
+  const other=(await f.call('POST','/v1/staff/cash-shifts',opening,'other')).json().shift;
+  const shifts='/v1/staff/cash-shifts', refunds='/v1/staff/cash-refunds';
+  const firstShifts=(await f.call('GET',shifts+'?active=true',undefined,'agent')).json();
+  assert.equal(firstShifts.shifts.length,50);
+  assert.ok(firstShifts.shifts.every(row=>row.closedAt===null && row.agentId===f.agent));
+  const lastShifts=(await f.call('GET',shifts+'?active=true&before='+firstShifts.nextCursor,undefined,'agent')).json();
+  assert.equal(lastShifts.nextCursor,null);
+  assert.equal(new Set([...firstShifts.shifts,...lastShifts.shifts].map(row=>row.id)).size,52);
+  assert.equal((await f.call('GET',shifts+'?before='+other.id,undefined,'agent')).json().shifts.length,0);
+
+  const firstRefunds=(await f.call('GET',refunds+'?active=true',undefined,'agent')).json();
+  assert.equal(firstRefunds.refunds.length,50);
+  const decision=await f.call('POST',`/v1/admin/cash-refunds/${firstRefunds.nextCursor}/decision`,{decision:'rejected',note:'Reviewed the controlled request'});
+  assert.equal(decision.statusCode,200);
+  const lastRefunds=(await f.call('GET',refunds+'?active=true&before='+firstRefunds.nextCursor,undefined,'agent')).json();
+  assert.equal(lastRefunds.nextCursor,null);
+  assert.equal(new Set([...firstRefunds.refunds,...lastRefunds.refunds].map(row=>row.id)).size,53);
+  assert.equal((await f.call('GET',refunds+'?before='+firstRefunds.nextCursor,undefined,'other')).json().refunds.length,0);
+  assert.equal((await f.call('GET',refunds+'?active=true&limit=1',undefined,'admin')).json().refunds[0].agentId,f.agent);
+  assert.equal((await f.call('GET',shifts+'?before=invalid',undefined,'agent')).statusCode,400);
+  assert.equal((await f.call('GET',refunds+'?limit=51',undefined,'agent')).statusCode,400);
+ } finally { await f.cleanup(); }
+});
+
 test('closing a shift serializes against a concurrent sale and includes every committed cash receipt',{skip:!url},async()=>{
  const f=await setup();
  try{

@@ -97,3 +97,10 @@ export function onStaffSessionChange(listener: (kind: 'signed_in' | 'signed_out'
   staffChannel?.addEventListener('message', receive);
   return () => staffChannel?.removeEventListener('message', receive);
 }
+
+export function cashListUrl(path: string, active: boolean, before: string | null) {
+  const query = new URLSearchParams();
+  if (active) query.set('active', 'true');
+  if (before) query.set('before', before);
+  return query.size ? `${path}?${query}` : path;
+}

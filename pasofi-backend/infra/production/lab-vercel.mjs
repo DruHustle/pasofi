@@ -214,6 +214,15 @@ try {
   const cashShift=JSON.parse(response.text).shifts[0];check(cashShift.expectedMinor,'0');check(cashShift.refundsMinor,'123');
   response=await request(`/api/staff/cash-shifts/${cashShift.id}/close`,{method:'POST',cookie:agentCookie,retrySecret:randomUUID(),body:{countedMinor:0,note:'Counted zero after returning unused sale cash'}});check(response.status,200);check(JSON.parse(response.text).shift.differenceMinor,'0');
 
+  for (const [area, field, cursor] of [['cash-refunds','refunds',refundId],['cash-shifts','shifts',cashShift.id]]) {
+    for (const query of ['active=true', 'before='+cursor]) {
+      response=await request(`/api/staff/${area}?limit=1&${query}`,{cookie:agentCookie});
+      check(response.status,200);
+      check(JSON.parse(response.text)[field].length,0);
+      check(JSON.parse(response.text).nextCursor,null);
+    }
+  }
+
   for (const [path, session] of [['/api/staff/session', agentCookie], ['/api/staff/session', admin.cookie], ['/api/session', customerCookie]]) {
     response = await request(path, { method: 'DELETE', cookie: session }); check(response.status, 204); secureCookies(response);
     assert.ok(response.headers['set-cookie'].every(value => /(?:Max-Age=0|Expires=Thu, 01 Jan 1970)/i.test(value))); checks++;
