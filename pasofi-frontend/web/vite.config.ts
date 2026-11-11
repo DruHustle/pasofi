@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
     '^/api/invoice-downloads(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/recovery(?:/(?:status|setup|rotate))?(?:\\?|$)': { target: identity, rewrite },
     '^/api/handoff(?:/redeem)?(?:\\?|$)': { target: identity, rewrite },
-    '^/api/staff/(?:register|login|session|mfa/(?:setup|confirm|verify)|password-reset/(?:availability|request|confirm)|users(?:/[0-9a-fA-F-]+/(?:decision|revoke-sessions|recover-mfa))?|audit)(?:\\?|$)': { target: identity, rewrite },
+    '^/api/staff/(?:register|login|session|onesa/(?:availability|start|complete)|mfa/(?:setup|confirm|verify)|password-reset/(?:availability|request|confirm)|users(?:/[0-9a-fA-F-]+/(?:decision|revoke-sessions|recover-mfa))?|audit)(?:\\?|$)': { target: identity, rewrite },
     '^/api/staff/(?:sites|inventory|cash-refunds(?:/[0-9a-fA-F-]+/(?:prepare-payout|payout))?|cash-shifts(?:/[0-9a-fA-F-]+/close)?|cash-references/lookup|sales(?:/[0-9a-fA-F-]+/(?:receipt|delivery|resend))?)(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/admin/(?:sites(?:/[0-9a-fA-F-]+)?|cash-refunds/[0-9a-fA-F-]+/decision|inventory/allocations|network/reviews(?:/[0-9a-fA-F-]+/resolve)?|bundles(?:/[a-z][a-z0-9-]{0,39})?)(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/admin/routers(?:/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:/changes(?:/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:/(?:apply|reconcile|rollback))?)?)?)?(?:\\?|$)': { target: prepaid, rewrite },

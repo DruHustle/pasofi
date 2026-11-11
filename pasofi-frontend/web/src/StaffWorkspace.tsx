@@ -12,6 +12,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
   const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [displayName, setDisplayName] = useState('');
   const [code, setCode] = useState(''), [secret, setSecret] = useState(''), [expiresAt, setExpiresAt] = useState(0);
   const [enrollmentUri, setEnrollmentUri] = useState(''), [passwordStrong, setPasswordStrong] = useState(false);
+  const [onesaOrigin, setOnesaOrigin] = useState<string | null>(null);
   const [resetAvailable, setResetAvailable] = useState(false), [resetCode, setResetCode] = useState(''), [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
   const challengeOwner = useRef<string | null>(null), generation = useRef(0);
@@ -35,6 +36,9 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
   useEffect(() => {
     live.current = true; heading.current?.focus(); void load();
     void api<{ enabled: boolean }>('/api/staff/password-reset/availability').then(result => { if (live.current) setResetAvailable(result.enabled === true); }).catch(() => { if (live.current) setResetAvailable(false); });
+    void api<{ origin: string | null }>('/api/staff/onesa/availability').then(({ origin }) => {
+      if (live.current && origin && new URL(origin).protocol === 'https:') setOnesaOrigin(origin);
+    }).catch(() => {});
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     const unsubscribe = onStaffSessionChange((kind, staffId) => { generation.current++; setBusy(false); setExpiresAt(0); setStaff(null); setSecret(''); setEnrollmentUri(''); setCode(''); setResetCode(''); setPassword(''); setPasswordConfirmation(''); challengeOwner.current = null; discardStaffDrafts(kind === 'signed_in' ? staffId : undefined); setStep('login'); setMessage('The staff account changed in another tab. Sign in again or refresh this workspace before continuing.'); });
     return () => { generation.current++; live.current = false; clearInterval(timer); unsubscribe(); };
@@ -56,6 +60,15 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     }, 250);
     return () => { active = false; clearTimeout(timer); };
   }, [password, email, displayName, step]);
+  async function startOnesa() {
+    if (busy || !onesaOrigin) return;
+    if (location.origin !== onesaOrigin) { location.assign(onesaOrigin + '/#staff'); return; }
+    setBusy(true); setMessage('');
+    try {
+      const flow = await api<{ authorizationUrl: string }>('/api/staff/onesa/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      location.assign(flow.authorizationUrl);
+    } catch (error) { setBusy(false); setMessage(messageFor(error)); }
+  }
   async function authenticate(event: React.FormEvent) {
     event.preventDefault(); if (busy) return;
     if (step === 'register' && !passwordStrong) { setMessage('Choose a longer, less predictable password.'); return; }
@@ -136,6 +149,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     {message && <p className="feedback" role="status">{message}</p>}
     {step === 'loading' && <p role="status">Checking your staff session…</p>}
     {step === 'unavailable' && <button className="secondary" onClick={load} disabled={busy}>Retry staff connection</button>}
+    {step === 'login' && onesaOrigin && <button className="secondary" disabled={busy} onClick={startOnesa}>Sign in with Onesa</button>}
     {(step === 'login' || step === 'register') && <div className="workspace-auth"><div><h3>{step === 'register' ? 'Apply for staff access' : 'Welcome back'}</h3><p>{step === 'register' ? 'Every staff account needs an authenticator and administrator approval before it can sell vouchers or manage a site.' : 'Sign in with your email, password, and authenticator code.'}</p></div><form className="form-grid" onSubmit={authenticate}>
       {step === 'register' && <label>Your name<input required maxLength={80} autoComplete="name" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>}
       <label>Email<input type="email" required maxLength={254} autoComplete="username" autoCapitalize="none" value={email} onChange={event => setEmail(event.target.value)} /></label>
