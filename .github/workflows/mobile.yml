@@ -4,6 +4,15 @@ on:
   pull_request:
     paths:
       - 'pasofi-frontend/mobile/**'
+      # Protected main also requires both real native builds for changes to the
+      # images and deployment definitions that name the mobile app's backend.
+      - 'pasofi-frontend/web/Dockerfile'
+      - 'pasofi-backend/services/*/Dockerfile'
+      - 'pasofi-backend/infra/production/*.yaml'
+      - 'pasofi-backend/infra/backup-production/compose.yaml'
+      - 'pasofi-backend/infra/backup-production/Dockerfile'
+      - 'pasofi-backend/infra/radius-production/compose.yaml'
+      - 'pasofi-backend/infra/oracle-staging/compose.yaml'
       - '.github/workflows/mobile.yml'
   push:
     branches: [main]
