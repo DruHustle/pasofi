@@ -13,6 +13,7 @@ import Policies, { PolicyNotice } from './Policies';
 import { withPolicyHelp, type HelpArticle as Article } from './PolicyHelp';
 import './style.css';
 import './premium.css';
+import AppDownloads from './AppDownloads';
 import './home.css';
 
 const DemoPurchase = lazy(() => import('./DemoPurchase'));
@@ -194,7 +195,7 @@ function App() {
       {!workspace && !purchase && (view === 'terms' || view === 'privacy') && <Policies kind={view}/>}
       {showCatalogue && <section className="pf-help-banner"><span className="pf-empty-icon"><Icon name="help"/></span><div><h2>A little help goes a long way.</h2><p>From your first voucher to your next connection.</p></div><button className="pf-text-link" onClick={() => navigate('help')}>Explore help <Icon name="arrow"/></button></section>}
       </ScreenBoundary>
-      <footer className="pf-footer"><div><strong>Pasofi</strong><p>An Onesa Mobile product</p></div><div className="pf-footer-tools"><button onClick={event => openRecovery(event.currentTarget)}>Recover</button><button onClick={event => openUtility('staff', event.currentTarget)}>Staff</button><button onClick={event => openUtility('handoff', event.currentTarget)}>Accept handoff</button>{demoEnabled && <button onClick={event => openDemo('access', event.currentTarget)}>My demo access</button>}<a href="#terms" onClick={event => { event.preventDefault(); navigate('terms'); }}>Service terms</a><a href="#privacy" onClick={event => { event.preventDefault(); navigate('privacy'); }}>Privacy</a><a href="/connect" onClick={event => { event.preventDefault(); navigate('connect'); }}>Hotspot welcome</a></div></footer>
+      <footer className="pf-footer"><div><strong>Pasofi</strong><p>An Onesa Mobile product</p></div><AppDownloads /><div className="pf-footer-tools"><button onClick={event => openRecovery(event.currentTarget)}>Recover</button><button onClick={event => openUtility('staff', event.currentTarget)}>Staff</button><button onClick={event => openUtility('handoff', event.currentTarget)}>Accept handoff</button>{demoEnabled && <button onClick={event => openDemo('access', event.currentTarget)}>My demo access</button>}<a href="#terms" onClick={event => { event.preventDefault(); navigate('terms'); }}>Service terms</a><a href="#privacy" onClick={event => { event.preventDefault(); navigate('privacy'); }}>Privacy</a><a href="/connect" onClick={event => { event.preventDefault(); navigate('connect'); }}>Hotspot welcome</a></div></footer>
     </main>
   </div>;
 }

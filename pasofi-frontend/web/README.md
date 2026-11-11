@@ -149,3 +149,12 @@ PAMOFI_BASE_URL=http://localhost:5178 PAMOFI_CHROME_PATH=/path/to/chrome npm run
 The completed local strict run on 2 November 2026 passed all 43 web cases and 8 mobile cases, within 168 integration/browser tests across the seven projects, with zero skipped or pending cases. See [the review record](../../pasofi-backend/docs/REVIEW_2026-11-02.md) for separate historical CI/native evidence and the pull request/Actions for subsequent exact-source results.
 
 Reports and screenshots live in Playwright's ignored `test-results` directory. Do not run real journey tests against production or shared data. Passing synthetic acceptance does not establish live provider delivery, physical RouterOS operation, native phone cookie behavior, production backup recovery, or deployment readiness.
+
+## Mobile app downloads
+
+The website footer shows iOS and Android availability independently. Leave each
+public build variable empty until its destination has been verified from a
+signed-out browser. Set `VITE_IOS_DOWNLOAD_URL` to this app's App Store listing
+or public TestFlight invitation. Set `VITE_ANDROID_DOWNLOAD_URL` to the Google
+Play details URL for `com.onesa.pasofi`. Rebuild the website after changing either
+value. Internal builds, simulator artifacts and debug APKs are not public releases.
