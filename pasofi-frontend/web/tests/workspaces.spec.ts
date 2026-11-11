@@ -204,7 +204,11 @@ test('network credentials are private and prepared access stays unconnected unti
   });
   await openCustomer(page); await page.getByRole('button', { name: 'Connect to Wi-Fi' }).click(); await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible(); await page.getByText('Manual connection details', { exact: true }).click(); await expect(page.getByRole('link', { name: /Open registered hotspot sign-in/ })).toHaveAttribute('href', 'https://hotspot.example.test/login'); await expect(page.getByRole('button', { name: 'Connect now →' })).toHaveCount(0);
   expect(await page.evaluate(() => JSON.stringify({ local: localStorage, session: sessionStorage })) ).not.toContain('short-lived-password');
-  connected = true; await page.getByRole('button', { name: 'Check connection', exact: true }).click(); await expect(page.getByText('Connected · recent router report', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Disconnect this hotspot session' }).click(); await expect(page.getByText('Disconnect awaiting confirmation', { exact: true })).toBeVisible(); await expect(page.getByText('No active hotspot session', { exact: true })).toHaveCount(0);
+  connected = true;
+  await page.getByRole('button', { name: 'Check connection', exact: true }).click();
+  await expect(page.getByText('Connected · recent router report', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Disconnect this hotspot session' }).click(); await expect(page.getByText('Disconnect awaiting confirmation', { exact: true })).toBeVisible(); await expect(page.getByText('No active hotspot session', { exact: true })).toHaveCount(0);
 });
 
 test('handoff requires explicit consent and refuses a mismatched or blocked resulting cookie', async ({ page }) => {

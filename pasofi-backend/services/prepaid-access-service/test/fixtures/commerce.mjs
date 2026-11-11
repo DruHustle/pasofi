@@ -38,14 +38,17 @@ async function main() {
     if (entitlements.rows.some(e => e.customer_id !== customer)) throw Error('fixture_ownership_mismatch');
     const entitlementIds = entitlements.rows.map(e => e.id);
     const sessionId=`browser-fixture-${site}`;
-    const grants=await client.query('SELECT id,customer_id,entitlement_id,site_id,nas_id,request_key,accounting_session_id FROM access_grants WHERE customer_id=$1 OR entitlement_id=ANY($2::uuid[])',[customer,entitlementIds]);
+    const grants=await client.query('SELECT id,generation,state,customer_id,entitlement_id,site_id,nas_id,request_key,accounting_session_id FROM access_grants WHERE customer_id=$1 OR entitlement_id=ANY($2::uuid[])',[customer,entitlementIds]);
     if(grants.rows.some(g=>g.customer_id!==customer||!entitlementIds.includes(g.entitlement_id)||g.site_id!==site||g.nas_id!==site||g.request_key!==site||g.accounting_session_id!==sessionId))throw Error('network_fixture_cleanup_required');
     if(action==='account-usage'){
       const allOwned=await client.query('SELECT id,byte_limit::text,consumed_bytes::text FROM purchase_entitlements WHERE customer_id=$1',[customer]);
       if(entitlementIds.length!==1||allOwned.rowCount!==1||allOwned.rows[0].id!==entitlementIds[0]||BigInt(allOwned.rows[0].byte_limit)<3000000n||BigInt(allOwned.rows[0].consumed_bytes)>3000000n)throw Error('single_owned_browser_entitlement_required');
       await client.query('COMMIT');
       const domainPool={query:client.query.bind(client),connect:async()=>({query:client.query.bind(client),release(){}})};
-      const grant=await issueGrant(domainPool,customer,site,site,site,sessionId);
+      // Retrying this fixture resends accounting for its verified active
+      // session. Only the initial connection needs RADIUS authorization.
+      const activeGrant=grants.rows.find(grant=>grant.state==='active');
+      const grant=activeGrant??await issueGrant(domainPool,customer,site,site,site,sessionId);
       await recordAccounting(domainPool,{grantId:grant.id,siteId:site,nasId:site,generation:grant.generation,sessionId,kind:'start',upload:1000000n,download:2000000n});
       const snapshot=await readUsageSnapshot(domainPool,customer);
       console.log(JSON.stringify({accounted:true,customerId:customer,usedBytes:snapshot.totals.usedBytes,remainingBytes:snapshot.totals.remainingBytes,lastAccountingAt:snapshot.lastAccountingAt}));
