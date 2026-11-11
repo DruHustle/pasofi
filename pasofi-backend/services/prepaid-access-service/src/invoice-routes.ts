@@ -51,9 +51,18 @@ export function registerInvoices(app:FastifyInstance,pool:Pool|null,demo:boolean
    try{
     const actor=await principal(request,reply);if(!actor)return;
     const {limit,offset,saleId,orderId}=request.query,index=actor.values.length;
-    const result=await pool!.query(`SELECT ${columns} FROM paid_invoices i JOIN invoice_deliveries d ON d.invoice_id=i.id WHERE ${actor.where}
+    // Only the paired customer can recover an outstanding cash voucher. The
+    // invoice list never contains a code and redemption rechecks its live state.
+    const receiptColumn = audience === 'customer' ? `, (
+     SELECT p.id FROM receipt_pairings p
+     JOIN agent_sales s ON s.id=p.sale_id
+     WHERE p.sale_id=i.sale_id AND p.customer_id=$1 AND s.start_by>=now()
+      AND EXISTS(SELECT 1 FROM issued_vouchers v WHERE v.sale_id=s.id AND v.state='valid')
+      AND NOT EXISTS(SELECT 1 FROM cash_refunds r WHERE r.sale_id=s.id AND r.state IN ('approved','paying','paid'))
+    ) AS pairing_id` : '';
+    const result=await pool!.query(`SELECT ${columns}${receiptColumn} FROM paid_invoices i JOIN invoice_deliveries d ON d.invoice_id=i.id WHERE ${actor.where}
      AND ($${index+1}::uuid IS NULL OR i.sale_id=$${index+1}) AND ($${index+2}::uuid IS NULL OR i.order_id=$${index+2}) ORDER BY i.issued_at DESC,i.id DESC LIMIT $${index+3} OFFSET $${index+4}`,[...actor.values,saleId??null,orderId??null,limit+1,offset]);
-    const hasMore=result.rows.length>limit;return {invoices:result.rows.slice(0,limit).map(invoiceDto),hasMore,nextOffset:hasMore?offset+limit:null};
+    const hasMore=result.rows.length>limit;return {invoices:result.rows.slice(0,limit).map(row => ({...invoiceDto(row), ...(row.pairing_id ? {pairingId:row.pairing_id} : {})})),hasMore,nextOffset:hasMore?offset+limit:null};
    }catch{return unavailable(reply);}
   });
   for(const pdf of [false,true])app.get<{Params:{id:string}}>(`${base}/:id${pdf?'/pdf':''}`,{config:{rateLimit:{max:30,timeWindow:'1 minute'}}},async(request,reply)=>{

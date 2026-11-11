@@ -101,9 +101,9 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
       // Only these domain rejections run after the same-key replay lock and roll back.
       // Gateway/availability errors can race another committed request and stay pending.
       const invalidSavedRequest = error instanceof ApiError && error.status === 400 && error.code === 'invalid_sale' && !!invalid;
-      const rolledBack = invalidSavedRequest || (error instanceof ApiError && error.status === 409 && ['out_of_stock', 'bundle_unavailable', 'pairing_unavailable', 'pairing_terms_mismatch', 'shift_required', 'pairing_required', 'invalid_phone', 'cash_confirmation_required', 'cash_amount_mismatch'].includes(error.code));
+      const rolledBack = invalidSavedRequest || (error instanceof ApiError && error.status === 409 && ['cash_sale_site_unavailable', 'out_of_stock', 'bundle_unavailable', 'pairing_unavailable', 'pairing_terms_mismatch', 'shift_required', 'pairing_required', 'invalid_phone', 'cash_confirmation_required', 'cash_amount_mismatch'].includes(error.code));
       if (rolledBack) { finishMutation(owner, 'sale'); savedPayload.current = null; }
-      if (live.current) { if (rolledBack) { setPending(false); setConfirmed(false); setMessage(`${invalidSavedRequest ? invalid : messageFor(error)} This request did not record a sale or debit inventory. Review the details before trying again.`); } else setMessage(messageFor(error, 'The sale response could not be verified. Retry the saved request to check the same sale; do not collect payment again.')); }
+      if (live.current) { if (rolledBack) { setPending(false); setConfirmed(false); setCashReference(null); setMessage(`${invalidSavedRequest ? invalid : messageFor(error)} This request did not record a sale or debit inventory. Review the details before trying again.`); } else setMessage(messageFor(error, 'The sale response could not be verified. Retry the saved request to check the same sale; do not collect payment again.')); }
     }
     finally { if (live.current) setBusy(false); }
   }

@@ -78,6 +78,26 @@ test('usage aggregates every owned current bundle exactly, including exhausted a
  }finally{await f.cleanup();}
 });
 
+test('a reconnect skips a bundle with too little validity for a positive RADIUS timeout',{skip:!url},async t=>{
+ const f=await fixture(t);
+ try{
+  const [expiring]=await f.bundles(1,1000n,{consumed:400n,activated:true});
+  await f.pool.query("UPDATE purchase_entitlements SET purchased_at=now()-interval '2 hours',activated_at=now()-interval '59 minutes 40 seconds' WHERE id=$1",[expiring]);
+  const site=randomUUID(),nas=randomUUID(),key=randomUUID();
+  const reconnect=()=>issueGrant(f.pool,f.customer,site,nas,key,'reconnect');
+  await assert.rejects(reconnect(),{code:'no_usable_entitlement'});
+  assert.equal((await f.snapshot()).session,null);
+
+  const [queued]=await f.bundles(1,2500n);
+  const grant=await reconnect();
+  assert.equal(grant.reserved_bytes,'2500');
+  const usage=await f.snapshot([expiring,queued]);
+  assert.equal(usage.session.entitlementId,queued);
+  assert.equal(usage.lifetimeAccountedBytes,'400');
+  assert.equal(usage.entitlementUpdates.find(e=>e.id===queued).activated_at,null);
+ }finally{await f.cleanup();}
+});
+
 test('usage follows verified accounting once and preserves reservations through stale, Stop and held states',{skip:!url},async t=>{
  const f=await fixture(t),site=randomUUID(),nas=randomUUID();
  try{

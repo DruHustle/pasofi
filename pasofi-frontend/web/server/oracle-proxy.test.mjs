@@ -273,6 +273,14 @@ test('cash workflow, recovery, staff and network routes are available through or
       assert.equal(publicRoute(path, method).target, path);
       const response = await call(path, { method, headers: { origin: env.PAMOFI_PUBLIC_ORIGIN } }); assert.equal(response.status, 200, `${method} ${path}`);
     }
+    for (const area of ['cash-shifts', 'cash-refunds']) {
+      const query = `active=true&limit=1&before=${id}`;
+      const target = `/api/staff/${area}?${query}`;
+      for (const url of [target, `/api/gateway?__pamofi_path=staff/${area}&${query}`]) {
+        assert.equal((await call(url)).status, 200);
+        assert.equal(events.at(-1).url, target);
+      }
+    }
     const response = await call('/api/usage?__pamofi_path=usage&opaque=x%2Fy'); assert.equal(response.status, 200); assert.equal(events.at(-1).url, '/api/usage?opaque=x%2Fy');
     const head = await call('/api/capabilities', { method: 'HEAD' }); assert.equal(head.status, 200); assert.equal(head.body, ''); privateResponse(head);
   });

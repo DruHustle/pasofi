@@ -1,6 +1,6 @@
 import {registerCashRefunds} from './cash-refunds.js';
 import {registerCashShifts} from './cash-shifts.js';
-import {createCashReference,cancelCashReference,referenceHash,referenceQuote,referenceStatus} from './cash-references.js';
+import {createCashReference,cancelCashReference,lookupCashReference,referenceQuote,referenceStatus} from './cash-references.js';
 import {randomUUID} from 'node:crypto';
 import {SignJWT,jwtVerify} from 'jose';
 import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
@@ -149,7 +149,10 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
   const s=await staff(request,reply,['admin','agent']);if(!s)return;const b=record(request.body),code=typeof b.code==='string'?b.code.toUpperCase().replace(/[-\s]/g,''):'';
   if(!/^[A-Z2-9]{10}$/.test(code)||typeof b.siteId!=='string'||!uuid.test(b.siteId))return reply.code(400).send({error:'invalid_reference'});
   if(!allowedSite(s,b.siteId))return reply.code(403).send({error:'site_forbidden'});
-  try{const row=(await pool!.query('SELECT * FROM receipt_pairings WHERE code_hash=$1 AND site_id=$2',[referenceHash(code),b.siteId])).rows[0];if(!row)return reply.code(404).send({error:'reference_not_found'});return {status:referenceStatus(row),expiresAt:row.expires_at,quote:referenceQuote(row)};}catch(error){return errors(reply,error);}
+  try{
+   const reference=await lookupCashReference(pool!,code,b.siteId,s.role==='agent'?s.staffId:null);
+   return reference??reply.code(404).send({error:'reference_not_found'});
+  }catch(error){return errors(reply,error);}
  });
  app.post<{Params:{id:string}}>('/v1/receipt-pairings/:id/cancel',async(request,reply)=>{
   const id=await account(request,reply);if(!id)return;if(!uuid.test(request.params.id))return reply.code(404).send({error:'not_found'});

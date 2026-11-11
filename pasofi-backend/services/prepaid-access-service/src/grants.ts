@@ -3,12 +3,42 @@ import type { Pool, PoolClient } from 'pg';
 
 // Only the authenticated network boundary may invoke these domain functions.
 const maxSessionSeconds = 86400;
+// The RADIUS authority subtracts 30 seconds before sending Session-Timeout.
+// A new reservation needs at least one whole usable second after this margin.
+const canStartSession = `e.revoked_at IS NULL AND e.consumed_bytes<e.byte_limit AND
+  ((e.activated_at IS NULL AND e.start_by>=statement_timestamp() AND e.validity_seconds>=31)
+    OR e.activated_at+make_interval(secs=>e.validity_seconds)>=statement_timestamp()+interval '31 seconds')`;
+
+export function selectNetworkEntitlement(client:PoolClient, customerId:string) {
+  return client.query(`SELECT id FROM purchase_entitlements e WHERE e.customer_id=$1 AND ${canStartSession}
+    ORDER BY (e.activated_at IS NULL),e.purchased_at,e.id LIMIT 1 FOR SHARE`,[customerId]);
+}
 export class GrantError extends Error { constructor(public readonly code: string) { super(code); } }
 async function transaction<T>(pool:Pool, work:(client:PoolClient)=>Promise<T>):Promise<T> {
   const client = await pool.connect();
   try { await client.query('BEGIN'); const result = await work(client); await client.query('COMMIT'); return result; }
   catch (error) { await client.query('ROLLBACK'); throw error; }
   finally { client.release(); }
+}
+// Callers lock the customer, entitlement and any pending grant before checking.
+// Use the current clock so waiting on a lock cannot extend an expiring bundle.
+export async function networkAccessEligible(client:PoolClient, customerId:string, entitlementId:string, grantId:string|null, credentialExpiresAt:string|null = null) {
+  const result = await client.query(`SELECT 1 FROM purchase_entitlements e
+    WHERE e.id=$1 AND e.customer_id=$2 AND e.revoked_at IS NULL AND e.consumed_bytes<e.byte_limit
+      AND ((e.activated_at IS NULL AND e.start_by>=clock_timestamp())
+        OR e.activated_at+make_interval(secs=>e.validity_seconds)>clock_timestamp())
+      AND ($3::uuid IS NOT NULL OR (${canStartSession}))
+      AND NOT EXISTS (SELECT 1 FROM network_account_holds WHERE customer_id=$2)
+      AND ($3::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM access_grants g WHERE g.id=$3 AND g.customer_id=$2 AND g.entitlement_id=e.id
+          AND g.state='pending' AND g.deadline>clock_timestamp()
+          AND g.disconnect_requested_at IS NULL AND g.stop_received_at IS NULL
+          AND g.credential_fenced_at IS NULL AND g.absent_verified_at IS NULL
+          AND g.accounting_started_at IS NULL AND g.last_accounting_at IS NULL AND NOT g.accounting_anomaly
+          AND g.charged_bytes=0 AND g.reserved_bytes<=e.byte_limit-e.consumed_bytes))
+      AND ($4::timestamptz IS NULL OR $4::timestamptz>clock_timestamp())`,
+    [entitlementId,customerId,grantId,credentialExpiresAt]);
+  return result.rowCount===1;
 }
 export async function issueGrant(pool:Pool, customerId:string, siteId:string, nasId:string, requestKey:string, sessionId:string) {
   if(typeof sessionId!=='string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(sessionId)) throw new GrantError('invalid_session');
@@ -17,31 +47,32 @@ export async function issueGrant(pool:Pool, customerId:string, siteId:string, na
     // protect against two first grants for the same customer.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',[customerId]);
     if((await client.query('SELECT 1 FROM network_account_holds WHERE customer_id=$1',[customerId])).rowCount) throw new GrantError('accounting_review_required');
-    const replay=await client.query(`SELECT id,generation,site_id,nas_id,accounting_session_id,reserved_bytes::text,issued_at,deadline,state,deadline > now() AS safe
-      FROM access_grants WHERE customer_id=$1 AND request_key=$2`,[customerId,requestKey]);
+    const replay=await client.query(`SELECT g.id,g.generation,g.site_id,g.nas_id,g.accounting_session_id,g.reserved_bytes::text,g.issued_at,g.deadline,g.entitlement_id
+      FROM access_grants g JOIN purchase_entitlements e ON e.id=g.entitlement_id
+      WHERE g.customer_id=$1 AND g.request_key=$2 FOR UPDATE OF g FOR SHARE OF e`,[customerId,requestKey]);
     if(replay.rowCount) {
       const grant=replay.rows[0];
       if(grant.site_id!==siteId || grant.nas_id!==nasId || grant.accounting_session_id!==sessionId) throw new GrantError('idempotency_conflict');
-      if(grant.state==='closed' || grant.state==='uncertain' || !grant.safe) throw new GrantError('grant_not_replayable');
+      // An Access-Request retry can recover a lost initial reply. Once accounting
+      // starts, sending the original byte limit again could reset the NAS quota.
+      if(!await networkAccessEligible(client,customerId,grant.entitlement_id,grant.id)) throw new GrantError('grant_not_replayable');
       return {id:grant.id,generation:grant.generation,site_id:grant.site_id,nas_id:grant.nas_id,reserved_bytes:grant.reserved_bytes,issued_at:grant.issued_at,deadline:grant.deadline};
     }
     const existing=await client.query("SELECT id FROM access_grants WHERE customer_id=$1 AND state <> 'closed'",[customerId]);
     if(existing.rowCount) throw new GrantError('session_pending_or_active');
-    const chosen=await client.query(`SELECT id, byte_limit::text, consumed_bytes::text, validity_seconds, activated_at,
-      CASE WHEN activated_at IS NULL THEN now()+make_interval(secs=>LEAST(validity_seconds,$2))
-           ELSE LEAST(activated_at+make_interval(secs=>validity_seconds),now()+make_interval(secs=>$2)) END AS deadline
-      FROM purchase_entitlements
-      WHERE customer_id=$1 AND revoked_at IS NULL AND consumed_bytes<byte_limit AND
-      ((activated_at IS NOT NULL AND activated_at+make_interval(secs=>validity_seconds)>now()) OR (activated_at IS NULL AND start_by>=now()))
-      ORDER BY (activated_at IS NULL), purchased_at, id FOR UPDATE LIMIT 1`,[customerId,maxSessionSeconds]);
+    const chosen=await selectNetworkEntitlement(client,customerId);
     if(!chosen.rowCount) throw new GrantError('no_usable_entitlement');
-    const entitlement=chosen.rows[0];
-    const reserved=BigInt(entitlement.byte_limit)-BigInt(entitlement.consumed_bytes);
-    if(reserved<=0n) throw new GrantError('no_usable_entitlement');
-    const id=randomUUID(), generation=randomUUID();
-    const result=await client.query(`INSERT INTO access_grants (id,customer_id,entitlement_id,site_id,nas_id,request_key,generation,state,reserved_bytes,deadline,accounting_session_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$9,$10) RETURNING id,generation,site_id,nas_id,reserved_bytes::text,issued_at,deadline`,
-      [id,customerId,entitlement.id,siteId,nasId,requestKey,generation,reserved.toString(),entitlement.deadline,sessionId]);
+    // Recheck on a fresh statement clock after acquiring the entitlement lock.
+    // An expiring bundle must not leave a reservation the router cannot accept.
+    const result=await client.query(`INSERT INTO access_grants
+      (id,customer_id,entitlement_id,site_id,nas_id,request_key,generation,state,reserved_bytes,issued_at,deadline,accounting_session_id)
+      SELECT $1,e.customer_id,e.id,$3,$4,$5,$6,'pending',e.byte_limit-e.consumed_bytes,statement_timestamp(),
+        LEAST(COALESCE(e.activated_at,statement_timestamp())+make_interval(secs=>e.validity_seconds),
+          statement_timestamp()+make_interval(secs=>$8)), $7
+      FROM purchase_entitlements e WHERE e.id=$2 AND ${canStartSession}
+      RETURNING id,generation,site_id,nas_id,reserved_bytes::text,issued_at,deadline`,
+      [randomUUID(),chosen.rows[0].id,siteId,nasId,requestKey,randomUUID(),sessionId,maxSessionSeconds]);
+    if(!result.rowCount) throw new GrantError('no_usable_entitlement');
     return result.rows[0];
   }); } catch(error) {
     if(typeof error==='object' && error!==null && 'constraint' in error && error.constraint==='one_live_grant_per_nas_session') throw new GrantError('nas_session_in_use');

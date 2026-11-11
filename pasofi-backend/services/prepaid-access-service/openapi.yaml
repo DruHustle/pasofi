@@ -953,6 +953,7 @@ components:
         orderId: {type: [string, 'null'], format: uuid}
         simulation: {type: boolean}
         requestedChannel: {type: string, enum: [download, email, sms]}
+        pairingId: {type: string, format: uuid, description: Private receipt reference provided in customer lists for a paired cash voucher that can still be redeemed.}
     UsageBytes: {type: string, pattern: '^(0|[1-9][0-9]*)$', description: Exact nonnegative decimal byte count; aggregate can exceed the signed 64-bit range.}
     UsageTotals:
       type: object
