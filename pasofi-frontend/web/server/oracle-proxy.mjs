@@ -11,6 +11,8 @@ const rules = [
   [/^\/api\/session$/, ['GET', 'POST', 'DELETE']],
   [/^\/api\/recovery\/status$/, ['GET']],
   [/^\/api\/(recovery(?:\/(setup|rotate))?|handoff(?:\/redeem)?)$/, ['POST']],
+  [/^\/api\/onesa\/availability$/, ['GET']],
+  [/^\/api\/onesa\/(start|complete)$/, ['POST']],
   [/^\/api\/staff\/onesa\/availability$/, ['GET']],
   [/^\/api\/staff\/onesa\/(start|complete)$/, ['POST']],
   [/^\/api\/staff\/(register|login|mfa\/(setup|confirm|verify))$/, ['POST']],
@@ -51,6 +53,7 @@ const rules = [
 // The native marker selects a narrower public customer protocol. It is not an
 // authentication credential and cannot grant staff or service authority.
 const nativeCustomerRules = [
+  [/^\/api\/onesa\/availability$/, ['GET']],
   [/^\/api\/(bundles|capabilities|sites|access|usage|help|payments\/methods)$/, ['GET']],
   [/^\/api\/orders$/, ['GET', 'POST']],
   [new RegExp(`^/api/orders/${UUID}/status$`), ['GET']],
@@ -69,7 +72,7 @@ const nativeCustomerRules = [
 ];
 const BODY_LIMIT = 32 * 1024;
 const RESPONSE_LIMIT = 1024 * 1024;
-const cookieNames = new Set(['__Host-pamofi_session', '__Host-pamofi_staff_session', '__Host-pamofi_staff_challenge', '__Host-pasofi_onesa_flow']);
+const cookieNames = new Set(['__Host-pamofi_session', '__Host-pamofi_staff_session', '__Host-pamofi_staff_challenge', '__Host-pasofi_onesa_flow', '__Host-pasofi_onesa_customer_flow']);
 const nativeCookieNames = new Set(['__Host-pamofi_session']);
 
 class ProxyError extends Error {

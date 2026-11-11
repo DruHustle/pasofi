@@ -126,27 +126,28 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
   const connected = fresh && session?.connected === true && session.state === 'active';
   return <section className="workspace-card"><div className="workspace-section-head"><h3>Hotspot connection</h3><button className="secondary" disabled={busy || refreshing} onClick={refresh}>Check connection</button></div>
     <p className={`connection-state ${connected ? 'connected' : ''}`} role="status">{!fresh ? 'Connection status not verified' : usage?.hold.active ? 'Connection needs review' : !session ? 'No active hotspot session' : session.disconnectRequested ? 'Disconnect awaiting confirmation' : connected ? 'Connected · recent router report' : session.state === 'uncertain' ? 'Checking an interrupted connection' : usage?.connectivity === 'stale' ? 'Router report delayed · connection not verified' : 'Sign-in pending · not confirmed connected'}</p>
+    {!session && capabilities.networkAccess && <ol className="customer-connection-guide" aria-label="How to connect"><li>Join the Wi-Fi network named by your local agent.</li><li>Prepare your sign-in below, then finish on the registered hotspot page.</li><li>Return to My WiFi to check the connection status.</li></ol>}
     {session && <p>Usage recorded for this connection: {dataAmount(session.chargedBytes)} · This connection is scheduled to end by {localDate(session.deadline)}. Check the balance above for your remaining data.</p>}
     {message && <p className="feedback" role="status">{message}</p>}
-    {!capabilities.networkAccess && <p className="notice">New hotspot connections are paused.{session ? " You can still check or disconnect your current session." : " Ask your Pasofi agent when service is available."}</p>}
+    {!capabilities.networkAccess && <p className="notice">New hotspot connections are paused.{session ? " You can still check or disconnect your current session." : " Ask your PasoFi agent when service is available."}</p>}
     {capabilities.networkAccess && !credentials && sitesLoading && <p role="status">Loading hotspot locations…</p>}
     {capabilities.networkAccess && !credentials && sitesError && <div className="notice"><p role="alert">Hotspot locations could not be loaded. Try again to choose where to connect.</p><button className="secondary" disabled={busy || sitesLoading} onClick={() => setSitesAttempt(value => value + 1)}>Retry locations</button></div>}
-    {capabilities.networkAccess && !credentials && !sitesLoading && !sitesError && sites.length === 0 && <div className="notice"><p role="status">No hotspot locations are available yet. Ask your Pasofi agent for help or check again.</p><button className="secondary" disabled={busy} onClick={() => setSitesAttempt(value => value + 1)}>Refresh locations</button></div>}
+    {capabilities.networkAccess && !credentials && !sitesLoading && !sitesError && sites.length === 0 && <div className="notice"><p role="status">No hotspot locations are available yet. Ask your PasoFi agent for help or check again.</p><button className="secondary" disabled={busy} onClick={() => setSitesAttempt(value => value + 1)}>Refresh locations</button></div>}
     {capabilities.networkAccess && !credentials && !sitesLoading && !sitesError && sites.length > 0 && <form className="form-grid" onSubmit={prepare}>
-      {sites.length === 1 ? <p>Connecting at <strong>{sites[0].siteName} · {sites[0].name}</strong>. No Wi-Fi name to enter.</p> : <label>Choose your Pasofi hotspot<select required value={nasId} onChange={event => { setNasId(event.target.value); setCredentials(null); clearRequest(); }} disabled={busy || !!session}><option value="">Select a hotspot</option>{sites.map(site => <option value={site.nasId} key={site.nasId}>{site.siteName} · {site.name}</option>)}</select></label>}
+      {sites.length === 1 ? <p>Connecting at <strong>{sites[0].siteName} · {sites[0].name}</strong>. No Wi-Fi name to enter.</p> : <label>Choose your PasoFi hotspot<select required value={nasId} onChange={event => { setNasId(event.target.value); setCredentials(null); clearRequest(); }} disabled={busy || !!session}><option value="">Select a hotspot</option>{sites.map(site => <option value={site.nasId} key={site.nasId}>{site.siteName} · {site.name}</option>)}</select></label>}
       <button className="primary" disabled={busy || !canShowCredentials || !nasId || (!!session && !retryPending)}>{busy ? 'Getting your connection ready…' : retryPending ? 'Retry connection' : 'Connect to Wi-Fi'}</button>
     </form>}
     {capabilities.networkAccess && credentials && canShowCredentials && <div className="private-value">
-      <h4>One more tap and you’re on your way</h4>
+      <h4>Finish hotspot sign-in</h4>
       {formOrigins.includes(new URL(credentials.loginUrl).origin) ? <>
-        <p>Connect securely to your Pasofi hotspot. Your connection details are filled in for you.</p>
+        <p>Connect securely to your PasoFi hotspot. Your connection details are filled in for you.</p>
         <form action={credentials.loginUrl} method="post">
           <input type="hidden" name="username" value={credentials.username} />
           <input type="hidden" name="password" value={credentials.password} />
           <button className="primary" type="submit">Connect now →</button>
         </form>
       </> : <p>This location needs a manual sign-in. Open the connection details below to continue.</p>}
-      <p>Ready until {localDate(credentials.expiresAt)}.</p>
+      <p>Sign-in expires at {localDate(credentials.expiresAt)}. Your connection is confirmed only after a recent router report appears above.</p>
       <details><summary>Manual connection details</summary>
         <a className="secondary button-link" href={credentials.loginUrl} target="_blank" rel="noopener noreferrer">Open registered hotspot sign-in ↗</a>
         <p>Enter these temporary details only on the registered hotspot page.</p>

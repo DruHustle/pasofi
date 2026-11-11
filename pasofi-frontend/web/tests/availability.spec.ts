@@ -8,7 +8,7 @@ const disabledCapabilities: Capabilities = {
 };
 const cashCapabilities: Capabilities = { ...disabledCapabilities, vouchers: true, receiptPairing: true, staffSales: true };
 const flex: Product = { id: 'flex', price_minor: 100, currency: 'USD', byte_limit: '5000000000', validity_seconds: 604800 };
-const emptyMessage = 'No bundles are published yet. Check back when Pasofi launches.';
+const emptyMessage = 'No bundles are published yet. Check back when PasoFi launches.';
 const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
 /** Production-shaped guest responses, isolated from all real accounts and services. */
@@ -24,6 +24,7 @@ async function guestAvailability(page: Page) {
       state.mutations.push(`${request.method()} ${path}`);
       return json(route, { error: 'unexpected_test_mutation' }, 405);
     }
+    if (path === '/api/onesa/availability') return json(route, { origin: null });
     if (path === '/api/capabilities' || path === '/api/bundles') {
       state.reads[path === '/api/capabilities' ? 'capabilities' : 'bundles']++;
       // Capture the response at request time so a delayed older request really
@@ -53,7 +54,7 @@ async function expectEmptyBundles(page: Page) {
   await expect(navigation(page).getByRole('button', { name: 'Bundles', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(navigation(page).locator('[aria-current="page"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Connect to Pasofi', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Connect to PasoFi', exact: true })).toHaveCount(0);
   await expect(page.locator('.pf-connection-card, .customer-workspace')).toHaveCount(0);
   await expect(catalogueHeading(page)).toBeFocused();
   await expect(catalogueHeading(page)).toBeInViewport({ ratio: 1 });
@@ -105,14 +106,14 @@ for (const width of [320, 390]) {
       await expect(page).toHaveURL(/\/connect$/);
       await expect(catalogueHeading(page)).toBeFocused();
       await expect(catalogueHeading(page)).toBeInViewport({ ratio: 1 });
-      await expect(page.getByRole('heading', { name: 'Connect to Pasofi', exact: true })).toHaveCount(1);
+      await expect(page.getByRole('heading', { name: 'Connect to PasoFi', exact: true })).toHaveCount(1);
       await expect.poll(() => state.reads).toEqual({ capabilities: before.capabilities + 1, bundles: before.bundles + 1 });
       await expect(page.getByText(emptyMessage, { exact: true })).toBeVisible();
     });
     for (const entry of ['Bundles', 'View bundles']) {
       await test.step(`Captive ${entry} opens the standalone catalogue`, async () => {
         await page.goto('/connect');
-        await expect(page.getByRole('heading', { name: 'Connect to Pasofi', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Connect to PasoFi', exact: true })).toBeVisible();
         await expect(page.getByText(emptyMessage, { exact: true })).toBeVisible();
         const button = entry === 'Bundles' ? navigation(page).getByRole('button', { name: entry, exact: true }) : page.getByRole('button', { name: entry, exact: true });
         await button.click(); await expectEmptyBundles(page);

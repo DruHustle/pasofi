@@ -28,7 +28,7 @@ async function fixture(page: Page, signedIn = false) {
 for (const width of [320, 390, 1280]) {
   test(`connection entry keeps five offers compact and voucher access visible at ${width}px`, async ({ page }, testInfo) => {
     await fixture(page); await page.setViewportSize({ width, height: 900 }); await page.goto('/connect');
-    await expect(page.getByRole('heading', { name: 'Connect to Pasofi', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Connect to PasoFi', exact: true })).toBeVisible();
     await expect(page.locator('.pf-bundle-card')).toHaveCount(5);
     await expect(page.getByText('Made for Zimbabwe', { exact: true })).toHaveCount(0);
     await expect(page.locator('.pf-connection-card')).toHaveCount(0);

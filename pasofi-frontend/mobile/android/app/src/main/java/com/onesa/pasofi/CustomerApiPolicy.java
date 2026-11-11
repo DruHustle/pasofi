@@ -42,6 +42,7 @@ final class CustomerApiPolicy {
 
     static boolean validUuid(String value) { return value != null && UUID_PATTERN.matcher(value).matches(); }
     static boolean validToken(String value) { return value != null && TOKEN.matcher(value).matches(); }
+    static String browserSignInUrl(String origin) { return validOrigin(origin) ? origin + "/#account" : null; }
     static boolean allowedStatus(Options options, int status) {
         if (status < 200 || status > 599 || (status >= 300 && status < 400)) return false;
         if (status >= 400) return true;
@@ -82,7 +83,7 @@ final class CustomerApiPolicy {
 
     private static boolean allowedRoute(String path, String method) {
         if (path.equals("/api/session")) return true;
-        if (method.equals("GET")) return path.matches("^/api/(bundles|capabilities|sites|access|usage|help|payments/methods|orders|recovery/status|network/sites|network/session)$") ||
+        if (method.equals("GET")) return path.equals("/api/onesa/availability") || path.matches("^/api/(bundles|capabilities|sites|access|usage|help|payments/methods|orders|recovery/status|network/sites|network/session)$") ||
             path.matches("^/api/orders/" + UUID + "/status$") || path.matches("^/api/customer/invoices(?:/" + UUID + "(?:/pdf)?)?$") ||
             path.matches("^/api/receipt-pairings/" + UUID + "$" );
         if (!method.equals("POST")) return false;

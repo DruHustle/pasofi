@@ -22,8 +22,13 @@ struct CustomerApiPolicyTests {
     }
     static func main() throws {
         check(CustomerApiPolicy.origin(origin) == origin, "Public HTTPS origin accepted")
+        check(CustomerApiPolicy.browserSignInURL(origin)?.absoluteString == origin + "/#account", "Only fixed public sign-in destination")
+        _ = try request("/api/onesa/availability"); checks += 1
+        rejects("Availability cannot mutate") { _ = try request("/api/onesa/availability", "POST") }
+        rejects("Availability does not accept private query") { _ = try request("/api/onesa/availability?code=private") }
+        rejects("Native does not exchange browser OIDC credentials") { _ = try request("/api/onesa/complete", "POST") }
         for invalid in ["http://pasofi.example.test", "https://user@pasofi.example.test", "https://pasofi.example.test/", "https://pasofi.example.test/api", "https://pasofi.example.test:8443", "https://127.0.0.1", "https://pasofi.local", "https://sub.localhost", "https://pasofi.example.test?route=evil"] {
-            check(CustomerApiPolicy.origin(invalid) == nil, "Unexpected origin rejected")
+            check(CustomerApiPolicy.origin(invalid) == nil && CustomerApiPolicy.browserSignInURL(invalid) == nil, "Unexpected origin rejected")
         }
         for path in ["/api/capabilities", "/api/session", "/api/access?offset=0&limit=100", "/api/orders?requestKey=" + retry, "/api/payments/methods?siteId=" + id + "&bundleId=flex", "/api/usage?entitlementIds=" + id + "%2C" + other, "/api/customer/invoices?orderId=" + id + "&limit=1"] {
             _ = try request(path); checks += 1

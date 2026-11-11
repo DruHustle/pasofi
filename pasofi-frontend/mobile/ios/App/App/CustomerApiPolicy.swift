@@ -46,6 +46,11 @@ enum CustomerApiPolicy {
         return raw
     }
 
+    static func browserSignInURL(_ raw: String) -> URL? {
+        guard let approved = origin(raw) else { return nil }
+        return URL(string: approved + "/#account")
+    }
+
     static func request(id: String, path: String, method: String, responseType: String, data: String?, key: String?) throws -> CustomerApiRequest {
         guard matches(id, uuid), path.utf8.count <= 4096,
               path.range(of: "[\\x00-\\x20\\x7f\\\\#]", options: .regularExpression) == nil,
@@ -53,7 +58,7 @@ enum CustomerApiPolicy {
               ["GET", "POST", "DELETE"].contains(method), ["json", "pdf"].contains(responseType) else { throw CustomerApiFailure.request }
         let pieces = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
         let route = String(pieces[0])
-        let getPatterns = ["/api/(bundles|capabilities|sites|access|usage|help|payments/methods)", "/api/orders", "/api/orders/" + uuid + "/status", "/api/session", "/api/recovery/status", "/api/customer/invoices(?:/" + uuid + "(?:/pdf)?)?", "/api/receipt-pairings/" + uuid, "/api/network/(sites|session)"]
+        let getPatterns = ["/api/onesa/availability", "/api/(bundles|capabilities|sites|access|usage|help|payments/methods)", "/api/orders", "/api/orders/" + uuid + "/status", "/api/session", "/api/recovery/status", "/api/customer/invoices(?:/" + uuid + "(?:/pdf)?)?", "/api/receipt-pairings/" + uuid, "/api/network/(sites|session)"]
         let postPatterns = ["/api/orders", "/api/orders/" + uuid + "/(checkout|mock-payment|expire-unused)", "/api/session", "/api/(recovery(?:/(setup|rotate))?|handoff(?:/redeem)?)", "/api/invoice-downloads", "/api/receipt-pairings", "/api/receipt-pairings/" + uuid + "/cancel", "/api/vouchers/redeem", "/api/network/(credentials|disconnect)"]
         let allowed = method == "GET" ? getPatterns.contains(where: { matches(route, $0) }) : method == "POST" ? postPatterns.contains(where: { matches(route, $0) }) : route == "/api/session"
         guard allowed else { throw CustomerApiFailure.request }

@@ -56,7 +56,7 @@ The command takes a database advisory lock, verifies that bootstrap has never co
 
 ## Captive to system-browser handoff
 
-`POST /v1/handoff {}` with the current customer cookie returns `{handoffCode,expiresIn:120,continueUrl}`. The URL is the clean `${PUBLIC_ORIGIN}/handoff`; it never contains a credential. The customer copies the 43-character code and pastes it into that page in their system browser. Keep the code in memory and require an explicit confirmation before `POST /v1/handoff/redeem {handoffCode}`. A successful response sets a fresh customer cookie for the same account. The client must confirm the returned customer ID with `GET /v1/session` before claiming success, because a browser may block cookies.
+`POST /v1/handoff {}` with the current customer cookie returns `{handoffCode,expiresIn,continueUrl}`. The URL is the clean `${PUBLIC_ORIGIN}/handoff`; it never contains a credential. The customer copies the 43-character code and pastes it into that page in their system browser. Keep the code in memory and require an explicit confirmation before `POST /v1/handoff/redeem {handoffCode}`. A successful response sets a fresh customer cookie for the same account. The client must confirm the returned customer ID with `GET /v1/session` before claiming success, because a browser may block cookies.
 
 Only a hash of the code is stored. Creating another code invalidates the previous unused code from that source session. Redemption atomically consumes the code, checks its two-minute expiry and the original session's validity, and creates the new session. A concurrent retry loses with `401 invalid_handoff`. Revoking the source session invalidates an unused code. A target browser with an existing authenticated customer gets `409 session_already_exists` without consuming the code; the service never silently replaces that account. Handoff leaves the original session and recovery settings intact.
 
@@ -73,3 +73,40 @@ An approved MFA-authenticated administrator can initiate `POST /v1/staff/users/:
 Register the confidential `pasofi` client at the Onesa Portal with the exact redirect URI `https://pasofi.mobile.onesa.eu/onesa-callback.html`. Add the browser origin to the identity service's allowed public origins. Set `PASOFI_ONESA_CLIENT_ID` and mount the matching client secret using the production `infra/production/onesa-staff.compose.yaml` overlay. The identity container must reach the configured HTTPS issuer. Apply identity migrations and runtime grants before enabling the overlay.
 
 From the PasoFi staff workspace choose **Sign in with Onesa**. The Portal requires recent MFA. PasoFi verifies the signed ID token and checks the live client-bound Portal session on every staff operation. The session must identify a verified global administrator with the PasoFi admin grant. The Portal subject identifies the actor in existing audit records. Local staff registration, MFA and site grants remain independent, including when both accounts share an email.
+
+
+### Onesa customer accounts
+
+Approved Portal customers use `POST /v1/onesa/start` and `/v1/onesa/complete`,
+with the same registered `/onesa-callback.html` as staff. The separate customer
+flow cookie, one-use state, nonce and PKCE bind each callback to its browser.
+`GET /v1/onesa/availability` exposes the configured public origin and `handoff: true` only when Portal customer sign-in is configured. The web
+client offers Sign in with Onesa and restores a server-allowlisted destination.
+
+Migration 011 adds immutable `(issuer, subject)` customer mapping, expiring flow
+state and encrypted provider credentials. Federated cookies live only in
+`customer_onesa_sessions`, so a pre-feature runtime rollback cannot reinterpret
+them as anonymous customer sessions. Repeat login reuses one local customer;
+email and existing guest purchases are never automatically merged. Guests should
+save their recovery details before switching accounts. Apply the updated least-
+privilege runtime grant manifest with the schema migration.
+
+The customer grant is `onesa_product_roles.pasofi=customer`; global administrators
+retain their separately checked MFA/admin path. Every protected customer-session
+resolution introspects the Portal token and fences a concurrent local sign-out.
+Missing configuration, expired/revoked grants or an unavailable Portal fail closed.
+Guest recovery/handoff cannot create an authenticated Portal customer session.
+Portal customers recover through Onesa; their guest-style recovery setup returns
+`409 onesa_sign_in_required`, and status identifies `authentication: onesa`.
+
+Migration 012 isolates Portal handoff codes in `customer_onesa_handoffs`. The native
+client opens only its compiled PasoFi origin in the system browser. After signing
+in, the user creates an explicit transfer code and confirms it in the native app.
+Creation and redemption both require live Portal verification. Codes expire within
+two minutes and no later than their source session; logout or observed revocation
+invalidates outstanding transfers. Redemption creates an independently encrypted
+Portal session with the same identity and bounded expiry, never a guest session.
+A provider outage returns 503 without consuming a valid code. Transfer refuses an
+already signed-in target. Credentials remain outside URLs and the JavaScript bridge.
+The private native cookie transport verifies the resulting account before success.
+Physical-device and signed-distribution acceptance remain separate release gates.

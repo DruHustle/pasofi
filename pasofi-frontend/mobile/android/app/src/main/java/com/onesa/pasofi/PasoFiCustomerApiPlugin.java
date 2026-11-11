@@ -1,6 +1,8 @@
 package com.onesa.pasofi;
 
 import android.util.Base64;
+import android.content.Intent;
+import android.net.Uri;
 import android.webkit.WebView;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -127,6 +129,33 @@ public final class PasoFiCustomerApiPlugin extends Plugin {
                 }
             });
         }
+    }
+
+    @PluginMethod
+    public void openSignIn(PluginCall call) {
+        final String requestId = call.getString("requestId");
+        if (call.getData().length() != 1 || !CustomerApiPolicy.validUuid(requestId)) { reject(call, "native_request_rejected"); return; }
+        final long page;
+        final String destination;
+        synchronized (gate) {
+            if (destroyed) return;
+            page = pageGeneration;
+            destination = CustomerApiPolicy.browserSignInUrl(origin);
+        }
+        if (destination == null || getActivity() == null) { reject(call, "mobile_api_not_configured"); return; }
+        getActivity().runOnUiThread(() -> {
+            synchronized (gate) {
+                if (destroyed || page != pageGeneration) return;
+                try {
+                    // Only the compiled HTTPS origin; no cookie, code or return token.
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(destination));
+                    intent.addCategory(Intent.CATEGORY_BROWSABLE);
+                    getActivity().startActivity(intent);
+                    JSObject result = new JSObject(); result.put("requestId", requestId); result.put("opened", true);
+                    call.resolve(result);
+                } catch (Exception ignored) { reject(call, "request_failed"); }
+            }
+        });
     }
 
     @PluginMethod

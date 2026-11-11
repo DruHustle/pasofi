@@ -1,3 +1,31 @@
+## Onesa account sign-in through an explicit handoff
+
+The customer app opens only its compiled HTTPS PasoFi origin at `/#account` in
+the system browser. `PasoFiCustomerApi.openSignIn` accepts a request ID only;
+JavaScript cannot supply a destination, cookie, code or authorization header.
+Android uses the operating system's `ACTION_VIEW` browser handling and iOS uses
+`UIApplication.open`; this is not an embedded identity WebView or a browser-cookie
+import. See [Android web intents](https://developer.android.com/guide/components/intents-common#ViewUrl)
+and [Apple external URL opening](https://developer.apple.com/documentation/uikit/uiapplication/open(_:options:completionhandler:)).
+
+The app first requires `/api/onesa/availability` to advertise the exact configured
+origin and `handoff: true`. Older deployments remain unavailable. The customer signs
+in with Onesa in the browser, opens Account and creates a two-minute one-use handoff
+code, then returns to the app, pastes the code and explicitly confirms ownership.
+The existing private native `/api/handoff/redeem` transport accepts the separately
+issued host-only session cookie; no cookie or provider token is passed through
+JavaScript. The server must validate the source's current Portal grant, expiry and
+logout state and bind a separate Portal session to the same customer identity.
+Existing app accounts require explicit sign-out before accepting another account.
+Opening a browser or accepting a code never grants Wi-Fi access.
+
+Contract tests cover qualified/unqualified availability, the request-ID-only native
+browser command, explicit code consent, no browser-fetch fallback or persisted
+code, and the exact browser destination policy on Android and Swift. These are
+source/contract tests. Actual signed-device browser switching, clipboard behavior,
+Keychain/Keystore persistence, process recreation, TLS, revoked-source handoff and
+subsequent live revocation require the separate device/paired-service acceptance.
+
 # Pasofi native build previews
 
 The mobile source is `pasofi-frontend/mobile`. The checked-in native projects are `android` and `ios`; the Capacitor application ID is `com.onesa.pasofi`. There is no separate `pamofi-mobile` source folder.

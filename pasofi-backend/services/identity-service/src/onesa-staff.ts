@@ -3,8 +3,8 @@ import type pg from 'pg';
 import { decryptMfa, encryptMfa, freshOpaque, isOpaque, opaqueHash } from './staff-crypto.js';
 
 type Store = pg.Pool | pg.PoolClient;
-type Configuration = { issuer: string; clientId: string; clientSecret: string; callback: URL };
-type Admin = { subject: string; email: string; name: string; expires: number; authenticated: number };
+export type Configuration = { issuer: string; clientId: string; clientSecret: string; callback: URL };
+export type Admin = { subject: string; email: string; name: string; expires: number; authenticated: number };
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 export class OnesaError extends Error {
@@ -43,7 +43,7 @@ export function configuredOnesaStaff(key: Buffer | null, allowed: (origin: strin
 
 export class OnesaStaff {
   readonly client: oidc.Configuration;
-  constructor(readonly config: Configuration, private readonly key: Buffer) {
+  constructor(readonly config: Configuration, protected readonly key: Buffer) {
     const { issuer, clientId, clientSecret } = config;
     this.client = new oidc.Configuration({
       issuer, authorization_endpoint: issuer + '/auth', token_endpoint: issuer + '/token',
@@ -67,6 +67,10 @@ export class OnesaStaff {
     return { browser, authorizationUrl: authorization.href };
   }
 
+  protected assertion(input: unknown): Admin {
+    return adminAssertion(input, this.config, Math.floor(Date.now() / 1000));
+  }
+
   async inspect(token: string) {
     const { clientId, clientSecret, issuer } = this.config;
     const encode = (value: string) => new URLSearchParams({ c: value }).toString().slice(2);
@@ -77,7 +81,7 @@ export class OnesaStaff {
       body: JSON.stringify({ token }),
     });
     if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) throw new OnesaError(503, 'onesa_unavailable');
-    return adminAssertion(await response.json(), this.config, Math.floor(Date.now() / 1000));
+    return this.assertion(await response.json());
   }
 
   async finish(db: Store, browser: unknown, params: { state: string; code: string; iss?: string }) {

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { downloadStatus, publicDownloadUrl } from '../src/appDownloads';
+import { downloadStatus, publicDownloadUrl } from '../src/downloadLinks';
 
 test('only public release destinations for the selected platform become download links', () => {
   expect(publicDownloadUrl('ios', undefined)).toBeUndefined();
@@ -67,7 +67,7 @@ test('direct navigation lands on both platform choices and allows scrolling away
     document.querySelector('main')!.append(delayed);
   });
   await expect(region).toBeInViewport({ ratio: 1 });
-  await page.keyboard.press('Control+Home');
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home');
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   await page.evaluate(() => { document.getElementById('deferred-content-test')!.style.height = '1800px'; });
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));

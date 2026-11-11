@@ -6,6 +6,7 @@ interface CustomerApiPlugin {
   availability(options: { requestId: string }): Promise<{ requestId: string; configured: boolean; origin?: string; protocol: number }>;
   request(options: NativeRequest): Promise<NativeResponse>;
   cancel(options: { requestId: string }): Promise<{ requestId: string }>;
+  openSignIn(options: { requestId: string }): Promise<{ requestId: string; opened: boolean }>;
 }
 const bridge = registerPlugin<CustomerApiPlugin>('PasoFiCustomerApi');
 export const usesNativeCustomerApi = Capacitor.isNativePlatform();
@@ -21,6 +22,15 @@ function configured(origin: string): Promise<void> {
     }).catch(() => { ready = undefined; throw new NativeApiError('mobile_api_not_configured'); });
   }
   return ready;
+}
+
+export async function openNativeOnesaSignIn(origin: string): Promise<void> {
+  await configured(origin);
+  const requestId = crypto.randomUUID();
+  try {
+    const result = await bridge.openSignIn({ requestId });
+    if (result.requestId !== requestId || result.opened !== true) throw Error();
+  } catch { throw new NativeApiError('request_failed'); }
 }
 
 // Native code owns the session cookie and account-creation retry credential.

@@ -23,6 +23,7 @@ async function fixture(page: Page, products = catalogue) {
       return reply({ error: 'unexpected_mutation' }, 405);
     }
     if (path === '/api/bundles') return state.failed ? reply({ error: 'temporarily_unavailable' }, 503) : reply({ products: state.products, candidate: false });
+    if (path === '/api/onesa/availability') return reply({ origin: null });
     if (path === '/api/capabilities') return reply({ demo: false, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: false, mobileCookies: false });
     if (path === '/api/help') return reply({ articles: [] });
     if (path === '/api/session') return reply({ error: 'not_authenticated' }, 401);
@@ -95,7 +96,7 @@ test('catalogue refresh preserves sorting and a valid duration, then safely fall
   state.products = []; await refresh(page);
   await expect(count(page)).toHaveText('Showing 0 of 0 bundles');
   await expect(sort(page)).toBeDisabled();
-  await expect(page.getByText('No bundles are published yet. Check back when Pasofi launches.', { exact: true })).toBeVisible();
+  await expect(page.getByText('No bundles are published yet. Check back when PasoFi launches.', { exact: true })).toBeVisible();
   await expect(names(page)).toHaveCount(0);
 
   state.products = [day, month]; await page.getByRole('button', { name: 'Refresh availability', exact: true }).click();

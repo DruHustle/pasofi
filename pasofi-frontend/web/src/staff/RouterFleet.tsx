@@ -313,7 +313,7 @@ export default function RouterFleet({ staff, capabilities }: { staff: Staff; cap
   const pendingElsewhere = pendingChangeId !== null && pendingChangeId !== change?.id;
 
   return <section className="router-fleet" aria-labelledby="router-fleet-heading">
-    <div className="router-fleet-heading"><div><h3 id="router-fleet-heading">Routers</h3><p>One staff session for your registered Pasofi routers.</p></div>
+    <div className="router-fleet-heading"><div><h3 id="router-fleet-heading">Routers</h3><p>One staff session for your registered PasoFi routers.</p></div>
       <button className="secondary" disabled={listLoading || serviceLoading || busy} onClick={refreshService}>{serviceLoading || listLoading ? 'Checking…' : 'Refresh routers'}</button></div>
     {accessError ? <p className="notice" role="alert">{accessError} Use Refresh staff access or sign in again.</p> : <>
       {!service.available && <div className="router-service-note" role="status"><strong>{service.known ? 'Router management is not enabled yet.' : 'Router management needs the service update.'}</strong><p>Registered routers appear here after their private management service is configured.</p></div>}

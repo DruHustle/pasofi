@@ -148,7 +148,7 @@ export function InvoiceLink() {
     try {
       const blob = await apiPdf('/api/invoice-downloads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: link.token }), signal: controller.signal });
       if (!current()) return;
-      const result = await exportInvoicePdf(blob, 'Pasofi-paid-invoice.pdf', controller.signal);
+      const result = await exportInvoicePdf(blob, 'PasoFi-paid-invoice.pdf', controller.signal);
       if (current()) setMessage(result === 'canceled' ? '' : result === 'shared' ? 'PDF opened in your device’s share controls.' : 'PDF download started. Keep your invoice private.');
     } catch (error) {
       if (current()) setMessage(error instanceof ApiError && [400, 404, 410].includes(error.status) ? 'This invoice link has expired or is unavailable. Ask the sender for a new copy.' : invoiceFailure(error));

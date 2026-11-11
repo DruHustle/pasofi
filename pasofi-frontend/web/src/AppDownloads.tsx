@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
-import { downloadStatus, publicDownloadUrl } from './appDownloads';
+import { downloadStatus, publicDownloadUrl } from './downloadLinks';
 
 const platforms = [
   { id: 'ios', name: 'iOS', icon: 'apple', configured: import.meta.env.VITE_IOS_DOWNLOAD_URL },

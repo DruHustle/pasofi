@@ -52,6 +52,7 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
   await page.exposeFunction('__syntheticCustomerApi', async (method: string, input: Record<string, unknown>) => {
     calls.push({ method, options: input });
     if (method === 'availability') return { requestId: input.requestId, configured: true, origin: apiOrigin, protocol: 1, ...options.availability };
+    if (method === 'openSignIn') return { requestId: input.requestId, opened: true };
     if (method === 'cancel') { options.cancel?.(String(input.requestId)); return { requestId: input.requestId }; }
     if (method === 'request') return { requestId: input.requestId, ...await handler(input as NativeRequest) };
     throw Error('Unexpected native method');
@@ -60,7 +61,7 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
     const runtime = window as any;
     runtime.CapacitorCustomPlatform = { name: platform };
     runtime.Capacitor = {
-      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: ['availability', 'request', 'cancel'].map(name => ({ name, rtype: 'promise' })) }],
+      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: ['availability', 'request', 'cancel', 'openSignIn'].map(name => ({ name, rtype: 'promise' })) }],
       nativePromise: (plugin: string, method: string, input: Record<string, unknown>) => {
         if (plugin !== 'PasoFiCustomerApi' || absent) return Promise.reject(Error('Native plugin unavailable'));
         return runtime.__syntheticCustomerApi(method, input).then((value: any) => {
@@ -78,6 +79,48 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
   }, { platform: options.platform || 'ios', absent: !!options.absent, apiOrigin });
   return calls;
 }
+
+for (const platform of ['ios', 'android'] as const) test(`${platform} Onesa sign-in opens only the native browser command and explicitly accepts a one-use code`, async ({ page, configuredBaseURL }) => {
+  let recovered = false;
+  const handoffCode = 'N'.repeat(43);
+  const calls = await nativeBridge(page, request => {
+    if (request.path === '/api/capabilities') return reply(capabilities);
+    if (request.path === '/api/onesa/availability') return reply({ origin: apiOrigin, handoff: true });
+    if (request.path === '/api/session') return recovered ? reply({ customerId }) : reply({ error: 'not_authenticated' }, 401);
+    if (request.path === '/api/handoff/redeem') {
+      expect(request.method).toBe('POST'); expect(JSON.parse(request.data!)).toEqual({ handoffCode });
+      recovered = true; return reply({ customerId });
+    }
+    return reply({ error: 'not_authenticated' }, 401);
+  }, { platform });
+  await page.goto(configuredBaseURL);
+  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
+  await page.getByRole('button', { name: 'Open Onesa sign-in in browser', exact: true }).click();
+  await expect(page.getByText('Browser opened.', { exact: false })).toBeVisible();
+  const opened = calls.filter(call => call.method === 'openSignIn');
+  expect(opened).toHaveLength(1); expect(Object.keys(opened[0].options)).toEqual(['requestId']);
+  expect(recovered).toBe(false);
+  await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click();
+  await page.getByLabel('One-time handoff code').fill(handoffCode);
+  await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled();
+  await page.getByRole('checkbox', { name: /my own PasoFi account/ }).check();
+  await page.getByRole('button', { name: 'Accept account handoff' }).click();
+  await expect.poll(() => recovered).toBe(true);
+  await expect.poll(() => calls.filter(call => call.method === 'request' && call.options.path === '/api/session').length).toBeGreaterThan(1);
+  const storage = await page.evaluate(() => ({ persistent: JSON.stringify(localStorage) + JSON.stringify(sessionStorage), fetches: (window as any).browserApiFetches }));
+  expect(storage.persistent).not.toContain(handoffCode); expect(storage.fetches).toBe(0);
+});
+
+test('native Onesa entry refuses an unqualified handoff deployment', async ({ page, configuredBaseURL }) => {
+  const calls = await nativeBridge(page, request => request.path === '/api/capabilities' ? reply(capabilities)
+    : request.path === '/api/onesa/availability' ? reply({ origin: apiOrigin }) : reply({ error: 'not_authenticated' }, 401));
+  await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
+  await expect(page.getByText('Onesa sign-in for this app is not available', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open Onesa sign-in in browser', exact: true })).toHaveCount(0);
+  expect(calls.filter(call => call.method === 'openSignIn')).toHaveLength(0);
+});
 
 test('native build fails closed without its bridge or exact pinned origin/protocol and never falls back to browser fetch', async ({ page, configuredBaseURL }) => {
   const calls = await nativeBridge(page, () => reply(capabilities), { absent: true });
@@ -104,7 +147,7 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
   test(`native account UI requires qualified cookie protocol version1 ${JSON.stringify(patch)}`, async ({ page, configuredBaseURL }) => {
     const requests: NativeRequest[] = [];
     await nativeBridge(page, request => { requests.push(request); return reply({ ...capabilities, ...patch }); });
-    await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My Pasofi', exact: true }).click();
+    await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
     await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
     expect(requests.length).toBeGreaterThan(0); expect(new Set(requests.map(request => request.path))).toEqual(new Set(['/api/capabilities']));
