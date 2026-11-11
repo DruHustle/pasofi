@@ -6,6 +6,10 @@ import {VoucherError} from './vouchers.js';
 type Staff = {staffId: string; role: 'admin'|'agent'|'support'; siteIds: string[]};
 export type CashStaffResolver = (request: FastifyRequest, reply: FastifyReply, roles: Staff['role'][]) => Promise<Staff|null>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export type CashListQuery = {before?: string; active?: boolean; limit: number};
+export const cashListSchema = {querystring:{type:'object',additionalProperties:false,properties:{
+ before:{type:'string',pattern:'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'}, active:{type:'boolean'}, limit:{type:'integer',minimum:1,maximum:50,default:50},
+}}};
 const minor = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value)>=0 && Number(value)<=1_000_000_000_000;
 const body = (value: unknown): Record<string, unknown> => value && typeof value==='object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 export async function cashTransaction<T>(pool: Pool, run: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -26,10 +30,17 @@ export async function shiftDto(client: Pick<PoolClient,'query'>, row: Record<str
 }
 export function registerCashShifts(app: FastifyInstance,pool:Pool|null,staff:CashStaffResolver,enabled:boolean,currencies:string[]) {
  const fail=(reply:FastifyReply,error:unknown)=>reply.code(error instanceof VoucherError?409:503).send({error:error instanceof VoucherError?error.code:'unavailable'});
- app.get('/v1/staff/cash-shifts',async(request,reply)=>{
+ app.get<{Querystring:CashListQuery}>('/v1/staff/cash-shifts',{schema:cashListSchema},async(request,reply)=>{
   const s=await staff(request,reply,['agent','admin']);if(!s)return;
-  try { const rows=await pool!.query('SELECT * FROM cash_shifts WHERE ($1::boolean OR agent_id=$2) ORDER BY opened_at DESC,id DESC LIMIT 50',[s.role==='admin',s.staffId]);return {shifts:await Promise.all(rows.rows.map(row=>shiftDto(pool!,row))),currencies}; }
-  catch(error){return fail(reply,error);}
+  const {before,active,limit}=request.query;
+  try {
+   const {rows}=await pool!.query(`SELECT * FROM cash_shifts
+    WHERE ($1::boolean OR agent_id=$2) AND (NOT $3::boolean OR closed_at IS NULL)
+      AND ($4::uuid IS NULL OR (opened_at,id)<(SELECT opened_at,id FROM cash_shifts WHERE id=$4 AND ($1 OR agent_id=$2)))
+    ORDER BY opened_at DESC,id DESC LIMIT $5`,[s.role==='admin',s.staffId,active??false,before??null,limit+1]);
+   const page=rows.slice(0,limit);
+   return {shifts:await Promise.all(page.map(row=>shiftDto(pool!,row))),currencies,nextCursor:rows.length>limit?page[limit-1].id:null};
+  }catch(error){return fail(reply,error);}
  });
  app.post('/v1/staff/cash-shifts',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(request,reply)=>{
   const s=await staff(request,reply,['agent']);if(!s)return;

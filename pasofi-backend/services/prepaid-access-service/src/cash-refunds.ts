@@ -1,7 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto';
 import type {Pool,PoolClient} from 'pg';
 import type {FastifyInstance,FastifyReply} from 'fastify';
-import {cashTransaction,shiftTotals,type CashStaffResolver} from './cash-shifts.js';
+import {cashTransaction,shiftTotals,cashListSchema,type CashListQuery,type CashStaffResolver} from './cash-shifts.js';
 import {VoucherError} from './vouchers.js';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const object=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
@@ -48,9 +48,19 @@ async function voidUnusedAccess(client:PoolClient,saleId:string) {
 }
 export function registerCashRefunds(app:FastifyInstance,pool:Pool|null,staff:CashStaffResolver) {
  const fail=(reply:FastifyReply,error:unknown)=>reply.code(error instanceof VoucherError?409:503).send({error:error instanceof VoucherError?error.code:'unavailable'});
- app.get('/v1/staff/cash-refunds',async(request,reply)=>{
+ app.get<{Querystring:CashListQuery}>('/v1/staff/cash-refunds',{schema:cashListSchema},async(request,reply)=>{
   const s=await staff(request,reply,['agent','admin']);if(!s)return;
-  try{const rows=(await pool!.query(`${select} WHERE ($1::boolean OR s.agent_id=$2) ORDER BY r.requested_at DESC,r.id DESC LIMIT 50`,[s.role==='admin',s.staffId])).rows;return {refunds:await Promise.all(rows.map(row=>dto(pool!,row)))};}catch(error){return fail(reply,error);}
+  const {before,active,limit}=request.query;
+  try {
+   const {rows}=await pool!.query(`${select}
+    WHERE ($1::boolean OR s.agent_id=$2) AND (NOT $3::boolean OR r.state IN ('requested','approved','paying'))
+      AND ($4::uuid IS NULL OR (r.requested_at,r.id)<(
+       SELECT prior.requested_at,prior.id FROM cash_refunds prior JOIN agent_sales owner ON owner.id=prior.sale_id
+        WHERE prior.id=$4 AND ($1 OR owner.agent_id=$2)))
+    ORDER BY r.requested_at DESC,r.id DESC LIMIT $5`,[s.role==='admin',s.staffId,active??false,before??null,limit+1]);
+   const page=rows.slice(0,limit);
+   return {refunds:await Promise.all(page.map(row=>dto(pool!,row))),nextCursor:rows.length>limit?page[limit-1].id:null};
+  }catch(error){return fail(reply,error);}
  });
  app.post('/v1/staff/cash-refunds',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(request,reply)=>{
   const s=await staff(request,reply,['agent']);if(!s)return;const b=object(request.body),key=request.headers['idempotency-key'];

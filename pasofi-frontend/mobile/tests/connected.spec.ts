@@ -376,8 +376,9 @@ for (const pendingContext of ['different', 'unknown'] as const) {
     await choice.selectOption(secondNas); await connect.click(); await expect(page.getByText('The service is temporarily unavailable.', { exact: false })).toBeVisible();
     await expect(choice).toHaveValue(secondNas); await connect.click(); await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('mobile-router-b-password');
     expect(requests).toHaveLength(2); expect(requests[0]).toEqual(requests[1]); expect(requests[0]).toEqual({ siteId, nasId: secondNas, requestKey: expect.any(String) });
-    await page.getByRole('button', { name: 'Hide connection details' }).click(); pendingElsewhere = true;
+    pendingElsewhere = true;
     await page.getByRole('button', { name: 'Check connection', exact: true }).click(); await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
     await expect(choice).toBeDisabled(); await expect(connect).toBeDisabled(); await expect(page.getByRole('button', { name: 'Retry connection' })).toHaveCount(0); await expect(page.getByRole('button', { name: 'Disconnect this hotspot session' })).toBeEnabled(); expect(requests).toHaveLength(2);
   });
 }
@@ -455,6 +456,22 @@ for (const transition of ['page reload', 'workspace remount'] as const) {
     expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/test-only-hotspot-(user|password)/);
   });
 }
+
+test('a finished hotspot grant clears its prepared password and request key', async ({ page, configuredBaseURL }) => {
+  const state = await mockNetworkRecovery(page);
+  await open(page, configuredBaseURL);
+  await prepareRecoveryRequest(page);
+  state.pending = true;
+  const refresh = page.getByRole('button', { name: 'Check connection', exact: true });
+  await refresh.click();
+  await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
+  state.pending = false;
+  await refresh.click();
+  await expect(page.getByText('No active hotspot session', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(key => sessionStorage.getItem(key), preparedRequestStorage)).toBeNull();
+  expect(state.requests).toHaveLength(1);
+});
 
 for (const invalid of ['malformed', 'expired', 'future expiry', 'different owner', 'invalid key', 'extra credential'] as const) {
   test('mobile invalid saved hotspot preparation: ' + invalid, async ({ page, configuredBaseURL }) => {

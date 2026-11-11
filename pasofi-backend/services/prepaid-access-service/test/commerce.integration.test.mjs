@@ -102,7 +102,7 @@ test('pausing a sales location blocks new cash sales but preserves paid receipt 
   const key=randomUUID(),body={siteId:f.site,bundleId:'mini',delivery:'receipt',pairingCode:first.code,payment:{method:'cash',confirmed:true,amountMinor:product.price_minor,currency:product.currency}};
   const sold=await f.call('POST','/v1/staff/sales',body,'agent',key);assert.equal(sold.statusCode,201);const sale=sold.json();assert.ok(sale.invoice.id);
   assert.equal((await f.call('PATCH',`/v1/admin/sites/${f.site}`,{enabled:false,expectedVersion:'1',reason:'Pause new sales while keeping existing customer access'})).statusCode,200);
-  const blocked=await f.call('POST','/v1/staff/sales',{...body,pairingCode:second.code},'agent');assert.equal(blocked.statusCode,409);assert.equal(blocked.json().error,'site_unavailable');
+  const blocked=await f.call('POST','/v1/staff/sales',{...body,pairingCode:second.code},'agent');assert.equal(blocked.statusCode,409);assert.equal(blocked.json().error,'cash_sale_site_unavailable');
   const retry=await f.call('POST','/v1/staff/sales',body,'agent',key);assert.equal(retry.statusCode,200);assert.equal(retry.json().replayed,true);assert.equal(retry.json().sale.id,sale.sale.id);assert.equal(retry.json().invoice.id,sale.invoice.id);
   assert.equal((await f.call('GET','/v1/staff/sites',undefined,'agent')).json().sites.some(site=>site.id===f.site),false);
   const history=(await f.call('GET','/v1/staff/sales',undefined,'agent')).json().sales;assert.equal(history.length,1);assert.equal(history[0].id,sale.sale.id);
@@ -127,10 +127,53 @@ test('a new cash sale waits for a concurrent location pause and cannot sell usin
   let observed=false;const deadline=Date.now()+5000;
   while(Date.now()<deadline){const waiting=await f.pool.query('SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database() AND $1::int=ANY(pg_blocking_pids(pid))',[pid]);if(waiting.rows[0].n>0){observed=true;break;}await new Promise(resolve=>setTimeout(resolve,10));}
   assert.equal(observed,true,'new sale must wait on the sales location status lock');await blocker.query('COMMIT');
-  const response=await pending;pending=null;assert.equal(response.statusCode,409);assert.equal(response.json().error,'site_unavailable');
+  const response=await pending;pending=null;assert.equal(response.statusCode,409);assert.equal(response.json().error,'cash_sale_site_unavailable');
   assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM agent_sales WHERE site_id=$1',[f.site])).rows[0].n,0);assert.equal((await f.pool.query('SELECT quantity FROM agent_site_inventory WHERE agent_id=$1 AND site_id=$2',[f.agent,f.site])).rows[0].quantity,1);
  }finally{await blocker.query('ROLLBACK');blocker.release();if(pending)await Promise.allSettled([pending]);await f.cleanup();}
 });
+test('withdrawing a bundle blocks a concurrent cash sale and preserves paid receipt recovery', {skip:!url,timeout:15000}, async()=>{
+ const f=await setup(), blocker=await f.pool.connect();
+ const bundleId='mini', purchaseKey=randomUUID();
+ let pending;
+ try {
+  const allocation=await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId,quantity:2,reason:'Concurrent cash purchase and bundle withdrawal'});
+  assert.equal(allocation.statusCode,201);
+  const pairing=async customer=>(await f.call('POST','/v1/receipt-pairings',{siteId:f.site,bundleId},customer)).json().pairing;
+  const first=await pairing('customer'), second=await pairing('customer2');
+  const sale=code=>({siteId:f.site,bundleId,delivery:'receipt',pairingCode:code,payment:{method:'cash',confirmed:true,amountMinor:50,currency:'USD'}});
+  const sold=await f.call('POST','/v1/staff/sales',sale(first.code),'agent',purchaseKey);
+  assert.equal(sold.statusCode,201);
+
+  await blocker.query('BEGIN');
+  await blocker.query('UPDATE bundle_versions SET published=false WHERE id=$1',[bundleId]);
+  const {pid}= (await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0];
+  pending=f.call('POST','/v1/staff/sales',sale(second.code),'agent').then(response=>response);
+  const deadline=Date.now()+5000;
+  let waiting=false;
+  while(!waiting && Date.now()<deadline) {
+   waiting=(await f.pool.query('SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1::int=ANY(pg_blocking_pids(pid))) AS blocked',[pid])).rows[0].blocked;
+   if(!waiting)await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.equal(waiting,true,'sale must wait for the bundle publication decision');
+  await blocker.query('COMMIT');
+  const blocked=await pending;
+  assert.equal(blocked.statusCode,409);
+  assert.equal(blocked.json().error,'bundle_unavailable');
+  const replay=await f.call('POST','/v1/staff/sales',sale(first.code),'agent',purchaseKey);
+  assert.equal(replay.statusCode,200);
+  assert.deepEqual(replay.json().invoice,sold.json().invoice);
+  assert.equal(replay.json().sale.id,sold.json().sale.id);
+  assert.equal((await f.pool.query('SELECT quantity FROM agent_site_inventory WHERE agent_id=$1 AND site_id=$2 AND bundle_id=$3',[f.agent,f.site,bundleId])).rows[0].quantity,1);
+  assert.equal((await f.pool.query('SELECT sale_id FROM receipt_pairings WHERE id=$1',[second.id])).rows[0].sale_id,null);
+ } finally {
+  await blocker.query('ROLLBACK');
+  blocker.release();
+  if(pending)await Promise.allSettled([pending]);
+  await f.pool.query('UPDATE bundle_versions SET published=true WHERE id=$1',[bundleId]);
+  await f.cleanup();
+ }
+});
+
 test('administrators can onboard agents and allocate scoped stock while commerce stays closed',{skip:!url},async()=>{
  const f=await setup({env:{PAMOFI_COMMERCE_ENABLED:'false',PAMOFI_PAYMENTS_ENABLED:'false',VOUCHER_DELIVERY_KEYS_JSON:''}}),bundleId=`setup-${randomUUID().slice(0,8)}`;
  try{
@@ -441,6 +484,14 @@ test('recorded cash issues one immutable private invoice and encrypted delivery 
   assert.equal((await f.call('GET',staffPath,undefined,'support')).statusCode,403);
   for(const who of ['admin','agent'])assert.equal((await f.call('GET',staffPath,undefined,who)).json().invoice.number,invoice.number);
   const owned=(await f.call('GET',`/v1/customer/invoices?saleId=${sale.id}`,undefined,'customer')).json();assert.equal(owned.invoices.length,1);assert.equal(owned.invoices[0].requestedChannel,'email');assert.equal(JSON.stringify(owned).includes('invoice@example.invalid'),false);
+  assert.equal(owned.invoices[0].pairingId,pair.id);
+  assert.deepEqual((await f.call('GET',`/v1/customer/invoices?saleId=${sale.id}`,undefined,'customer2')).json().invoices,[]);
+  assert.equal((await f.call('GET',`/v1/staff/invoices?saleId=${sale.id}`,undefined,'agent')).json().invoices[0].pairingId,undefined);
+  const receipt=(await f.call('GET',`/v1/receipt-pairings/${owned.invoices[0].pairingId}`,undefined,'customer')).json().receipt;
+  assert.ok(receipt.voucher.code);
+  assert.ok(!JSON.stringify(owned).includes(receipt.voucher.code));
+  assert.equal((await f.call('POST','/v1/vouchers/redeem',{code:receipt.voucher.code},'customer')).statusCode,200);
+  assert.equal((await f.call('GET',`/v1/customer/invoices?saleId=${sale.id}`,undefined,'customer')).json().invoices[0].pairingId,undefined);
   const pdf=await f.call('GET',`${customerPath}/pdf`,undefined,'customer');assert.equal(pdf.statusCode,200);assert.match(pdf.headers['content-type'],/^application\/pdf/);assert.equal(pdf.headers['cache-control'],'no-store');assert.deepEqual(pdf.rawPayload,saved.pdf_bytes);
   await assert.rejects(f.pool.query('UPDATE paid_invoices SET total_minor=1 WHERE id=$1',[invoice.id]),/immutable/);
   await f.pool.query('UPDATE sales_locations SET name=$2 WHERE id=$1',[f.site,'Renamed location after payment']);
@@ -583,6 +634,8 @@ test('cash references bind server-priced terms and location, enforce lookup scop
   const payload={bundleId:'mini',siteId:f.site};
   const created=await f.call('POST','/v1/receipt-pairings',payload,'customer',key);assert.equal(created.statusCode,201);
   const pair=created.json().pairing;assert.equal(pair.status,'pending');assert.deepEqual(pair.quote,{bundleId:'mini',siteId:f.site,siteName:'Test site one',priceMinor:50,currency:'USD',byteLimit:'2000000000',validitySeconds:259200});
+  const allocation=await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:1,reason:'Verify the assigned cashier can accept this payment'});
+  assert.equal(allocation.statusCode,201);
   const lookup=await f.call('POST','/v1/staff/cash-references/lookup',{code:pair.code,siteId:f.site},'agent');assert.equal(lookup.statusCode,200);assert.deepEqual(lookup.json().quote,pair.quote);assert.equal(lookup.json().customerId,undefined);assert.equal(lookup.json().code,undefined);assert.equal(lookup.headers['cache-control'],'no-store');
   assert.equal((await f.call('POST','/v1/staff/cash-references/lookup',{code:pair.code,siteId:f.otherSite},'agent')).statusCode,403);
   assert.equal((await f.call('POST','/v1/staff/cash-references/lookup',{code:pair.code,siteId:f.otherSite},'other')).statusCode,404);
@@ -594,6 +647,39 @@ test('cash references bind server-priced terms and location, enforce lookup scop
   assert.equal((await f.call('POST','/v1/receipt-pairings',payload,'customer')).json().error,'site_or_bundle_unavailable');
   assert.equal((await f.pool.query('SELECT id FROM purchase_entitlements WHERE customer_id=$1',[f.customer])).rowCount,0);
  }finally{await f.cleanup();}
+});
+
+test('an agent can verify a pending cash reference only while able to sell it', {skip:!url}, async()=>{
+ const f=await setup({shifts:false});
+ try {
+  const payload={siteId:f.site,bundleId:'mini'};
+  const {pairing}= (await f.call('POST','/v1/receipt-pairings',payload,'customer')).json();
+  const lookup=(who='agent')=>f.call('POST','/v1/staff/cash-references/lookup',{siteId:f.site,code:pairing.code},who);
+  const rejected=async code=>{
+   const response=await lookup();
+   assert.equal(response.statusCode,409);
+   assert.equal(response.json().error,code);
+  };
+  assert.equal((await lookup('admin')).json().status,'pending');
+  await rejected('shift_required');
+  assert.equal((await f.call('POST','/v1/staff/cash-shifts',{siteId:f.site,currency:'USD',openingMinor:0},'agent')).statusCode,201);
+  await rejected('out_of_stock');
+  const allocate=agentId=>f.call('POST','/v1/admin/inventory/allocations',{...payload,agentId,quantity:1,reason:'Prepare cash reference lookup test stock'});
+  assert.equal((await allocate(f.otherAgent)).statusCode,201);
+  await rejected('out_of_stock');
+  assert.equal((await allocate(f.agent)).statusCode,201);
+  assert.equal((await lookup()).json().status,'pending');
+  await f.pool.query("UPDATE bundle_versions SET published=false WHERE id='mini'");
+  await rejected('bundle_unavailable');
+  await f.pool.query('UPDATE sales_locations SET enabled=false WHERE id=$1',[f.site]);
+  await rejected('site_unavailable');
+  assert.equal((await f.call('POST',`/v1/receipt-pairings/${pairing.id}/cancel`,{},'customer')).statusCode,200);
+  assert.equal((await lookup()).json().status,'cancelled');
+  assert.equal((await f.pool.query('SELECT id FROM agent_sales WHERE site_id=$1',[f.site])).rowCount,0);
+ } finally {
+  await f.pool.query("UPDATE bundle_versions SET published=true WHERE id='mini'");
+  await f.cleanup();
+ }
 });
 
 test('a reference cannot be confirmed for another bundle, location or by its customer',{skip:!url},async()=>{
@@ -661,6 +747,52 @@ test('cash shifts enforce opening, retain immutable counts, and recover sales af
   assert.equal((await f.call('POST','/v1/staff/sales',sale,'agent',saleKey)).json().sale.id,sold.json().sale.id);
   assert.equal((await f.call('POST','/v1/staff/sales',sale,'agent')).json().error,'shift_required');
  }finally{await f.cleanup();}
+});
+
+test('open shifts and pending refunds remain reachable beyond fifty rows with staff-scoped cursors', {skip:!url}, async()=>{
+ const f=await setup({shifts:false});
+ try {
+  // Make the open shifts share their timestamp to exercise the UUID tiebreaker.
+  await f.pool.query(`INSERT INTO cash_shifts(id,agent_id,site_id,currency,request_key,opening_minor)
+   SELECT gen_random_uuid(),$1,$2,'X'||chr(65+n/26)||chr(65+n%26),gen_random_uuid(),0
+   FROM generate_series(0,51) AS n`,[f.agent,f.site]);
+  const opening={siteId:f.site,currency:'USD',openingMinor:0};
+  const shift=(await f.call('POST','/v1/staff/cash-shifts',opening,'agent')).json().shift;
+  const sales=await f.pool.query(`INSERT INTO agent_sales
+    (id,agent_id,site_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,start_by,payment_method,cash_received_minor,cash_confirmed_at,shift_id)
+    SELECT gen_random_uuid(),$1,$2,gen_random_uuid(),'mini',50,'USD',2000000000,259200,now()+interval '30 days','cash',50,now(),$3
+    FROM generate_series(1,53) RETURNING id`,[f.agent,f.site,shift.id]);
+  await f.pool.query(`WITH inserted AS (
+    INSERT INTO cash_refunds(id,sale_id,requested_by,request_key,reason)
+    SELECT gen_random_uuid(),id,$2,gen_random_uuid(),'Controlled cash refund history' FROM unnest($1::uuid[]) AS id RETURNING id
+   ), entries AS (
+    SELECT id,json_build_object('refundId',id,'sequence',1,'actorId',$2::uuid,'state','requested','recordedAt',now(),'details',json_build_object())::text AS payload FROM inserted
+   ) INSERT INTO cash_refund_events(refund_id,sequence,payload,previous_hash,entry_hash)
+    SELECT id,1,payload,repeat('0',64),encode(sha256(convert_to(repeat('0',64)||chr(10)||payload,'UTF8')),'hex') FROM entries`,[sales.rows.map(row=>row.id),f.agent]);
+  const close=await f.call('POST',`/v1/staff/cash-shifts/${shift.id}/close`,{countedMinor:2650,note:'Counted the full test drawer'},'agent');
+  assert.equal(close.statusCode,200);
+  const other=(await f.call('POST','/v1/staff/cash-shifts',opening,'other')).json().shift;
+  const shifts='/v1/staff/cash-shifts', refunds='/v1/staff/cash-refunds';
+  const firstShifts=(await f.call('GET',shifts+'?active=true',undefined,'agent')).json();
+  assert.equal(firstShifts.shifts.length,50);
+  assert.ok(firstShifts.shifts.every(row=>row.closedAt===null && row.agentId===f.agent));
+  const lastShifts=(await f.call('GET',shifts+'?active=true&before='+firstShifts.nextCursor,undefined,'agent')).json();
+  assert.equal(lastShifts.nextCursor,null);
+  assert.equal(new Set([...firstShifts.shifts,...lastShifts.shifts].map(row=>row.id)).size,52);
+  assert.equal((await f.call('GET',shifts+'?before='+other.id,undefined,'agent')).json().shifts.length,0);
+
+  const firstRefunds=(await f.call('GET',refunds+'?active=true',undefined,'agent')).json();
+  assert.equal(firstRefunds.refunds.length,50);
+  const decision=await f.call('POST',`/v1/admin/cash-refunds/${firstRefunds.nextCursor}/decision`,{decision:'rejected',note:'Reviewed the controlled request'});
+  assert.equal(decision.statusCode,200);
+  const lastRefunds=(await f.call('GET',refunds+'?active=true&before='+firstRefunds.nextCursor,undefined,'agent')).json();
+  assert.equal(lastRefunds.nextCursor,null);
+  assert.equal(new Set([...firstRefunds.refunds,...lastRefunds.refunds].map(row=>row.id)).size,53);
+  assert.equal((await f.call('GET',refunds+'?before='+firstRefunds.nextCursor,undefined,'other')).json().refunds.length,0);
+  assert.equal((await f.call('GET',refunds+'?active=true&limit=1',undefined,'admin')).json().refunds[0].agentId,f.agent);
+  assert.equal((await f.call('GET',shifts+'?before=invalid',undefined,'agent')).statusCode,400);
+  assert.equal((await f.call('GET',refunds+'?limit=51',undefined,'agent')).statusCode,400);
+ } finally { await f.cleanup(); }
 });
 
 test('closing a shift serializes against a concurrent sale and includes every committed cash receipt',{skip:!url},async()=>{

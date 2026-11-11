@@ -1,6 +1,7 @@
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {Pool} from 'pg';
 import {SignJWT} from 'jose';
+import {networkAccessEligible,selectNetworkEntitlement} from './grants.js';
 
 const uuid={type:'string',pattern:'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'};
 class CredentialBoundaryError extends Error {constructor(readonly code:'credential_expired'|'nas_selection_required'|'accounting_review_required'|'session_pending_or_active'|'no_usable_entitlement'){super(code);}}
@@ -42,21 +43,11 @@ export function registerCustomerNetwork(app:FastifyInstance,pool:Pool|null,demo:
       if(open.rowCount&&(!grant||open.rowCount!==1||grant.state!=='pending'||grant.site_id!==selection.siteId.toLowerCase()||(selection.nasId!==undefined&&grant.nas_id!==selection.nasId.toLowerCase())||!grant.nas_id||!grant.request_key))throw new CredentialBoundaryError('session_pending_or_active');
       const entitlement=grant
         ?await client.query('SELECT id FROM purchase_entitlements WHERE id=$1 AND customer_id=$2 FOR SHARE',[grant.entitlement_id,customerId])
-        :await client.query(`SELECT id FROM purchase_entitlements WHERE customer_id=$1 AND revoked_at IS NULL AND consumed_bytes<byte_limit AND
-          ((activated_at IS NULL AND start_by>=clock_timestamp()) OR activated_at+make_interval(secs=>validity_seconds)>clock_timestamp()) ORDER BY purchased_at,id LIMIT 1 FOR SHARE`,[customerId]);
+        :await selectNetworkEntitlement(client,customerId);
       const eligibilityError=grant?'session_pending_or_active':'no_usable_entitlement';
       if(!entitlement.rowCount)throw new CredentialBoundaryError(eligibilityError);
       async function assertEligible(expiresAt?:string) {
-        // Evaluate time only after the row locks are held, and again after the
-        // private response; transaction now() would freeze before a lock wait.
-        const usable=await client.query(`SELECT 1 FROM purchase_entitlements e WHERE e.id=$1 AND e.customer_id=$2 AND e.revoked_at IS NULL AND e.consumed_bytes<e.byte_limit AND
-          ((e.activated_at IS NULL AND e.start_by>=clock_timestamp()) OR e.activated_at+make_interval(secs=>e.validity_seconds)>clock_timestamp())
-          AND NOT EXISTS(SELECT 1 FROM network_account_holds WHERE customer_id=$2)
-          AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM access_grants g WHERE g.id=$3 AND g.customer_id=$2 AND g.entitlement_id=e.id AND
-            g.state='pending' AND g.deadline>clock_timestamp() AND g.disconnect_requested_at IS NULL AND g.stop_received_at IS NULL AND
-            g.credential_fenced_at IS NULL AND g.absent_verified_at IS NULL AND g.accounting_started_at IS NULL AND g.last_accounting_at IS NULL AND g.accounting_anomaly=false))
-          AND ($4::timestamptz IS NULL OR $4::timestamptz>clock_timestamp())`,[entitlement.rows[0].id,customerId,grant?.id??null,expiresAt??null]);
-        if(!usable.rowCount)throw new CredentialBoundaryError(eligibilityError);
+        if(!await networkAccessEligible(client,customerId,entitlement.rows[0].id,grant?.id??null,expiresAt))throw new CredentialBoundaryError(eligibilityError);
       }
       await assertEligible();
       let result;

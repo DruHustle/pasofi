@@ -68,6 +68,35 @@ test('invoice delivery values normalize only new requests and reject invalid inv
   expect(invoiceStatusText('sms', { state: 'delivered', deliveredAt: '2026-11-05T12:00:00Z', channel: 'email' })).toContain('unavailable');
 });
 
+for (const voucherAvailable of [true, false]) {
+  test(voucherAvailable ? 'a customer with fresh browser storage can redeem a paid voucher from invoice history' : 'a refund after loading invoice history prevents redemption', async ({page}) => {
+    const pairingId = '22222222-2222-4222-8222-222222222222';
+    const code = 'PRIVATEVOUCHER234567';
+    let redemptionCount = 0;
+    await mock(page, capabilities, async (route, path) => {
+      if (path === '/api/customer/invoices') {
+        await json(route, {...invoicePage, invoices: [{...invoice, pairingId}]}); return true;
+      }
+      if (path === `/api/receipt-pairings/${pairingId}`) {
+        await json(route, {status: 'ready', receipt: {sale: sale(), voucher: {id: saleId, code: voucherAvailable ? code : '', state: voucherAvailable ? 'valid' : 'refunded'}}}); return true;
+      }
+      if (path === '/api/vouchers/redeem') {
+        expect(route.request().postDataJSON()).toEqual({code});
+        redemptionCount++;
+        await json(route, {entitlementId: saleId, replayed: false}); return true;
+      }
+      return false;
+    });
+    await customer(page, 'History');
+    await page.locator('.invoice-history summary').click();
+    const redeem = page.getByRole('button', {name: 'Redeem paid voucher'});
+    await redeem.click();
+    await expect(page.getByText(voucherAvailable ? 'Voucher redeemed.' : 'This paid voucher is unavailable.', {exact:false})).toBeVisible();
+    expect(redemptionCount).toBe(voucherAvailable ? 1 : 0);
+    expect(await page.evaluate(() => JSON.stringify({...sessionStorage}))).not.toContain(code);
+  });
+}
+
 test('cash invoice delivery remains exact across a lost response and a paused email provider', async ({ page }, testInfo) => {
   const writes: { key: string; body: unknown }[] = [];
   await mock(page, capabilities, async (route, path, method) => {

@@ -60,6 +60,7 @@ test('mutual TLS and two registered NASes share one authoritative reservation', 
   assert.equal((await post(`${base}/radius/accounting`,c['ca.crt'],radius,interim,'nas_0')).status,204);
   assert.equal((await post(`${base}/radius/accounting`,c['ca.crt'],radius,interim,'nas_0')).status,204);
   assert.equal((await prepaid.query('SELECT consumed_bytes::text FROM purchase_entitlements WHERE id=$1',[entitlement])).rows[0].consumed_bytes,'4294967306');
+  assert.equal((await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(0),'nas_0')).status,401);
   const missing={...interim};delete missing['Acct-Output-Gigawords'];assert.equal((await post(`${base}/radius/accounting`,c['ca.crt'],radius,missing,'nas_0')).status,401);
   assert.equal((await post(`${base}/radius/accounting`,c['ca.crt'],radius,{...interim,'Acct-Status-Type':attr('Stop')},'nas_0')).status,204);
   assert.equal((await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(1),'nas_1')).status,401);

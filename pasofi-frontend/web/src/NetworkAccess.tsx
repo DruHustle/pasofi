@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api, ApiError } from './api';
 import { currentSession } from './session';
 import { clearNetworkRequest, networkRequestLifetimeMs, readNetworkRequest, saveNetworkRequest, type NetworkRequest } from './network-request';
@@ -26,10 +26,13 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
   const request = useRef<NetworkRequest | null>(null), live = useRef(false), generation = useRef(0);
-  const validity = useRef({ customerId, fresh, revision: 0 });
-  if (validity.current.customerId !== customerId || (validity.current.fresh && !fresh)) ++validity.current.revision;
-  validity.current.customerId = customerId; validity.current.fresh = fresh;
   const session = usage?.customerId === customerId ? usage.session : null;
+  const signInBlocked = !!usage?.hold.active || !!session && (
+    session.state !== 'pending' || session.disconnectRequested || session.accountingAnomaly || !!session.lastAccountingAt ||
+    (request.current !== null && (session.siteId !== request.current.siteId || session.nasId !== request.current.nasId))
+  );
+  const canShowCredentials = fresh && !signInBlocked;
+  const validity = useRef({ customerId, allowed: canShowCredentials, grantId: session?.grantId, revision: 0 });
   const isCurrent = (revision: number) => live.current && generation.current === revision && validity.current.customerId === customerId;
   function clearRequest() { request.current = null; clearNetworkRequest(); }
   async function verifyOwner() { if (await currentSession() !== customerId) throw new ApiError(401, 'session_changed'); }
@@ -63,30 +66,41 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
     return () => controller.abort();
   }, [customerId, capabilities.networkAccess, sitesAttempt]);
   useEffect(() => { if (credentials && Date.parse(credentials.expiresAt) <= now) { setCredentials(null); clearRequest(); } }, [now, credentials]);
-  useEffect(() => { if (session && (session.state !== 'pending' || session.disconnectRequested)) clearRequest(); }, [session?.state, session?.disconnectRequested]);
+  useLayoutEffect(() => {
+    const previous = validity.current;
+    const grantEnded = !!previous.grantId && previous.grantId !== session?.grantId;
+    if (previous.customerId !== customerId || (previous.allowed && !canShowCredentials) || grantEnded) previous.revision++;
+    previous.customerId = customerId;
+    previous.allowed = canShowCredentials;
+    previous.grantId = session?.grantId;
+    if (signInBlocked || grantEnded) clearRequest();
+    // Keep the retry key through a temporary loss of freshness, but require
+    // another verified preparation before showing its password again.
+    if (!canShowCredentials || grantEnded) { setCredentials(null); setShowPassword(false); }
+  }, [customerId, session?.grantId, signInBlocked, canShowCredentials]);
   async function prepare(event: React.FormEvent) {
     event.preventDefault();
     const selected = sites.find(site => site.nasId === nasId);
-    if (busy || sitesLoading || sitesError || !selected || !capabilities.networkAccess || !fresh || usage?.hold.active) return;
+    if (busy || sitesLoading || sitesError || !selected || !capabilities.networkAccess || !canShowCredentials || (session && !retryPending)) return;
     const revision = generation.current, verifiedRevision = validity.current.revision;
     setBusy(true); setMessage(''); setCredentials(null); setShowPassword(false);
     try {
       await verifyOwner();
-      if (!isCurrent(revision)) return;
+      if (!isCurrent(revision) || validity.current.revision !== verifiedRevision) return;
       if (!request.current || request.current.customerId !== customerId || request.current.siteId !== selected.siteId || request.current.nasId !== selected.nasId) {
         request.current = { customerId, siteId: selected.siteId, nasId: selected.nasId, key: crypto.randomUUID(), expiresAt: Date.now() + networkRequestLifetimeMs };
         saveNetworkRequest(request.current);
       }
       const result = await api<Credential>('/api/network/credentials', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteId: selected.siteId, nasId: selected.nasId, requestKey: request.current.key }) });
       if (!isCurrent(revision)) return;
-      if (!validity.current.fresh || validity.current.revision !== verifiedRevision) { setMessage('Account status changed while preparing sign-in. Check the connection, then retry the prepared request safely.'); return; }
+      if (!validity.current.allowed || validity.current.revision !== verifiedRevision) { setMessage('Account status changed while preparing sign-in. Check the connection, then retry the prepared request safely.'); return; }
       const url = new URL(result.loginUrl);
       if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/login' || result.siteId !== selected.siteId || result.nasId !== selected.nasId || result.loginUrl !== selected.loginUrl || typeof result.username !== 'string' || typeof result.password !== 'string' || !Number.isFinite(Date.parse(result.expiresAt))) throw Error('invalid_connection_details');
       if (request.current) {
         request.current = { ...request.current, expiresAt: Math.min(request.current.expiresAt, Date.parse(result.expiresAt)) };
         saveNetworkRequest(request.current);
       }
-      if (isCurrent(revision)) { setCredentials(result); setMessage('Your connection is ready to start. Continue below; the hotspot will confirm when you’re online.'); await refresh(); }
+      if (isCurrent(revision)) { setCredentials(result); await refresh(); }
     } catch (error) {
       if (isCurrent(revision)) {
         const expired = error instanceof ApiError && error.status === 409 && error.code === 'credential_expired';
@@ -120,9 +134,9 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
     {capabilities.networkAccess && !credentials && !sitesLoading && !sitesError && sites.length === 0 && <div className="notice"><p role="status">No hotspot locations are available yet. Ask your Pasofi agent for help or check again.</p><button className="secondary" disabled={busy} onClick={() => setSitesAttempt(value => value + 1)}>Refresh locations</button></div>}
     {capabilities.networkAccess && !credentials && !sitesLoading && !sitesError && sites.length > 0 && <form className="form-grid" onSubmit={prepare}>
       {sites.length === 1 ? <p>Connecting at <strong>{sites[0].siteName} · {sites[0].name}</strong>. No Wi-Fi name to enter.</p> : <label>Choose your Pasofi hotspot<select required value={nasId} onChange={event => { setNasId(event.target.value); setCredentials(null); clearRequest(); }} disabled={busy || !!session}><option value="">Select a hotspot</option>{sites.map(site => <option value={site.nasId} key={site.nasId}>{site.siteName} · {site.name}</option>)}</select></label>}
-      <button className="primary" disabled={busy || !fresh || !!usage?.hold.active || !nasId || (!!session && !retryPending)}>{busy ? 'Getting your connection ready…' : retryPending ? 'Retry connection' : 'Connect to Wi-Fi'}</button>
+      <button className="primary" disabled={busy || !canShowCredentials || !nasId || (!!session && !retryPending)}>{busy ? 'Getting your connection ready…' : retryPending ? 'Retry connection' : 'Connect to Wi-Fi'}</button>
     </form>}
-    {capabilities.networkAccess && credentials && fresh && <div className="private-value">
+    {capabilities.networkAccess && credentials && canShowCredentials && <div className="private-value">
       <h4>One more tap and you’re on your way</h4>
       {formOrigins.includes(new URL(credentials.loginUrl).origin) ? <>
         <p>Connect securely to your Pasofi hotspot. Your connection details are filled in for you.</p>

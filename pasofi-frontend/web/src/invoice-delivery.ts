@@ -2,6 +2,7 @@ export type InvoiceDelivery = { channel: 'download' | 'email' | 'sms'; recipient
 export type Invoice = {
   id: string; number: string; issuedAt: string; paidAt: string; currency: string; totalMinor: number;
   sourceType: 'cash' | 'digital'; saleId: string | null; orderId: string | null;
+  pairingId?: string;
   simulation: boolean; requestedChannel: InvoiceDelivery['channel'];
 };
 export type InvoicePage = { invoices: Invoice[]; hasMore: boolean; nextOffset: number | null };
@@ -47,6 +48,7 @@ export function parseInvoicePage(value: unknown): InvoicePage {
       || !Number.isSafeInteger(invoice.totalMinor) || invoice.totalMinor < 0 || !/^[A-Z]{3}$/.test(invoice.currency)
       || !['cash', 'digital'].includes(invoice.sourceType) || typeof invoice.simulation !== 'boolean'
       || !['download', 'email', 'sms'].includes(invoice.requestedChannel)
+      || (invoice.pairingId !== undefined && (invoice.sourceType !== 'cash' || !invoice.saleId || !invoiceIdPattern.test(invoice.pairingId)))
       || (invoice.saleId !== null && !invoiceIdPattern.test(invoice.saleId)) || (invoice.orderId !== null && !invoiceIdPattern.test(invoice.orderId))) throw new Error('invalid_invoice_response');
   }
   return page;

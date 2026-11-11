@@ -28,12 +28,27 @@ test('lab authority requires a scoped network token and durably binds accounting
   const grant=created.json();assert.equal(grant.reservedBytes,'5000000000');
   const replay=await post('/internal/v1/radius/grants',grantBody,grantToken);assert.equal(replay.json().grantId,grant.grantId);assert.equal(replay.json().deadline,grant.deadline);
   assert.equal((await post('/internal/v1/radius/grants',{...grantBody,sessionId:'OTHER'},grantToken)).statusCode,409);
+  async function assertReplayUnavailable() {
+   const retry=await post('/internal/v1/radius/grants',grantBody,grantToken);
+   assert.equal(retry.statusCode,409);
+   assert.deepEqual(retry.json(),{error:'grant_not_replayable'});
+  }
+  // A valid temporary credential must not restore its original quota if the
+  // bound purchase has since expired, lost allowance, or been revoked.
+  await pool.query("UPDATE purchase_entitlements SET start_by=now()-interval '1 second' WHERE id=$1",[entitlement]);
+  await assertReplayUnavailable();
+  await pool.query("UPDATE purchase_entitlements SET start_by=now()+interval '1 day',consumed_bytes=1 WHERE id=$1",[entitlement]);
+  await assertReplayUnavailable();
+  await pool.query('UPDATE purchase_entitlements SET consumed_bytes=0,revoked_at=now() WHERE id=$1',[entitlement]);
+  await assertReplayUnavailable();
+  await pool.query('UPDATE purchase_entitlements SET revoked_at=NULL WHERE id=$1',[entitlement]);
   const event={grantId:grant.grantId,siteId:site,nasId:nas,generation:grant.generation,sessionId,kind:'start',upload:'4294967296',download:'10'};
   assert.equal((await post('/internal/v1/radius/accounting',event,grantToken)).statusCode,403);
   assert.equal((await post('/internal/v1/radius/accounting',{...event,kind:'interim'},accountToken)).statusCode,409);
   assert.equal((await post('/internal/v1/radius/accounting',{...event,sessionId:'OTHER'},accountToken)).statusCode,409);
   assert.equal((await post('/internal/v1/radius/accounting',{...event,upload:'18446744073709551616'},accountToken)).statusCode,409);
   const first=await post('/internal/v1/radius/accounting',event,accountToken);assert.equal(first.statusCode,200);assert.equal(first.json().chargedBytes,'4294967306');
+  await assertReplayUnavailable();
   const duplicate=await post('/internal/v1/radius/accounting',event,accountToken);assert.equal(duplicate.json().chargedBytes,'4294967306');
   assert.equal((await pool.query('SELECT consumed_bytes::text FROM purchase_entitlements WHERE id=$1',[entitlement])).rows[0].consumed_bytes,'4294967306');
   process.env.APP_ENV='production';const production=buildApp();try{assert.equal((await production.inject({method:'POST',url:'/internal/v1/radius/grants',payload:grantBody,headers:{authorization:`Bearer ${grantToken}`}})).statusCode,404);}finally{await production.close();}

@@ -11,6 +11,31 @@ export function referenceStatus(row: Record<string, any>) {
 export function referenceQuote(row: Record<string, any>) {
  return row.bundle_id ? {bundleId: row.bundle_id, siteId: row.site_id, siteName: row.site_name, priceMinor: row.price_minor, currency: row.currency, byteLimit: String(row.byte_limit), validitySeconds: row.validity_seconds} : null;
 }
+export async function lookupCashReference(pool: Pool, code: string, siteId: string, agentId: string | null) {
+ // The agent uses this read to decide whether to collect cash. It does not
+ // reserve stock. The sale transaction rechecks these conditions under lock.
+ const {rows} = await pool.query(`
+  SELECT p.sale_id, p.cancelled_at, p.expires_at, p.bundle_id, p.site_id, p.site_name,
+         p.price_minor, p.currency, p.byte_limit, p.validity_seconds,
+         l.enabled, b.published, s.id AS shift_id, i.quantity
+    FROM receipt_pairings p
+    JOIN sales_locations l ON l.id=p.site_id
+    JOIN bundle_versions b ON b.id=p.bundle_id
+    LEFT JOIN cash_shifts s ON s.agent_id=$3 AND s.site_id=p.site_id AND s.currency=p.currency AND s.closed_at IS NULL
+    LEFT JOIN agent_site_inventory i ON i.agent_id=$3 AND i.site_id=p.site_id AND i.bundle_id=p.bundle_id
+   WHERE p.code_hash=$1 AND p.site_id=$2`, [referenceHash(code),siteId,agentId]);
+ const row=rows[0];
+ if(!row)return null;
+ const status=referenceStatus(row);
+ if(agentId && status==='pending') {
+  if(!row.enabled)throw new VoucherError('site_unavailable');
+  if(!row.published)throw new VoucherError('bundle_unavailable');
+  if(!row.shift_id)throw new VoucherError('shift_required');
+  if(!row.quantity)throw new VoucherError('out_of_stock');
+ }
+ return {status,expiresAt:row.expires_at,quote:referenceQuote(row)};
+}
+
 export async function createCashReference(pool: Pool, customerId: string, requestKey: string, bundleId: string, siteId: string, keys: DeliveryKeys) {
  const client = await pool.connect();
  try {

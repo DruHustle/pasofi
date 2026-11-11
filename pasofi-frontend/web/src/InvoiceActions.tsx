@@ -78,7 +78,10 @@ export function InvoiceDownload({ scope, ownerKey, verify, invoice, saleId, orde
   return <span className="invoice-action"><button type="button" className="secondary invoice-button" disabled={disabled || busy} onClick={() => perform('pdf')} aria-label={invoice ? `${exportAction} invoice ${invoice.number}` : undefined}>{action === 'pdf' ? 'Loading PDF…' : exportAction === 'Save or share' ? 'Save or share PDF' : invoice ? 'PDF' : 'Invoice PDF'}</button>{(!invoice || invoice.requestedChannel !== 'download') && <button type="button" className="text-button invoice-status-button" disabled={disabled || busy} onClick={() => perform('status')} aria-label={invoice ? `Delivery status for invoice ${invoice.number}` : 'Invoice delivery status'}>{action === 'status' ? 'Checking…' : 'Delivery status'}</button>}{message && <small className="invoice-status" role="status">{message}</small>}</span>;
 }
 
-export function InvoiceHistory({ scope, ownerKey, verify }: { scope: InvoiceScope; ownerKey: string; verify: Verify }) {
+export function InvoiceHistory({ scope, ownerKey, verify, onRedeem, redeeming = false }: {
+  scope: InvoiceScope; ownerKey: string; verify: Verify;
+  onRedeem?: (saleId: string, pairingId: string) => void; redeeming?: boolean;
+}) {
   const [invoices, setInvoices] = useState<Invoice[]>([]), [loaded, setLoaded] = useState(false), [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(''), [nextOffset, setNextOffset] = useState<number | null>(null);
   const active = useRef<AbortController | null>(null);
@@ -109,6 +112,7 @@ export function InvoiceHistory({ scope, ownerKey, verify }: { scope: InvoiceScop
       {loaded && invoices.length === 0 && <p className="invoice-status">No paid invoices are available for this account yet.</p>}
       {invoices.length > 0 && <ul className="invoice-list">{invoices.map(item => <li key={item.id}>
         <div><strong>{item.number} · {money(item.totalMinor, item.currency)}</strong><small>{localDate(item.paidAt)}{item.simulation ? ' · Demo' : ''} · {invoiceDeliveryLabel(item.requestedChannel)}</small></div>
+        {onRedeem && item.pairingId && item.saleId && <button type="button" className="secondary" disabled={redeeming} onClick={() => onRedeem(item.saleId!, item.pairingId!)}>Redeem paid voucher</button>}
         <InvoiceDownload scope={scope} ownerKey={ownerKey} verify={verify} invoice={item} />
       </li>)}</ul>}
       <div className="invoice-history-actions"><button type="button" className="text-button" disabled={busy} onClick={() => load()}>{loaded ? 'Refresh invoices' : 'Retry invoices'}</button>{nextOffset !== null && <button type="button" className="text-button" disabled={busy} onClick={() => load(true)}>More invoices</button>}</div>

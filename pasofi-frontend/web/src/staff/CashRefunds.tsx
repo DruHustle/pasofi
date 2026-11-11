@@ -1,15 +1,34 @@
 import {useEffect,useRef,useState} from 'react';
 import {api,ApiError} from '../api';
-import {type Staff,finishMutation,localDate,messageFor,money,mutationIntent} from '../business';
+import {type Staff,cashListUrl,finishMutation,localDate,messageFor,money,mutationIntent} from '../business';
 type Refund={id:string;saleId:string;siteName:string;bundleId:string;amountMinor:number;currency:string;reason:string;state:'requested'|'approved'|'rejected'|'paying'|'paid';requestedAt:string;decisionNote:string|null;auditHead:string;events:{sequence:number;state:string;actorId:string;recordedAt:string;hash:string}[]};
 type Draft={path:string;body:Record<string,unknown>};
 export default function CashRefunds({staff}:{staff:Staff}) {
  const [refunds,setRefunds]=useState<Refund[]>([]),[saleId,setSaleId]=useState(''),[reason,setReason]=useState('');
  const [selected,setSelected]=useState<Refund|null>(null),[action,setAction]=useState<'approved'|'rejected'|'prepare'|'payout'>('approved');
  const [draft,setDraft]=useState<Draft|null>(null),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ const [activeOnly,setActiveOnly]=useState(false),[nextCursor,setNextCursor]=useState<string|null>(null),[canFilter,setCanFilter]=useState(false);
  const live=useRef(false),owner=`staff:${staff.staffId}`;
  async function verify(){const current=await api<Staff>('/api/staff/session');if(current.staffId!==staff.staffId||current.version!==staff.version||current.role!==staff.role||current.status!=='approved')throw new ApiError(401,'staff_changed');}
- async function refresh(){await verify();const result=await api<{refunds:Refund[]}>('/api/staff/cash-refunds');if(live.current)setRefunds(result.refunds);}
+ async function refresh(active=activeOnly,before:string|null=null){
+  await verify();
+  const result=await api<{refunds:Refund[];nextCursor?:string|null}>(cashListUrl('/api/staff/cash-refunds',active,before));
+  if(!live.current)return;
+  setRefunds(previous=>before?[...previous,...result.refunds]:result.refunds);
+  setCanFilter(result.nextCursor!==undefined);setNextCursor(result.nextCursor??null);setActiveOnly(active);
+ }
+ async function showPage(active:boolean,before:string|null=null){
+  const previousFilter=activeOnly;
+  setActiveOnly(active);setBusy(true);
+  try{await refresh(active,before);}catch(error){
+   if(live.current){
+    setActiveOnly(previousFilter);
+    if(error instanceof ApiError && [401,403].includes(error.status)){setRefunds([]);setNextCursor(null);setCanFilter(false);}
+    setMessage(messageFor(error));
+   }
+  }
+  finally{if(live.current)setBusy(false);}
+ }
  async function load(){setBusy(true);try{await refresh();const saved=sessionStorage.getItem(`pamofi.operation:${owner}:cash-refund`);if(live.current&&saved)setDraft(JSON.parse(JSON.parse(saved).payload) as Draft);}catch(error){if(live.current){setRefunds([]);setMessage(messageFor(error));}}finally{if(live.current)setBusy(false);}}
  useEffect(()=>{live.current=true;void load();return()=>{live.current=false;};},[staff.staffId,staff.version]);
  function choose(refund:Refund,next:typeof action){setSelected(refund);setAction(next);setReason('');setConfirmed(false);setMessage('');}
@@ -42,9 +61,11 @@ export default function CashRefunds({staff}:{staff:Staff}) {
    <button className="primary" disabled={busy||!confirmed}>{draft?'Retry saved refund request':selected?action==='prepare'?'Reserve cash for refund':action==='payout'?'Confirm cash returned':`${action==='approved'?'Approve and withdraw unused access':'Reject refund'}`:'Submit refund for approval'}</button>
    {selected&&!draft&&<button type="button" className="secondary" disabled={busy} onClick={()=>{setSelected(null);setConfirmed(false);setReason('');}}>Cancel review</button>}
   </form>}
-  {!refunds.length?<p>No refund requests recorded.</p>:<ul className="audit-list">{refunds.map(refund=><li key={refund.id}><strong>{refund.siteName} · {refund.bundleId.toUpperCase()} · {money(refund.amountMinor,refund.currency)} · {refund.state==='paying'?'cash reserved; return awaiting confirmation':refund.state==='paid'?'cash returned':refund.state}</strong><p>{refund.reason}</p>{refund.decisionNote&&<p>Supervisor: {refund.decisionNote}</p>}<small>Sale: {refund.saleId} · {localDate(refund.requestedAt)}</small>
+  {canFilter&&<label className="check-label"><input type="checkbox" checked={activeOnly} disabled={busy} onChange={event=>void showPage(event.target.checked)}/>Pending refunds only</label>}
+  {!refunds.length?<p>{activeOnly?'No pending refunds.':'No refund requests recorded.'}</p>:<ul className="audit-list">{refunds.map(refund=><li key={refund.id}><strong>{refund.siteName} · {refund.bundleId.toUpperCase()} · {money(refund.amountMinor,refund.currency)} · {refund.state==='paying'?'cash reserved; return awaiting confirmation':refund.state==='paid'?'cash returned':refund.state}</strong><p>{refund.reason}</p>{refund.decisionNote&&<p>Supervisor: {refund.decisionNote}</p>}<small>Sale: {refund.saleId} · {localDate(refund.requestedAt)}</small>
    <div className="purchase-actions">{staff.role==='admin'&&refund.state==='requested'&&<><button className="secondary" disabled={busy||!!draft} onClick={()=>choose(refund,'approved')}>Review approval</button><button className="secondary" disabled={busy||!!draft} onClick={()=>choose(refund,'rejected')}>Review rejection</button></>}{staff.role==='agent'&&refund.state==='approved'&&<button className="secondary" disabled={busy||!!draft} onClick={()=>choose(refund,'prepare')}>Prepare cash return</button>}{staff.role==='agent'&&refund.state==='paying'&&<button className="secondary" disabled={busy||!!draft} onClick={()=>choose(refund,'payout')}>Record returned cash</button>}</div>
    <details><summary>Refund audit trail</summary><ol>{refund.events.map(entry=><li key={entry.sequence}>{entry.state} · {localDate(entry.recordedAt)}<small>Actor: {entry.actorId}</small><small>Record hash: {entry.hash}</small></li>)}</ol><small>Audit head: {refund.auditHead}</small></details>
   </li>)}</ul>}
+  {nextCursor&&<button type="button" className="secondary" disabled={busy} onClick={()=>void showPage(activeOnly,nextCursor)}>Load more refunds</button>}
  </section>;
 }
