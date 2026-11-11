@@ -6,9 +6,9 @@
 .router-fleet h3 { font-size: 20px; line-height: 1.3; margin: 0 0 4px; }
 .router-fleet h4 { font-size: 16px; line-height: 1.4; margin: 0; }
 .router-fleet :is(button,input,select,textarea) { font: inherit; max-width: 100%; }
-.router-fleet :is(button,input,select,textarea):focus-visible, .router-fleet summary:focus-visible { outline: 3px solid #075cf5; outline-offset: 3px; }
+.router-fleet :is(button,input,select,textarea):focus-visible, .router-fleet summary:focus-visible { outline: 3px solid #0070f2; outline-offset: 3px; }
 .router-fleet :is(.primary,.secondary) { min-height: 44px; padding: 9px 12px; border-radius: 9px; font-size: 12px; white-space: normal; line-height: 1.4; }
-.router-fleet .primary { background: #075cf5; border: 1px solid #075cf5; color: #fff; }
+.router-fleet .primary { background: #0070f2; border: 1px solid #0070f2; color: #fff; }
 .router-fleet .secondary { background: #fff; border: 1px solid #b7cae6; color: var(--router-ink); }
 .router-fleet button:disabled { opacity: .58; cursor: not-allowed; }
 .router-fleet-heading,.router-detail-heading,.router-change-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
@@ -24,7 +24,7 @@
 .router-fleet-list,.router-detail { min-width: 0; }
 .router-fleet .router-list { list-style: none; padding: 0; display: grid; gap: 5px; max-height: 206px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .router-fleet .router-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 57px; border: 1px solid var(--router-line); border-radius: 9px; padding: 9px 10px; background: #fff; color: var(--router-ink); text-align: left; }
-.router-fleet .router-row.selected { background: #eef4ff; border-color: #075cf5; box-shadow: inset 3px 0 #075cf5; }
+.router-fleet .router-row.selected { background: #eef4ff; border-color: #0070f2; box-shadow: inset 3px 0 #0070f2; }
 .router-row-main { display: grid; gap: 3px; min-width: 0; }
 .router-row-main strong { font-size: 12px; overflow-wrap: anywhere; }
 .router-row-main small { font-size: 11px; overflow-wrap: anywhere; }
@@ -43,7 +43,7 @@
 .router-device-more,.router-change-record,.router-history { border-top: 1px solid var(--router-line); }
 .router-fleet summary { cursor: pointer; min-height: 44px; padding: 12px 0; font-size: 12px; color: var(--router-ink); font-weight: 650; line-height: 1.5; }
 .router-device-more dl,.router-change-record dl { display: grid; gap: 8px; padding-bottom: 10px; }
-.router-fleet .router-service-note,.router-fleet .feedback,.router-fleet .notice { padding: 10px 11px; border: 1px solid #d8e4f6; border-left: 3px solid #075cf5; border-radius: 6px; background: #f2f7ff; margin: 10px 0; color: var(--router-ink); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.router-fleet .router-service-note,.router-fleet .feedback,.router-fleet .notice { padding: 10px 11px; border: 1px solid #d8e4f6; border-left: 3px solid #0070f2; border-radius: 6px; background: #f2f7ff; margin: 10px 0; color: var(--router-ink); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
 .router-service-note > p + p,.router-service-note > strong + p { margin-top: 5px; }
 .router-service-note > button { margin-top: 8px; }
 .router-config-form,.router-rollback-form { display: grid; gap: 10px; margin-top: 12px; }
@@ -51,7 +51,7 @@
 .router-config-fields { display: grid; gap: 10px; }
 .router-config-form > button { justify-self: start; }
 .router-fleet .router-check { display: flex; align-items: flex-start; gap: 9px; font-weight: 500; padding: 6px 0; }
-.router-check input { accent-color: #075cf5; width: 20px; height: 20px; min-height: 20px; flex: 0 0 20px; margin: 0; }
+.router-check input { accent-color: #0070f2; width: 20px; height: 20px; min-height: 20px; flex: 0 0 20px; margin: 0; }
 .router-check span { min-width: 0; }
 .router-check small { display: block; margin-top: 3px; }
 .router-change { display: grid; gap: 10px; border-top: 1px solid var(--router-line); padding-top: 12px; margin-top: 8px; }

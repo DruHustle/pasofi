@@ -162,9 +162,13 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
   --pf-canvas: #f8f9f5;
   --pf-muted: #5c716a;
 }
-.pf-header { border-bottom: 3px solid #075cf5; }
-.pf-brand-mark { background: #075cf5; color: #fff; }
-.pf-connection-card { background: #075cf5; border-color: #075cf5; color: #fff; box-shadow: 0 14px 34px #075cf529; }
+.pf-header { background: #001a33; border-bottom: 3px solid #0070f2; color: #fff; }
+.pf-header .pf-brand small, .pf-header .pf-header-tagline { color: #c7f5b5; }
+.pf-header .pf-icon-button { color: #fff; }
+.pf-header .pf-icon-button:hover { background: #003a99; }
+.pf-header :is(a, button):focus-visible { outline: 3px solid #c7f5b5; outline-offset: 3px; }
+.pf-brand-mark { background: #006f53; color: #fff; }
+.pf-connection-card { background: #0070f2; border-color: #0070f2; color: #fff; box-shadow: 0 14px 34px #0070f229; }
 .pf-connection-copy h2, .pf-connection-copy h2 span, .pf-connection-copy p,
 .pf-connection-top > span:first-child, .pf-dark-link { color: #fff; }
 .pf-connection-copy h2 { font-weight: 850; }
@@ -172,22 +176,22 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
 .pf-connection-orbits > span { border-color: #ffffff44; }
 .pf-connection-orbits > .pf-icon { color: #97d5ff; }
 .pf-connection-actions > .pf-button-primary { background: var(--pf-lime); color: var(--pf-forest); border-color: var(--pf-lime); }
-.pf-button-primary, .workspace .primary, .purchase .primary { background: #075cf5; border-color: #075cf5; color: #fff; }
-.pf-button-primary:hover:not(:disabled), .workspace .primary:hover:not(:disabled) { background: #0647c7; border-color: #0647c7; color: #fff; }
+.pf-button-primary, .workspace .primary, .purchase .primary { background: #0070f2; border-color: #0070f2; color: #fff; }
+.pf-button-primary:hover:not(:disabled), .workspace .primary:hover:not(:disabled) { background: #003a99; border-color: #003a99; color: #fff; }
 .pf-connection-actions > .pf-button-primary:hover:not(:disabled) { background: #b7e7a6; border-color: #b7e7a6; color: var(--pf-forest); }
-.pf-quick-actions > button:nth-child(1) { background: #075cf5; color: #fff; }
+.pf-quick-actions > button:nth-child(1) { background: #0070f2; color: #fff; }
 .pf-quick-actions > button:nth-child(1) > span { background: #ffffff26; color: #fff; }
 .pf-quick-actions > button:nth-child(2) { background: #c7f5b5; }
 .pf-quick-actions > button:nth-child(3) { background: #006f53; color: #fff; }
 .pf-quick-actions > button:nth-child(4) { background: #ffb927; }
 .pf-quick-actions > button:nth-child(3) > span { background: #ffffff26; color: #fff; }
 .pf-quick-actions > button:nth-child(3):hover:not(:disabled) > span { background: #ffffff40; border-color: #fff; }
-.pf-bundle-card { border-top: 6px solid #075cf5; background: #f8f9f5; }
+.pf-bundle-card { border-top: 6px solid #0070f2; background: #f8f9f5; }
 .pf-bundle-card:nth-child(3n+2) { border-top-color: #006f53; background: #e9f7ef; }
 .pf-bundle-card:nth-child(3n) { border-top-color: #ffad00; background: #fffbed; }
 .pf-help-illustration, .pf-help-banner .pf-empty-icon { background: var(--pf-lime); color: var(--pf-forest); }
 .pf-navigation > button[aria-current=page] .pf-nav-icon { background: var(--pf-mint); color: var(--pf-forest); }
-.workspace-tabs button.selected { background: #075cf5; color: #fff; }
+.workspace-tabs button.selected { background: #0070f2; color: #fff; }
 .private-value summary { min-height: 44px; padding: 12px 0; cursor: pointer; font-size: 14px; font-weight: 700; }
 @media (min-width: 1000px) {
   .pf-navigation > button[aria-current=page] { background: var(--pf-mint); color: var(--pf-forest); }
@@ -197,7 +201,7 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
 
 /* Compact comparison: keep data, validity, price and selection together. */
 .pf-bundle-grid{grid-template-columns:1fr;gap:8px}
-.pf-bundle-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(70px,auto) 72px;grid-template-areas:"name price action" "data price action" "validity price action";column-gap:12px;row-gap:2px;padding:11px 14px;border-radius:14px;border-top-width:1px;border-left:4px solid #075cf5;box-shadow:none}
+.pf-bundle-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(70px,auto) 72px;grid-template-areas:"name price action" "data price action" "validity price action";column-gap:12px;row-gap:2px;padding:11px 14px;border-radius:14px;border-top-width:1px;border-left:4px solid #0070f2;box-shadow:none}
 .pf-bundle-card:nth-child(3n+2){border-left-color:#006f53}.pf-bundle-card:nth-child(3n){border-left-color:#ffad00}
 .pf-bundle-top{grid-area:name;min-height:0;line-height:1.2}.pf-plan-name{font-size:12px;overflow-wrap:anywhere}.pf-bundle-top>.pf-icon{display:none}
 .pf-bundle-card h3{grid-area:data;font-size:29px;letter-spacing:-1px;margin:0;gap:4px;line-height:1.15}
@@ -221,9 +225,9 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
 @media(max-width:359px){.pf-bundle-card{column-gap:8px;padding:10px;grid-template-columns:minmax(0,1fr) 68px 62px}.pf-bundle-price strong{font-size:20px}.pf-sort{flex-basis:152px}:is(.pf-home,.pf-captive) .pf-quick-actions>button strong{font-size:10px}:is(.pf-home,.pf-captive) .pf-page-intro h1{font-size:24px}}
 
 /* Use primary blue, deep teal and soft mint across the customer surfaces. */
-.pf-bundle-card:nth-child(n){background:#fff;border-color:#dae3da;border-left-color:#075cf5}
+.pf-bundle-card:nth-child(n){background:#fff;border-color:#dae3da;border-left-color:#0070f2}
 :is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n){background:#fff;color:#103c35;border-color:#dae3da}
-:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n)>span{color:#075cf5}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n)>span{color:#0070f2}
 :is(.pf-home,.pf-captive) .pf-quick-actions>button:first-child{background:#c7f5b5;border-color:#718a78}
 :is(.pf-home,.pf-captive) .pf-quick-actions>button:first-child>span{color:#103c35}
 .pf-bundle-terms{background:#fff;border-color:#dae3da}.pf-bundle-terms p{color:#5c716a}
@@ -232,13 +236,13 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
 .pf-catalogue-options>summary{font-size:12px;font-weight:650;color:#5c716a;padding:12px 0;min-height:44px;cursor:pointer}
 .pf-catalogue-options[open]>summary{margin-bottom:6px}.pf-catalogue-options .pf-catalogue-toolbar{margin-bottom:12px}
 
-.pf-text-link{color:#0647c7}.pf-bundle-card h3 span,.pf-navigation>button{color:#5c716a}
-.pf-navigation>button[aria-current=page] .pf-nav-icon{background:#075cf5;color:#fff}
-@media(min-width:1000px){.pf-navigation>button[aria-current=page]{background:#075cf5;color:#fff}.pf-navigation>button[aria-current=page] .pf-nav-icon{background:transparent}.pf-nav-dot{background:#c7f5b5}}
+.pf-text-link{color:#003a99}.pf-bundle-card h3 span,.pf-navigation>button{color:#5c716a}
+.pf-navigation>button[aria-current=page] .pf-nav-icon{background:#0070f2;color:#fff}
+@media(min-width:1000px){.pf-navigation>button[aria-current=page]{background:#0070f2;color:#fff}.pf-navigation>button[aria-current=page] .pf-nav-icon{background:transparent}.pf-nav-dot{background:#c7f5b5}}
 
 /* The app continues the compact welcome palette; colour has a clear purpose. */
 .pf-avatar-button{background:#fff;border-color:#dae3da;color:#103c35}
 :is(.pf-home,.pf-captive) .pf-quick-actions>button strong{font-size:12px}
-:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n):hover:not(:disabled){background:#e8f0ff;border-color:#075cf5;color:#103c35}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n):hover:not(:disabled){background:#e8f0ff;border-color:#0070f2;color:#103c35}
 :is(.pf-home,.pf-captive) .pf-quick-actions>button:first-child:hover:not(:disabled){background:#b7e7a6;border-color:#718a78}
-:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n):hover:not(:disabled)>span{color:#075cf5;background:transparent}
+:is(.pf-home,.pf-captive) .pf-quick-actions>button:nth-child(n):hover:not(:disabled)>span{color:#0070f2;background:transparent}
