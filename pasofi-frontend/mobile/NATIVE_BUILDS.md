@@ -2,7 +2,7 @@
 
 The mobile source is `pasofi-frontend/mobile`. The checked-in native projects are `android` and `ios`; the Capacitor application ID is `com.onesa.pasofi`. There is no separate `pamofi-mobile` source folder.
 
-The `Build PasoFi native previews` workflow compiles fresh web assets, runs the pinned Capacitor 8.6.0 synchronization, then independently builds Android and iOS. A successful job uploads its binary, exact source commit, toolchain version and SHA-256 checksum for 14 days. A workflow definition or successful web build alone does not mean a native binary has been built: inspect the native job result and its artifact.
+The `Build PasoFi native previews` workflow compiles fresh web assets, runs the pinned Capacitor 8.6.0 synchronization, then independently builds Android and iOS. Each successful build checks the output on its runner and records its checksum in the job summary. Relevant main-branch pushes and manual runs also upload the binaries, source commit, toolchain version and archive checksums for three days. Run the workflow manually on a review branch when an installable preview is needed. A workflow definition or successful web build alone does not mean a native binary has been built: inspect the native job result and its artifact.
 
 ## Private native customer API
 

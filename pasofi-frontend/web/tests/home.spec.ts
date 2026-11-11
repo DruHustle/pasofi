@@ -73,7 +73,7 @@ test('Home account shortcuts and connection guidance preserve guest privacy and 
   await expect(page).toHaveURL(/#voucher$/);
   await page.goto('/'); await page.locator('.pasofi-home-guide > summary').click();
   await expect(page.getByRole('heading', { name: 'Find your hotspot', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'View bundles', exact: true }).click(); await expect(page).toHaveURL(/#bundles$/);
+  await page.locator('.pasofi-home-guide').getByRole('button', { name: 'View bundles', exact: true }).click(); await expect(page).toHaveURL(/#bundles$/);
   await page.goto('/connect'); await expect(page.getByRole('heading', { name: 'Connect to Pasofi', exact: true })).toBeVisible();
   await expect(page.locator('.pasofi-home-hero, .pasofi-home-more')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Redeem voucher', exact: true })).toBeVisible();
@@ -85,7 +85,7 @@ test('Home handles an empty published catalogue without inserting promotional pr
   await expect(page.getByText('No bundles are published yet. Check back when Pasofi launches.', { exact: true })).toBeVisible();
   await expect(page.locator('.pf-bundle-card')).toHaveCount(0);
   await expect(page.locator('.pasofi-home-hero')).not.toContainText('$');
-  await page.getByRole('button', { name: 'Buy data', exact: true }).click(); await expect(page).toHaveURL(/#bundles$/);
+  await page.getByRole('button', { name: 'View bundles', exact: true }).click(); await expect(page).toHaveURL(/#bundles$/);
   expect(state.mutations).toEqual([]);
 });
 

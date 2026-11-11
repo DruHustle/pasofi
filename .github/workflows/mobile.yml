@@ -1,19 +1,9 @@
 name: Build PasoFi native previews
 
 on:
+  # Both native jobs are required on protected main, including for web-only
+  # changes. A path-filtered workflow leaves these checks pending forever.
   pull_request:
-    paths:
-      - 'pasofi-frontend/mobile/**'
-      # Protected main also requires both real native builds for changes to the
-      # images and deployment definitions that name the mobile app's backend.
-      - 'pasofi-frontend/web/Dockerfile'
-      - 'pasofi-backend/services/*/Dockerfile'
-      - 'pasofi-backend/infra/production/*.yaml'
-      - 'pasofi-backend/infra/backup-production/compose.yaml'
-      - 'pasofi-backend/infra/backup-production/Dockerfile'
-      - 'pasofi-backend/infra/radius-production/compose.yaml'
-      - 'pasofi-backend/infra/oracle-staging/compose.yaml'
-      - '.github/workflows/mobile.yml'
   push:
     branches: [main]
     paths:
@@ -82,7 +72,13 @@ jobs:
           test "$(sed -n 's/^distributionUrl=//p' gradle/wrapper/gradle-wrapper.properties)" = 'https\://services.gradle.org/distributions/gradle-8.14.3-all.zip'
           printf '%s\n' '7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172  gradle/wrapper/gradle-wrapper.jar' | sha256sum --check
           bash ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify Android output and report its checksum
+        run: |
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          sha256sum "$apk" >> "$GITHUB_STEP_SUMMARY"
       - name: Package review artifact and provenance
+        if: github.event_name != 'pull_request'
         run: |
           mkdir -p native-artifacts
           cp android/app/build/outputs/apk/debug/app-debug.apk native-artifacts/pamofi-api-unconfigured-debug.apk
@@ -92,12 +88,13 @@ jobs:
           sha256sum native-artifacts/pamofi-api-unconfigured-debug.apk > native-artifacts/SHA256SUMS.txt
           java -version 2> native-artifacts/JAVA_VERSION.txt
       - name: Upload Android preview
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pamofi-android-api-unconfigured-debug-${{ github.sha }}
           path: pasofi-frontend/mobile/native-artifacts/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
   ios:
     name: iOS unsigned Release simulator app (API unconfigured)
@@ -192,7 +189,13 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
             DEVELOPMENT_TEAM= ONLY_ACTIVE_ARCH=NO build
           cmp native-build/ios-package-resolved.json ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+      - name: Verify simulator executable and report its checksum
+        run: |
+          executable=native-build/ios/Build/Products/Release-iphonesimulator/App.app/App
+          test -x "$executable"
+          shasum -a 256 "$executable" >> "$GITHUB_STEP_SUMMARY"
       - name: Package simulator app without losing executable permissions
+        if: github.event_name != 'pull_request'
         run: |
           mkdir -p native-artifacts
           tar -czf native-artifacts/pamofi-api-unconfigured-ios-simulator.tar.gz \
@@ -205,9 +208,10 @@ jobs:
           xcodebuild -version > native-artifacts/XCODE_VERSION.txt
           printf '%s\n' 'Release; API unconfigured; unsigned simulator' > native-artifacts/BUILD_CONFIGURATION.txt
       - name: Upload iOS simulator preview
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pamofi-ios-api-unconfigured-simulator-${{ github.sha }}
           path: pasofi-frontend/mobile/native-artifacts/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3

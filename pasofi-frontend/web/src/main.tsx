@@ -178,9 +178,9 @@ function App() {
       <div className="demo pf-service-status" data-status={capabilitiesError ? 'unavailable' : !capabilities ? 'checking' : capabilities.demo ? 'demo' : capabilities.staffSales || capabilities.paymentCheckout || capabilities.networkAccess ? 'available' : 'preparation'}><span className="pf-status-dot"/><span><strong>{serviceLabel}</strong><span className="pf-service-detail">{serviceDetail}</span></span>{capabilitiesError && <button onClick={refreshCapabilities}>Retry service status</button>}</div>
       <ScreenBoundary screen={`${view}:${workspace ?? ''}:${purchase === 'recovery' ? 'recovery' : purchase ? 'purchase' : ''}:${catalogueAttempt}`} onBrowse={() => navigate('bundles')}>
       {showWelcome && view === 'connect' && <>
-        <div className="pf-page-intro"><div><span className="pf-eyebrow">{view === 'connect' ? 'WELCOME TO YOUR HOTSPOT' : 'HELLO, GOOD TO SEE YOU'}</span><h1 tabIndex={-1}>{view === 'connect' ? 'Connect to Pasofi' : 'Your internet. Your everyday.'}</h1><p>{view === 'connect' ? 'Choose a bundle or use your voucher to get started.' : 'A little data for everything that matters.'}</p></div></div>
+        <div className="pf-page-intro"><div><span className="pf-eyebrow">WELCOME TO YOUR HOTSPOT</span><h1 tabIndex={-1}>Connect to Pasofi</h1><p>Check bundle prices and voucher availability at this hotspot.</p></div></div>
         {view === 'connect' && <section className="pf-quick-actions" aria-label="Quick actions">{([
-          { label: 'Buy data', icon: 'plus' as IconName, action: (b: HTMLButtonElement) => navigate('bundles', b), disabled: false },
+          { label: 'View bundles', icon: 'plus' as IconName, action: (b: HTMLButtonElement) => navigate('bundles', b), disabled: false },
           { label: 'Redeem voucher', icon: 'ticket' as IconName, action: (b: HTMLButtonElement) => openCustomer('voucher', b), disabled: !capabilities },
           { label: 'My WiFi', icon: 'wifi' as IconName, action: (b: HTMLButtonElement) => openCustomer('wifi', b), disabled: !capabilities },
           { label: 'Get help', icon: 'help' as IconName, action: (b: HTMLButtonElement) => navigate('help', b), disabled: false },
