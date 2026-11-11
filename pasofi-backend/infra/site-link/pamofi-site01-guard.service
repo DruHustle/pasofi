@@ -1,5 +1,5 @@
 [Unit]
-Description=PamoFi site-01 WireGuard firewall guard
+Description=pasofi site-01 WireGuard firewall guard
 Requires=netfilter-persistent.service
 After=netfilter-persistent.service
 Before=wg-quick@pfi-site01.service

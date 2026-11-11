@@ -53,6 +53,8 @@ x-migration: &migration
     postgres: {condition: service_healthy}
 services:
   postgres:
+    labels:
+      eu.onesa.product: pasofi
     image: postgres:17.11-alpine3.23@sha256:2ad58d61b036d41f2613302e8c0fee03f6fe51e94d68087327ac45d1cebd4b5e
     restart: unless-stopped
     mem_limit: 512m
@@ -102,6 +104,8 @@ services:
       timeout: 3s
       retries: 30
   identity:
+    labels:
+      eu.onesa.product: pasofi
     <<: *runtime
     image: ${PAMOFI_IDENTITY_IMAGE:?Set the immutable identity image}
     environment:
@@ -118,6 +122,8 @@ services:
       - session_creation_secret
       - staff_mfa_encryption_key
   identity-migrate:
+    labels:
+      eu.onesa.product: pasofi
     <<: *migration
     image: ${PAMOFI_IDENTITY_IMAGE:?Set the immutable identity image}
     environment:
@@ -127,6 +133,8 @@ services:
       MIGRATION_DATABASE_URL_FILE: /run/secrets/identity_migrate_url
     secrets: [identity_migrate_url]
   prepaid-access:
+    labels:
+      eu.onesa.product: pasofi
     <<: *runtime
     image: ${PAMOFI_PREPAID_IMAGE:?Set the immutable prepaid-access image}
     environment:
@@ -160,6 +168,8 @@ services:
       - internal_delivery_secret
       - voucher_delivery_keys_json
   prepaid-access-migrate:
+    labels:
+      eu.onesa.product: pasofi
     <<: *migration
     image: ${PAMOFI_PREPAID_IMAGE:?Set the immutable prepaid-access image}
     environment:
@@ -169,6 +179,8 @@ services:
       MIGRATION_DATABASE_URL_FILE: /run/secrets/prepaid_migrate_url
     secrets: [prepaid_migrate_url]
   network:
+    labels:
+      eu.onesa.product: pasofi
     <<: *runtime
     image: ${PAMOFI_NETWORK_IMAGE:?Set the immutable network image}
     environment:
@@ -188,6 +200,8 @@ services:
       - internal_network_secret
       - radius_credential_keys
   network-migrate:
+    labels:
+      eu.onesa.product: pasofi
     <<: *migration
     image: ${PAMOFI_NETWORK_IMAGE:?Set the immutable network image}
     environment:
@@ -197,6 +211,8 @@ services:
       MIGRATION_DATABASE_URL_FILE: /run/secrets/network_migrate_url
     secrets: [network_migrate_url]
   notification:
+    labels:
+      eu.onesa.product: pasofi
     <<: *runtime
     image: ${PAMOFI_NOTIFICATION_IMAGE:?Set the immutable notification image}
     environment:
@@ -221,6 +237,8 @@ services:
       - internal_events_secret
       - internal_delivery_secret
   notification-migrate:
+    labels:
+      eu.onesa.product: pasofi
     <<: *migration
     image: ${PAMOFI_NOTIFICATION_IMAGE:?Set the immutable notification image}
     environment:
@@ -230,6 +248,8 @@ services:
       MIGRATION_DATABASE_URL_FILE: /run/secrets/notification_migrate_url
     secrets: [notification_migrate_url]
   assistant:
+    labels:
+      eu.onesa.product: pasofi
     <<: *runtime
     image: ${PAMOFI_ASSISTANT_IMAGE:?Set the immutable assistant image}
     environment:
@@ -240,6 +260,8 @@ services:
       - assistant_runtime_url
       - internal_ca
   assistant-migrate:
+    labels:
+      eu.onesa.product: pasofi
     <<: *migration
     image: ${PAMOFI_ASSISTANT_IMAGE:?Set the immutable assistant image}
     environment:
@@ -249,6 +271,8 @@ services:
       MIGRATION_DATABASE_URL_FILE: /run/secrets/assistant_migrate_url
     secrets: [assistant_migrate_url]
   web:
+    labels:
+      eu.onesa.product: pasofi
     image: ${PAMOFI_WEB_IMAGE:?Set the immutable built web image}
     restart: unless-stopped
     mem_limit: 96m
@@ -261,6 +285,8 @@ services:
       timeout: 3s
       retries: 3
   gateway:
+    labels:
+      eu.onesa.product: pasofi
     image: nginx:1.30.6-alpine3.24
     restart: unless-stopped
     mem_limit: 96m
@@ -277,6 +303,8 @@ services:
     depends_on:
       web: {condition: service_healthy}
   internal-gateway:
+    labels:
+      eu.onesa.product: pasofi
     image: nginx:1.30.6-alpine3.24
     restart: unless-stopped
     mem_limit: 96m
@@ -326,13 +354,19 @@ secrets:
   assistant_runtime_url: {file: "${PAMOFI_SECRETS_DIR:?Set the absolute protected secret directory}/assistant_runtime_url"}
 networks:
   database:
+    labels:
+      eu.onesa.product: pasofi
     internal: true
   services:
+    labels:
+      eu.onesa.product: pasofi
     internal: true
     ipam:
       config:
         - subnet: ${PAMOFI_SERVICES_SUBNET:?Set a non-overlapping private IPv4 service-network CIDR}
-  public: {}
+  public:
+    labels:
+      eu.onesa.product: pasofi
 volumes:
   database:
     external: true

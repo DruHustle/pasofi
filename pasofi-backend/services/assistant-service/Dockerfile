@@ -1,4 +1,5 @@
 FROM node:24.22.1-alpine
+LABEL eu.onesa.product="pasofi"
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force

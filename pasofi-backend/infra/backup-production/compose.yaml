@@ -22,4 +22,6 @@ secrets:
   b2_application_key: {file: "${PAMOFI_SECRETS_DIR:?Set secret directory}/b2_application_key"}
   backup_cipher: {file: "${PAMOFI_SECRETS_DIR:?Set secret directory}/backup_cipher"}
 networks:
-  backup_egress: {}
+  backup_egress:
+    labels:
+      eu.onesa.product: pasofi
