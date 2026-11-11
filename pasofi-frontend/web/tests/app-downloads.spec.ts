@@ -52,3 +52,24 @@ test('direct Android downloads require a versioned file, first-party source and 
     expect(publicDownloadUrl('android', url, digest)).toBeUndefined();
   }
 });
+
+test('direct navigation lands on both platform choices and allows scrolling away', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 756 });
+  await page.route('**/api/**', route => route.fulfill({ status: 503, body: '{}' }));
+  await page.goto('/#mobile-apps-title');
+  const region = page.getByRole('region', { name: 'Mobile apps' });
+  await expect(region.getByText('iOS', { exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(region.getByText('Android', { exact: true })).toBeInViewport({ ratio: 1 });
+  await page.evaluate(() => {
+    const delayed = document.createElement('div');
+    delayed.id = 'deferred-content-test';
+    delayed.style.height = '1400px';
+    document.querySelector('main')!.append(delayed);
+  });
+  await expect(region).toBeInViewport({ ratio: 1 });
+  await page.keyboard.press('Control+Home');
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.evaluate(() => { document.getElementById('deferred-content-test')!.style.height = '1800px'; });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
