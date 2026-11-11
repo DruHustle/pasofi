@@ -228,7 +228,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$info")" = iPhoneOS
           executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$info")
           test -x "$app/$executable"
-          xcrun lipo -verify_arch arm64 "$app/$executable"
+          xcrun lipo "$app/$executable" -verify_arch arm64
           xcrun vtool -arch arm64 -show-build "$app/$executable" | grep -Eq 'platform[[:space:]]+IOS$'
           test ! -e "$app/embedded.mobileprovision"
           /usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:ApplicationPath' "$archive/Info.plist"
