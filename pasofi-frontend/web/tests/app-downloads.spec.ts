@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { publicDownloadUrl } from '../src/appDownloads';
+import { downloadStatus, publicDownloadUrl } from '../src/appDownloads';
 
 test('only public release destinations for the selected platform become download links', () => {
   expect(publicDownloadUrl('ios', undefined)).toBeUndefined();
@@ -30,4 +30,25 @@ test('both platforms are visible without inactive download links on phones', asy
   await expect(section.getByRole('link')).toHaveCount(0);
   expect(await section.locator('img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0))).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('direct Android downloads require a versioned file, first-party source and verified digest', () => {
+  const digest = 'a'.repeat(64);
+  expect(downloadStatus(undefined)).toBe('unavailable');
+  expect(downloadStatus('https://play.google.com/store/apps/details')).toBe('play');
+  const firstParty = 'https://pasofi.mobile.onesa.eu/downloads/pasofi-1.0.0.apk';
+  const release = 'https://github.com/DruHustle/pasofi/releases/download/mobile-v1.0.0/pasofi-1.0.0.apk';
+  for (const url of [firstParty, release]) {
+    expect(publicDownloadUrl('android', url, digest)).toBe(url);
+    expect(downloadStatus(url)).toBe('apk');
+    expect(publicDownloadUrl('android', url)).toBeUndefined();
+    expect(publicDownloadUrl('android', url, 'unverified')).toBeUndefined();
+    expect(publicDownloadUrl('ios', url, digest)).toBeUndefined();
+  }
+  for (const url of [firstParty.replace('pasofi.mobile.onesa.eu', 'unrelated.example'),
+    release.replace('/DruHustle/', '/untrusted/'), release.replace('/pasofi/', '/other-repo/'),
+    release.replace('/download/', '/edit/'), firstParty.replace('-1.0.0.apk', '-debug.apk'),
+    firstParty + '?redirect=other', firstParty.replace('/downloads/', '/uploads/')]) {
+    expect(publicDownloadUrl('android', url, digest)).toBeUndefined();
+  }
 });
