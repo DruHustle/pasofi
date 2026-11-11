@@ -47,7 +47,7 @@ export default function Home({ capabilities, children, onInteract, browse, accou
       <div className="pasofi-home-hero-photo"><img src="/images/pasofi-community-hero.webp" alt="Three friends sharing a happy moment around a smartphone" width={1536} height={1024} fetchPriority="high" decoding="async"/><span className="pasofi-home-photo-note"><Icon name="wifi"/> Your world. A little closer.</span></div>
     </section>
     <section className="pf-quick-actions pasofi-home-actions" aria-label="Quick actions">
-      <button onClick={event => browse(event.currentTarget)}><span><Icon name="plus"/></span><strong>Buy data</strong></button>
+      <button onClick={event => browse(event.currentTarget)}><span><Icon name="plus"/></span><strong>View bundles</strong></button>
       <button onClick={showLocations}><span><Icon name="location"/></span><strong>Hotspot locations</strong></button>
       <button disabled={!capabilities} onClick={event => account('access', event.currentTarget)}><span><Icon name="history"/></span><strong>Check usage</strong></button>
       <button onClick={event => help(event.currentTarget)}><span><Icon name="help"/></span><strong>Get help</strong></button>
