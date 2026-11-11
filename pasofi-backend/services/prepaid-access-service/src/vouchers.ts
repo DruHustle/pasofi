@@ -51,14 +51,16 @@ export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bund
   let siteName=options.siteName??'';
   if(options.siteInventory){
    const location=(await client.query<{name:string;enabled:boolean}>('SELECT name,enabled FROM sales_locations WHERE id=$1 FOR SHARE',[siteId])).rows[0];
-   if(!location?.enabled)throw new VoucherError('site_unavailable');
+   if(!location?.enabled)throw new VoucherError('cash_sale_site_unavailable');
    siteName=location.name;
   }
   // The authenticated agent attests receipt of cash; this is not evidence from
   // a payment provider. Validate only after replay so older committed requests
   // remain recoverable without inventing cash evidence for historical sales.
   if(options.siteInventory&&(!payment||payment.method!=='cash'||payment.confirmed!==true))throw new VoucherError('cash_confirmation_required');
-  const product=await client.query('SELECT price_minor,currency,byte_limit::text,validity_seconds FROM bundle_versions WHERE id=$1 AND published=true',[bundleId]);
+  // A withdrawal and a new sale must agree on which committed first. Paid
+  // retries above still recover the original invoice after withdrawal.
+  const product=await client.query('SELECT price_minor,currency,byte_limit::text,validity_seconds FROM bundle_versions WHERE id=$1 AND published=true FOR SHARE',[bundleId]);
   if(!product.rowCount) throw new VoucherError('bundle_unavailable');
   if(options.siteInventory&&(!Number.isSafeInteger(payment!.amountMinor)||payment!.amountMinor!==product.rows[0].price_minor||payment!.currency!==product.rows[0].currency))throw new VoucherError('cash_amount_mismatch');
   let shiftId:string|null=null;

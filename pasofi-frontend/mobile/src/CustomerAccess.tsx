@@ -7,7 +7,7 @@ import { CreateHandoff } from './Handoff';
 import NetworkAccess from './NetworkAccess';
 import { PolicyNotice } from './Policies';
 import { InvoiceDeliveryFields, InvoiceDownload, InvoiceHistory } from './InvoiceActions';
-import { type InvoiceDelivery, defaultInvoiceDelivery, invoiceDeliveryError, invoiceDeliveryPayload } from './invoice-delivery';
+import { type InvoiceDelivery, invoiceIdPattern, defaultInvoiceDelivery, invoiceDeliveryError, invoiceDeliveryPayload } from './invoice-delivery';
 import LiveUsage, { dataAmount, useLiveUsage, type UsageSnapshot } from './LiveUsage';
 import StripeCheckout,{type StripePayment} from './StripeCheckout';
 import './customer-premium.css';
@@ -116,6 +116,14 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
         try { const saved = sessionStorage.getItem(`pamofi.operation:customer:${id}:purchase-details`); if (saved) { const draft = JSON.parse(JSON.parse(saved).payload) as PurchaseDetails; invoiceChoiceExplicit.current = true; setInvoiceDelivery(draft.invoiceDelivery ?? { channel: 'download' }); restoredMethod.current = draft.methodCode; setBundleId(draft.bundleId); setSiteId(draft.siteId); setMethodCode(draft.methodCode); setCheckoutPending(true); selectTab('purchase', draft.bundleId); setMessage('Your unfinished checkout details were restored. Safely retry or check its verified status before starting another purchase.'); void restoreSavedOrder(id, revision, draft.bundleId).catch(() => { if (isCurrent(revision)) setMessage('Your checkout is still saved. Its order could not be loaded. Retry the saved-order check before starting another payment.'); }); } } catch { /* Storage is required and checked before a new checkout request. */ }
         const savedReference = sessionStorage.getItem(`pamofi.operation:customer:${id}:receipt-pairing`);
         if (savedReference) { const draft = JSON.parse(JSON.parse(savedReference).payload) as { bundleId: string; siteId: string }; if (draft.bundleId && draft.siteId) { setReferencePending(true); setBundleId(draft.bundleId); setSiteId(draft.siteId); await createReference(id, draft, revision); } else { finishMutation(`customer:${id}`, 'receipt-pairing'); } }
+        let paidId: string | null = null;
+        try { paidId = sessionStorage.getItem(`pamofi.operation:customer:${id}:paid-receipt`); } catch { /* History still has the paid invoice. */ }
+        if (!savedReference && paidId && invoiceIdPattern.test(paidId)) {
+          try {
+            const result = await api<{ receipt?: Receipt }>(`/api/receipt-pairings/${paidId}`);
+            if (result.receipt && isCurrent(revision)) { await identity(); if (isCurrent(revision)) setReceipt(result.receipt); }
+          } catch { /* Invoice history can recover a paid receipt independently. */ }
+        }
         await refreshAccess();
       }
       catch (error) { if (!(error instanceof ApiError && error.status === 401) && isCurrent(revision)) setMessage(messageFor(error)); }
@@ -155,20 +163,52 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     if (!pairing || pairingState !== 'pending' || polling.current || document.hidden) return;
     polling.current = true; const revision = generation.current;
     void (async () => {
-      try { await identity(); const result = await api<{ status: string; receipt?: Receipt }>(`/api/receipt-pairings/${pairing.id}`); if (isCurrent(revision)) { setPairingState(result.status); if (['ready', 'expired', 'cancelled'].includes(result.status)) { setReferencePending(false); if (ownerRef.current) finishMutation(`customer:${ownerRef.current}`, 'receipt-pairing'); } if (result.receipt) { setReceipt(result.receipt); setMessage('Your private receipt is ready. Redeem its voucher to queue the bundle; this does not connect you automatically.'); } } }
+      try {
+        const id = await identity();
+        const result = await api<{ status: string; receipt?: Receipt }>(`/api/receipt-pairings/${pairing.id}`);
+        if (!isCurrent(revision)) return;
+        setPairingState(result.status);
+        if (result.receipt) {
+          setReceipt(result.receipt);
+          try { sessionStorage.setItem(`pamofi.operation:customer:${id}:paid-receipt`, pairing.id); } catch { /* Keep the verified receipt available on screen. */ }
+          setMessage('Your private receipt is ready. Redeem its voucher to queue the bundle; this does not connect you automatically.');
+        }
+        if (['ready', 'expired', 'cancelled'].includes(result.status)) {
+          setReferencePending(false);
+          try { finishMutation(`customer:${id}`, 'receipt-pairing'); } catch { /* The server already settled this reference. */ }
+        }
+      }
       catch (error) { if (isCurrent(revision)) setMessage(messageFor(error)); }
       finally { polling.current = false; }
     })();
   }, [now, pairing, pairingState]);
   async function startAccount() { if (busy) return; const revision = generation.current; setBusy(true); setMessage(''); try { await identity(true); await refreshAccess(); await usage.refresh(); } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error)); } finally { if (isCurrent(revision)) setBusy(false); } }
-  async function redeem(event?: React.FormEvent, receiptCode?: string) {
+  function receiptVoucherAvailable(value: Receipt, at: number) {
+    return !!value.voucher.code && ['valid', 'issued'].includes(value.voucher.state) && Date.parse(value.sale.startBy) >= at;
+  }
+  async function redeem(event?: React.FormEvent, receiptCode?: string, paid?: { saleId: string; pairingId: string }) {
     event?.preventDefault(); if (busy || !capabilities.vouchers) return; const revision = generation.current; setBusy(true); setMessage('');
     try {
-      await identity(true); const code = (receiptCode ?? voucherCode).replace(/[\s-]/g, '').toUpperCase();
+      const id = await identity(!paid);
+      if (paid) {
+        const result = await api<{ status: string; receipt?: Receipt }>(`/api/receipt-pairings/${paid.pairingId}`);
+        if (!isCurrent(revision)) return;
+        if (result.status !== 'ready' || result.receipt?.sale.id !== paid.saleId || !receiptVoucherAvailable(result.receipt, Date.now())) {
+          setMessage('This paid voucher is unavailable. Refresh your invoices to check its current status.');
+          return;
+        }
+        await identity(); // Confirm the same customer before submitting the private code.
+        receiptCode = result.receipt.voucher.code;
+      }
+      const code = (receiptCode ?? voucherCode).replace(/[\s-]/g, '').toUpperCase();
       const result = await api<{ entitlementId: string; replayed: boolean }>('/api/vouchers/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
       if (!result.entitlementId) throw Error('invalid_redemption');
       if (!isCurrent(revision)) return;
-      setVoucherCode(''); setReceipt(null); setRecoveryReminder(true); setMessage(result.replayed ? 'This voucher was already redeemed into your account. Your existing bundle is shown below.' : 'Voucher redeemed. Your bundle is queued; time starts only after a successful hotspot connection.'); selectTab('access');
+      if (receipt?.voucher.code && code === receipt.voucher.code.replace(/[\s-]/g, '').toUpperCase()) {
+        try { sessionStorage.removeItem(`pamofi.operation:customer:${id}:paid-receipt`); } catch { /* Redemption has already succeeded. */ }
+        setReceipt(null);
+      }
+      setVoucherCode(''); setRecoveryReminder(true); setMessage(result.replayed ? 'This voucher was already redeemed into your account. Your existing bundle is shown below.' : 'Voucher redeemed. Your bundle is queued; time starts only after a successful hotspot connection.'); selectTab('access');
       await refreshAccess(); await usage.refresh();
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'The voucher response could not be confirmed. Retrying the same voucher is safe and cannot create a second bundle.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
@@ -389,7 +429,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
 
     {tab === 'history' && <>
       <div className="customer-history-summary customer-history-compact"><div><h3>History and receipts</h3><p>Paid invoices and bundle activity for this account.</p></div></div>
-      {owner && capabilities.invoices && <InvoiceHistory key={owner} scope="customer" ownerKey={owner} verify={identity} />}
+      {owner && capabilities.invoices && <InvoiceHistory key={owner} scope="customer" ownerKey={owner} verify={identity} redeeming={busy} onRedeem={capabilities.vouchers && capabilities.receiptPairing ? (saleId, pairingId) => { void redeem(undefined, undefined, {saleId, pairingId}); } : undefined} />}
       {receipt && <section className="customer-history-record"><div><h3>{receipt.sale.simulation ? 'Latest demo receipt' : 'Latest agent receipt'}</h3><strong>{money(receipt.sale.priceMinor, receipt.sale.currency)} · {receipt.sale.bundleId.toUpperCase()}</strong><small>{receipt.sale.siteName} · {cashDescription(receipt.sale.payment, receipt.sale.simulation)}</small></div><div className="customer-history-record-actions"><button className="secondary" onClick={() => selectTab('receipt')}>View private receipt</button>{owner && capabilities.invoices && <InvoiceDownload scope="customer" ownerKey={owner} verify={identity} saleId={receipt.sale.id} disabled={busy} />}</div></section>}
       {order && <section className="customer-history-record"><div><h3>Recent checkout <span className="customer-status-tag">{paymentLabel}</span></h3><strong>{money(order.price_minor, order.currency)} · {order.bundle_id.toUpperCase()}</strong><small>Order {order.id.slice(0, 8)}</small></div><div className="customer-history-record-actions"><button className="secondary" onClick={() => selectTab('purchase')}>View checkout status</button>{owner && capabilities.invoices && paymentVerified && <InvoiceDownload scope="customer" ownerKey={owner} verify={identity} orderId={order.id} disabled={busy} />}</div></section>}
       {bundleList(true)}
@@ -406,7 +446,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     {tab === 'receipt' && <div className="customer-checkout-layout"><section className="workspace-card customer-agent-checkout"><div className="eyebrow">CASH, MADE SIMPLE</div><h3>Receive a private agent receipt</h3><p>Create a pairing code on your own device and show it to the agent. Agree the bundle and pay its exact cash price. The agent confirms receipt of cash before issuing your voucher. Keep this page open; your private receipt appears automatically.</p>
       <ol className="customer-steps"><li><span>1</span><div><strong>Choose your bundle</strong><small>Confirm the price with an authorized agent.</small></div></li><li><span>2</span><div><strong>Pair and pay</strong><small>Show your code, then pay the exact cash amount.</small></div></li><li><span>3</span><div><strong>Redeem and connect</strong><small>Use the voucher delivered privately to this page.</small></div></li></ol>
       {!capabilities.receiptPairing ? <p className="notice">Private receipt pairing is not enabled here yet.</p> : <><fieldset className="form-grid" disabled={busy || referencePending || catalogueLoading || catalogueError}><label>Cash location<select value={siteId} onChange={event => setSiteId(event.target.value)}><option value="">Choose a location</option>{sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><label>Cash bundle<select value={bundleId} onChange={event => setBundleId(event.target.value)}><option value="">Choose a bundle</option>{products.map(item => <option key={item.id} value={item.id}>{item.id.toUpperCase()} · {money(item.price_minor, item.currency)}</option>)}</select></label></fieldset><button className="primary" disabled={busy || (!referencePending && (catalogueLoading || catalogueError || !product || !sites.some(site => site.id === siteId))) || (!!pairing && pairingState === 'pending' && Date.parse(pairing.expiresAt) > now)} onClick={pair}>Create private pairing code<CustomerGlyph name="arrow" /></button>{pairing && <div className="pairing-card"><span>SHOW THIS CODE TO YOUR AGENT</span><strong>{pairing.code}</strong><small>{pairingState === 'pending' && Date.parse(pairing.expiresAt) > now ? `Waiting for your receipt · expires ${localDate(pairing.expiresAt)}` : pairingState === 'ready' ? 'Receipt ready' : pairingState === 'cancelled' ? 'Reference cancelled' : 'Pairing expired · create a new code'}</small>{pairing.quote && <p>{pairing.quote.siteName} · {pairing.quote.bundleId.toUpperCase()} · {money(pairing.quote.priceMinor, pairing.quote.currency)}<br />{Number(pairing.quote.byteLimit) / 1e9} GB · {pairing.quote.validitySeconds / 86400} days after connection</p>}{referencePending && <button className="secondary" disabled={busy} onClick={cancelReference}>Cancel unpaid reference</button>}</div>}</>}
-      {receipt && <div className="private-receipt"><div className="customer-receipt-heading"><CustomerGlyph name="receipt" /><h4>{receipt.sale.simulation ? 'Demo receipt' : 'Your receipt'}</h4></div><p>{receipt.sale.siteName} · {receipt.sale.bundleId.toUpperCase()} · {money(receipt.sale.priceMinor, receipt.sale.currency)}</p><p>{Number(receipt.sale.byteLimit) / 1e9} GB · {receipt.sale.validitySeconds / 86400} days · Start by {localDate(receipt.sale.startBy)}</p><p className="cash-evidence">{cashDescription(receipt.sale.payment, receipt.sale.simulation)}</p>{!receipt.voucher.code && <p className="notice">{receipt.voucher.state === 'refunded' ? 'The agent recorded a cash refund for this sale.' : 'This voucher has been withdrawn. A supervisor approved your refund; the agent still needs to return the cash.'}</p>}<label>Private voucher<input readOnly value={receipt.voucher.code} autoComplete="off" /></label><button className="primary" disabled={busy || !capabilities.vouchers || !receipt.voucher.code} onClick={() => redeem(undefined, receipt.voucher.code)}>Redeem this receipt's voucher</button><small>Receipt reference: {receipt.sale.id}</small>{owner && capabilities.invoices && <InvoiceDownload scope="customer" ownerKey={owner} verify={identity} saleId={receipt.sale.id} disabled={busy} />}</div>}
+      {receipt && <div className="private-receipt"><div className="customer-receipt-heading"><CustomerGlyph name="receipt" /><h4>{receipt.sale.simulation ? 'Demo receipt' : 'Your receipt'}</h4></div><p>{receipt.sale.siteName} · {receipt.sale.bundleId.toUpperCase()} · {money(receipt.sale.priceMinor, receipt.sale.currency)}</p><p>{Number(receipt.sale.byteLimit) / 1e9} GB · {receipt.sale.validitySeconds / 86400} days · Start by {localDate(receipt.sale.startBy)}</p><p className="cash-evidence">{cashDescription(receipt.sale.payment, receipt.sale.simulation)}</p>{!receipt.voucher.code && <p className="notice">{receipt.voucher.state === 'refunded' ? 'The agent recorded a cash refund for this sale.' : 'This voucher has been withdrawn. A supervisor approved your refund; the agent still needs to return the cash.'}</p>}{receipt.voucher.state === 'redeemed' && <p className="notice">You have already redeemed this voucher. Check your bundle in My access.</p>}{receipt.voucher.code && receipt.voucher.state !== 'redeemed' && Date.parse(receipt.sale.startBy) < now && <p className="notice">The deadline for redeeming this voucher has passed.</p>}<label>Private voucher<input readOnly value={receipt.voucher.code} autoComplete="off" /></label><button className="primary" disabled={busy || !capabilities.vouchers || !receiptVoucherAvailable(receipt, now)} onClick={() => redeem(undefined, receipt.voucher.code)}>Redeem this receipt's voucher</button><small>Receipt reference: {receipt.sale.id}</small>{owner && capabilities.invoices && <InvoiceDownload scope="customer" ownerKey={owner} verify={identity} saleId={receipt.sale.id} disabled={busy} />}</div>}
     </section><aside className="workspace-card customer-order-summary"><span className="customer-record-icon"><CustomerGlyph name="wifi" /></span><div className="eyebrow">YOUR NEXT BUNDLE</div>{product ? <><h3>{product.id.toUpperCase()}</h3><strong className="customer-summary-data">{Number(product.byte_limit) / 1e9}<small>GB</small></strong><p>{product.validity_seconds / 86400} days after connection</p><div className="customer-summary-price"><span>Cash price</span><strong>{money(product.price_minor, product.currency)}</strong></div><small>Ask the agent for this published bundle. Check the issued receipt before redeeming.</small></> : <><h3>A little more online.</h3><p>Choose your bundle with the agent and check its price before you pay.</p>{onBuyData && <button className="secondary" onClick={onBuyData}>Explore bundles</button>}</>}<div className="customer-private-note"><CustomerGlyph name="shield" /><span>Your bundle time starts when you first connect.</span></div></aside></div>}
 
     {tab === 'purchase' && <section className="workspace-card customer-payment-card">

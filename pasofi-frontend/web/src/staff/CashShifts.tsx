@@ -24,6 +24,7 @@ export default function CashShifts({staff,selling}:{staff:Staff;selling:boolean}
  async function submit(event:React.FormEvent) {
   event.preventDefault();if(busy||!confirmed)return;
   let request:Draft;
+  if(!draft && closing && note.trim().length<10){setMessage('Enter a reconciliation note of at least 10 characters.');return;}
   try{request=draft??(closing?{path:`/api/staff/cash-shifts/${closing.id}/close`,body:{countedMinor:amount(counted),note:note.trim()}}:{path:'/api/staff/cash-shifts',body:{siteId,currency,openingMinor:amount(opening)}});}catch(error){setMessage((error as Error).message);return;}
   setBusy(true);setMessage('');
   try {
@@ -32,8 +33,17 @@ export default function CashShifts({staff,selling}:{staff:Staff;selling:boolean}
    finishMutation(owner,'cash-shift');if(!live.current)return;
    setDraft(null);setClosing(null);setConfirmed(false);setCounted('');setNote('');setMessage('Cash shift saved. Recorded amounts remain available for reconciliation.');await refresh();
   }catch(error){
-   const rejected=error instanceof ApiError&&error.status===409&&['shift_already_open','currency_unavailable','site_unavailable','commerce_disabled'].includes(error.code);
-   if(rejected){finishMutation(owner,'cash-shift');if(live.current)setDraft(null);}
+   const rejected=error instanceof ApiError && (
+    (error.status===409 && ['shift_already_open','currency_unavailable','site_unavailable','commerce_disabled','shift_already_closed','shift_unavailable','refund_payout_pending'].includes(error.code)) ||
+    (error.status===400 && ['invalid_shift','invalid_shift_close'].includes(error.code))
+   );
+   if(rejected){
+    finishMutation(owner,'cash-shift');
+    if(live.current){
+     setDraft(null);setClosing(null);setConfirmed(false);setCounted('');setNote('');
+     try{await refresh();}catch{setShifts([]);}
+    }
+   }
    if(live.current)setMessage(messageFor(error,'The result is unconfirmed. Retry the saved shift request before making another adjustment.'));
   }finally{if(live.current)setBusy(false);}
  }

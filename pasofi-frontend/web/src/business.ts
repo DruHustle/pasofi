@@ -30,6 +30,7 @@ export function messageFor(error: unknown, fallback = 'This request could not be
   const messages: Record<string, string> = {
     cookie_not_kept: 'This browser did not keep the account cookie. Allow cookies for the configured Pasofi service, then retry. No voucher or payment was submitted.',
     version_conflict: 'This record changed while you were reviewing it. Refresh and review the current details.',
+    cash_sale_site_unavailable: 'Sales are paused at this location. Return any cash received for this sale to the customer.',
     site_unavailable: 'New sales are paused or unavailable at this sales location. Paid receipts and existing allowances remain available.',
     staff_changed: 'This staff record changed. Refresh and review the latest details.',
     insufficient_inventory: 'There is not enough stock for this sale. Refresh inventory or ask an administrator to allocate stock.',

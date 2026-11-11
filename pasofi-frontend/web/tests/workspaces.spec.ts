@@ -167,7 +167,13 @@ test('private pairing delivers a receipt and voucher redemption queues access wi
     return false;
   });
   await openCustomer(page); await page.getByRole('button', { name: 'Private receipt', exact: true }).click(); await page.getByRole('button', { name: 'Create private pairing code' }).click(); await expect(page.getByLabel('Private voucher')).toHaveValue(receipt.voucher.code); expect(paired).toBe(true);
-  await page.getByRole('button', { name: "Redeem this receipt's voucher" }).click(); await expect(page.getByText('Queued · not connected', { exact: true })).toBeVisible(); await expect(page.getByLabel('Private voucher')).toHaveCount(0); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':receipt-pairing')))).toEqual([]);
+  const saved = await page.evaluate(() => ({ ...sessionStorage }));
+  expect(JSON.stringify(saved)).not.toContain(receipt.voucher.code);
+  expect(saved[`pamofi.operation:customer:${customerId}:paid-receipt`]).toBe(saleId);
+  await page.reload();
+  await expect(page.getByLabel('Private voucher')).toHaveValue(receipt.voucher.code);
+  await page.getByRole('button', { name: "Redeem this receipt's voucher" }).click(); await expect(page.getByText('Queued · not connected', { exact: true })).toBeVisible(); await expect(page.getByLabel('Private voucher')).toHaveCount(0);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => /:(receipt-pairing|paid-receipt)$/.test(key)))).toEqual([]);
 });
 
 test('checkout survives a lost response and only authoritative fulfillment unlocks a new purchase', async ({ page }) => {
@@ -243,7 +249,8 @@ test('only a serialized rolled-back sale rejection unlocks the form; ambiguous g
     if (path === '/api/staff/sales') {
       if (method === 'POST') {
         keys.push(route.request().headers()['idempotency-key']); attempts++;
-        if (attempts === 1) await json(route, { error: 'pairing_unavailable' }, 409);
+        if (attempts === 1) await json(route, { error: 'cash_sale_site_unavailable' }, 409);
+        // Older servers may return this before checking whether the sale committed.
         else if (attempts === 2) await json(route, { error: 'site_unavailable' }, 409);
         else { sold = true; await json(route, { sale: sale(), replayed: true }); }
       } else await json(route, { sales: sold ? [sale()] : [], hasMore: false, nextOffset: null });
@@ -252,6 +259,7 @@ test('only a serialized rolled-back sale rejection unlocks the form; ambiguous g
     return false;
   });
   await openStaff(page); await page.getByLabel('Customer pairing code').fill('ABCD234567'); await page.getByRole('button', { name: 'Look up cash reference' }).click(); await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click();
+  await expect(page.getByText('Return any cash received for this sale to the customer.', { exact: false })).toBeVisible();
   await expect(page.getByText('This request did not record a sale or debit inventory.', { exact: false })).toBeVisible(); await expect(page.getByLabel('Customer pairing code')).toBeEnabled(); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':sale')))).toEqual([]);
   await page.getByLabel('Customer pairing code').fill('JKLM234567'); await page.getByRole('button', { name: 'Look up cash reference' }).click(); await page.getByRole('checkbox', { name: /simulated sale/ }).check(); await page.getByRole('button', { name: 'Confirm demo sale' }).click(); await expect(page.getByRole('button', { name: 'Retry saved sale safely' })).toBeEnabled(); await expect(page.getByLabel('Customer pairing code')).toBeDisabled();
   expect(keys).toHaveLength(2); expect(keys[1]).not.toBe(keys[0]); await page.getByRole('button', { name: 'Retry saved sale safely' }).click(); await expect(page.getByText('stock was not debited twice', { exact: false })).toBeVisible(); expect(keys[2]).toBe(keys[1]);
@@ -585,4 +593,39 @@ test('registered Pasofi hotspot connects by HTTPS POST without retyping a networ
   await expect(page.getByRole('heading', { name: 'Hotspot confirmed' })).toBeVisible();
   expect(posted).toBe(true);
   expect(page.url()).toBe(loginUrl);
+});
+
+test('a rejected shift close releases the old count before the agent settles a refund', async ({page}) => {
+  const shiftId = '12345678-1234-4123-8123-123456789abc';
+  let closed = false;
+  const requests: {key: string; counted: number}[] = [];
+  const shift = () => ({id:shiftId,agentId:staffId,siteId,currency:'USD',openingMinor:'100',openedAt:future(),closedAt:closed?future():null,countedMinor:closed?'50':null,expectedMinor:closed?'50':'100',differenceMinor:closed?'0':null,closeNote:closed?'Counted after the refund':null,saleCount:'0',salesMinor:'0',commissionMinor:'0',refundsMinor:closed?'50':'0',commissionReversedMinor:'0'});
+  await mock(page, async (route,path) => {
+    if (path === '/api/staff/session') { await json(route,staff()); return true; }
+    if (path === '/api/staff/cash-shifts') { await json(route,{shifts:[shift()],currencies:['USD']}); return true; }
+    if (path === `/api/staff/cash-shifts/${shiftId}/close`) {
+      requests.push({key:route.request().headers()['idempotency-key'],counted:route.request().postDataJSON().countedMinor});
+      if (requests.length === 1) await json(route,{error:'refund_payout_pending'},409);
+      else {closed=true;await json(route,{shift:shift()});}
+      return true;
+    }
+    if (path === '/api/staff/inventory') {await json(route,{inventory:[]});return true;}
+    if (path === '/api/staff/sales') {await json(route,{sales:[],hasMore:false,nextOffset:null});return true;}
+    return false;
+  });
+  await openStaff(page);
+  for (const count of ['1.00','0.50']) {
+    await page.getByRole('button',{name:'Count and close'}).click();
+    await page.getByLabel('Counted cash').fill(count);
+    await page.getByLabel('Reconciliation note').fill('Counted after the refund');
+    await page.getByRole('checkbox',{name:'I have counted the cash and confirm this amount.'}).check();
+    await page.getByRole('button',{name:'Confirm counted cash and close'}).click();
+    if (count === '1.00') {
+      await expect(page.getByText('A cash refund is reserved', {exact:false})).toBeVisible();
+      await expect(page.getByRole('button',{name:'Retry saved shift request'})).toHaveCount(0);
+    }
+  }
+  await expect(page.getByText('Difference: USD 0.00')).toBeVisible();
+  expect(requests.map(item=>item.counted)).toEqual([100,50]);
+  expect(requests[1].key).not.toBe(requests[0].key);
 });
