@@ -43,6 +43,10 @@ Agents open a shift for a site and currency, recording the counted opening float
 
 Expected cash equals opening float plus confirmed sales minus recorded cash refunds. Commission accrued on sales and reversed by refunds are shown separately; no assumed commission withdrawal, bank deposit, currency conversion or tax is inserted. Administrators can inspect shifts under **Cash reconciliation**. Reconcile inventory allocations and retained receipts alongside the shift report and document actual handover separately.
 
+Select **Open shifts only** or **Pending refunds only** to find unfinished work. **Load more shifts** and **Load more refunds** show older records. Agents see their own records and administrators can review records across agents.
+
+The staff list endpoints `GET /v1/staff/cash-shifts` and `GET /v1/staff/cash-refunds` return up to 50 records per page, newest first. Pass `active=true` to filter, and use the returned `nextCursor` value as `before` to fetch the next page with the same filter. A null cursor marks the last page. The optional `limit` accepts 1 through 50.
+
 ## Supervisor-controlled refunds and voucher withdrawal
 
 1. The selling agent requests a full cash refund using the sale reference and a reason. The customer and other agents cannot request or confirm it on that agent's behalf.

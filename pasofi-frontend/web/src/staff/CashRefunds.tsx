@@ -18,8 +18,15 @@ export default function CashRefunds({staff}:{staff:Staff}) {
   setCanFilter(result.nextCursor!==undefined);setNextCursor(result.nextCursor??null);setActiveOnly(active);
  }
  async function showPage(active:boolean,before:string|null=null){
-  setBusy(true);
-  try{await refresh(active,before);}catch(error){if(live.current)setMessage(messageFor(error));}
+  const previousFilter=activeOnly;
+  setActiveOnly(active);setBusy(true);
+  try{await refresh(active,before);}catch(error){
+   if(live.current){
+    setActiveOnly(previousFilter);
+    if(error instanceof ApiError && [401,403].includes(error.status)){setRefunds([]);setNextCursor(null);setCanFilter(false);}
+    setMessage(messageFor(error));
+   }
+  }
   finally{if(live.current)setBusy(false);}
  }
  async function load(){setBusy(true);try{await refresh();const saved=sessionStorage.getItem(`pamofi.operation:${owner}:cash-refund`);if(live.current&&saved)setDraft(JSON.parse(JSON.parse(saved).payload) as Draft);}catch(error){if(live.current){setRefunds([]);setMessage(messageFor(error));}}finally{if(live.current)setBusy(false);}}

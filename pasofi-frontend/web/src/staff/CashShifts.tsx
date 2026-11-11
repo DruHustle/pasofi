@@ -26,8 +26,15 @@ export default function CashShifts({staff,selling}:{staff:Staff;selling:boolean}
   setCurrencies(result.currencies);setSites(locations.sites);setCurrency(value=>value||result.currencies[0]||'');setSiteId(value=>value||locations.sites[0]?.id||'');
  }
  async function showPage(active:boolean,before:string|null=null){
-  setBusy(true);
-  try{await refresh(active,before);}catch(error){if(live.current)setMessage(messageFor(error));}
+  const previousFilter=activeOnly;
+  setActiveOnly(active);setBusy(true);
+  try{await refresh(active,before);}catch(error){
+   if(live.current){
+    setActiveOnly(previousFilter);
+    if(error instanceof ApiError && [401,403].includes(error.status)){setShifts([]);setNextCursor(null);setCanFilter(false);}
+    setMessage(messageFor(error));
+   }
+  }
   finally{if(live.current)setBusy(false);}
  }
  async function load() { setBusy(true);try{await refresh();const saved=sessionStorage.getItem(`pamofi.operation:${owner}:cash-shift`);if(live.current&&saved)setDraft(JSON.parse(JSON.parse(saved).payload) as Draft);}catch(error){if(live.current){setShifts([]);setMessage(messageFor(error));}}finally{if(live.current)setBusy(false);} }
