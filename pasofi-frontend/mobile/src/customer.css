@@ -19,7 +19,7 @@
 .mobile-customer :where(.purchase-head > div, .workspace-section-head > div) { min-width: 0; }
 .mobile-customer :where(.eyebrow) { font-size: 10px; line-height: 1.6; letter-spacing: 1.3px; font-weight: 750; color: #4e7169; }
 .mobile-customer :where(.close-button) { display: grid; place-items: center; width: 44px; height: 44px; min-width: 44px; padding: 0; flex-shrink: 0; border: 1px solid #dce7e0; border-radius: 50%; background: #f9fcfa; color: #244f3f; font-size: 25px; }
-.mobile-customer :where(.primary, .secondary) { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 12px 17px; border: 1px solid #075cf5; border-radius: 13px; background: #075cf5; color: #fff; font-size: 13px; font-weight: 750; text-align: center; text-decoration: none; line-height: 1.5; }
+.mobile-customer :where(.primary, .secondary) { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 12px 17px; border: 1px solid #0070f2; border-radius: 13px; background: #0070f2; color: #fff; font-size: 13px; font-weight: 750; text-align: center; text-decoration: none; line-height: 1.5; }
 .mobile-customer :where(.secondary) { background: #f5faf7; border-color: #ccded3; color: #275c47; }
 .mobile-customer :where(.text-button) { min-height: 44px; padding: 9px 0; border: 0; background: none; color: #0b7056; font-size: 12px; font-weight: 700; }
 .mobile-customer :where(.purchase-actions) { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }

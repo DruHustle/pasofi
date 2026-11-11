@@ -7,7 +7,8 @@ for (const entry of ['/']) {
     await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href', '/favicon.svg');
     await expect(page.locator('link[rel="icon"][sizes="16x16 32x32 48x48"]')).toHaveAttribute('href', '/favicon.ico');
     await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute('sizes', '180x180');
-    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#075cf5');
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#001a33');
+    await expect(page.getByRole('button', { name: 'Pasofi home' }).getByText('An Onesa Mobile product')).toBeVisible();
     const svg = await page.request.get('/favicon.svg');
     expect(svg.status()).toBe(200); expect(svg.headers()['content-type']).toMatch(/^image\/svg\+xml/);
     expect(await svg.text()).toContain('viewBox="0 0 64 64"');

@@ -268,6 +268,8 @@
 .customer-workspace .customer-profile-card .eyebrow { font-size: 11px; }
 .customer-workspace .customer-page-heading p { font-size: 14px; }
 .customer-workspace .primary { color: #fff; background: var(--customer-forest); border-color: var(--customer-forest); font-size: 14px; }
+.customer-workspace:is([data-screen="purchase"], [data-screen="voucher"], [data-screen="wifi"]) .primary { background: #006f53; border-color: #006f53; color: #fff; }
+.customer-workspace:is([data-screen="purchase"], [data-screen="voucher"], [data-screen="wifi"]) .primary:hover:not(:disabled) { background: #103c35; border-color: #103c35; }
 .customer-workspace .primary:hover:not(:disabled) { color: #fff; background: #20574b; border-color: #20574b; }
 .customer-workspace .secondary { font-size: 14px; }
 .customer-workspace .text-button { font-size: 13px; }
@@ -354,7 +356,7 @@
 
 /* Blue-green surfaces retain distinct warning and failure colours. */
 .customer-workspace { --customer-forest: #103c35; --customer-mint: #c7f5b5; --customer-wash: #f8f9f5; }
-.customer-workspace .premium-usage { background: #075cf5; border-color: #075cf5; }
+.customer-workspace .premium-usage { background: #003a99; border-color: #003a99; }
 .customer-workspace .premium-usage::before { border: 30px solid #c7f5b526; }
 .customer-workspace .primary:hover:not(:disabled) { background: #00ca88; border-color: #00ca88; }
 .customer-workspace .customer-section-tabs button.selected { background: #c7f5b5; color: #073b31; }
@@ -366,8 +368,8 @@
 .customer-workspace .premium-usage progress::-webkit-progress-value { background: #c7f5b5; }
 .customer-workspace .premium-usage progress::-moz-progress-bar { background: #c7f5b5; }
 
-.customer-workspace .primary { background: #075cf5; border-color: #075cf5; color: #fff; }
-.customer-workspace .primary:hover:not(:disabled) { background: #0647c7; border-color: #0647c7; color: #fff; }
+.customer-workspace .primary { background: #0070f2; border-color: #0070f2; color: #fff; }
+.customer-workspace .primary:hover:not(:disabled) { background: #003a99; border-color: #003a99; color: #fff; }
 .customer-workspace .premium-usage .primary { background: #c7f5b5; border-color: #c7f5b5; color: #103c35; }
 
 /* Blue surfaces need their own accessible text palette, including small metadata. */
@@ -390,37 +392,37 @@
 .customer-workspace .usage-refresh{color:#eef5ff}
 .customer-workspace .usage-ring span{font-size:10px;letter-spacing:.2px}
 .customer-workspace .usage-connection-pill,
-.customer-workspace .usage-connection-pill.is-connected{color:#fff;background:#0647c7;border-color:#b5d0ff}
+.customer-workspace .usage-connection-pill.is-connected{color:#fff;background:#003a99;border-color:#b5d0ff}
 .customer-workspace .usage-connection-pill i{background:#fff}
 .customer-workspace .usage-connection-pill.is-connected i{background:#c7f5b5}
 .customer-workspace .premium-usage .usage-freshness.offline,
 .customer-workspace .premium-usage .usage-freshness.stale{color:#fff1c2}
 .customer-workspace .premium-usage .notice{color:#624715;background:#fff1d5;border-color:#e6ce9c}
-.customer-workspace .usage-ring-track{stroke:#0647c7}
-.customer-workspace .premium-usage progress::-webkit-progress-bar{background:#0647c7}
+.customer-workspace .usage-ring-track{stroke:#003a99}
+.customer-workspace .premium-usage progress::-webkit-progress-bar{background:#003a99}
 .customer-workspace .customer-quick-actions{gap:8px;margin:14px 0 20px}
 .customer-workspace .customer-quick-actions button:nth-child(n){min-height:76px;padding:9px 4px;gap:6px;border:1px solid #dae3da;border-radius:12px;background:#fff;color:#103c35;font-size:12px}
-.customer-workspace .customer-quick-actions button:nth-child(n)>span{width:24px;height:24px;border:0;border-radius:0;background:transparent;color:#075cf5}
+.customer-workspace .customer-quick-actions button:nth-child(n)>span{width:24px;height:24px;border:0;border-radius:0;background:transparent;color:#0070f2}
 .customer-workspace .customer-quick-actions button:first-child{background:#c7f5b5;border-color:#718a78}
 .customer-workspace .customer-quick-actions button:first-child>span{color:#103c35}
-.customer-workspace .customer-quick-actions button:nth-child(n):hover:not(:disabled){background:#e8f0ff;border-color:#075cf5}
+.customer-workspace .customer-quick-actions button:nth-child(n):hover:not(:disabled){background:#e8f0ff;border-color:#0070f2}
 .customer-workspace .customer-quick-actions button:first-child:hover:not(:disabled){background:#b7e7a6}
-.customer-workspace .customer-section-tabs button.selected{background:#075cf5;color:#fff;border-color:#075cf5}
+.customer-workspace .customer-section-tabs button.selected{background:#0070f2;color:#fff;border-color:#0070f2}
 .customer-workspace .customer-wifi-intro,
 .customer-workspace .customer-profile-card,
 .customer-workspace .customer-voucher-art,
 .customer-workspace .customer-order-summary{background:#fff;border-color:#dae3da;color:#103c35}
 .customer-workspace .customer-soft-banner{background:#e8f0ff;border:1px solid #dae3da}
 .customer-workspace .customer-record-icon,
-.customer-workspace .customer-profile-avatar{background:#e8f0ff;color:#075cf5}
+.customer-workspace .customer-profile-avatar{background:#e8f0ff;color:#0070f2}
 .customer-workspace .customer-voucher-art{border:1px dashed #91add7}
 .customer-workspace .customer-voucher-art>span:last-child{color:#5c716a;font-size:12px}
 .customer-workspace .customer-voucher-art>i{border-top-color:#91add7}
-.customer-workspace .customer-welcome-card{background:#075cf5}
+.customer-workspace .customer-welcome-card{background:#003a99}
 .customer-workspace .customer-welcome-card p,
 .customer-workspace .customer-welcome-card .eyebrow,
 .customer-workspace .customer-welcome-card>small{color:#eef5ff}
-.customer-workspace .text-button{color:#0647c7}
+.customer-workspace .text-button{color:#003a99}
 .customer-workspace .customer-muted,
 .customer-workspace .customer-private-note,
 .customer-workspace .customer-bundle-row span,

@@ -6,7 +6,8 @@ The product display name is **Pasofi**. Its canonical repository is
 
 Current web and mobile screens, launch names, page metadata, captive portal
 templates, help, receipts, invoice presentation and transactional message text use
-this spelling. The blue/green visual identity is unchanged.
+this spelling. The storefront, account and hotspot welcome screens identify
+Pasofi as an Onesa Mobile product. They use Learning Hub blue with Pasofi green.
 
 ## Infrastructure labels
 

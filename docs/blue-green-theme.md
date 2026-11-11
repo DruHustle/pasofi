@@ -6,8 +6,9 @@ it does not integrate their accounts, payments, APIs or runtime packages.
 
 | Role | Color |
 | --- | --- |
-| Primary action | Blue `#075CF5` with white text |
-| Primary hover | Darker blue `#0647C7` |
+| Primary action | Blue `#0070F2` with white text |
+| Primary hover | Darker blue `#003A99` |
+| Parent brand header | Learning Hub navy `#001A33` |
 | Brand surface and heading | Deep teal `#103C35` |
 | Strong green accent | Green `#006F53` |
 | Soft accent | Mint `#C7F5B5` with dark teal text |
@@ -17,8 +18,9 @@ it does not integrate their accounts, payments, APIs or runtime packages.
 | Borders | `#DAE3DA`; control borders `#718A78` |
 | Light supporting surfaces | Blue `#EAF2FF` or green `#E9F7EF` |
 
-Use blue for ordinary primary actions and deep teal/green for branded surfaces
-and supporting accents. Mint actions on dark branded panels are an intentional
+Use Learning Hub blue for navigation and primary actions, deep blue for content
+panels, and Pasofi green for Wi-Fi, voucher and checkout actions. Customer
+surfaces identify Pasofi as an Onesa Mobile product. Mint actions on dark branded panels are an intentional
 contrast variant. Keep warning/error colors and meanings distinct. Do not use
 purple or neon lime as unrelated brand accents.
 
