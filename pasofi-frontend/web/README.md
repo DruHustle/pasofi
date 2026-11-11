@@ -158,3 +158,5 @@ signed-out browser. Set `VITE_IOS_DOWNLOAD_URL` to this app's App Store listing
 or public TestFlight invitation. Set `VITE_ANDROID_DOWNLOAD_URL` to the Google
 Play details URL for `com.onesa.pasofi`. Rebuild the website after changing either
 value. Internal builds, simulator artifacts and debug APKs are not public releases.
+
+For a direct Android install, publish the signed `pasofi-<version>.apk` under `https://pasofi.mobile.onesa.eu/downloads/` or as a versioned GitHub Release asset in `DruHustle/pasofi`. Verify its public bytes and owner certificate as described in [mobile distribution](../mobile/DISTRIBUTION.md), then set `VITE_ANDROID_DOWNLOAD_URL` and `VITE_ANDROID_APK_SHA256` and rebuild. Android asks the user to approve installation after downloading the file.

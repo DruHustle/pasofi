@@ -1,0 +1,66 @@
+name: Android release packaging
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/android-release-package.yml"
+      - "pasofi-frontend/mobile/scripts/sign-release-apk.sh"
+      - "pasofi-frontend/mobile/scripts/test-release-apk.py"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Verify Android release packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: pasofi-frontend/mobile
+    env:
+      VITE_PAMOFI_API_BASE_URL: https://pasofi.mobile.onesa.eu
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: pasofi-frontend/mobile/package-lock.json
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install mobile dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install Android package tools
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
+      - name: Exercise signature and rejection checks with temporary credentials
+        run: python3 scripts/test-release-apk.py
+      - name: Bundle the production mobile web assets
+        run: |
+          npm run build
+          npx --no-install cap sync android
+      - name: Compile the unsigned Release APK
+        run: bash android/gradlew -p android --no-daemon :app:assembleRelease
+      - name: Verify the compiled product through the signing path
+        run: |
+          # The ephemeral QA key and its APK stay in this run and are never uploaded.
+          qa_dir=$(mktemp -d "$RUNNER_TEMP/apk-validation.XXXXXX")
+          trap 'rm -rf -- "$qa_dir"' EXIT
+          export ANDROID_RELEASE_KEYSTORE="$qa_dir/qa.p12" ANDROID_RELEASE_ALIAS=qa
+          ANDROID_RELEASE_STORE_PASSWORD=$(openssl rand -hex 24)
+          export ANDROID_RELEASE_STORE_PASSWORD
+          export ANDROID_RELEASE_KEY_PASSWORD="$ANDROID_RELEASE_STORE_PASSWORD"
+          keytool -genkeypair -keystore "$ANDROID_RELEASE_KEYSTORE" -alias qa \
+            -storepass:env ANDROID_RELEASE_STORE_PASSWORD -keypass:env ANDROID_RELEASE_KEY_PASSWORD \
+            -keyalg RSA -keysize 2048 -dname "CN=Ephemeral packaging QA" -validity 1
+          ANDROID_RELEASE_CERT_SHA256=$(keytool -exportcert -keystore "$ANDROID_RELEASE_KEYSTORE" -alias qa \
+            -storepass:env ANDROID_RELEASE_STORE_PASSWORD | sha256sum | cut -d' ' -f1)
+          export ANDROID_RELEASE_CERT_SHA256
+          scripts/sign-release-apk.sh sign android/app/build/outputs/apk/release/app-release-unsigned.apk "$qa_dir/verified.apk"
+          scripts/sign-release-apk.sh verify "$qa_dir/verified.apk"
