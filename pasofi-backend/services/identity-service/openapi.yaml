@@ -203,6 +203,39 @@ paths:
           description: Generic pending status and next login step
         '503':
           description: Database or staff encryption key unavailable
+  /v1/staff/onesa/availability:
+    get:
+      summary: Read the configured Onesa staff sign-in origin
+      responses:
+        '200': {description: Canonical staff origin, or null when unconfigured}
+        '503': {description: Identity service unavailable}
+  /v1/staff/onesa/start:
+    post:
+      summary: Start a browser-bound Onesa authorization code flow with PKCE and MFA
+      responses:
+        '200': {description: Onesa authorization URL and HttpOnly browser-binding cookie}
+        '403': {description: Request origin does not match the configured callback origin}
+        '503': {description: Identity service or Onesa client unavailable}
+  /v1/staff/onesa/complete:
+    post:
+      summary: Complete the Onesa callback and open a PasoFi staff session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, state]
+              additionalProperties: false
+              properties:
+                code: {type: string, minLength: 1, maxLength: 2048}
+                state: {type: string, minLength: 43, maxLength: 43}
+                iss: {type: string, maxLength: 1024}
+      responses:
+        '200': {description: Verified platform administrator and secure staff session cookie}
+        '401': {description: Callback or live administrator grant rejected}
+        '403': {description: Request origin rejected}
+        '503': {description: PasoFi identity or the Onesa issuer is unavailable}
   /v1/staff/login:
     post:
       summary: Verify a password and begin a limited MFA challenge

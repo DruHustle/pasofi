@@ -1,3 +1,4 @@
+import { configuredOnesaStaff, OnesaError } from './onesa-staff.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
@@ -30,6 +31,8 @@ export const publicStaff = (row: Record<string, any>) => ({
 export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Pool | null; demo: boolean; origin?: string; validOrigin: boolean; originAllowed: (value: string | undefined) => boolean; resetDelivery?: StaffResetDelivery; resetJobs: Set<Promise<void>> }) {
   const { pool, demo, origin, validOrigin, originAllowed } = options;
   const key = mfaKey(demo);
+  const onesa = configuredOnesaStaff(key, originAllowed);
+  const flowCookie = demo ? 'pasofi_demo_onesa_flow' : '__Host-pasofi_onesa_flow';
   const resetDelivery = options.resetDelivery ?? configuredStaffResetDelivery(origin);
   const sessionCookie = demo ? 'pamofi_demo_staff_session' : '__Host-pamofi_staff_session';
   const challengeCookie = demo ? 'pamofi_demo_staff_challenge' : '__Host-pamofi_staff_challenge';
@@ -43,7 +46,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   async function execute(reply: FastifyReply, run: () => Promise<unknown>) {
     try { return await run(); }
     catch (error) {
-      if (error instanceof StaffError) return reply.code(error.status).send({ error: error.code });
+      if (error instanceof StaffError || error instanceof OnesaError) return reply.code(error.status).send({ error: error.code });
       return reply.code(503).send({ error: 'identity_unavailable' });
     }
   }
@@ -64,6 +67,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     const found = await client.query(`SELECT ${PUBLIC_COLUMNS.map(column => `u.${column}`).join(',')}, s.token_hash AS session_hash FROM staff_sessions s JOIN staff_users u ON u.id=s.staff_id
       WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now() AND s.staff_version=u.version
       ${lock ? 'FOR UPDATE OF u,s' : ''}`, [opaqueHash(token)]);
+    if (!found.rowCount && onesa) return onesa.principal(client, token, lock);
     if (!found.rowCount) return fail(401, 'not_authenticated');
     return found.rows[0];
   }
@@ -246,15 +250,42 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     }));
   }
 
+  app.get('/v1/staff/onesa/availability', { preHandler: publicGuard }, async () => ({ origin: onesa?.config.callback.origin ?? null }));
+  app.post('/v1/staff/onesa/start', { preHandler: publicGuard, config: { rateLimit: { max: 12, timeWindow: '1 minute' } } }, (request, reply) => execute(reply, async () => {
+    if (!onesa) return fail(503, 'onesa_unavailable');
+    if (request.headers.origin !== onesa.config.callback.origin) return fail(403, 'origin_rejected');
+    const flow = await onesa.start(pool!);
+    reply.setCookie(flowCookie, flow.browser, { ...attributes, maxAge: 300 });
+    return { authorizationUrl: flow.authorizationUrl };
+  }));
+  app.post<{ Body: { state: string; code: string; iss?: string } }>('/v1/staff/onesa/complete', {
+    preHandler: publicGuard, config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
+    schema: { body: { type: 'object', required: ['code','state'], additionalProperties: false, properties: {
+      state: { type: 'string', minLength: 43, maxLength: 43 }, code: { type: 'string', minLength: 1, maxLength: 2048 }, iss: { type: 'string', maxLength: 1024 }
+    } } }
+  }, (request, reply) => execute(reply, async () => {
+    if (!onesa) return fail(503, 'onesa_unavailable');
+    if (request.headers.origin !== onesa.config.callback.origin) return fail(403, 'origin_rejected');
+    const { session, maxAge } = await onesa.finish(pool!, request.cookies[flowCookie], request.body);
+    reply.clearCookie(flowCookie, attributes);
+    reply.clearCookie(challengeCookie, attributes);
+    reply.setCookie(sessionCookie, session, { ...attributes, maxAge });
+    return { authenticated: true };
+  }));
+
   app.get('/v1/staff/session', { preHandler: publicGuard }, async (request, reply) => execute(reply, async () => ({ ...publicStaff(await current(request)), mfaVerified: true })));
   app.delete('/v1/staff/session', { preHandler: publicGuard, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => execute(reply, async () => {
     await transaction(async client => {
       const session = request.cookies[sessionCookie], pending = request.cookies[challengeCookie];
       if (isOpaque(session)) await client.query('UPDATE staff_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1', [opaqueHash(session)]);
+      if (isOpaque(session)) await client.query('DELETE FROM staff_onesa_sessions WHERE token_hash=$1', [opaqueHash(session)]);
+      const flow = request.cookies[flowCookie];
+      if (isOpaque(flow)) await client.query('DELETE FROM staff_onesa_flows WHERE browser_hash=$1', [opaqueHash(flow)]);
       if (isOpaque(pending)) await client.query('UPDATE staff_auth_challenges SET consumed_at=COALESCE(consumed_at,now()),enrollment_ciphertext=NULL WHERE token_hash=$1', [opaqueHash(pending)]);
     });
     reply.clearCookie(sessionCookie, attributes);
     reply.clearCookie(challengeCookie, attributes);
+    if (request.cookies[flowCookie]) reply.clearCookie(flowCookie, attributes);
     return reply.code(204).send();
   }));
 

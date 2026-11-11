@@ -29,7 +29,7 @@ export async function applyRuntimeGrants(client, { service, owner, runtime }) {
     await client.query(`REVOKE ALL ON ALL ROUTINES IN SCHEMA public FROM PUBLIC, ${identifier(runtime)}`);
     for (const [table, privileges] of Object.entries(policy)) {
       if (!privileges.length) continue;
-      if (privileges.some(value => !/^(SELECT|INSERT|UPDATE|DELETE|UPDATE \((id|request_hash)\))$/.test(value))) throw Error('Invalid runtime grant policy.');
+      if (privileges.some(value => !/^(SELECT|INSERT|UPDATE|DELETE|UPDATE \((id|request_hash|token_hash)\))$/.test(value))) throw Error('Invalid runtime grant policy.');
       await client.query(`GRANT ${privileges.join(',')} ON TABLE public.${identifier(table)} TO ${identifier(runtime)}`);
     }
     for (const [sequence, privileges] of Object.entries(sequencePolicy)) {

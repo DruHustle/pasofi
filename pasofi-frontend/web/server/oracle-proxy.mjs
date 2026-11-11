@@ -11,6 +11,8 @@ const rules = [
   [/^\/api\/session$/, ['GET', 'POST', 'DELETE']],
   [/^\/api\/recovery\/status$/, ['GET']],
   [/^\/api\/(recovery(?:\/(setup|rotate))?|handoff(?:\/redeem)?)$/, ['POST']],
+  [/^\/api\/staff\/onesa\/availability$/, ['GET']],
+  [/^\/api\/staff\/onesa\/(start|complete)$/, ['POST']],
   [/^\/api\/staff\/(register|login|mfa\/(setup|confirm|verify))$/, ['POST']],
   [/^\/api\/staff\/password-reset\/availability$/, ['GET']],
   [/^\/api\/staff\/password-reset\/(request|confirm)$/, ['POST']],
@@ -67,7 +69,7 @@ const nativeCustomerRules = [
 ];
 const BODY_LIMIT = 32 * 1024;
 const RESPONSE_LIMIT = 1024 * 1024;
-const cookieNames = new Set(['__Host-pamofi_session', '__Host-pamofi_staff_session', '__Host-pamofi_staff_challenge']);
+const cookieNames = new Set(['__Host-pamofi_session', '__Host-pamofi_staff_session', '__Host-pamofi_staff_challenge', '__Host-pasofi_onesa_flow']);
 const nativeCookieNames = new Set(['__Host-pamofi_session']);
 
 class ProxyError extends Error {
