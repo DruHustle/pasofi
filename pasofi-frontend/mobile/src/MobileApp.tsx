@@ -57,7 +57,7 @@ export default function MobileApp() {
   return <div className="mobile-app">
     <a className="mobile-skip" href="#mobile-content">Skip to content</a>
     <header className="mobile-header">
-      <button className="mobile-brand" aria-label="Pasofi home" onClick={() => choose('home')}><span className="mobile-brandmark"><Icon name="wifi" /></span><span>Pasofi<small>by Onesa</small></span></button>
+      <button className="mobile-brand" aria-label="Pasofi home" aria-describedby="pasofi-product-family" onClick={() => choose('home')}><span className="mobile-brandmark"><Icon name="wifi" /></span><span>Pasofi<small id="pasofi-product-family">An Onesa Mobile product</small></span></button>
       <div className="mobile-header-actions">{mobileApiConfigured && <button className="mobile-account-button" onClick={() => openAccount()}>My Pasofi</button>}<button className="mobile-icon-button" aria-label="Help" onClick={() => choose('help')}><Icon name="help" /></button></div>
     </header>
     <main id="mobile-content" className="mobile-content" ref={content}>
@@ -115,7 +115,7 @@ export default function MobileApp() {
           <div className="mobile-setting-row"><span className="mobile-setting-icon"><Icon name="globe" /></span><span><strong>Language</strong><small>English</small></span><span className="mobile-setting-value">EN</span></div>
           <button onClick={() => choose('help')}><span className="mobile-setting-icon"><Icon name="help" /></span><span><strong>Help & support</strong><small>Clear answers, whenever you need them</small></span><Icon name="chevron" /></button>
         </div>
-        <p className="mobile-brand-footnote"><Icon name="wifi" />Pasofi by Onesa<span>Wi-Fi for your everyday.</span></p>
+        <p className="mobile-brand-footnote"><Icon name="wifi" />Pasofi<span>An Onesa Mobile product</span></p>
       </section>}
 
       {tab === 'help' && <section aria-labelledby="mobile-help">
