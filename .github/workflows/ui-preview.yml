@@ -42,15 +42,20 @@ jobs:
             npm --prefix "pasofi-frontend/$project" ci --no-audit --no-fund
             npm --prefix "pasofi-frontend/$project" run build
           done
-      - name: Package reproducible review materials
+      - name: Validate built preview entry points
+        run: |
+          test -s pasofi-frontend/web/dist/index.html
+          test -s pasofi-frontend/mobile/dist/index.html
+      - name: Package review materials
+        if: github.event_name != 'pull_request'
         run: |
           mkdir -p ui-review
-          git archive --format=tar.gz --output=ui-review/frontend-source.tar.gz HEAD pasofi-frontend .github
           cp -R pasofi-frontend/web/dist ui-review/web
           cp -R pasofi-frontend/mobile/dist ui-review/mobile
           git rev-parse HEAD > ui-review/SOURCE_COMMIT.txt
           printf '%s\n' 'Internal UI review only. No live payment, customer account or physical hotspot qualification is implied.' > ui-review/README.txt
       - name: Upload private UI review artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: pamofi-ui-review-${{ github.sha }}
