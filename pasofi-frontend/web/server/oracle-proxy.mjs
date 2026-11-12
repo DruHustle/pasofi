@@ -3,6 +3,8 @@ import { isIP } from 'node:net';
 
 // This module is server-only. Vite never imports it into the customer bundle.
 const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+const localStaffCredentials = /^\/api\/staff\/(?:register|login|mfa\/(?:setup|confirm|verify)|password-reset\/(?:request|confirm))$/;
+const resetAvailability = '/api/staff/password-reset/availability';
 const rules = [
   [/^\/api\/(bundles|capabilities|sites|access|usage|help|payments\/methods)$/, ['GET']],
   [/^\/api\/orders$/, ['GET', 'POST']],
@@ -15,9 +17,8 @@ const rules = [
   [/^\/api\/onesa\/(start|complete)$/, ['POST']],
   [/^\/api\/staff\/onesa\/availability$/, ['GET']],
   [/^\/api\/staff\/onesa\/(start|complete)$/, ['POST']],
-  [/^\/api\/staff\/(register|login|mfa\/(setup|confirm|verify))$/, ['POST']],
+  [localStaffCredentials, ['POST']],
   [/^\/api\/staff\/password-reset\/availability$/, ['GET']],
-  [/^\/api\/staff\/password-reset\/(request|confirm)$/, ['POST']],
   [/^\/api\/staff\/session$/, ['GET', 'DELETE']],
   [/^\/api\/staff\/(users|audit|sites|inventory)$/, ['GET']],
   [new RegExp(`^/api/staff/users/${UUID}/(decision|revoke-sessions|recover-mfa)$`), ['POST']],
@@ -351,6 +352,14 @@ export function createProxyHandler({ env = process.env, request = httpsRequest, 
       if ((sourceOrigin !== undefined && sourceOrigin !== frontend.origin) ||
           ((nativeCustomer || !['GET', 'HEAD'].includes(method)) && sourceOrigin !== frontend.origin)) throw new ProxyError(403, 'origin_not_allowed');
       if (nativeCustomer && !nativeCustomerRoute(route.path, method)) throw new ProxyError(404, 'not_found');
+      // Older Oracle revisions can still issue product-local staff sessions.
+      // The public web accepts staff authentication only through Company Portal.
+      if (localStaffCredentials.test(route.path)) throw new ProxyError(403, 'portal_sign_in_required');
+      if (route.path === resetAvailability) {
+        res.statusCode = 200;
+        res.end(method === 'HEAD' ? undefined : JSON.stringify({ enabled:false }));
+        return;
+      }
       if (nativeCustomer) validateNativeQuery(route, method);
       if (nativeCustomer && !config.nativeCustomerEnabled && route.path !== '/api/capabilities') throw new ProxyError(503, 'native_customer_disabled');
       const clientIp = canonicalClientIp(header(req, 'x-vercel-forwarded-for', 45));

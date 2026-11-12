@@ -255,11 +255,34 @@ test('canonical IPv4/IPv6 identities stay distinct and a mapped address agrees w
   });
 });
 
+test('public web staff credentials stay closed when Oracle still serves legacy login', async () => {
+  await withProxy({}, async call => {
+    for (const suffix of ['register','login','mfa/setup','mfa/confirm','mfa/verify','password-reset/request','password-reset/confirm']) {
+      const path = 'staff/' + suffix;
+      for (const url of ['/api/' + path, '/api/gateway?__pamofi_path=' + encodeURIComponent(path) + '&path=' + encodeURIComponent(path)]) {
+        const result = await call(url,{ method:'POST',headers:{origin:env.PAMOFI_PUBLIC_ORIGIN,'content-type':'application/json'},body:'{}' });
+        assert.equal(result.status,403);
+        assert.deepEqual(JSON.parse(result.body),{error:'portal_sign_in_required'});
+        assert.equal(result.headers['set-cookie'],undefined);
+        privateResponse(result);
+      }
+    }
+    const reset = await call('/api/staff/password-reset/availability');
+    assert.equal(reset.status,200);
+    assert.deepEqual(JSON.parse(reset.body),{enabled:false});
+    assert.equal(events.length,0,'No credential or recovery request should reach the older identity service');
+    const portal = await call('/api/staff/onesa/start',{method:'POST',headers:{origin:env.PAMOFI_PUBLIC_ORIGIN,'content-type':'application/json'},body:'{}'});
+    assert.equal(portal.status,200);
+    assert.equal(events.length,1);
+    assert.equal(events[0].url,'/api/staff/onesa/start');
+  });
+});
+
 test('cash workflow, recovery, staff and network routes are available through original and rewritten URL forms', async () => {
   const paths = [
     ['GET','/api/onesa/availability'], ['POST','/api/onesa/start'], ['POST','/api/onesa/complete'],
     ['GET', '/api/capabilities'], ['GET', '/api/usage?entitlementIds=a%2Cb'], ['POST', '/api/session'], ['DELETE', '/api/session'],
-    ['POST', '/api/staff/register'], ['POST', '/api/staff/mfa/confirm'], ['GET', '/api/staff/password-reset/availability'], ['POST', '/api/staff/password-reset/request'], ['POST', '/api/staff/password-reset/confirm'], ['POST', `/api/staff/users/${id}/decision`], ['POST', `/api/staff/users/${id}/recover-mfa`],
+    ['GET', '/api/staff/onesa/availability'], ['POST', '/api/staff/onesa/start'], ['POST', '/api/staff/onesa/complete'], ['POST', `/api/staff/users/${id}/decision`], ['POST', `/api/staff/users/${id}/recover-mfa`],
     ['POST', '/api/admin/inventory/allocations'], ['PATCH', `/api/admin/sites/${id}`], ['POST', '/api/staff/sales'], ['GET', `/api/staff/sales/${id}/receipt`],
     ['GET', '/api/customer/invoices'], ['GET', '/api/staff/invoices'], ['GET', `/api/customer/invoices/${id}`], ['GET', `/api/staff/invoices/${id}`],
     ['GET','/api/staff/cash-refunds'], ['POST','/api/staff/cash-refunds'], ['POST',`/api/staff/cash-refunds/${id}/payout`], ['POST',`/api/staff/cash-refunds/${id}/prepare-payout`], ['POST',`/api/admin/cash-refunds/${id}/decision`], ['GET', '/api/staff/cash-shifts'], ['POST', '/api/staff/cash-shifts'], ['POST', `/api/staff/cash-shifts/${id}/close`], ['POST', '/api/staff/cash-references/lookup'], ['POST', `/api/receipt-pairings/${id}/cancel`], ['POST', '/api/receipt-pairings'], ['GET', `/api/receipt-pairings/${id}`], ['POST', '/api/vouchers/redeem'],
