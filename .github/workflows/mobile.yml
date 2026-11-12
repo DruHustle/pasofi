@@ -78,15 +78,16 @@ jobs:
           test -s "$apk"
           sha256sum "$apk" >> "$GITHUB_STEP_SUMMARY"
       - name: Package review artifact and provenance
-        if: github.event_name != 'pull_request'
         run: |
           mkdir -p native-artifacts
           cp android/app/build/outputs/apk/debug/app-debug.apk native-artifacts/pasofi-api-unconfigured-debug.apk
           cp -R android/app/build/test-results/testDebugUnitTest native-artifacts/android-unit-test-results
           cp NATIVE_BUILDS.md native-artifacts/READ-ME.md
           git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
-          sha256sum native-artifacts/pasofi-api-unconfigured-debug.apk > native-artifacts/SHA256SUMS.txt
           java -version 2> native-artifacts/JAVA_VERSION.txt
+          cd native-artifacts
+          sha256sum pasofi-api-unconfigured-debug.apk > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
       - name: Upload Android preview
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -135,16 +136,30 @@ jobs:
           npm run build
           npx --no-install cap sync ios
       - name: Resolve pinned Swift packages in an isolated directory
-        timeout-minutes: 10
+        # A cold Stripe SDK checkout can take more than ten minutes on the Intel runner.
+        timeout-minutes: 20
         env:
           GIT_TERMINAL_PROMPT: '0'
         run: |
+          # Fetch the locked Stripe release without cloning its full binary history.
+          stripe_url=https://github.com/stripe/stripe-ios.git
+          stripe_tag=26.15.1
+          stripe_commit=2f4547639a5aed18d39e4ba44c0ba684dab3161b
+          stripe_mirror=$(mktemp -d "$RUNNER_TEMP/pasofi-stripe-XXXXXX")
+          git init --bare --quiet "$stripe_mirror"
+          git -C "$stripe_mirror" fetch --quiet --depth=1 --no-tags "$stripe_url" "refs/tags/$stripe_tag:refs/tags/$stripe_tag"
+          test "$(git -C "$stripe_mirror" rev-parse "refs/tags/$stripe_tag^{commit}")" = "$stripe_commit"
+          git -C "$stripe_mirror" update-ref refs/heads/pinned "$stripe_commit"
+          git -C "$stripe_mirror" symbolic-ref HEAD refs/heads/pinned
+          # The system Git transport uses this mirror only for the exact upstream URL.
+          # Package.resolved retains its published URL, version and commit.
           # Bypass the missing shared cache checkout observed during package fetch.
           # Retry dependency resolution once on its I/O exit code, never compilation.
           for attempt in 1 2; do
             swiftpm_directory=$(mktemp -d "$RUNNER_TEMP/pasofi-swiftpm-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX")
             mkdir -p "$swiftpm_directory/SourcePackages" "$swiftpm_directory/Cache"
-            if xcodebuild -resolvePackageDependencies \
+            if GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.file://$stripe_mirror.insteadOf" GIT_CONFIG_VALUE_0="$stripe_url" \
+              xcodebuild -resolvePackageDependencies \
               -project ios/App/App.xcodeproj -scheme App \
               -clonedSourcePackagesDirPath "$swiftpm_directory/SourcePackages" \
               -packageCachePath "$swiftpm_directory/Cache" \
@@ -236,7 +251,6 @@ jobs:
           shasum -a 256 "$app/$executable" >> "$GITHUB_STEP_SUMMARY"
           echo 'com.onesa.pasofi, generic physical iOS, Release, no distribution signature' >> "$GITHUB_STEP_SUMMARY"
       - name: Package simulator app without losing executable permissions
-        if: github.event_name != 'pull_request'
         run: |
           mkdir -p native-artifacts
           tar -czf native-artifacts/pasofi-api-unconfigured-ios-simulator.tar.gz \
@@ -245,9 +259,11 @@ jobs:
           cp native-build/ios-package-resolved.json native-artifacts/Package.resolved
           cp native-build/customer-policy-results.txt native-artifacts/ios-customer-policy-results.txt
           git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
-          shasum -a 256 native-artifacts/pasofi-api-unconfigured-ios-simulator.tar.gz > native-artifacts/SHA256SUMS.txt
           xcodebuild -version > native-artifacts/XCODE_VERSION.txt
           printf '%s\n' 'Release; API unconfigured; unsigned simulator' > native-artifacts/BUILD_CONFIGURATION.txt
+          cd native-artifacts
+          shasum -a 256 pasofi-api-unconfigured-ios-simulator.tar.gz > SHA256SUMS.txt
+          shasum -a 256 --check SHA256SUMS.txt
       - name: Upload iOS simulator preview
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
