@@ -141,12 +141,25 @@ jobs:
         env:
           GIT_TERMINAL_PROMPT: '0'
         run: |
+          # Fetch the locked Stripe release without cloning its full binary history.
+          stripe_url=https://github.com/stripe/stripe-ios.git
+          stripe_tag=26.15.1
+          stripe_commit=2f4547639a5aed18d39e4ba44c0ba684dab3161b
+          stripe_mirror=$(mktemp -d "$RUNNER_TEMP/pasofi-stripe-XXXXXX")
+          git init --bare --quiet "$stripe_mirror"
+          git -C "$stripe_mirror" fetch --quiet --depth=1 --no-tags "$stripe_url" "refs/tags/$stripe_tag:refs/tags/$stripe_tag"
+          test "$(git -C "$stripe_mirror" rev-parse "refs/tags/$stripe_tag^{commit}")" = "$stripe_commit"
+          git -C "$stripe_mirror" update-ref refs/heads/pinned "$stripe_commit"
+          git -C "$stripe_mirror" symbolic-ref HEAD refs/heads/pinned
+          # The system Git transport uses this mirror only for the exact upstream URL.
+          # Package.resolved retains its published URL, version and commit.
           # Bypass the missing shared cache checkout observed during package fetch.
           # Retry dependency resolution once on its I/O exit code, never compilation.
           for attempt in 1 2; do
             swiftpm_directory=$(mktemp -d "$RUNNER_TEMP/pasofi-swiftpm-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX")
             mkdir -p "$swiftpm_directory/SourcePackages" "$swiftpm_directory/Cache"
-            if xcodebuild -resolvePackageDependencies \
+            if GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.file://$stripe_mirror.insteadOf" GIT_CONFIG_VALUE_0="$stripe_url" \
+              xcodebuild -resolvePackageDependencies \
               -project ios/App/App.xcodeproj -scheme App \
               -clonedSourcePackagesDirPath "$swiftpm_directory/SourcePackages" \
               -packageCachePath "$swiftpm_directory/Cache" \
