@@ -24,7 +24,7 @@ export default function MobileCustomer({ close, initialTab = 'access' }: { close
       if (value.mobileCookies !== true || (usesNativeCustomerApi && value.nativeCustomerApiVersion !== 1)) { setMessage('Mobile account access is not enabled by this deployment yet. You can continue using the offline preview.'); return; }
       setCapabilities(value);
     }).catch(error => { if (live.current && !controller.signal.aborted) setMessage(messageFor(error, 'The configured PasoFi service could not be reached. Your offline preview is still available.')); }).finally(() => { if (live.current && !controller.signal.aborted) setLoading(false); });
-    const unsubscribe = onSessionChange(() => { controller.abort(); setCapabilities(null); setMessage('Your account changed in another window. Reconnect to load the current account.'); });
+    const unsubscribe = onSessionChange(() => { controller.abort(); setCapabilities(null); setMessage('Your account changed. Reconnect to load the current account.'); });
     return () => { live.current = false; controller.abort(); unsubscribe(); };
   }, [attempt]);
   return <div className="mobile-customer"><div className="mobile-account-links"><p className="mobile-account-brand"><strong>PasoFi</strong> An Onesa Mobile product</p><button onClick={close}>← Offline preview</button>{capabilities && <>{usesNativeCustomerApi && <button onClick={() => setScreen('onesa')}>Sign in with Onesa</button>}<button onClick={() => setScreen('account')}>My account</button><button onClick={() => setScreen('recover')}>Recover</button><button onClick={() => setScreen('handoff')}>Accept handoff</button></>}</div>
