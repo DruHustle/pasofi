@@ -40,7 +40,7 @@ async function mock(page: Page, handle?: (route: Route, path: string, method: st
     return reply({ error: 'unexpected_request' }, 500);
   });
 }
-async function open(page: Page, origin: string) { await page.goto(origin); await page.getByRole('button', { name: 'My Pasofi', exact: true }).click(); }
+async function open(page: Page, origin: string) { await page.goto(origin); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click(); }
 
 test('native bridge argument logging stays disabled even in debug payment builds',async()=>{
   const configuration=await readFile(new URL('../capacitor.config.ts',import.meta.url),'utf8');
@@ -121,7 +121,7 @@ test('qualified mobile API session and voucher redemption use credentialed HTTPS
     return false;
   });
   await page.setViewportSize({ width: 360, height: 850 }); await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Use a voucher', exact: true }).click(); await page.getByLabel('Voucher code', { exact: true }).fill('DEMO-VOUCHER-234567'); await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click(); await expect(page.getByText('Queued · not connected', { exact: true })).toBeVisible();
-  await expect(page.getByText('New hotspot connections are paused.', { exact: false })).toContainText('Ask your Pasofi agent when service is available.');
+  await expect(page.getByText('New hotspot connections are paused.', { exact: false })).toContainText('Ask your PasoFi agent when service is available.');
   await expect(page.getByText('No active hotspot session', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check connection', exact: true })).toBeEnabled();
   await expect(page.getByRole('button', { name: /^(Connect to Wi-Fi|Connect now →|Retry connection)$/ })).toHaveCount(0);
@@ -275,7 +275,7 @@ test('mobile paid invoices stay compact and download over the configured credent
   }
   await page.setViewportSize({ width: 320, height: 844 });
   const file = page.waitForEvent('download'); await history.getByRole('button', { name: 'Download invoice PF-000001' }).click();
-  expect((await file).suggestedFilename()).toBe('Pasofi-PF-000001.pdf');
+  expect((await file).suggestedFilename()).toBe('PasoFi-PF-000001.pdf');
   expect(transports.filter(item => item.path.endsWith('/pdf'))).toEqual([{ method: 'GET', path: `/api/customer/invoices/${invoiceId}/pdf` }]);
 });
 
@@ -339,7 +339,7 @@ test('native invoice export uses a cache file and system share only on click, th
   expect(await page.evaluate(() => (window as any).invoiceApiCalls)).toEqual([{ method: 'POST', path: '/api/invoice-downloads', responseType: 'pdf' }]);
   const calls = await page.evaluate(() => (window as any).invoiceNativeCalls);
   const write = calls.find((call: any) => call.method === 'writeFile');
-  expect(write.options.directory).toBe('CACHE'); expect(write.options.path).toMatch(/^pasofi-invoice-exports\/\d+-[0-9a-f-]+-Pasofi-paid-invoice\.pdf$/);
+  expect(write.options.directory).toBe('CACHE'); expect(write.options.path).toMatch(/^pasofi-invoice-exports\/\d+-[0-9a-f-]+-PasoFi-paid-invoice\.pdf$/);
   expect(write.options.data).toMatch(/^JVBERi0/); expect(write.options.encoding).toBeUndefined();
   const share = calls.find((call: any) => call.method === 'share'); expect(share.options.files).toEqual([`file:///cache/${write.options.path}`]);
   expect(JSON.stringify(share.options)).not.toContain(token);
@@ -370,7 +370,7 @@ for (const pendingContext of ['different', 'unknown'] as const) {
       return false;
     });
     await open(page, configuredBaseURL);
-    const choice = page.getByRole('combobox', { name: 'Choose your Pasofi hotspot' });
+    const choice = page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' });
     const connect = page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true });
     await expect(choice).toHaveValue(''); await expect(connect).toBeDisabled();
     await choice.selectOption(secondNas); await connect.click(); await expect(page.getByText('The service is temporarily unavailable.', { exact: false })).toBeVisible();
@@ -394,7 +394,7 @@ test('mobile hides credentials returned for another router and keeps the selecte
     if (path === '/api/network/credentials') { requests.push(route.request().postDataJSON()); await reply({ siteId, nasId: firstNas, username: 'wrong-user', password: 'wrong-password', expiresAt: new Date(Date.now() + 120_000).toISOString(), loginUrl: points[1].loginUrl }); return true; }
     return false;
   });
-  await open(page, configuredBaseURL); await page.getByRole('combobox', { name: 'Choose your Pasofi hotspot' }).selectOption(secondNas);
+  await open(page, configuredBaseURL); await page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' }).selectOption(secondNas);
   const connect = page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true }); await connect.click();
   await expect(page.getByText('Connection details could not be verified.', { exact: false })).toBeVisible(); await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
   await connect.click(); await expect(connect).toBeEnabled(); expect(requests).toHaveLength(2); expect(requests[0]).toEqual(requests[1]);
@@ -434,7 +434,7 @@ async function mockNetworkRecovery(page: Page) {
   return state;
 }
 async function prepareRecoveryRequest(page: Page) {
-  await page.getByRole('combobox', { name: 'Choose your Pasofi hotspot' }).selectOption(recoveryNasId);
+  await page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' }).selectOption(recoveryNasId);
   await page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true }).click();
   await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('test-only-hotspot-password');
 }
@@ -445,8 +445,8 @@ for (const transition of ['page reload', 'workspace remount'] as const) {
     await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
     if (transition === 'page reload') await page.reload();
     else await page.getByRole('button', { name: 'Close customer workspace' }).click();
-    await page.getByRole('button', { name: 'My Pasofi', exact: true }).click();
-    await expect(page.getByRole('combobox', { name: 'Choose your Pasofi hotspot' })).toHaveValue(recoveryNasId);
+    await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' })).toHaveValue(recoveryNasId);
     const retry = page.getByRole('button', { name: 'Retry connection', exact: true }); await expect(retry).toBeEnabled(); await retry.click();
     await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('test-only-hotspot-password');
     expect(state.requests).toHaveLength(2); expect(state.requests[1]).toEqual(state.requests[0]);
@@ -497,7 +497,7 @@ for (const change of ['removed router', 'changed site', 'paused network'] as con
     if (change === 'removed router') state.points = state.points.filter(point => point.nasId !== recoveryNasId);
     if (change === 'changed site') state.points = state.points.map(point => point.nasId === recoveryNasId ? { ...point, siteId: '99999999-9999-4999-8999-999999999999' } : point);
     if (change === 'paused network') state.networkEnabled = false;
-    await page.reload(); await page.getByRole('button', { name: 'My Pasofi', exact: true }).click();
+    await page.reload(); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
     await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toHaveCount(0);
     if (change === 'paused network') await expect(page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true })).toHaveCount(0);
@@ -514,7 +514,7 @@ for (const change of ['signed_out', 'recovered'] as const) {
     await page.evaluate(change => { const channel = new BroadcastChannel('pamofi.session'); channel.postMessage(change); channel.close(); }, change);
     await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), preparedRequestStorage)).toBeNull();
     await page.getByRole('button', { name: 'Retry service connection', exact: true }).click();
-    await expect(page.getByRole('combobox', { name: 'Choose your Pasofi hotspot' })).toHaveValue('');
+    await expect(page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' })).toHaveValue('');
     await prepareRecoveryRequest(page);
     expect(state.requests).toHaveLength(2); expect(state.requests[1].requestKey).not.toBe(firstKey);
     expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)!).customerId, preparedRequestStorage)).toBe(state.owner);
@@ -528,7 +528,7 @@ test('mobile hotspot preparation handles unavailable tab storage without issuing
   await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
   await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('test-only-hotspot-password');
   expect(state.requests).toHaveLength(2); expect(state.requests[1]).toEqual(state.requests[0]);
-  await page.reload(); await page.getByRole('button', { name: 'My Pasofi', exact: true }).click();
+  await page.reload(); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true })).toBeDisabled();
   expect(state.requests).toHaveLength(2);

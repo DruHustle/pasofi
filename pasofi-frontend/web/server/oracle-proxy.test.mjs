@@ -99,6 +99,7 @@ test('actual HTTPS forwarding preserves public path, exact query, JSON bytes and
 test('customer/staff cookies, comma-containing expiry and clearing survive separately; API responses never become cacheable', async () => {
   await withProxy({}, async call => {
     const cookies = ['__Host-pamofi_session=customer; Path=/; HttpOnly; Secure; SameSite=Lax',
+      '__Host-pasofi_onesa_customer_flow=flow; Path=/; HttpOnly; Secure; SameSite=Lax',
       '__Host-pamofi_staff_challenge=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax'];
     behavior = (_req, res) => {
       res.statusCode = 201; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('set-cookie', cookies);
@@ -108,9 +109,9 @@ test('customer/staff cookies, comma-containing expiry and clearing survive separ
     const response = await call('/api/session', { method: 'POST', headers: { origin: env.PAMOFI_PUBLIC_ORIGIN } });
     assert.equal(response.status, 201); assert.deepEqual(response.headers['set-cookie'], cookies);
     assert.equal(response.headers['x-pamofi-proxy-token'], undefined); privateResponse(response);
-    behavior = (_req, res) => { res.statusCode = 204; res.setHeader('set-cookie', cookies[1]); res.end(); };
+    behavior = (_req, res) => { res.statusCode = 204; res.setHeader('set-cookie', cookies.at(-1)); res.end(); };
     const cleared = await call('/api/staff/session', { method: 'DELETE', headers: { origin: env.PAMOFI_PUBLIC_ORIGIN } });
-    assert.equal(cleared.status, 204); assert.equal(cleared.body, ''); assert.deepEqual(cleared.headers['set-cookie'], [cookies[1]]); privateResponse(cleared);
+    assert.equal(cleared.status, 204); assert.equal(cleared.body, ''); assert.deepEqual(cleared.headers['set-cookie'], [cookies.at(-1)]); privateResponse(cleared);
   });
 });
 
@@ -256,6 +257,7 @@ test('canonical IPv4/IPv6 identities stay distinct and a mapped address agrees w
 
 test('cash workflow, recovery, staff and network routes are available through original and rewritten URL forms', async () => {
   const paths = [
+    ['GET','/api/onesa/availability'], ['POST','/api/onesa/start'], ['POST','/api/onesa/complete'],
     ['GET', '/api/capabilities'], ['GET', '/api/usage?entitlementIds=a%2Cb'], ['POST', '/api/session'], ['DELETE', '/api/session'],
     ['POST', '/api/staff/register'], ['POST', '/api/staff/mfa/confirm'], ['GET', '/api/staff/password-reset/availability'], ['POST', '/api/staff/password-reset/request'], ['POST', '/api/staff/password-reset/confirm'], ['POST', `/api/staff/users/${id}/decision`], ['POST', `/api/staff/users/${id}/recover-mfa`],
     ['POST', '/api/admin/inventory/allocations'], ['PATCH', `/api/admin/sites/${id}`], ['POST', '/api/staff/sales'], ['GET', `/api/staff/sales/${id}/receipt`],

@@ -302,3 +302,22 @@ test('native transport retains bounded requests, sanitized deadlines, Retry-Afte
     const result = await call('/api/session'); assert.equal(result.status, 502); assert.equal(events.length, 0); privateResponse(result);
   });
 });
+
+
+test('native Onesa availability stays read-only, qualified and outside browser OIDC credentials', async () => {
+  await withProxy({env:baseEnv},async call=>{
+    assert.equal((await call('/api/onesa/availability')).status,503);
+    assert.equal(events.length,0);
+  });
+  await withProxy({},async call=>{
+    behavior=(_req,res)=>json(res,{origin:baseEnv.PAMOFI_PUBLIC_ORIGIN,handoff:true});
+    const response=await call('/api/onesa/availability');
+    assert.equal(response.status,200);
+    assert.deepEqual(JSON.parse(response.body),{origin:baseEnv.PAMOFI_PUBLIC_ORIGIN,handoff:true});
+    assert.equal(response.headers['set-cookie'],undefined);privateResponse(response);
+    const forwarded=events.length;
+    assert.equal((await call('/api/onesa/availability?redirect=https%3A%2F%2Fforeign.invalid')).status,400);
+    for(const path of ['/api/onesa/start','/api/onesa/complete'])assert.equal((await call(path,{method:'POST',body:'{}',headers:{'content-type':'application/json'}})).status,404);
+    assert.equal(events.length,forwarded,'native bridge cannot initiate or complete browser-bound OIDC');
+  });
+});

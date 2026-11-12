@@ -10,6 +10,7 @@ import { InvoiceDeliveryFields, InvoiceDownload, InvoiceHistory } from './Invoic
 import { type InvoiceDelivery, invoiceIdPattern, defaultInvoiceDelivery, invoiceDeliveryError, invoiceDeliveryPayload } from './invoice-delivery';
 import LiveUsage, { dataAmount, useLiveUsage, type UsageSnapshot } from './LiveUsage';
 import StripeCheckout,{type StripePayment} from './StripeCheckout';
+import OnesaCustomerSignIn from './OnesaCustomerSignIn';
 import './customer-premium.css';
 
 type Entitlement = { id: string; bundle_id: string; byte_limit: string; consumed_bytes: string; validity_seconds: number; activated_at: string | null; revoked_at: string | null; start_by: string };
@@ -392,8 +393,9 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     {nextOffset !== null && <button className="secondary" disabled={busy} onClick={() => reloadBundles(true)}>Show more bundles</button>}
   </section>;
   const connectionPanel = owner && <NetworkAccess customerId={owner} capabilities={capabilities} usage={usage.snapshot} fresh={usage.fresh} refreshing={usage.refreshing} refresh={usage.refresh} />;
-  return <section className="workspace customer-workspace" aria-labelledby="customer-heading" aria-busy={busy} data-screen={tab}>
+  return <section className="workspace customer-workspace" aria-labelledby="customer-heading" aria-busy={busy || loading} data-screen={tab}>
     <div className="purchase-head customer-page-heading"><div><div className="eyebrow">YOUR PASOFI</div><h2 id="customer-heading" tabIndex={-1} ref={heading}>{titles[tab]}</h2><p>{subtitles[tab]}</p></div><button className="close-button" onClick={close} aria-label="Close customer workspace">×</button></div>
+    {tab === 'recovery' && !loading && !owner && <OnesaCustomerSignIn prominent />}
     {capabilities.demo && <p className="notice customer-demo-notice">Demonstration environment. These flows do not establish real customer payment, SMS delivery, or internet connectivity.</p>}
     {tab !== 'access' && sectionNavigation}
     <PolicyNotice/>
@@ -404,7 +406,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     {(tab === 'receipt' || tab === 'purchase') && <>
       {catalogueLoading && <p role="status">Loading available bundles and locations…</p>}
       {catalogueError && <div className="notice"><p role="alert">Available bundles and locations could not be loaded. Your saved purchase details are unchanged.</p><button className="secondary" disabled={busy || catalogueLoading} onClick={() => setCatalogueAttempt(value => value + 1)}>Retry purchase options</button></div>}
-      {catalogueLoaded && (!sites.length || !products.length) && <div className="notice"><p role="status">{!products.length ? 'No bundles are available to buy yet.' : 'No sales locations are available yet.'} Ask a Pasofi agent for help or check again.</p><button className="secondary" disabled={busy} onClick={() => setCatalogueAttempt(value => value + 1)}>Refresh purchase options</button></div>}
+      {catalogueLoaded && (!sites.length || !products.length) && <div className="notice"><p role="status">{!products.length ? 'No bundles are available to buy yet.' : 'No sales locations are available yet.'} Ask a PasoFi agent for help or check again.</p><button className="secondary" disabled={busy} onClick={() => setCatalogueAttempt(value => value + 1)}>Refresh purchase options</button></div>}
     </>}
     {catalogueLoaded && bundleId && !product && (tab === 'receipt' || tab === 'purchase') && <p className="notice" role="status">{checkoutPending || order ? 'This bundle is no longer published. Your saved purchase is preserved; check its verified status before paying again.' : 'The selected bundle is no longer published. Choose an available bundle before continuing.'}</p>}
     {checkoutPending && tab !== 'purchase' && <button className="customer-pending-checkout" onClick={() => selectTab('purchase')}><CustomerGlyph name="receipt" /><span><strong>Your checkout is saved</strong><small>Check its status before starting another payment.</small></span><CustomerGlyph name="arrow" /></button>}
@@ -473,7 +475,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     </section>}
 
     {tab === 'recovery' && <>
-      <section className="customer-profile-card"><span className="customer-profile-avatar"><CustomerGlyph name="user" /></span><div><span className="eyebrow">YOUR EVERYDAY CONNECTION</span><h3>{owner ? 'Your Pasofi account' : 'Welcome to Pasofi'}</h3><p>{owner ? 'Your account is available in this browser.' : 'Start with a bundle, or bring back your saved account.'}</p></div><span className="customer-profile-language">English</span></section>
+      <section className="customer-profile-card"><span className="customer-profile-avatar"><CustomerGlyph name="user" /></span><div><span className="eyebrow">YOUR EVERYDAY CONNECTION</span><h3>{owner ? 'Your PasoFi account' : 'Welcome to PasoFi'}</h3><p>{owner ? 'Your account is available in this browser.' : 'Start with a bundle, or bring back your saved account.'}</p></div><span className="customer-profile-language">English</span></section>
       {owner ? <><div className="customer-account-grid"><RecoverySetup /><CreateHandoff customerId={owner} /></div><section className="workspace-card customer-signout-card"><h3>Sign out of this browser</h3>{signout ? <><p>Save your recovery details before you leave. Signing out does not end an active hotspot session; use the connection controls for that.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of customer account</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></> : <button className="secondary" onClick={() => setSignout(true)}>Prepare to sign out</button>}</section></> : <section className="workspace-card"><h3>Save or restore access</h3><p>Use your saved reference and recovery key to restore an existing account. Start a new account only if you do not need to recover one.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button><button className="secondary" disabled={busy} onClick={startAccount}>Start a new customer account</button></div></section>}
     </>}
   </section>;

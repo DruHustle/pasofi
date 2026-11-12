@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError } from './api';
+import { api, ApiError, usesNativeCustomerApi } from './api';
 import { announceSessionChange, clearSessionSecrets, currentSession } from './session';
 
-type Status = { configured: boolean; accountReference?: string; version?: number };
+type Status = { authentication?: 'onesa'; configured: boolean; accountReference?: string; version?: number };
 type Secret = { accountReference: string; recoveryKey: string };
 export function RecoverySetup() {
   const [status, setStatus] = useState<Status | null>(null), [secret, setSecret] = useState<Secret | null>(null);
@@ -51,8 +51,9 @@ export function RecoverySetup() {
       try { await loadStatus(); } catch { /* Keep replacement disabled until the current version is known. */ }
     } finally { if (mounted.current) setBusy(false); }
   }
+  if (status?.authentication === 'onesa') return <div className="recovery-box"><h3>Your Onesa account</h3><p>Use Sign in with Onesa to reopen this account. Onesa manages your sign-in and account recovery. A one-time handoff brings it into another device while keeping each device’s session separate.</p></div>;
   return <div className="recovery-box" aria-busy={busy}>
-    <h3>Keep your access recoverable</h3><p>Save an account reference and recovery key somewhere private. You need both to restore this account in another browser. Never send the key to support or paste it into chat.</p>
+    <h3>Keep your access recoverable</h3><p>Save an account reference and recovery key somewhere private. You need both to restore this account on another device. Never send the key to support or paste it into chat.</p>
     {status?.configured && !secret && <p>Account reference: <strong>{status.accountReference}</strong></p>}
     {secret && <div className="recovery-secret"><p>Save these now. The recovery key will not be shown again.</p><p>Account reference: <strong data-testid="account-reference">{secret.accountReference}</strong></p><p>Recovery key: <strong data-testid="recovery-key">{secret.recoveryKey}</strong></p><button className="secondary" onClick={() => setSecret(null)}>Hide saved key</button></div>}
     {error && <p role="alert">{error}</p>}
@@ -81,7 +82,7 @@ export default function Recovery({ close, recovered }: { close: () => void; reco
       if (mounted.current) { setKey(''); recovered(); }
     } catch (reason) {
       if (!mounted.current) return;
-      if (reason instanceof Error && reason.message === 'cookie_not_confirmed') setError('Your recovery details were verified, but this browser did not keep the recovered session. Allow cookies for Pasofi, then try again.');
+      if (reason instanceof Error && reason.message === 'cookie_not_confirmed') setError(usesNativeCustomerApi ? 'Your recovery details were verified, but the app did not keep the recovered account. Close and reopen PasoFi, then try again with your saved details.' : 'Your recovery details were verified, but this browser did not keep the recovered session. Allow cookies for PasoFi, then try again.');
       else if (reason instanceof ApiError && reason.status === 429) setError('Too many recovery attempts. Wait a minute before trying again.');
       else if (reason instanceof ApiError && [400, 401].includes(reason.status)) setError('The reference and key could not be verified. Check both and try again.');
       else setError('The recovery service is temporarily unavailable. Your saved details have not been changed. Please try again.');

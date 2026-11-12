@@ -2,6 +2,7 @@ import Capacitor
 import Foundation
 import Security
 import WebKit
+import UIKit
 
 /// Customer-only HTTP. Session authority is never placed in a WebView cookie
 /// store, shared URLSession, bridge result, native preference or diagnostic log.
@@ -11,6 +12,7 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
     public let jsName = "PasoFiCustomerApi"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "availability", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openSignIn", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "request", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
     ]
@@ -92,6 +94,26 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
         if let origin = configuredOrigin {
             call.resolve(["requestId": id, "configured": true, "origin": origin, "protocol": 1])
         } else { call.resolve(["requestId": id, "configured": false, "protocol": 1]) }
+    }
+
+    @objc public func openSignIn(_ call: CAPPluginCall) {
+        guard Set(call.jsObjectRepresentation.keys) == ["requestId"], let id = call.getString("requestId"), CustomerApiPolicy.matches(id, CustomerApiPolicy.uuid) else { reject(call, .request); return }
+        stateQueue.async {
+            guard Self.owner === self else { return }
+            guard let origin = self.configuredOrigin, let url = CustomerApiPolicy.browserSignInURL(origin) else { self.reject(call, .unavailable); return }
+            let page = self.generation
+            DispatchQueue.main.async {
+                guard self.stateQueue.sync(execute: { Self.owner === self && self.generation == page }) else { return }
+                // External browser receives only the configured public URL.
+                UIApplication.shared.open(url, options: [:]) { opened in
+                    self.stateQueue.async {
+                        guard Self.owner === self && self.generation == page else { return }
+                        if opened { call.resolve(["requestId": id, "opened": true]) }
+                        else { self.reject(call, .network) }
+                    }
+                }
+            }
+        }
     }
 
     @objc public func request(_ call: CAPPluginCall) {

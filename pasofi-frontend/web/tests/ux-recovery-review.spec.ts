@@ -72,7 +72,7 @@ test('paused issuance without a current session gives a clear status without fai
     return false;
   });
   await page.goto('/#wifi');
-  await expect(page.getByText('New hotspot connections are paused.', { exact: false })).toContainText('Ask your Pasofi agent when service is available.');
+  await expect(page.getByText('New hotspot connections are paused.', { exact: false })).toContainText('Ask your PasoFi agent when service is available.');
   await expect(page.getByText('No active hotspot session', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check connection', exact: true })).toBeEnabled();
   await expect(page.getByRole('button', { name: /Retry locations|Connect to Wi-Fi|Disconnect this hotspot session/ })).toHaveCount(0);

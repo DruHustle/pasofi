@@ -22,8 +22,13 @@ struct CustomerApiPolicyTests {
     }
     static func main() throws {
         check(CustomerApiPolicy.origin(origin) == origin, "Public HTTPS origin accepted")
+        check(CustomerApiPolicy.browserSignInURL(origin)?.absoluteString == origin + "/#account", "Only fixed public sign-in destination")
+        _ = try request("/api/onesa/availability"); checks += 1
+        rejects("Availability cannot mutate") { _ = try request("/api/onesa/availability", "POST") }
+        rejects("Availability does not accept private query") { _ = try request("/api/onesa/availability?code=private") }
+        rejects("Native does not exchange browser OIDC credentials") { _ = try request("/api/onesa/complete", "POST") }
         for invalid in ["http://pasofi.example.test", "https://user@pasofi.example.test", "https://pasofi.example.test/", "https://pasofi.example.test/api", "https://pasofi.example.test:8443", "https://127.0.0.1", "https://pasofi.local", "https://sub.localhost", "https://pasofi.example.test?route=evil"] {
-            check(CustomerApiPolicy.origin(invalid) == nil, "Unexpected origin rejected")
+            check(CustomerApiPolicy.origin(invalid) == nil && CustomerApiPolicy.browserSignInURL(invalid) == nil, "Unexpected origin rejected")
         }
         for path in ["/api/capabilities", "/api/session", "/api/access?offset=0&limit=100", "/api/orders?requestKey=" + retry, "/api/payments/methods?siteId=" + id + "&bundleId=flex", "/api/usage?entitlementIds=" + id + "%2C" + other, "/api/customer/invoices?orderId=" + id + "&limit=1"] {
             _ = try request(path); checks += 1
@@ -66,6 +71,32 @@ struct CustomerApiPolicyTests {
         rejects("Confirmation from another customer is rejected") { try wrongOwner.accept(request(), status: 200, body: ["customerId": other], cookie: nil, now: now) }
         try restored.accept(request(), status: 200, body: ["customerId": id], cookie: nil, now: now)
         check(restored.creationRetry == nil && restored.creationCustomerId == nil && restored.token == token, "Confirmed GET clears only creation retry")
+        var rejectedSession = pending
+        try rejectedSession.accept(request(), status: 401, body: ["error": "not_authenticated"], cookie: nil, now: now)
+        let rejectedRestart = try JSONDecoder().decode(CustomerSessionState.self, from: JSONEncoder().encode(rejectedSession))
+        check(rejectedRestart.token == nil && rejectedRestart.expiresAt == nil && rejectedRestart.creationRetry == nil && rejectedRestart.creationCustomerId == nil,
+              "Authoritative session rejection retires existing private authority across restart")
+        var cannotRevive = rejectedRestart
+        rejects("Restored server session cannot revive a retired native credential") {
+            try cannotRevive.accept(request(), status: 200, body: ["customerId": id], cookie: nil, now: now)
+        }
+        try cannotRevive.accept(request("/api/handoff/redeem", "POST", data: "{}"), status: 200, body: ["customerId": id], cookie: cookie, now: now)
+        check(cannotRevive.token == token, "Fresh explicit handoff can establish the same customer again")
+        var unconfirmedCreation = CustomerSessionState(origin: origin)
+        unconfirmedCreation.creationRetry = retry
+        try unconfirmedCreation.accept(request(), status: 401, body: ["error": "not_authenticated"], cookie: nil, now: now)
+        check(unconfirmedCreation.creationRetry == retry && unconfirmedCreation.token == nil,
+              "A missing token does not discard an ambiguous account-creation retry")
+        for (operation, status) in [(try request(), 503), (try request(), 403), (try request("/api/orders"), 401), (try request("/api/handoff/redeem", "POST", data: "{}"), 401)] {
+            var preserved = pending
+            try preserved.accept(operation, status: status, body: ["error": "unavailable_or_denied"], cookie: nil, now: now)
+            check(preserved == pending, "Outages and unrelated denials preserve private authority")
+        }
+        var malformedRejection = pending
+        rejects("Unexpected cookie on rejection cannot alter private authority") {
+            try malformedRejection.accept(request(), status: 401, body: ["error": "not_authenticated"], cookie: cookie, now: now)
+        }
+        check(malformedRejection == pending, "Response validation still precedes credential retirement")
         var incomplete = CustomerSessionState(origin: origin)
         incomplete.creationRetry = retry
         rejects("Invalid body cannot adopt new cookie") { try incomplete.accept(create, status: 201, body: ["customerId": "invalid"], cookie: cookie, now: now) }

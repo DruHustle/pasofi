@@ -29,6 +29,15 @@ public class CustomerApiPolicyTest {
         }
     }
 
+    @Test public void browserSignInUsesOnlyTheCompiledPublicOrigin() {
+        assertEquals("https://pasofi.example.test/#account", CustomerApiPolicy.browserSignInUrl("https://pasofi.example.test"));
+        for (String value : new String[]{null, "http://pasofi.example.test", "https://pasofi.example.test?code=private", "https://user@pasofi.example.test", "https://pasofi.example.test/#account", "https://127.0.0.1"}) assertNull(CustomerApiPolicy.browserSignInUrl(value));
+        assertNotNull(request("GET", "/api/onesa/availability"));
+        assertNull(request("POST", "/api/onesa/availability"));
+        assertNull(request("GET", "/api/onesa/availability?code=private"));
+        assertNull(request("POST", "/api/onesa/complete"));
+    }
+
     @Test public void acceptsOnlyTheCustomerWorkflowMethodsIncludingInvoices() {
         String[][] routes = {{"GET", "/api/capabilities"}, {"GET", "/api/bundles"}, {"GET", "/api/sites"}, {"GET", "/api/session"},
             {"POST", "/api/session"}, {"DELETE", "/api/session"}, {"GET", "/api/recovery/status"}, {"POST", "/api/recovery"},

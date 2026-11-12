@@ -1,3 +1,31 @@
+## Onesa account sign-in through an explicit handoff
+
+The customer app opens only its compiled HTTPS PasoFi origin at `/#account` in
+the system browser. `PasoFiCustomerApi.openSignIn` accepts a request ID only;
+JavaScript cannot supply a destination, cookie, code or authorization header.
+Android uses the operating system's `ACTION_VIEW` browser handling and iOS uses
+`UIApplication.open`; this is not an embedded identity WebView or a browser-cookie
+import. See [Android web intents](https://developer.android.com/guide/components/intents-common#ViewUrl)
+and [Apple external URL opening](https://developer.apple.com/documentation/uikit/uiapplication/open(_:options:completionhandler:)).
+
+The app first requires `/api/onesa/availability` to advertise the exact configured
+origin and `handoff: true`. Older deployments remain unavailable. The customer signs
+in with Onesa in the browser, opens Account and creates a two-minute one-use handoff
+code, then returns to the app, pastes the code and explicitly confirms ownership.
+The existing private native `/api/handoff/redeem` transport accepts the separately
+issued host-only session cookie; no cookie or provider token is passed through
+JavaScript. The server must validate the source's current Portal grant, expiry and
+logout state and bind a separate Portal session to the same customer identity.
+Existing app accounts require explicit sign-out before accepting another account.
+Opening a browser or accepting a code never grants Wi-Fi access.
+
+Contract tests cover qualified/unqualified availability, the request-ID-only native
+browser command, explicit code consent, no browser-fetch fallback or persisted
+code, and the exact browser destination policy on Android and Swift. These are
+source/contract tests. Actual signed-device browser switching, clipboard behavior,
+Keychain/Keystore persistence, process recreation, TLS, revoked-source handoff and
+subsequent live revocation require the separate device/paired-service acceptance.
+
 # Pasofi native build previews
 
 The mobile source is `pasofi-frontend/mobile`. The checked-in native projects are `android` and `ios`; the Capacitor application ID is `com.onesa.pasofi`. There is no separate `pamofi-mobile` source folder.
@@ -15,6 +43,15 @@ The bridge exposes `availability`, `request` and `cancel`. Requests accept an ex
 iOS uses an isolated ephemeral URLSession with shared cookie, cache and credential stores disabled, and persists private state in origin-scoped Keychain data protected by `WhenUnlockedThisDeviceOnly`. Android uses an isolated HTTP client with private encrypted state protected by Android Keystore and AtomicFile in its no-backup directory. Neither implementation synchronizes credentials into WebView cookies or Capacitor's shared HTTP/cookie stores. A malformed or unavailable private store fails closed.
 
 Account creation persists a native-generated retry key before sending; a matching GET/session must confirm the customer before that key is cleared. Explicit recovery/handoff and successful logout replace or clear the relevant state. Exact terminal `session_retry_expired`409 clears only the obsolete creation retry and does not start another request. Identity changes fence prior in-flight work and reject new work until completion. A persisted interrupted logout is resumed once by the next session read; another failure retains the pending state for a later deliberate retry.
+
+A validated `GET /api/session`401 retires an existing native credential and its
+associated creation state before returning the rejection to JavaScript. Restarting
+the app or restoring the server grant cannot revive that credential; a fresh
+explicit sign-in or handoff is required. A tokenless, unconfirmed account-creation
+retry remains recoverable. Temporary outages, scoped403 responses and rejection
+of an unrelated handoff do not erase the current account. Android does not retain
+idle customer HTTP connections, avoiding stale sockets without enabling automatic
+mutation retries; the extra TLS handshake uses the existing request deadline.
 
 CI runs Java policy/state tests and a pure Foundation Swift policy/state executable before building the actual plugins. Those tests cover route/query/authority-header limits, cookie transition validation, private creation confirmation, terminal retry handling and durable logout semantics. The iOS artifact includes the pure-test result. Device acceptance still must verify OS credential persistence and relaunch, interrupted requests, genuine TLS/redirect handling, no private cookie or retry material in bridge/log output, and customer identity throughout recovery/logout. A simulator build or synthetic bridge response does not establish these properties on a physical device.
 

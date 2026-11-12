@@ -26,6 +26,17 @@ test('a cancelled or malformed callback presents a clean sign-in retry', async (
   await page.goto('/onesa-callback.html?error=access_denied&state=private-state');
   await expect(page).toHaveURL(/\/onesa-callback\.html$/);
   await expect(page.getByRole('status')).toContainText('Sign-in could not be completed');
-  await expect(page.getByRole('link', { name: 'Return to PasoFi staff' })).toHaveAttribute('href', '/#staff');
+  await expect(page.getByRole('link', { name: 'Return to PasoFi' })).toHaveAttribute('href', '/');
   expect(exchange).toBe(false);
+});
+
+
+test('blocked callback storage presents a readable retry after removing URL credentials', async ({page}) => {
+  let exchanged=false;
+  await page.addInitScript(() => Object.defineProperty(window,'sessionStorage',{get(){throw new DOMException('Storage unavailable','SecurityError');}}));
+  await page.route('**/api/**',route=>{exchanged=true;return route.fulfill({status:503,json:{}});});
+  await page.goto('/onesa-callback.html?code=synthetic-code&state=synthetic-state');
+  await expect(page).toHaveURL(/\/onesa-callback\.html$/);
+  await expect(page.getByRole('status')).toContainText('Sign-in could not be completed');
+  expect(exchanged).toBe(false);
 });

@@ -150,18 +150,18 @@ paths:
 
   /v1/handoff:
     post:
-      summary: Create a two-minute customer browser handoff
+      summary: Create a customer browser or native handoff lasting at most two minutes
       description: Requires the current customer cookie and configured Origin. Returns a copyable code and clean continuation URL. Replaces unused handoffs from this source session; no credential is placed in a URL.
       responses:
         '201':
-          description: handoffCode, expiresIn 120 and clean continueUrl; no-store
+          description: handoffCode, expiresIn at most 120 seconds and clean continueUrl; no-store
         '401':
           description: No valid source session
         '403':
           description: Origin rejected
   /v1/handoff/redeem:
     post:
-      summary: Consume a handoff and establish the same customer in this browser
+      summary: Consume a handoff and establish the same customer in this browser or native app
       description: Requires configured Origin and explicit client confirmation. Check GET /v1/session after success to verify that the browser accepted its cookie.
       requestBody:
         required: true
@@ -203,6 +203,47 @@ paths:
           description: Generic pending status and next login step
         '503':
           description: Database or staff encryption key unavailable
+  /v1/onesa/availability:
+    get:
+      summary: Read the configured Onesa customer sign-in origin and handoff capability
+      responses:
+        '200': {description: Canonical customer origin, or null when unconfigured}
+  /v1/onesa/start:
+    post:
+      summary: Start a browser-bound Portal customer flow with PKCE and nonce
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                returnTo: {type: string, maxLength: 100}
+      responses:
+        '200': {description: Authorization URL and HttpOnly browser-binding cookie; destination is server allowlisted}
+        '403': {description: Origin does not match registered callback}
+        '503': {description: Identity or Portal configuration unavailable}
+  /v1/onesa/complete:
+    post:
+      summary: Open a Portal-backed customer session without merging guest identities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, state]
+              additionalProperties: false
+              properties:
+                code: {type: string, minLength: 1, maxLength: 2048}
+                state: {type: string, minLength: 43, maxLength: 43}
+                iss: {type: string, maxLength: 1024}
+      responses:
+        '200': {description: Authenticated customerId, allowlisted returnTo and secure session cookie; same issuer/subject retains the customer}
+        '401': {description: Browser binding, callback or live customer grant rejected}
+        '403': {description: Origin rejected}
+        '503': {description: Database or Portal unavailable}
   /v1/staff/onesa/availability:
     get:
       summary: Read the configured Onesa staff sign-in origin

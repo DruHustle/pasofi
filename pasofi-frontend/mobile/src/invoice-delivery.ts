@@ -81,5 +81,5 @@ export function invoiceStatusText(channel: InvoiceDelivery['channel'], delivery:
 }
 
 export function invoiceFilename(number: string): string {
-  return `Pasofi-${number.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80) || 'invoice'}.pdf`;
+  return `PasoFi-${number.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80) || 'invoice'}.pdf`;
 }

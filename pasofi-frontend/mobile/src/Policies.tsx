@@ -7,7 +7,7 @@ type PolicySection = { title: string; paragraphs: string[]; escalation?: boolean
 
 const terms: PolicySection[] = [
   { title: 'Buying, receipts and the price', paragraphs: [
-    'The cash service uses Pasofi-authorized agents. Check that sales and your chosen hotspot are available before paying. Choose the published bundle, show your private pairing code and pay the exact quoted amount. The agent confirms the cash received and your private receipt provides the voucher. Redeem it in your own account, then connect at an available hotspot.',
+    'The cash service uses PasoFi-authorized agents. Check that sales and your chosen hotspot are available before paying. Choose the published bundle, show your private pairing code and pay the exact quoted amount. The agent confirms the cash received and your private receipt provides the voucher. Redeem it in your own account, then connect at an available hotspot.',
     'Pay only the displayed cash amount; an agent must not add an undisclosed charge. The recorded price, currency, allowance, validity and start-by date apply to your purchase. A later offer or price change does not alter those recorded terms. Keep your receipt reference. Preview bundles and simulated payments are not live offers.',
   ] },
   { title: 'Data, validity and your devices', paragraphs: [
@@ -16,7 +16,7 @@ const terms: PolicySection[] = [
     'Access stops when the available allowance or validity ends. There is no subscription, automatic renewal or automatic extra-data charge. Unused allowance does not automatically roll over, and another purchase does not extend an earlier bundle’s expiry. Only one hotspot connection per customer can be active at a time. Disconnect it before starting another; signing out of the app is a separate action. Use recovery or device handoff to move your account, and keep recovery keys and vouchers private.',
   ] },
   { title: 'Availability and fair use', paragraphs: [
-    'Pasofi works within participating hotspot coverage. Signal, your device, power, upstream Internet and demand affect speed and availability. A displayed speed limit is a maximum, not a continuous minimum. Report failed connections and interruptions. A free welcome period, where offered, has the duration and limits shown on that welcome screen and is separate from paid access.',
+    'PasoFi works within participating hotspot coverage. Signal, your device, power, upstream Internet and demand affect speed and availability. A displayed speed limit is a maximum, not a continuous minimum. Report failed connections and interruptions. A free welcome period, where offered, has the duration and limits shown on that welcome screen and is separate from paid access.',
     'Do not use the service for unlawful activity, unauthorized access, malware, network interference or evasion of access and usage controls. We may restrict access when necessary to protect the network, investigate a security incident or comply with law, and explain the reason and review route where lawful and practicable. Making a complaint alone is not a reason to suspend service. Use secure websites and keep account secrets private on public Wi-Fi.',
   ] },
   { title: 'Refunds, failed connections and complaints', paragraphs: [
@@ -32,7 +32,7 @@ const terms: PolicySection[] = [
 
 const privacy: PolicySection[] = [
   { title: 'Information and purpose', paragraphs: [
-    'Onesa operates Pasofi and is responsible for the personal information used by this service. We use account and session identifiers, recovery and device records, purchases, vouchers, hotspot identifiers, connection times and data counters to provide access, calculate balances, protect accounts and resolve queries. IP addresses are handled for connection security and request controls. Network and hosting providers can also hold operational security records.',
+    'Onesa operates PasoFi and is responsible for the personal information used by this service. We use account and session identifiers, recovery and device records, purchases, vouchers, hotspot identifiers, connection times and data counters to provide access, calculate balances, protect accounts and resolve queries. IP addresses are handled for connection security and request controls. Network and hosting providers can also hold operational security records.',
     'We receive information you choose to send support. An enabled phone-delivery option uses the destination number for that delivery. Staff and agent accounts additionally use contact, authentication and authorized-action records. An ordinary customer account does not require a name or email address. Necessary account and connection processing is required to provide the service; optional uses will be explained separately. Joining the hotspot is not permission for unrelated marketing.',
   ] },
   { title: 'Cookies, browser storage and account security', paragraphs: [

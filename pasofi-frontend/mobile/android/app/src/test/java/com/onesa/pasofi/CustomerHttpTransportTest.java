@@ -9,6 +9,7 @@ import java.net.CookieHandler;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -139,5 +140,70 @@ public class CustomerHttpTransportTest {
             }
             assertEquals(0, reads.get()); assertEquals(0, writes.get());
         } finally { CookieHandler.setDefault(previous); if (client != null) close(client); }
+    }
+
+    @Test public void requestAfterServerIdleCloseSucceedsOnceWithoutMutationRetry() throws Exception {
+        OkHttpClient client = CustomerHttpTransport.client();
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        AtomicInteger received = new AtomicInteger();
+        try (ServerSocket server = new ServerSocket(0, 2, InetAddress.getByName("127.0.0.1"))) {
+            server.setSoTimeout(10000);
+            Future<?> serving = worker.submit(() -> {
+                try {
+                    for (int index = 0; index < 2; index++) try (Socket socket = server.accept()) {
+                        socket.setSoTimeout(4000);
+                        readMutation(socket); received.incrementAndGet();
+                        socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}".getBytes(StandardCharsets.US_ASCII));
+                        socket.getOutputStream().flush();
+                        // The controlled Node TLS edge closes an idle socket at
+                        // six seconds, before OkHttp's ten-second health probe.
+                        if (index == 0) Thread.sleep(6000);
+                    }
+                } catch (Exception error) { throw new RuntimeException(error); }
+            });
+            assertFalse(client.retryOnConnectionFailure());
+            Request request = CustomerHttpTransport.request(ORIGIN, options("POST", "/api/handoff/redeem", "{}"), null, null)
+                .newBuilder().url("http://127.0.0.1:" + server.getLocalPort() + "/api/handoff/redeem").build();
+            try (Response response = client.newCall(request).execute()) { assertEquals(200, response.code()); assertEquals("{}", response.body().string()); }
+            Thread.sleep(7000);
+            try (Response response = client.newCall(request).execute()) { assertEquals(200, response.code()); assertEquals("{}", response.body().string()); }
+            serving.get(3, TimeUnit.SECONDS);
+            assertEquals("Exactly one wire request for each explicit operation", 2, received.get());
+        } finally { worker.shutdownNow(); close(client); }
+    }
+
+    @Test public void lostMutationResponseIsNotAutomaticallyRetried() throws Exception {
+        OkHttpClient client = CustomerHttpTransport.client();
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        AtomicInteger received = new AtomicInteger();
+        try (ServerSocket server = new ServerSocket(0, 2, InetAddress.getByName("127.0.0.1"))) {
+            server.setSoTimeout(4000);
+            Future<?> serving = worker.submit(() -> {
+                try {
+                    try (Socket socket = server.accept()) { socket.setSoTimeout(4000); readMutation(socket); received.incrementAndGet(); }
+                    server.setSoTimeout(750);
+                    try (Socket ignored = server.accept()) { received.incrementAndGet(); }
+                    catch (SocketTimeoutException expected) { /* No automatic second request. */ }
+                } catch (Exception error) { throw new RuntimeException(error); }
+            });
+            Request request = CustomerHttpTransport.request(ORIGIN, options("POST", "/api/handoff/redeem", "{}"), null, null)
+                .newBuilder().url("http://127.0.0.1:" + server.getLocalPort() + "/api/handoff/redeem").build();
+            try (Response ignored = client.newCall(request).execute()) { fail("A lost response must remain unconfirmed"); }
+            catch (IOException expected) { /* The caller must choose a safe explicit recovery. */ }
+            serving.get(3, TimeUnit.SECONDS);
+            assertEquals(1, received.get());
+        } finally { worker.shutdownNow(); close(client); }
+    }
+
+    private static void readMutation(Socket socket) throws IOException {
+        InputStream input = socket.getInputStream();
+        assertEquals("POST /api/handoff/redeem HTTP/1.1", WireServer.line(input));
+        int length = 0; String header;
+        while (!(header = WireServer.line(input)).isEmpty()) {
+            if (header.toLowerCase(Locale.ROOT).startsWith("content-length:")) length = Integer.parseInt(header.substring(header.indexOf(':') + 1).trim());
+        }
+        assertEquals(2, length);
+        byte[] body = new byte[length]; new DataInputStream(input).readFully(body);
+        assertEquals("{}", new String(body, StandardCharsets.UTF_8));
     }
 }

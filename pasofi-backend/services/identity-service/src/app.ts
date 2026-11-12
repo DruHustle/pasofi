@@ -1,3 +1,4 @@
+import { configureOnesaCustomer, registerCustomerOnesa } from './onesa-customer.js';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
@@ -25,6 +26,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
   const origins = publicOrigins(origin, process.env.PUBLIC_ORIGIN_ALIASES, demo);
   const validOrigin = origins !== null;
   const originAllowed = (value: string | undefined) => typeof value === 'string' && origins?.has(value) === true;
+  const onesaCustomer = configureOnesaCustomer(demo, originAllowed);
   app.register(cookie);
   app.register(rateLimit, { global: false });
   // Route-specific rate limits are attached by the plugin's onRoute hook. Wait
@@ -41,8 +43,12 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
   async function current(request: FastifyRequest) {
     const token = request.cookies[cookieName];
     if (!pool || !token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-    const result = await pool.query('SELECT customer_id FROM customer_sessions WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()', [tokenHash(token)]);
-    return result.rows[0]?.customer_id as string | undefined;
+    const result = await pool.query('SELECT customer_id FROM customer_onesa_sessions WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>now() UNION ALL SELECT customer_id FROM customer_sessions WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>now() LIMIT 1', [tokenHash(token)]);
+    const id = result.rows[0]?.customer_id as string | undefined;
+    if (!id) return null;
+    if (onesaCustomer) return onesaCustomer.customer(pool, token, id);
+    const federated = await pool.query('SELECT 1 FROM customer_onesa_identities WHERE customer_id=$1',[id]);
+    return federated.rowCount ? null : id;
   }
   // Only the prepaid service may resolve its forwarded customer cookie. The
   // browser never supplies a customer ID to select the account.
@@ -81,6 +87,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
         // would let a retained first-response retry secret create an account
         // again after the user explicitly signed out.
         await pool.query('UPDATE customer_sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE token_hash = $1', [tokenHash(token)]);
+        await pool.query('UPDATE customer_onesa_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1',[tokenHash(token)]);
       }
       reply.clearCookie(cookieName, { path: '/', httpOnly: true, secure: !demo, sameSite: 'lax' });
       return reply.code(204).send();
@@ -93,6 +100,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
     if (!originAllowed(request.headers.origin)) return reply.code(403).send({error:'origin_rejected'});
     try {
       const id=await current(request);if(!id)return reply.code(401).send({error:'not_authenticated'});
+      if ((await pool.query('SELECT 1 FROM customer_onesa_identities WHERE customer_id=$1',[id])).rowCount) return reply.code(409).send({error:'onesa_sign_in_required'});
       const accountReference=randomBytes(10).toString('base64url'), recoveryKey=randomBytes(32).toString('base64url');
       const row=await pool.query('INSERT INTO customer_recovery(customer_id,account_reference,key_hash) VALUES ($1,$2,$3) ON CONFLICT(customer_id) DO NOTHING RETURNING customer_id',[id,accountReference,tokenHash(recoveryKey)]);
       if(!row.rowCount)return reply.code(409).send({error:'recovery_already_set'});
@@ -104,6 +112,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
     if (!pool || !validOrigin) return reply.code(503).send({error:'identity_unavailable'});
     try {
       const id=await current(request);if(!id)return reply.code(401).send({error:'not_authenticated'});
+      if ((await pool.query('SELECT 1 FROM customer_onesa_identities WHERE customer_id=$1',[id])).rowCount) return {configured:false,authentication:'onesa'};
       const result=await pool.query('SELECT account_reference,version FROM customer_recovery WHERE customer_id=$1',[id]);
       return result.rowCount?{configured:true,accountReference:result.rows[0].account_reference,version:result.rows[0].version}:{configured:false};
     } catch{return reply.code(503).send({error:'identity_unavailable'});}
@@ -114,6 +123,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
     if (!originAllowed(request.headers.origin)) return reply.code(403).send({error:'origin_rejected'});
     try {
       const id=await current(request);if(!id)return reply.code(401).send({error:'not_authenticated'});
+      if ((await pool.query('SELECT 1 FROM customer_onesa_identities WHERE customer_id=$1',[id])).rowCount) return reply.code(409).send({error:'onesa_sign_in_required'});
       const recoveryKey=randomBytes(32).toString('base64url');
       const result=await pool.query('UPDATE customer_recovery SET key_hash=$2,version=version+1,updated_at=now() WHERE customer_id=$1 AND version=$3 RETURNING account_reference',[id,tokenHash(recoveryKey),request.body.expectedVersion]);
       if(!result.rowCount)return reply.code(409).send({error:'recovery_changed'});
@@ -149,6 +159,9 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
     try {
       const existing = await current(request);
       if (existing) return { customerId: existing };
+      const previousToken = request.cookies[cookieName];
+      if (previousToken && /^[A-Za-z0-9_-]{43}$/.test(previousToken) && (await pool.query('SELECT 1 FROM customer_onesa_sessions WHERE token_hash=$1 UNION ALL SELECT 1 FROM customer_sessions s JOIN customer_onesa_identities i ON i.customer_id=s.customer_id WHERE s.token_hash=$1',[tokenHash(previousToken)])).rowCount) return reply.code(401).send({error:'onesa_sign_in_required'});
+      // An expired Portal session must not silently become a new guest account.
       const key = request.headers['idempotency-key'];
       if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(key) || Buffer.from(key,'base64url').toString('base64url') !== key) return reply.code(400).send({error:'invalid_idempotency_key'});
       const secret=process.env.SESSION_CREATION_SECRET;
@@ -180,8 +193,9 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
       } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
+  registerCustomerOnesa(app, pool, demo, onesaCustomer);
   registerStaffRoutes(app, { pool, demo, origin, validOrigin, originAllowed, resetDelivery: options.staffResetDelivery, resetJobs: staffResetJobs });
-  registerHandoffRoutes(app, { pool, demo, validOrigin, originAllowed });
+  registerHandoffRoutes(app, { pool, demo, validOrigin, originAllowed, onesa: onesaCustomer });
   });
   return app;
 }
