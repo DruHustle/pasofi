@@ -23,8 +23,14 @@ jobs:
           root="$RUNNER_TEMP/pasofi-upgrade-qa"
           mkdir -p "$root/evidence"
           cd "$root"
-          gh api repos/DruHustle/pasofi/actions/artifacts/13946805604/zip > previous.zip
-          gh api repos/DruHustle/pasofi/actions/artifacts/13953498139/zip > current.zip
+          fetch_archive() {
+            curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 3 \
+              --connect-timeout 15 --max-time 90 --proto '=https' \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --output "$2" "https://api.github.com/repos/DruHustle/pasofi/actions/artifacts/$1/zip"
+          }
+          fetch_archive 13946805604 previous.zip
+          fetch_archive 13953498139 current.zip
           printf '%s  %s\n' ca060cf707b8a4c4a4fc2dbadd7999c7c049eedfee27a8d737a296aa1f477b6e previous.zip 4b41ab1fe9b18bba14ab035c12355b1fd6efbb810cff3fedfa9a5ed02d432571 current.zip | sha256sum -c -
           for version in previous current; do
             unzip -p "$version.zip" pasofi-api-unconfigured-debug.apk > "$version.apk"
