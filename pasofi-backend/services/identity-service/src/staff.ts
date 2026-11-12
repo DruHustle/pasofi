@@ -325,7 +325,13 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     const sites = approved ? request.body.siteIds?.map(id => id.toLowerCase()).sort() : user.site_ids;
     if (approved && (!role || !sites || new Set(sites).size !== sites.length || (role === 'admin' ? sites.length !== 0 : sites.length === 0))) return fail(400, 'invalid_role_scope');
     if (!approved && (request.body.role !== undefined || request.body.siteIds !== undefined)) return fail(400, 'unexpected_role_scope');
-    if (approved && !user.mfa_enrolled_at) return fail(409, 'mfa_enrollment_required');
+    if (approved && !user.mfa_enrolled_at) {
+      // An owner-bound site operator must complete current Portal MFA to obtain
+      // a staff session. Product-local enrollment is unavailable in production.
+      const federated = !demo && (role === 'agent' || role === 'support') && onesa &&
+        (await client.query('SELECT 1 FROM staff_onesa_bindings WHERE staff_id=$1 AND issuer=$2', [user.id, onesa.config.issuer])).rowCount;
+      if (!federated) return fail(409, 'mfa_enrollment_required');
+    }
     if (user.status === 'approved' && user.role === 'admin' && (!approved || role !== 'admin')) {
       const remaining = await client.query("SELECT count(*)::integer AS count FROM staff_users WHERE status='approved' AND role='admin' AND id<>$1", [user.id]);
       if (remaining.rows[0].count < 1) return fail(409, 'last_admin_protected');

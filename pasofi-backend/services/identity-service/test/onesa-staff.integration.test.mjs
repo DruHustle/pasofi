@@ -92,10 +92,22 @@ test('staff entry, callback and administrative route require the same browser an
     const browser = getCookie(started, '__Host-pasofi_onesa_flow');
     return request('POST','onesa/complete',{state:authQuery.get('state'),code:'fixture',iss:issuer}, browser.name + '=' + browser.value);
   };
-  await db.query("INSERT INTO staff_users(id,email,display_name,password_hash,status,role,site_ids) VALUES($1,$2,'Site operator','unused','approved','agent',$3)",[staffId, staffId+'@example.invalid', [siteId]]);
+  await db.query("INSERT INTO staff_users(id,email,display_name,password_hash) VALUES($1,$2,'Site operator','unused')",[staffId, staffId+'@example.invalid']);
+  const operatorAssertion = assertion;
+  const approve = () => request('POST','users/' + staffId + '/decision',{
+    expectedVersion:1, status:'approved', role:'agent', siteIds:[siteId], reason:'Verified operator in isolated test',
+  },cookie);
   try {
     assert.equal((await operatorSignIn()).statusCode,401);
+    assertion = initial;
+    assert.equal((await approve()).statusCode,409,'Unbound staff require enrollment');
+    assertion = operatorAssertion;
     await db.query('INSERT INTO staff_onesa_bindings(issuer,subject,staff_id) VALUES($1,$2,$3)',[issuer,assertion.sub,staffId]);
+    assert.equal((await operatorSignIn()).statusCode,401,'Pending bound staff cannot sign in');
+    assertion = initial;
+    const approved = await approve();
+    assert.equal(approved.statusCode,200,approved.body);
+    assertion = operatorAssertion;
     assertion.amr = ['pwd'];
     assert.equal((await operatorSignIn()).statusCode,401);
     assertion.amr = ['pwd','otp'];
