@@ -27,7 +27,7 @@ test('an active, verified, MFA-authenticated PasoFi platform administrator is re
 
 test('staff entry, callback and administrative route require the same browser and live Portal grant', { skip: !process.env.PAMOFI_TEST_DATABASE_URL }, async (t) => {
   Object.assign(process.env, { DATABASE_URL: process.env.PAMOFI_TEST_DATABASE_URL, PUBLIC_ORIGIN: origin,
-    APP_ENV: 'demo', NODE_ENV: 'development', STAFF_MFA_ENCRYPTION_KEY: 'cd'.repeat(32), PASOFI_ONESA_CLIENT_ID: clientId,
+    APP_ENV: 'production', NODE_ENV: 'production', STAFF_MFA_ENCRYPTION_KEY: randomBytes(32).toString('hex'), PASOFI_ONESA_CLIENT_ID: clientId,
     PASOFI_ONESA_CLIENT_SECRET: clientSecret, PASOFI_ONESA_ISSUER: issuer, PASOFI_ONESA_REDIRECT_URI: origin + '/onesa-callback.html' });
   const app = buildApp();
   t.after(() => app.close());
@@ -63,7 +63,7 @@ test('staff entry, callback and administrative route require the same browser an
   authQuery = new URL(start.json().authorizationUrl).searchParams;
   assert.equal(authQuery.get('acr_values'), 'urn:onesa:mfa');
   assert.equal(authQuery.get('code_challenge_method'), 'S256');
-  const flow = getCookie(start, 'pasofi_demo_onesa_flow'), flowCookie = flow.name + '=' + flow.value;
+  const flow = getCookie(start, '__Host-pasofi_onesa_flow'), flowCookie = flow.name + '=' + flow.value;
   const params = { state: authQuery.get('state'), code: 'synthetic-code', iss: issuer };
   assert.equal((await request('POST','onesa/complete',params)).statusCode,401);
   assert.equal(tokenCalls,0);
@@ -71,12 +71,17 @@ test('staff entry, callback and administrative route require the same browser an
   assert.equal(verified.statusCode,200,verified.body);
   assert.equal((await request('POST','onesa/complete',params,flowCookie)).statusCode,401);
   assert.equal(tokenCalls,1);
-  const session = getCookie(verified,'pamofi_demo_staff_session'), cookie = session.name + '=' + session.value;
+  const session = getCookie(verified,'__Host-pamofi_staff_session'), cookie = session.name + '=' + session.value;
   const loggedIn = await request('GET','session',undefined,cookie);
   assert.equal(loggedIn.json().staffId,assertion.sub);
   assert.equal(loggedIn.json().mfaVerified,true);
   assert.equal((await request('GET','users',undefined,cookie)).statusCode,200);
-  const db = new pg.Pool({ connectionString: process.env.PAMOFI_TEST_DATABASE_URL });
+  const fixture = new URL(process.env.PAMOFI_TEST_STAFF_FIXTURE_URL || process.env.PAMOFI_TEST_DATABASE_URL);
+  const runtime = new URL(process.env.PAMOFI_TEST_DATABASE_URL);
+  assert.equal(fixture.host, runtime.host);
+  assert.equal(fixture.pathname, runtime.pathname);
+  assert.ok(['127.0.0.1','localhost','[::1]'].includes(fixture.hostname));
+  const db = new pg.Pool({ connectionString: fixture.href });
   t.after(() => db.end());
   const initial = assertion;
   const staffId = randomUUID(), siteId = randomUUID();
@@ -84,7 +89,7 @@ test('staff entry, callback and administrative route require the same browser an
   const operatorSignIn = async () => {
     const started = await request('POST','onesa/start',{});
     authQuery = new URL(started.json().authorizationUrl).searchParams;
-    const browser = getCookie(started, 'pasofi_demo_onesa_flow');
+    const browser = getCookie(started, '__Host-pasofi_onesa_flow');
     return request('POST','onesa/complete',{state:authQuery.get('state'),code:'fixture',iss:issuer}, browser.name + '=' + browser.value);
   };
   await db.query("INSERT INTO staff_users(id,email,display_name,password_hash,status,role,site_ids) VALUES($1,$2,'Site operator','unused','approved','agent',$3)",[staffId, staffId+'@example.invalid', [siteId]]);
@@ -96,7 +101,7 @@ test('staff entry, callback and administrative route require the same browser an
     assertion.amr = ['pwd','otp'];
     const signed = await operatorSignIn();
     assert.equal(signed.statusCode,200,signed.body);
-    const value = getCookie(signed,'pamofi_demo_staff_session');
+    const value = getCookie(signed,'__Host-pamofi_staff_session');
     const operatorCookie = value.name + '=' + value.value;
     const operator = (await request('GET','session',undefined,operatorCookie)).json();
     await assert.rejects(db.query('UPDATE staff_onesa_bindings SET staff_id=$1 WHERE staff_id=$2',[randomUUID(),staffId]),{code:'23514'});
@@ -107,7 +112,7 @@ test('staff entry, callback and administrative route require the same browser an
     assert.equal((await request('GET','users',undefined,operatorCookie)).statusCode,403);
     await db.query("UPDATE staff_users SET role='support',version=version+1 WHERE id=$1",[staffId]);
     assert.equal((await request('GET','session',undefined,operatorCookie)).statusCode,401);
-    const support = getCookie(await operatorSignIn(),'pamofi_demo_staff_session');
+    const support = getCookie(await operatorSignIn(),'__Host-pamofi_staff_session');
     const supportCookie = support.name+'='+support.value;
     assert.equal((await request('GET','session',undefined,supportCookie)).json().role,'support');
     await db.query('DELETE FROM staff_onesa_bindings WHERE staff_id=$1',[staffId]);
