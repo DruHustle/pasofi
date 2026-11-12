@@ -99,6 +99,8 @@ test('staff entry, callback and administrative route require the same browser an
     const value = getCookie(signed,'pamofi_demo_staff_session');
     const operatorCookie = value.name + '=' + value.value;
     const operator = (await request('GET','session',undefined,operatorCookie)).json();
+    await assert.rejects(db.query('UPDATE staff_onesa_bindings SET staff_id=$1 WHERE staff_id=$2',[randomUUID(),staffId]),{code:'23514'});
+    assert.equal((await request('GET','session',undefined,operatorCookie)).json().staffId,staffId);
     assert.equal(operator.staffId,staffId);
     assert.equal(operator.role,'agent');
     assert.deepEqual(operator.siteIds,[siteId]);
