@@ -85,7 +85,11 @@ jobs:
           cp -R android/app/build/test-results/testDebugUnitTest native-artifacts/android-unit-test-results
           cp NATIVE_BUILDS.md native-artifacts/READ-ME.md
           git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
-          sha256sum native-artifacts/pasofi-api-unconfigured-debug.apk > native-artifacts/SHA256SUMS.txt
+          (
+            cd native-artifacts
+            sha256sum pasofi-api-unconfigured-debug.apk > SHA256SUMS.txt
+            sha256sum --check SHA256SUMS.txt
+          )
           java -version 2> native-artifacts/JAVA_VERSION.txt
       - name: Upload Android preview
         if: github.event_name != 'pull_request'
@@ -245,7 +249,11 @@ jobs:
           cp native-build/ios-package-resolved.json native-artifacts/Package.resolved
           cp native-build/customer-policy-results.txt native-artifacts/ios-customer-policy-results.txt
           git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
-          shasum -a 256 native-artifacts/pasofi-api-unconfigured-ios-simulator.tar.gz > native-artifacts/SHA256SUMS.txt
+          (
+            cd native-artifacts
+            shasum -a 256 pasofi-api-unconfigured-ios-simulator.tar.gz > SHA256SUMS.txt
+            shasum -a 256 --check SHA256SUMS.txt
+          )
           xcodebuild -version > native-artifacts/XCODE_VERSION.txt
           printf '%s\n' 'Release; API unconfigured; unsigned simulator' > native-artifacts/BUILD_CONFIGURATION.txt
       - name: Upload iOS simulator preview
