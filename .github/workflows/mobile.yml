@@ -136,7 +136,8 @@ jobs:
           npm run build
           npx --no-install cap sync ios
       - name: Resolve pinned Swift packages in an isolated directory
-        timeout-minutes: 10
+        # A cold Stripe SDK checkout can take more than ten minutes on the Intel runner.
+        timeout-minutes: 20
         env:
           GIT_TERMINAL_PROMPT: '0'
         run: |
