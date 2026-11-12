@@ -183,7 +183,6 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       finally { polling.current = false; }
     })();
   }, [now, pairing, pairingState]);
-  async function startAccount() { if (busy) return; const revision = generation.current; setBusy(true); setMessage(''); try { await identity(true); await refreshAccess(); await usage.refresh(); } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error)); } finally { if (isCurrent(revision)) setBusy(false); } }
   function receiptVoucherAvailable(value: Receipt, at: number) {
     return !!value.voucher.code && ['valid', 'issued'].includes(value.voucher.state) && Date.parse(value.sale.startBy) >= at;
   }
@@ -401,7 +400,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     <PolicyNotice/>
     {loading && <div className="customer-loading" role="status"><span className="customer-loading-dot" />Checking your account…</div>}
     {message && <p className="feedback" role="status">{message}</p>}
-    {!loading && !owner && <p className="notice customer-session-notice">No account is active in this browser. Buying, redeeming a voucher, or creating a private receipt starts a customer account. <button className="text-button" onClick={recovered}>Recover an existing account</button></p>}
+    {!loading && !owner && <p className="notice customer-session-notice">No account is active in this browser. You can buy or redeem as a guest. Sign in through Company Portal to use your Onesa identity. <button className="text-button" onClick={recovered}>Recover an existing account</button></p>}
     {recoveryReminder && owner && tab !== 'recovery' && <aside className="notice customer-recovery-reminder"><strong>Keep access to your bundle.</strong><p>Save your account reference and recovery key before changing devices or clearing this browser.</p><button className="secondary" onClick={() => { setRecoveryReminder(false); selectTab('recovery'); }}>Review recovery & devices</button></aside>}
     {(tab === 'receipt' || tab === 'purchase') && <>
       {catalogueLoading && <p role="status">Loading available bundles and locations…</p>}
@@ -476,7 +475,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
 
     {tab === 'recovery' && <>
       <section className="customer-profile-card"><span className="customer-profile-avatar"><CustomerGlyph name="user" /></span><div><span className="eyebrow">YOUR EVERYDAY CONNECTION</span><h3>{owner ? 'Your PasoFi account' : 'Welcome to PasoFi'}</h3><p>{owner ? 'Your account is available in this browser.' : 'Start with a bundle, or bring back your saved account.'}</p></div><span className="customer-profile-language">English</span></section>
-      {owner ? <><div className="customer-account-grid"><RecoverySetup /><CreateHandoff customerId={owner} /></div><section className="workspace-card customer-signout-card"><h3>Sign out of this browser</h3>{signout ? <><p>Save your recovery details before you leave. Signing out does not end an active hotspot session; use the connection controls for that.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of customer account</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></> : <button className="secondary" onClick={() => setSignout(true)}>Prepare to sign out</button>}</section></> : <section className="workspace-card"><h3>Save or restore access</h3><p>Use your saved reference and recovery key to restore an existing account. Start a new account only if you do not need to recover one.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button><button className="secondary" disabled={busy} onClick={startAccount}>Start a new customer account</button></div></section>}
+      {owner ? <><div className="customer-account-grid"><RecoverySetup /><CreateHandoff customerId={owner} /></div><section className="workspace-card customer-signout-card"><h3>Sign out of this browser</h3>{signout ? <><p>Save your recovery details before you leave. Signing out does not end an active hotspot session; use the connection controls for that.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of customer account</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></> : <button className="secondary" onClick={() => setSignout(true)}>Prepare to sign out</button>}</section></> : <section className="workspace-card"><h3>Save or restore access</h3><p>Use your saved reference and recovery key to restore a guest purchase. Create an Onesa account through Company Portal.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button></div></section>}
     </>}
   </section>;
 }

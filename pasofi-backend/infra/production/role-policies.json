@@ -11,6 +11,7 @@
     "customer_handoffs": ["SELECT", "INSERT", "UPDATE"],
     "staff_users": ["SELECT", "INSERT", "UPDATE"],
     "staff_auth_challenges": ["SELECT", "INSERT", "UPDATE"],
+    "staff_onesa_bindings": ["SELECT"],
     "staff_onesa_flows": ["SELECT", "INSERT", "DELETE"],
     "staff_onesa_sessions": ["SELECT", "INSERT", "UPDATE (token_hash)", "DELETE"],
     "staff_sessions": ["SELECT", "INSERT", "UPDATE"],

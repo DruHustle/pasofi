@@ -43,6 +43,10 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     if (!pool || !key || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
     if (!['GET', 'HEAD'].includes(request.method) && !originAllowed(request.headers.origin)) return reply.code(403).send({ error: 'origin_rejected' });
   }
+  async function demoCredentials(request: FastifyRequest, reply: FastifyReply) {
+    if (!demo) return reply.header('Cache-Control', 'no-store').code(403).send({ error: 'portal_sign_in_required' });
+    return publicGuard(request, reply);
+  }
   async function execute(reply: FastifyReply, run: () => Promise<unknown>) {
     try { return await run(); }
     catch (error) {
@@ -64,6 +68,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   async function current(request: FastifyRequest, client: pg.Pool | pg.PoolClient = pool!, lock = false) {
     const token = request.cookies[sessionCookie];
     if (!isOpaque(token)) return fail(401, 'not_authenticated');
+    if (!demo) return onesa ? onesa.principal(client, token, lock) : fail(401, 'not_authenticated');
     const found = await client.query(`SELECT ${PUBLIC_COLUMNS.map(column => `u.${column}`).join(',')}, s.token_hash AS session_hash FROM staff_sessions s JOIN staff_users u ON u.id=s.staff_id
       WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now() AND s.staff_version=u.version
       ${lock ? 'FOR UPDATE OF u,s' : ''}`, [opaqueHash(token)]);
@@ -101,7 +106,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   }
 
   app.post<{ Body: { email: string; password: string; displayName: string } }>('/v1/staff/register', {
-    preHandler: publicGuard, config: { rateLimit: { max: 8, timeWindow: '1 minute' } },
+    preHandler: demoCredentials, config: { rateLimit: { max: 8, timeWindow: '1 minute' } },
     schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'password', 'displayName'], properties: { email, password: newPassword, displayName: { type: 'string', minLength: 2, maxLength: 80, pattern: '\\S' } } } }
   }, async (request, reply) => execute(reply, async () => {
     const name = request.body.displayName.trim();
@@ -114,7 +119,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   }));
 
   app.post<{ Body: { email: string; password: string } }>('/v1/staff/login', {
-    preHandler: publicGuard, config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
+    preHandler: demoCredentials, config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
     schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'password'], properties: { email, password } } }
   }, async (request, reply) => execute(reply, async () => {
     const outcome = await transaction(async client => {
@@ -144,9 +149,9 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   // Requests return the same response before any account lookup or email is
   // attempted. Work is bounded and the per-account throttle is stored in the
   // database; a full queue drops requests uniformly rather than enumerating.
-  app.get('/v1/staff/password-reset/availability', { preHandler: publicGuard }, async () => ({ enabled: !!resetDelivery }));
+  app.get('/v1/staff/password-reset/availability', { preHandler: publicGuard }, async () => ({ enabled: demo && !!resetDelivery }));
   app.post<{ Body: { email: string } }>('/v1/staff/password-reset/request', {
-    preHandler: publicGuard, config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    preHandler: demoCredentials, config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
     schema: { body: { type: 'object', additionalProperties: false, required: ['email'], properties: { email } } }
   }, async (request, reply) => {
     if (!resetDelivery) return reply.code(503).send({ error: 'staff_recovery_unavailable' });
@@ -173,7 +178,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     return reply.code(202).send({ status: 'accepted' });
   });
   app.post<{ Body: { email: string; code: string; password: string } }>('/v1/staff/password-reset/confirm', {
-    preHandler: publicGuard, config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    preHandler: demoCredentials, config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
     schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'code', 'password'], properties: {
       email, code: { type: 'string', pattern: '^[A-Za-z0-9_-]{43}$' }, password: newPassword
     } } }
@@ -205,7 +210,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     }));
   });
 
-  app.post('/v1/staff/mfa/setup', { preHandler: publicGuard, config: { rateLimit: { max: 10, timeWindow: '1 minute' } }, schema: { body: { type: 'object', additionalProperties: false } } }, async (request, reply) => execute(reply, async () => {
+  app.post('/v1/staff/mfa/setup', { preHandler: demoCredentials, config: { rateLimit: { max: 10, timeWindow: '1 minute' } }, schema: { body: { type: 'object', additionalProperties: false } } }, async (request, reply) => execute(reply, async () => {
     return transaction(async client => {
       const user = await challenge(request, client);
       if (user.mfa_enrolled_at) return fail(409, 'mfa_already_enrolled');
@@ -221,7 +226,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
 
   for (const enrollment of [true, false]) {
     app.post<{ Body: { code: string } }>(enrollment ? '/v1/staff/mfa/confirm' : '/v1/staff/mfa/verify', {
-      preHandler: publicGuard, config: { rateLimit: { max: 15, timeWindow: '1 minute' } }, schema: { body: codeBody }
+      preHandler: demoCredentials, config: { rateLimit: { max: 15, timeWindow: '1 minute' } }, schema: { body: codeBody }
     }, async (request, reply) => execute(reply, async () => {
       const outcome = await transaction(async client => {
         const user = await challenge(request, client);

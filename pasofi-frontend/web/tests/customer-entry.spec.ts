@@ -79,3 +79,22 @@ test('staff sign-in clears the purpose of an abandoned customer flow before star
   await expect.poll(() => starts).toBe(1);
   await expect(page.getByRole('button', { name: 'Sign in with Onesa', exact: true })).toBeEnabled();
 });
+
+test('production account and staff entry use Portal when federation is unavailable', async ({ page }) => {
+  let credentialWrites = 0;
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === 'POST') credentialWrites++;
+    return route.fulfill({ status: path.endsWith('/session') ? 401 : 200,
+      json: path === '/api/capabilities' ? paused : path.endsWith('/availability') ? { origin: null } : {} });
+  });
+  for (const hash of ['#account', '#staff?apply=1']) {
+    await page.goto('/' + hash);
+    const scope = hash.startsWith('#staff') ? page.getByRole('region', { name: 'Staff workspace' }) : page;
+    await expect(scope.getByRole('link',{name:'Create an Onesa account'})).toHaveAttribute('href','https://portal.onesa.eu/account/register');
+    await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveAttribute('href','https://portal.onesa.eu/account');
+    await expect(scope.getByRole('button',{name:'Start a new customer account'})).toHaveCount(0);
+    await expect(scope.locator('input[type="password"]')).toHaveCount(0);
+  }
+  expect(credentialWrites).toBe(0);
+});

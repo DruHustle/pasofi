@@ -110,3 +110,9 @@ A provider outage returns 503 without consuming a valid code. Transfer refuses a
 already signed-in target. Credentials remain outside URLs and the JavaScript bridge.
 The private native cookie transport verifies the resulting account before success.
 Physical-device and signed-distribution acceptance remain separate release gates.
+
+### Company Portal staff access
+
+Production staff authenticate through Company Portal with MFA. Platform administrators require the global administrator and PasoFi administrator grants. A site operator requires an active PasoFi customer grant, a verified Portal subject, and an explicit link to their approved local agent or support record. The operator keeps the existing staff ID, role and assigned sites. Production rejects local staff registration, password sign-in and recovery. The local credential fixtures run in the isolated development demo.
+
+Apply migration 013 and the identity runtime grants before rollout. The identity database owner verifies the Portal issuer and subject and the existing staff ID against the operator assignment, then inserts those three fields into `staff_onesa_bindings`. The application has read-only access to bindings. Removing a binding invalidates its sessions. Changing the local record version also requires a fresh sign-in. No email match creates a binding.
