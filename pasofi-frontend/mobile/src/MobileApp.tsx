@@ -44,8 +44,13 @@ export default function MobileApp() {
   const [accountOpen, setAccountOpen] = useState(false), [accountTab, setAccountTab] = useState<CustomerTab>('access');
   const [selected, setSelected] = useState<string | null>(null), [category, setCategory] = useState<Category>('all');
   const [helpQuery, setHelpQuery] = useState('');
-  const content = useRef<HTMLElement>(null), previousTab = useRef(tab);
-  useEffect(() => { if (previousTab.current !== tab) { content.current?.querySelector('h1')?.focus(); previousTab.current = tab; } }, [tab]);
+  const content = useRef<HTMLElement>(null), previousTab = useRef(tab), previousAccountOpen = useRef(accountOpen);
+  useEffect(() => {
+    const returnedFromAccount = previousAccountOpen.current && !accountOpen;
+    if (returnedFromAccount) window.scrollTo({ top: 0, behavior: 'auto' });
+    if (!accountOpen && (returnedFromAccount || previousTab.current !== tab)) content.current?.querySelector('h1')?.focus({ preventScroll: true });
+    previousTab.current = tab; previousAccountOpen.current = accountOpen;
+  }, [tab, accountOpen]);
   const choose = (next: Tab) => { setSelected(null); setTab(next); window.scrollTo({ top: 0, behavior: 'auto' }); };
   const openAccount = (next: CustomerTab = 'access') => { setAccountTab(next); setAccountOpen(true); window.scrollTo({ top: 0, behavior: 'auto' }); };
   const accountFeature = (next: CustomerTab) => mobileApiConfigured ? openAccount(next) : choose('account');
