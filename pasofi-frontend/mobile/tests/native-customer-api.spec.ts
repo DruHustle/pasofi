@@ -149,6 +149,8 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
     await nativeBridge(page, request => { requests.push(request); return reply({ ...capabilities, ...patch }); });
     await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
     await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible();
+    await expect(page.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/account');
+    await expect(page.getByRole('link',{name:'Create an Onesa account',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/account/register');
     await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
     expect(requests.length).toBeGreaterThan(0); expect(new Set(requests.map(request => request.path))).toEqual(new Set(['/api/capabilities']));
     expect(await page.evaluate(() => (window as any).browserApiFetches)).toBe(0);

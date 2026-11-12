@@ -130,3 +130,19 @@ test('production account and staff entry use Portal when federation is unavailab
   }
   expect(credentialWrites).toBe(0);
 });
+
+test('a gateway outage still offers Company Portal sign-in and signup on the account and staff screens', async ({page}) => {
+  let writes = 0;
+  await page.route('**/api/**', route => {
+    if (route.request().method() !== 'GET') writes++;
+    return route.fulfill({status:503,json:{error:'api_unconfigured'}});
+  });
+  for (const hash of ['#account','#staff?apply=1']) {
+    await page.goto('/'+hash);
+    const scope = hash.startsWith('#staff') ? page.getByRole('region',{name:'Staff workspace'}) : page.getByRole('main');
+    await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/account');
+    await expect(scope.getByRole('link',{name:'Create an Onesa account',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/account/register');
+    await expect(scope.locator('input[type="password"]')).toHaveCount(0);
+  }
+  expect(writes).toBe(0);
+});

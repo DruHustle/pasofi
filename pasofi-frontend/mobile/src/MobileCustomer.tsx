@@ -32,7 +32,10 @@ export default function MobileCustomer({ close, initialTab = 'access' }: { close
     <button onClick={close}>← Offline preview</button>
     {capabilities && usesNativeCustomerApi ? <button onClick={() => setScreen('onesa')}>Create an Onesa account</button>
       : capabilities ? <a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">Continue with Company Portal on the PasoFi website</a>
-      : !loading && <a href="https://portal.onesa.eu/account/register" target="_blank" rel="noopener noreferrer">Create an Onesa account</a>}
+      : !loading && <>
+        <a href="https://portal.onesa.eu/account" target="_blank" rel="noopener noreferrer">Sign in to Company Portal</a>
+        <a href="https://portal.onesa.eu/account/register" target="_blank" rel="noopener noreferrer">Create an Onesa account</a>
+      </>}
     {capabilities && <>
       {usesNativeCustomerApi && <button onClick={() => setScreen('onesa')}>Sign in with Onesa</button>}
       <button onClick={() => setScreen('account')}>My account</button>

@@ -151,7 +151,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     {message && <p className="feedback" role="status">{message}</p>}
     {step === 'loading' && <p role="status">Checking your staff session…</p>}
     {step === 'unavailable' && <button className="secondary" onClick={load} disabled={busy}>Retry staff connection</button>}
-    {step === 'login' && onesaOrigin && <button className="secondary" disabled={busy} onClick={startOnesa}>Sign in with Onesa</button>}
+    {(step === 'login' || step === 'unavailable') && onesaOrigin && <button className="secondary" disabled={busy} onClick={startOnesa}>Sign in with Onesa</button>}
     {!capabilities?.demo && (step === 'login' || step === 'register' || step === 'unavailable') && <div className="workspace-auth">
       <p>Use your Company Portal account. Staff access requires an approved role and authenticator.</p>
       {onesaOrigin === undefined && <p role="status">Checking Company Portal sign-in…</p>}
