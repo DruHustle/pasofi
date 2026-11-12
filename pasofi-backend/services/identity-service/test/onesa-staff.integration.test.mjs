@@ -32,7 +32,7 @@ test('staff entry, callback and administrative route require the same browser an
   const app = buildApp();
   t.after(() => app.close());
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  let assertion = active(), authQuery, tokenCalls = 0;
+  let assertion = active(), authQuery, tokenCalls = 0, issuerUnavailable = false;
   const token = randomBytes(32).toString('hex');
   const request = (method, path, payload, cookie) => app.inject({ method, url: '/v1/staff/' + path,
     headers: { origin, ...(cookie ? { cookie } : {}) }, ...(payload ? { payload } : {}) });
@@ -54,7 +54,7 @@ test('staff entry, callback and administrative route require the same browser an
     }
     assert.equal(String(url), issuer + '/session');
     assert.deepEqual(JSON.parse(init.body), { token });
-    return Response.json(assertion);
+    return issuerUnavailable ? Response.json({}, {status:503}) : Response.json(assertion);
   });
   const availability = await request('GET','onesa/availability');
   assert.deepEqual(availability.json(), { origin });
@@ -118,9 +118,30 @@ test('staff entry, callback and administrative route require the same browser an
     await db.query('DELETE FROM staff_users WHERE id=$1',[staffId]);
     assertion = initial;
   }
+  issuerUnavailable = true;
+  assert.equal((await request('GET','users',undefined,cookie)).statusCode,503);
+  issuerUnavailable = false;
+  assert.equal((await request('GET','users',undefined,cookie)).statusCode,200);
   assertion = { ...assertion, active: false };
   assert.equal((await request('GET','users',undefined,cookie)).statusCode,401);
-  assert.equal((await request('DELETE','session',undefined,cookie)).statusCode,204);
   assertion.active = true;
+  assert.equal((await request('GET','session',undefined,cookie)).statusCode,401,'Restoring a revoked Portal grant requires a fresh staff sign-in');
+  assert.equal((await request('DELETE','session',undefined,cookie)).statusCode,204);
   assert.equal((await request('GET','users',undefined,cookie)).statusCode,401);
+});
+
+test('production direct staff credentials cannot establish or recover a local staff session', async t => {
+  Object.assign(process.env, { APP_ENV:'production', NODE_ENV:'production', PUBLIC_ORIGIN:origin });
+  const app = buildApp(); t.after(() => app.close());
+  for (const [path, body] of [
+    ['login',{email:'operator@example.invalid',password:'synthetic-secret-credential'}],
+    ['register',{email:'operator@example.invalid',password:'synthetic-secret-credential',displayName:'Site Operator'}],
+    ['password-reset/request',{email:'operator@example.invalid'}],
+    ['mfa/setup',{}],
+  ]) {
+    const res=await app.inject({method:'POST',url:'/v1/staff/'+path,headers:{origin},payload:body});
+    assert.equal(res.statusCode,403,res.body);
+    assert.equal(res.json().error,'portal_sign_in_required');
+    assert.equal(res.cookies.length,0);
+  }
 });

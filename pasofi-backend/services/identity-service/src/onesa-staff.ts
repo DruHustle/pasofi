@@ -10,6 +10,10 @@ const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 export class OnesaError extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
 }
+// Retire the credential after any enclosing authorization transaction releases its locks.
+export class RejectedStaffSession extends OnesaError {
+  constructor(readonly hash: Buffer) { super(401, 'onesa_sign_in_rejected'); }
+}
 const denied = () => new OnesaError(401, 'onesa_sign_in_rejected');
 
 export function adminAssertion(input: unknown, config: Configuration, now: number): Admin {
@@ -140,15 +144,21 @@ export class OnesaStaff {
       [hash, this.config.issuer]);
     if (!result.rowCount) throw denied();
     const row = result.rows[0];
-    const assertion = await this.inspect(decryptMfa(row.access_ciphertext, this.key, 'onesa-session:' + hash.toString('hex')));
-    if (row.subject !== assertion.subject || Boolean(row.binding_id) !== Boolean(assertion.siteOperator)) throw denied();
+    let assertion: Admin;
+    try {
+      assertion = await this.inspect(decryptMfa(row.access_ciphertext, this.key, 'onesa-session:' + hash.toString('hex')));
+    } catch (error) {
+      if (error instanceof OnesaError && error.status === 401) throw new RejectedStaffSession(hash);
+      throw error;
+    }
+    if (row.subject !== assertion.subject || Boolean(row.binding_id) !== Boolean(assertion.siteOperator)) throw new RejectedStaffSession(hash);
     if (assertion.siteOperator) {
       const operator = await db.query(`SELECT u.id,u.email,u.display_name,u.status,u.role,u.site_ids,u.version,u.created_at
         FROM staff_onesa_sessions s JOIN staff_onesa_bindings b ON b.id=s.binding_id AND b.issuer=s.issuer AND b.subject=s.subject
         JOIN staff_users u ON u.id=b.staff_id AND u.version=s.staff_version
         WHERE s.token_hash=$1 AND s.expires_at>now() AND u.status='approved' AND u.role IN ('agent','support')
         ${lock ? 'FOR UPDATE OF u,s' : ''}`, [hash]);
-      if (!operator.rowCount) throw denied();
+      if (!operator.rowCount) throw new RejectedStaffSession(hash);
       return { ...operator.rows[0], mfa_enrolled_at: new Date(assertion.authenticated * 1000) };
     }
     // Fence sign-out while the live Portal check was in flight.

@@ -1,4 +1,4 @@
-import { configuredOnesaStaff, OnesaError } from './onesa-staff.js';
+import { configuredOnesaStaff, OnesaError, RejectedStaffSession } from './onesa-staff.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
@@ -50,6 +50,10 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   async function execute(reply: FastifyReply, run: () => Promise<unknown>) {
     try { return await run(); }
     catch (error) {
+      if (error instanceof RejectedStaffSession) {
+        try { await pool!.query('DELETE FROM staff_onesa_sessions WHERE token_hash=$1', [error.hash]); }
+        catch { return reply.code(503).send({error:'identity_unavailable'}); }
+      }
       if (error instanceof StaffError || error instanceof OnesaError) return reply.code(error.status).send({ error: error.code });
       return reply.code(503).send({ error: 'identity_unavailable' });
     }
