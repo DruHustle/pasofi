@@ -214,13 +214,13 @@ try {
   }
   // Two callers share this proxy listener but keep independent real API limits.
   // Ordinary forwarded headers and spoofed trust headers never select a bucket.
-  for (let attempt = 0; attempt < 9; attempt++) {
-    response = await request('/api/staff/register', { method: 'POST', body: { email: 'invalid', password, displayName: 'Invalid applicant' }, ip: '198.51.100.20', extraHeaders: { 'x-forwarded-for': '192.0.2.' + (attempt + 1), 'x-real-ip': '192.0.2.' + (attempt + 1), 'x-pamofi-proxy-token': 'attacker', 'x-pamofi-client-ip': '192.0.2.' + (attempt + 1) } });
-    check(response.status, attempt < 8 ? 400 : 429, 'rate limit follows the Vercel-owned caller address');
+  for (let attempt = 0; attempt < 11; attempt++) {
+    response = await request('/api/handoff', { method: 'POST', body: {}, ip: '198.51.100.20', extraHeaders: { 'x-forwarded-for': '192.0.2.' + (attempt + 1), 'x-real-ip': '192.0.2.' + (attempt + 1), 'x-pamofi-proxy-token': 'attacker', 'x-pamofi-client-ip': '192.0.2.' + (attempt + 1) } });
+    check(response.status, attempt < 10 ? 401 : 429, 'rate limit follows the Vercel-owned caller address');
   }
   assert.ok(Number(response.headers['retry-after']) > 0); checks++;
-  check((await request('/api/staff/register', { method: 'POST', body: { email: 'invalid', password, displayName: 'Second applicant' }, ip: '198.51.100.21' })).status, 400);
-  check((await request('/api/staff/register', { method: 'POST', body: { email: 'invalid', password, displayName: 'IPv6 applicant' }, ip: '2001:db8::99' })).status, 400);
+  check((await request('/api/handoff', { method: 'POST', body: {}, ip: '198.51.100.21' })).status, 401);
+  check((await request('/api/handoff', { method: 'POST', body: {}, ip: '2001:db8::99' })).status, 401);
   check(forwarded.every(item => item.headers['x-forwarded-for'] === undefined && item.headers['x-real-ip'] === undefined && item.headers.forwarded === undefined), true);
   const diagnostic = await checkHttpsOrigins({
     gatewayOrigin: oracleOrigin, frontendOrigin,
