@@ -1,4 +1,17 @@
 /* Customer entry and recovery states use the existing PasoFi palette. */
+.pf-portal-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 12px;
+  font-size: 14px;
+}
+.pf-portal-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+}
 .pf-onesa-sign-in-prominent,
 .pf-purchase-availability {
   display: flex;

@@ -27,6 +27,11 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     } catch { setError('Onesa sign-in is temporarily unavailable. Please try again.'); setBusy(false); }
   }
   const signup = <a href="https://portal.onesa.eu/account/register">Create an Onesa account</a>;
+  if (!available && prominent) return <nav className="pf-portal-links" aria-label="Company Portal account">
+    <span>Company Portal</span>
+    <a href="https://portal.onesa.eu/account" aria-label="Sign in to Company Portal">Sign in</a>
+    <a href="https://portal.onesa.eu/account/register" aria-label="Create an Onesa account">Sign up</a>
+  </nav>;
   if (!available) return <div className="pf-onesa-sign-in">
     <a href="https://portal.onesa.eu/account">Sign in to Company Portal</a>
     {signup}
