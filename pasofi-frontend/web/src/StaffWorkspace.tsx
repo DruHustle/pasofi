@@ -12,7 +12,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
   const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [displayName, setDisplayName] = useState('');
   const [code, setCode] = useState(''), [secret, setSecret] = useState(''), [expiresAt, setExpiresAt] = useState(0);
   const [enrollmentUri, setEnrollmentUri] = useState(''), [passwordStrong, setPasswordStrong] = useState(false);
-  const [onesaOrigin, setOnesaOrigin] = useState<string | null>(null);
+  const [onesaOrigin, setOnesaOrigin] = useState<string | null>();
   const [resetAvailable, setResetAvailable] = useState(false), [resetCode, setResetCode] = useState(''), [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
   const challengeOwner = useRef<string | null>(null), generation = useRef(0);
@@ -37,8 +37,8 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     live.current = true; heading.current?.focus(); void load();
     void api<{ enabled: boolean }>('/api/staff/password-reset/availability').then(result => { if (live.current) setResetAvailable(result.enabled === true); }).catch(() => { if (live.current) setResetAvailable(false); });
     void api<{ origin: string | null }>('/api/staff/onesa/availability').then(({ origin }) => {
-      if (live.current && origin && new URL(origin).protocol === 'https:') setOnesaOrigin(origin);
-    }).catch(() => {});
+      if (live.current) setOnesaOrigin(origin && new URL(origin).protocol === 'https:' ? origin : null);
+    }).catch(() => { if (live.current) setOnesaOrigin(null); });
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     const unsubscribe = onStaffSessionChange((kind, staffId) => { generation.current++; setBusy(false); setExpiresAt(0); setStaff(null); setSecret(''); setEnrollmentUri(''); setCode(''); setResetCode(''); setPassword(''); setPasswordConfirmation(''); challengeOwner.current = null; discardStaffDrafts(kind === 'signed_in' ? staffId : undefined); setStep('login'); setMessage('The staff account changed in another tab. Sign in again or refresh this workspace before continuing.'); });
     return () => { generation.current++; live.current = false; clearInterval(timer); unsubscribe(); };
@@ -154,8 +154,10 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     {step === 'login' && onesaOrigin && <button className="secondary" disabled={busy} onClick={startOnesa}>Sign in with Onesa</button>}
     {!capabilities?.demo && (step === 'login' || step === 'register' || step === 'unavailable') && <div className="workspace-auth">
       <p>Use your Company Portal account. Staff access requires an approved role and authenticator.</p>
-      {!onesaOrigin && <p><a href="https://portal.onesa.eu/account">Sign in to Company Portal</a>. Staff access is awaiting the PasoFi connection.</p>}
-      <a href="https://portal.onesa.eu/account/register">Create an Onesa account</a>
+      {onesaOrigin === undefined && <p role="status">Checking Company Portal sign-in…</p>}
+      {onesaOrigin === null && <p><a href="https://portal.onesa.eu/account">Sign in to Company Portal</a>. Staff access is awaiting the PasoFi connection.</p>}
+      {onesaOrigin ? <button className="secondary" disabled={busy} onClick={startOnesa}>Create an Onesa account</button>
+        : onesaOrigin === null && <a href="https://portal.onesa.eu/account/register">Create an Onesa account</a>}
     </div>}
     {capabilities?.demo && (step === 'login' || step === 'register') && <div className="workspace-auth"><div><h3>{step === 'register' ? 'Apply for staff access' : 'Welcome back'}</h3><p>{step === 'register' ? 'Every staff account needs an authenticator and administrator approval before it can sell vouchers or manage a site.' : 'Sign in with your email, password, and authenticator code.'}</p></div><form className="form-grid" onSubmit={authenticate}>
       {step === 'register' && <label>Your name<input required maxLength={80} autoComplete="name" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>}

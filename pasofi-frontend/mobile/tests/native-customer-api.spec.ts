@@ -80,7 +80,7 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
   return calls;
 }
 
-for (const platform of ['ios', 'android'] as const) test(`${platform} Onesa sign-in opens only the native browser command and explicitly accepts a one-use code`, async ({ page, configuredBaseURL }) => {
+for (const platform of ['ios', 'android'] as const) for (const entry of ['Sign in with Onesa', 'Create an Onesa account']) test(`${platform} ${entry} opens only the native browser command and explicitly accepts a one-use code`, async ({ page, configuredBaseURL }) => {
   let recovered = false;
   const handoffCode = 'N'.repeat(43);
   const calls = await nativeBridge(page, request => {
@@ -95,7 +95,7 @@ for (const platform of ['ios', 'android'] as const) test(`${platform} Onesa sign
   }, { platform });
   await page.goto(configuredBaseURL);
   await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
-  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
+  await page.getByRole('button', { name: entry, exact: true }).click();
   await page.getByRole('button', { name: 'Open Onesa sign-in in browser', exact: true }).click();
   await expect(page.getByText('Browser opened.', { exact: false })).toBeVisible();
   const opened = calls.filter(call => call.method === 'openSignIn');
