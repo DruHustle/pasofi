@@ -47,7 +47,10 @@ final class CustomerSessionState {
         return new CustomerSessionState(cookie, cookieExpiresAt, null, null, logoutPending);
     }
     CustomerSessionState unauthenticated() {
-        return logoutPending ? empty() : new CustomerSessionState(null, 0, creationRetry, creationCustomerId, false);
+        // An authoritative session rejection retires the stored credential and
+        // its creation custody. With no credential yet, an ambiguous creation
+        // still needs its original retry key to avoid creating another account.
+        return logoutPending || cookie != null ? empty() : new CustomerSessionState(null, 0, creationRetry, creationCustomerId, false);
     }
     CustomerSessionState retryExpired() { return new CustomerSessionState(cookie, cookieExpiresAt, null, null, logoutPending); }
 

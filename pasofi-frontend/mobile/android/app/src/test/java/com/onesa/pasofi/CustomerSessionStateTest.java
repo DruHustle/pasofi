@@ -60,14 +60,35 @@ public class CustomerSessionStateTest {
         assertFalse(prior.logoutPending); assertTrue(pending.logoutPending);
     }
 
-    @Test public void expiredCookieDoesNotEraseAnUnresolvedCreationKeyAndTerminalRetryExpiryDoesNotReplaceAnAccount() {
+    @Test public void expiredCookieIsUnusableAndTerminalRetryExpiryDoesNotReplaceAnAccount() {
         CustomerSessionState prior = new CustomerSessionState(TOKEN, NOW - 1, RETRY, CUSTOMER, false);
         assertNull(prior.usableCookie(NOW));
         rejects(() -> prior.confirmed(CUSTOMER, NOW));
-        CustomerSessionState rejectedSession = prior.unauthenticated();
-        assertNull(rejectedSession.cookie); assertEquals(RETRY, rejectedSession.creationRetry); assertEquals(CUSTOMER, rejectedSession.creationCustomerId);
         CustomerSessionState terminal = prior.retryExpired();
         assertNull(terminal.creationRetry); assertNull(terminal.creationCustomerId); assertEquals(TOKEN, terminal.cookie); assertEquals(prior.cookieExpiresAt, terminal.cookieExpiresAt);
+    }
+
+    @Test public void rejectedStoredCookieRetiresItsCreationCustodyAcrossRestart() throws Exception {
+        for (boolean pendingLogout : new boolean[]{false, true}) {
+            CustomerSessionState prior = new CustomerSessionState(TOKEN, NOW + 60_000, RETRY, CUSTOMER, pendingLogout);
+            CustomerSessionState retired = CustomerSessionState.decode(ORIGIN, prior.unauthenticated().encode(ORIGIN));
+            assertNull(retired.cookie); assertEquals(0, retired.cookieExpiresAt);
+            assertNull(retired.creationRetry); assertNull(retired.creationCustomerId); assertFalse(retired.logoutPending);
+            rejects(() -> retired.confirmed(CUSTOMER, NOW));
+            CustomerSessionState freshlyRecovered = retired.identityResult(options("POST", "/api/handoff/redeem"), cookie(), CUSTOMER, NOW);
+            assertEquals(TOKEN, freshlyRecovered.usableCookie(NOW));
+            assertEquals(TOKEN, prior.cookie); // The prior immutable state was not mutated.
+        }
+    }
+
+    @Test public void unauthenticatedNoCookieCreationRetainsItsUnconfirmedRetryAcrossRestart() throws Exception {
+        CustomerSessionState pending = CustomerSessionState.empty().withCreationRetry(RETRY);
+        CustomerSessionState resumed = CustomerSessionState.decode(ORIGIN, pending.unauthenticated().encode(ORIGIN));
+        assertNull(resumed.cookie); assertEquals(0, resumed.cookieExpiresAt);
+        assertEquals(RETRY, resumed.creationRetry); assertNull(resumed.creationCustomerId); assertFalse(resumed.logoutPending);
+        CustomerSessionState created = resumed.identityResult(options("POST", "/api/session"), cookie(), CUSTOMER, NOW);
+        assertEquals(RETRY, created.creationRetry);
+        assertNull(created.confirmed(CUSTOMER, NOW).creationRetry);
     }
 
     @Test public void privateSerializationBindsTheExactOriginAndRejectsCorruptionOrInvalidVersion() throws Exception {

@@ -44,6 +44,15 @@ iOS uses an isolated ephemeral URLSession with shared cookie, cache and credenti
 
 Account creation persists a native-generated retry key before sending; a matching GET/session must confirm the customer before that key is cleared. Explicit recovery/handoff and successful logout replace or clear the relevant state. Exact terminal `session_retry_expired`409 clears only the obsolete creation retry and does not start another request. Identity changes fence prior in-flight work and reject new work until completion. A persisted interrupted logout is resumed once by the next session read; another failure retains the pending state for a later deliberate retry.
 
+A validated `GET /api/session`401 retires an existing native credential and its
+associated creation state before returning the rejection to JavaScript. Restarting
+the app or restoring the server grant cannot revive that credential; a fresh
+explicit sign-in or handoff is required. A tokenless, unconfirmed account-creation
+retry remains recoverable. Temporary outages, scoped403 responses and rejection
+of an unrelated handoff do not erase the current account. Android does not retain
+idle customer HTTP connections, avoiding stale sockets without enabling automatic
+mutation retries; the extra TLS handshake uses the existing request deadline.
+
 CI runs Java policy/state tests and a pure Foundation Swift policy/state executable before building the actual plugins. Those tests cover route/query/authority-header limits, cookie transition validation, private creation confirmation, terminal retry handling and durable logout semantics. The iOS artifact includes the pure-test result. Device acceptance still must verify OS credential persistence and relaunch, interrupted requests, genuine TLS/redirect handling, no private cookie or retry material in bridge/log output, and customer identity throughout recovery/logout. A simulator build or synthetic bridge response does not establish these properties on a physical device.
 
 ## Native Stripe checkout

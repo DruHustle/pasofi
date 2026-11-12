@@ -182,6 +182,12 @@ struct CustomerSessionState: Codable, Equatable {
         let recover = request.method == "POST" && ["/api/recovery", "/api/handoff/redeem"].contains(request.path) && status == 200
         let logout = request.method == "DELETE" && request.path == "/api/session" && status == 204
         guard cookie == nil || create || recover || logout else { throw CustomerApiFailure.response }
+        if request.method == "GET" && request.path == "/api/session" && status == 401 && token != nil {
+            // A definitive rejection retires a previously accepted credential.
+            // With no token, retain any unresolved account-creation retry so a
+            // lost create response cannot accidentally start another account.
+            clear(); return
+        }
         if request.method == "POST" && request.path == "/api/session" && status == 409 && (body as? [String: Any])?["error"] as? String == "session_retry_expired" {
             creationRetry = nil; creationCustomerId = nil
             return // The next account-start attempt must be an explicit new request.
