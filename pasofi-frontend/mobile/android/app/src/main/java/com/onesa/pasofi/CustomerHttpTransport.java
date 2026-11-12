@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import okhttp3.Authenticator;
 import okhttp3.CookieJar;
+import okhttp3.ConnectionPool;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -17,6 +18,11 @@ final class CustomerHttpTransport {
         // No platform CookieHandler, shared WebView store, redirects, automatic
         // mutation retries, cache, logging interceptors or ambient authenticators.
         return new OkHttpClient.Builder().cookieJar(CookieJar.NO_COOKIES)
+            // A server can close an idle socket before OkHttp's pooled-socket
+            // health check. Open a fresh connection instead of retrying an
+            // unconfirmed account mutation; the extra TLS handshake is bounded
+            // by the same call deadline.
+            .connectionPool(new ConnectionPool(0, 1, TimeUnit.SECONDS))
             .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
             .authenticator(Authenticator.NONE).proxyAuthenticator(Authenticator.NONE).cache(null)
             .callTimeout(10, TimeUnit.SECONDS).connectTimeout(8, TimeUnit.SECONDS)
