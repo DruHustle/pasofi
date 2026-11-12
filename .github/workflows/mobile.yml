@@ -81,17 +81,17 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           mkdir -p native-artifacts
-          cp android/app/build/outputs/apk/debug/app-debug.apk native-artifacts/pamofi-api-unconfigured-debug.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk native-artifacts/pasofi-api-unconfigured-debug.apk
           cp -R android/app/build/test-results/testDebugUnitTest native-artifacts/android-unit-test-results
           cp NATIVE_BUILDS.md native-artifacts/READ-ME.md
           git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
-          sha256sum native-artifacts/pamofi-api-unconfigured-debug.apk > native-artifacts/SHA256SUMS.txt
+          sha256sum native-artifacts/pasofi-api-unconfigured-debug.apk > native-artifacts/SHA256SUMS.txt
           java -version 2> native-artifacts/JAVA_VERSION.txt
       - name: Upload Android preview
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: pamofi-android-api-unconfigured-debug-${{ github.sha }}
+          name: pasofi-android-api-unconfigured-debug-${{ github.sha }}
           path: pasofi-frontend/mobile/native-artifacts/
           if-no-files-found: error
           retention-days: 3
@@ -239,20 +239,20 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           mkdir -p native-artifacts
-          tar -czf native-artifacts/pamofi-api-unconfigured-ios-simulator.tar.gz \
+          tar -czf native-artifacts/pasofi-api-unconfigured-ios-simulator.tar.gz \
             -C native-build/ios/Build/Products/Release-iphonesimulator App.app
           cp NATIVE_BUILDS.md native-artifacts/READ-ME.md
           cp native-build/ios-package-resolved.json native-artifacts/Package.resolved
           cp native-build/customer-policy-results.txt native-artifacts/ios-customer-policy-results.txt
           git rev-parse HEAD > native-artifacts/SOURCE_COMMIT.txt
-          shasum -a 256 native-artifacts/pamofi-api-unconfigured-ios-simulator.tar.gz > native-artifacts/SHA256SUMS.txt
+          shasum -a 256 native-artifacts/pasofi-api-unconfigured-ios-simulator.tar.gz > native-artifacts/SHA256SUMS.txt
           xcodebuild -version > native-artifacts/XCODE_VERSION.txt
           printf '%s\n' 'Release; API unconfigured; unsigned simulator' > native-artifacts/BUILD_CONFIGURATION.txt
       - name: Upload iOS simulator preview
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: pamofi-ios-api-unconfigured-simulator-${{ github.sha }}
+          name: pasofi-ios-api-unconfigured-simulator-${{ github.sha }}
           path: pasofi-frontend/mobile/native-artifacts/
           if-no-files-found: error
           retention-days: 3
