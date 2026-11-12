@@ -1,0 +1,96 @@
+name: Inspect the published PasoFi iOS simulator replacement
+on:
+  push:
+    branches: [qualify/published-ios-upgrade-20261112]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  installer:
+    name: Install the two published iPhone simulator apps
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Fetch and verify both historical App bundles
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/pasofi-ios-upgrade-qa"
+          mkdir -p "$root/previous" "$root/current" "$root/evidence"
+          cd "$root"
+          fetch_archive() {
+            curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 3 \
+              --connect-timeout 15 --max-time 90 --proto '=https' --header "Authorization: Bearer $GH_TOKEN" \
+              --output "$2.zip" "https://api.github.com/repos/DruHustle/pasofi/actions/artifacts/$1/zip"
+          }
+          fetch_archive 13947318485 previous
+          fetch_archive 13956368582 current
+          printf '%s  %s\n' e18b27553aae245665a004b72603a69c36543000973c54c2a5799d8ae1863229 previous.zip 4fd3f7c1c3bd6ad49f794dcba11fe76e40e782bca5881bdfc5c1b8584c170922 current.zip | shasum -a 256 -c -
+          for version in previous current; do
+            unzip -p "$version.zip" pasofi-api-unconfigured-ios-simulator.tar.gz > "$version/app.tar.gz"
+          done
+          printf '%s  %s\n' d48fee658992e3b92b1db52ea3930e4999ec3f5b0a34b5238ca1a656398511c6 previous/app.tar.gz 955b89ab0e18d3d8eaf8acc6b215866e5bed4faa14d557c50311f48345dde914 current/app.tar.gz | shasum -a 256 -c -
+          for version in previous current; do
+            tar -xzf "$version/app.tar.gz" -C "$version"
+            id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$version/App.app/Info.plist")
+            test "$id" = com.onesa.pasofi
+          done
+          echo "PASOFI_QA_ROOT=$root" >> "$GITHUB_ENV"
+      - name: Install previous binary, replace in place, then install current binary cleanly
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PASOFI_QA_ROOT"
+          udid=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; data=json.load(sys.stdin)["devices"]; options=[d for rt,ds in data.items() if ".iOS-" in rt for d in ds if d.get("isAvailable") and d["name"].startswith("iPhone")]; print(next((d for d in options if d["name"]=="iPhone Air"),options[0])["udid"])')
+          echo "PASOFI_QA_DEVICE=$udid" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl list devices booted | tee evidence/simulator.txt
+          evidence() { echo "$1" | tee -a evidence/installer.txt; }
+          app=com.onesa.pasofi
+          if xcrun simctl get_app_container "$udid" "$app" app >/dev/null 2>&1; then exit 1; fi
+          xcrun simctl install "$udid" previous/App.app
+          xcrun simctl launch "$udid" "$app"
+          evidence 'Previous published app installed and launched on the clean simulator.'
+          data=$(xcrun simctl get_app_container "$udid" "$app" data)
+          mkdir -p "$data/Documents"
+          printf '%s\n' synthetic-upgrade-marker > "$data/Documents/release-qualification.txt"
+          xcrun simctl terminate "$udid" "$app"
+          xcrun simctl install "$udid" current/App.app
+          data=$(xcrun simctl get_app_container "$udid" "$app" data)
+          test "$(cat "$data/Documents/release-qualification.txt")" = synthetic-upgrade-marker
+          installed=$(xcrun simctl get_app_container "$udid" "$app" app)
+          cmp "$installed/App" current/App.app/App
+          xcrun simctl launch "$udid" "$app"
+          evidence 'In-place simulator replacement preserved the synthetic data marker, the installed executable matched the new artifact, and it relaunched. Both artifacts identify version 1.0 build 1.'
+          xcrun simctl terminate "$udid" "$app"
+          xcrun simctl uninstall "$udid" "$app"
+          xcrun simctl install "$udid" current/App.app
+          data=$(xcrun simctl get_app_container "$udid" "$app" data)
+          test ! -e "$data/Documents/release-qualification.txt"
+          xcrun simctl launch "$udid" "$app"
+          evidence 'Current published app separately installed and launched in a fresh data container.'
+      - name: Open the offline preview and its bundle catalogue
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.12.0/maestro.zip \
+            --output "$RUNNER_TEMP/maestro.zip"
+          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
+          "$RUNNER_TEMP/maestro/bin/maestro" --device "$PASOFI_QA_DEVICE" test .github/qa/published-ios-preview.yaml
+          xcrun simctl io "$PASOFI_QA_DEVICE" screenshot "$PASOFI_QA_ROOT/evidence/current-bundle-catalogue.png"
+          echo 'Customer opened Bundles from Offline preview and saw Find your fit.' | tee -a "$PASOFI_QA_ROOT/evidence/installer.txt"
+      - name: Keep simulator installation receipts and offline screen
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pasofi-iphone-simulator-preview-install-and-replace
+          path: ${{ runner.temp }}/pasofi-ios-upgrade-qa/evidence/
+          if-no-files-found: warn
+          retention-days: 7

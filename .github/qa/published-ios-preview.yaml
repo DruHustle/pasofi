@@ -1,0 +1,9 @@
+appId: com.onesa.pasofi
+---
+- extendedWaitUntil:
+    visible: '(?i).*offline preview.*'
+    timeout: 60000
+- tapOn: '^Bundles$'
+- extendedWaitUntil:
+    visible: '(?i)Find your fit[.]'
+    timeout: 30000
