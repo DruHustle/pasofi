@@ -12,6 +12,10 @@ Configure a distinct, secret, persistent `SESSION_CREATION_SECRET` of at least 3
 
 ## Staff authentication and approval
 
+Production staff enter through Company Portal. Administrators need current global-admin and PasoFi admin grants plus MFA. A site operator needs a verified owner-provisioned issuer/subject binding to their existing staff ID, an approved agent or support role, and MFA at Portal. The staff decision API can approve a bound site operator before their first Portal staff session. It uses the bound issuer and subject, never the email address. The runtime database role can read bindings and cannot create or alter them.
+
+### Isolated demo credentials
+
 Staff accounts and cookies are independent of customer accounts. A customer session never grants a staff role. `POST /v1/staff/register` accepts only `{email,password,displayName}` and always returns the same `202 {status:"pending",next:"login"}` for a valid new or duplicate address. It never changes an existing account. Email is a normalized login name; it is **not an email-ownership verification**. An administrator must verify the applicant and their site assignments through the organization's approval process before approving them.
 
 Passwords are 15–128 characters and use salted asynchronous Node `scrypt` with `N=32768,r=8,p=3`, one active hash per process and at most four waiting operations. This is the [OWASP 32 MiB scrypt profile](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#scrypt). Unknown accounts use the same hash operation. Five failed password attempts lock that account for 15 minutes; the counter is in PostgreSQL and survives process replacement. Route rate limits add a per-process IP limit. A public deployment should also configure its trusted edge request limit. Proxy trust is off by default. `PAMOFI_TRUST_PROXY_CIDRS` accepts only explicit IP CIDRs with nonzero prefixes, never wildcards, hostnames or universal ranges. The public gateway must overwrite incoming `X-Forwarded-For`; configure only the actual private proxy network. Requests from untrusted peers cannot choose their rate-limit key by forging that header.
@@ -32,7 +36,7 @@ The private prepaid service resolves a forwarded staff cookie through `GET /inte
 
 All staff mutations require exact `Origin: PUBLIC_ORIGIN`, every auth response is `Cache-Control: no-store`, and customer and staff cookies remain same-origin. Native/mobile clients must use a same-origin HTTPS gateway and verify cookie establishment. There is no permissive cross-origin credential fallback or token-in-local-storage mode.
 
-## First administrator bootstrap
+## Legacy local-data bootstrap
 
 No migration seeds a staff password, role or MFA bypass. After applying migrations, build the service and run `node dist/bootstrap-staff.js` as a deliberate operator action with a migration-owner database connection. It accepts `--email`, `--display-name`, `--password-file`, and `--reason`; no plaintext password argument is accepted. The password file must be a regular file owned by the operator, mode `0600` or `0400`, containing one 15–128-character password line. Do not commit this file. Supply these explicit acknowledgments in addition to the usual application environment and encryption key:
 
@@ -52,7 +56,7 @@ node dist/bootstrap-staff.js \
   --reason 'Approved first administrator under the operator change record'
 ```
 
-The command takes a database advisory lock, verifies that bootstrap has never completed and that no administrator already exists, and atomically records the first account, immutable audit event and permanent bootstrap guard. It emits only the staff ID and next step. That administrator must still log in and enroll MFA before receiving a staff session. Re-running the command fails even if the initial administrator is later disabled. The flags cannot replace an administrator or reset an authenticator. Securely remove the one-use password file after the operator has stored their credential and verified MFA.
+The command takes a database advisory lock, verifies that bootstrap has never completed and that no administrator already exists, and atomically records the first account, immutable audit event and permanent bootstrap guard. It emits only the staff ID and next step. In the isolated demo that administrator must still log in and enroll MFA before receiving a staff session. Production browser sessions require current Company Portal grants and MFA. Re-running the command fails even if the initial administrator is later disabled. The flags cannot replace an administrator or reset an authenticator. Securely remove the one-use password file after the operator has stored their credential and verified MFA.
 
 ## Captive to system-browser handoff
 

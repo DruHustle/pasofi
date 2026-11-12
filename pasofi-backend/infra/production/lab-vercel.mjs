@@ -7,7 +7,8 @@ import https from 'node:https';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { randomBytes, randomUUID, createHmac } from 'node:crypto';
+import { signIn } from './lab-portal.mjs';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout } from 'node:timers/promises';
 import { createProxyHandler } from '../../../pasofi-frontend/web/server/oracle-proxy.mjs';
 import { checkHttpsOrigins } from '../operations/check.mjs';
@@ -81,26 +82,6 @@ function privateResponse(response) {
   check(response.headers['x-pamofi-proxy-token'], undefined); check(response.headers['x-pamofi-client-ip'], undefined);
   check(response.text.includes(proxyToken), false); checks++;
 }
-function totp(secret, offsetSteps = 0) {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567', bytes = []; let bits = 0, buffer = 0;
-  for (const letter of secret) { buffer = (buffer << 5) | alphabet.indexOf(letter); bits += 5; if (bits >= 8) { bits -= 8; bytes.push((buffer >> bits) & 255); } }
-  const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000) + offsetSteps));
-  const digest = createHmac('sha1', Buffer.from(bytes)).update(counter).digest(), offset = digest[19] & 15;
-  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, '0');
-}
-async function enroll(email) {
-  let response = await request('/api/staff/login', { method: 'POST', body: { email, password } });
-  check(response.status, 200, 'staff password login'); check(JSON.parse(response.text).next, 'mfa_setup');
-  secureCookies(response); assert.ok(response.headers['set-cookie'].length >= 2); checks++;
-  const challenge = cookie(response, '__Host-pamofi_staff_challenge'); assert.ok(challenge);
-  check((await request('/api/staff/users', { cookie: challenge })).status, 401);
-  response = await request('/api/staff/mfa/setup', { method: 'POST', body: {}, cookie: challenge }); check(response.status, 200);
-  const secret = JSON.parse(response.text).secret;
-  response = await request('/api/staff/mfa/confirm', { method: 'POST', body: { code: totp(secret) }, cookie: challenge }); check(response.status, 200);
-  secureCookies(response); assert.ok(response.headers['set-cookie'].length >= 2); checks++;
-  return { cookie: cookie(response, '__Host-pamofi_staff_session'), secret, data: JSON.parse(response.text) };
-}
-
 try {
   await new Promise((resolve, reject) => { frontend.once('error', reject); frontend.listen(0, '127.0.0.1', resolve); });
   frontendPort = frontend.address().port;
@@ -156,11 +137,12 @@ try {
   check((await request('/api/handoff/redeem', { method: 'POST', body: { handoffCode: handoff.handoffCode } })).status, 401);
 
   response = await request('/api/staff/password-reset/availability'); check(response.status, 200); check(JSON.parse(response.text).enabled, false);
-  response = await request('/api/staff/password-reset/request', { method: 'POST', body: { email: 'operator@pamofi.invalid' } }); check(response.status, 503);
-  const admin = await enroll('operator@pamofi.invalid');
+  response = await request('/api/staff/password-reset/request', { method: 'POST', body: { email: 'operator@pamofi.invalid' } }); check(response.status, 403);
+  check(JSON.parse(response.text).error,'portal_sign_in_required');
+  const admin = await signIn(request,'admin'); secureCookies(admin.response);
   check(admin.data.role, 'admin'); check(admin.data.mfaVerified, true);
-  response = await request('/api/staff/users', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).users.length, 1);
-  response = await request('/api/gateway?__pamofi_path=staff%2Fusers&path=staff%2Fusers', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).users.length, 1);
+  response = await request('/api/staff/users', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).users.length, 2);
+  response = await request('/api/gateway?__pamofi_path=staff%2Fusers&path=staff%2Fusers', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).users.length, 2);
   check(forwarded.at(-1).target, '/api/staff/users');
   response = await request('/api/gateway?__pamofi_path=staff%2Faudit&path=staff%2Fusers', { cookie: admin.cookie }); check(response.status, 400);
   response = await request('/api/staff/audit', { cookie: admin.cookie }); check(response.status, 200); check(JSON.parse(response.text).events[0].action, 'bootstrap');
@@ -172,16 +154,18 @@ try {
   response = await request('/api/bundles'); check(response.status, 200); check(JSON.parse(response.text).products.some(product => product.id === bundleId), true);
   response = await request('/api/admin/sites', { method: 'POST', cookie: admin.cookie, body: { id: siteId, name: 'Isolated split-host lab site' } }); check(response.status, 201);
   const agentEmail = 'agent@pamofi.invalid';
-  response = await request('/api/staff/register', { method: 'POST', body: { email: agentEmail, password, displayName: 'Disposable agent' } }); check(response.status, 202);
-  const pending = await enroll(agentEmail); check(pending.data.status, 'pending');
-  response = await request('/api/staff/users', { cookie: admin.cookie });
+  response = await request('/api/staff/register', { method:'POST', body:{email:agentEmail,password,displayName:'Disposable agent'} });
+  check(response.status,403); check(JSON.parse(response.text).error,'portal_sign_in_required');
+  await signIn(request,'agent',401);
+  response = await request('/api/staff/users', {cookie:admin.cookie});
   const applicant = JSON.parse(response.text).users.find(user => user.email === agentEmail); assert.ok(applicant); checks++;
-  response = await request('/api/staff/users/' + applicant.staffId + '/decision', { method: 'POST', cookie: admin.cookie, body: { expectedVersion: applicant.version, status: 'approved', role: 'agent', siteIds: [siteId], reason: 'Disposable split-host agent qualification' } }); check(response.status, 200);
-  check((await request('/api/staff/session', { cookie: pending.cookie })).status, 401);
-  response = await request('/api/staff/login', { method: 'POST', body: { email: agentEmail, password } }); check(response.status, 200);
-  const challenge = cookie(response, '__Host-pamofi_staff_challenge');
-  response = await request('/api/staff/mfa/verify', { method: 'POST', cookie: challenge, body: { code: totp(pending.secret, 1) } }); check(response.status, 200);
-  const agentCookie = cookie(response, '__Host-pamofi_staff_session'); check(JSON.parse(response.text).role, 'agent');
+  check(applicant.status,'pending');
+  response = await request('/api/staff/users/' + applicant.staffId + '/decision', { method:'POST',cookie:admin.cookie,body:{
+    expectedVersion:applicant.version,status:'approved',role:'agent',siteIds:[siteId],reason:'Disposable split-host agent qualification',
+  } }); check(response.status,200);
+  const agent = await signIn(request,'agent'), agentCookie = agent.cookie;
+  check(agent.data.role,'agent'); check(agent.data.staffId,applicant.staffId);
+  assert.deepEqual(agent.data.siteIds,[siteId]); checks++;
   check((await request('/api/admin/bundles', { cookie: agentCookie })).status, 403);
   response = await request('/api/admin/inventory/allocations', { method: 'POST', cookie: admin.cookie, retrySecret: randomUUID(), body: { agentId: applicant.staffId, siteId, bundleId, quantity: 2, reason: 'Disposable split-host agent stock' } }); check(response.status, 201);
   response = await request('/api/staff/cash-shifts', { method: 'POST', cookie: agentCookie, retrySecret: randomUUID(), body: {siteId,currency:'USD',openingMinor:0} }); check(response.status,201);
