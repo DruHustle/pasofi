@@ -4,11 +4,15 @@ import { decryptMfa, encryptMfa, freshOpaque, isOpaque, opaqueHash } from './sta
 
 type Store = pg.Pool | pg.PoolClient;
 export type Configuration = { issuer: string; clientId: string; clientSecret: string; callback: URL };
-export type Admin = { subject: string; email: string; name: string; expires: number; authenticated: number };
+export type Admin = { subject: string; email: string; name: string; expires: number; authenticated: number; siteOperator?: true };
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 export class OnesaError extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
+}
+// Retire the credential after any enclosing authorization transaction releases its locks.
+export class RejectedStaffSession extends OnesaError {
+  constructor(readonly hash: Buffer) { super(401, 'onesa_sign_in_rejected'); }
 }
 const denied = () => new OnesaError(401, 'onesa_sign_in_rejected');
 
@@ -27,6 +31,28 @@ export function adminAssertion(input: unknown, config: Configuration, now: numbe
       typeof value.auth_time !== 'number' || !Number.isSafeInteger(value.auth_time) ||
       value.auth_time > now || value.auth_time <= now - 28800) throw denied();
   return { subject: value.sub, email: value.email, name: value.name.trim(), authenticated: value.auth_time, expires: Math.min(value.exp, value.auth_time + 28800) };
+}
+
+export function customerAssertion(input: unknown, config: Configuration, now: number): Admin {
+  if (!input || typeof input !== 'object') throw denied();
+  const value = input as Record<string, unknown>;
+  const roles = value.onesa_product_roles as Record<string, unknown> | undefined;
+  if (roles?.pasofi === 'admin') return adminAssertion(input, config, now);
+  if (value.active !== true || value.iss !== config.issuer || value.aud !== config.clientId ||
+      typeof value.sub !== 'string' || !uuid.test(value.sub) || value.email_verified !== true ||
+      typeof value.email !== 'string' || !value.email.includes('@') || value.email.length > 254 ||
+      typeof value.name !== 'string' || !value.name.trim() || value.name.length > 200 ||
+      !Array.isArray(value.onesa_applications) || !value.onesa_applications.includes('pasofi') || roles?.pasofi !== 'customer' ||
+      typeof value.exp !== 'number' || !Number.isSafeInteger(value.exp) || value.exp <= now ||
+      typeof value.auth_time !== 'number' || !Number.isSafeInteger(value.auth_time) || value.auth_time > now || value.auth_time <= now - 28800) throw denied();
+  return { subject: value.sub, email: value.email, name: value.name.trim(), authenticated: value.auth_time, expires: Math.min(value.exp, value.auth_time + 28800) };
+}
+function staffAssertion(input: unknown, config: Configuration, now: number): Admin {
+  const identity = customerAssertion(input, config, now);
+  const claims = input as { onesa_product_roles: { pasofi: string }; amr?: unknown };
+  if (claims.onesa_product_roles.pasofi === 'admin') return identity;
+  if (!Array.isArray(claims.amr) || !claims.amr.some(method => method === 'mfa' || method === 'otp')) throw denied();
+  return { ...identity, siteOperator: true };
 }
 
 export function configuredOnesaStaff(key: Buffer | null, allowed: (origin: string) => boolean): OnesaStaff | null {
@@ -68,7 +94,7 @@ export class OnesaStaff {
   }
 
   protected assertion(input: unknown): Admin {
-    return adminAssertion(input, this.config, Math.floor(Date.now() / 1000));
+    return staffAssertion(input, this.config, Math.floor(Date.now() / 1000));
   }
 
   async inspect(token: string) {
@@ -95,24 +121,46 @@ export class OnesaStaff {
       pkceCodeVerifier: result.rows[0].verifier, expectedNonce: result.rows[0].nonce, expectedState: params.state, idTokenExpected: true, maxAge: 300,
     }).catch(() => { throw denied(); });
     if (tokens.token_type.toLowerCase() !== 'bearer' || !tokens.access_token || tokens.access_token.length > 2048) throw denied();
-    const admin = await this.inspect(tokens.access_token);
-    if (tokens.claims()?.sub !== admin.subject) throw denied();
+    const staff = await this.inspect(tokens.access_token);
+    if (tokens.claims()?.sub !== staff.subject) throw denied();
     const session = freshOpaque(), hash = opaqueHash(session);
     const envelope = encryptMfa(tokens.access_token, this.key, 'onesa-session:' + hash.toString('hex'));
     await db.query('DELETE FROM staff_onesa_sessions WHERE expires_at<=now()');
-    await db.query('INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at) VALUES($1,$2,$3,$4,to_timestamp($5))',
-      [hash, this.config.issuer, admin.subject, envelope, admin.expires]);
-    return { session, maxAge: Math.max(1, admin.expires - Math.floor(Date.now() / 1000)) };
+    const values = [hash, this.config.issuer, staff.subject, envelope, staff.expires];
+    if (staff.siteOperator) {
+      const inserted = await db.query(`INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at,binding_id,staff_version)
+        SELECT $1,$2,$3,$4,to_timestamp($5),b.id,u.version FROM staff_onesa_bindings b JOIN staff_users u ON u.id=b.staff_id
+        WHERE b.issuer=$2 AND b.subject=$3::uuid AND u.status='approved' AND u.role IN ('agent','support')`, values);
+      if (!inserted.rowCount) throw denied();
+    } else {
+      await db.query('INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at) VALUES($1,$2,$3,$4,to_timestamp($5))', values);
+    }
+    return { session, maxAge: Math.max(1, staff.expires - Math.floor(Date.now() / 1000)) };
   }
 
   async principal(db: Store, session: string, lock: boolean) {
     const hash = opaqueHash(session);
-    const result = await db.query('SELECT subject,access_ciphertext,created_at FROM staff_onesa_sessions WHERE token_hash=$1 AND issuer=$2 AND expires_at>now()',
+    const result = await db.query('SELECT subject,access_ciphertext,created_at,binding_id FROM staff_onesa_sessions WHERE token_hash=$1 AND issuer=$2 AND expires_at>now()',
       [hash, this.config.issuer]);
     if (!result.rowCount) throw denied();
     const row = result.rows[0];
-    const assertion = await this.inspect(decryptMfa(row.access_ciphertext, this.key, 'onesa-session:' + hash.toString('hex')));
-    if (row.subject !== assertion.subject) throw denied();
+    let assertion: Admin;
+    try {
+      assertion = await this.inspect(decryptMfa(row.access_ciphertext, this.key, 'onesa-session:' + hash.toString('hex')));
+    } catch (error) {
+      if (error instanceof OnesaError && error.status === 401) throw new RejectedStaffSession(hash);
+      throw error;
+    }
+    if (row.subject !== assertion.subject || Boolean(row.binding_id) !== Boolean(assertion.siteOperator)) throw new RejectedStaffSession(hash);
+    if (assertion.siteOperator) {
+      const operator = await db.query(`SELECT u.id,u.email,u.display_name,u.status,u.role,u.site_ids,u.version,u.created_at
+        FROM staff_onesa_sessions s JOIN staff_onesa_bindings b ON b.id=s.binding_id AND b.issuer=s.issuer AND b.subject=s.subject
+        JOIN staff_users u ON u.id=b.staff_id AND u.version=s.staff_version
+        WHERE s.token_hash=$1 AND s.expires_at>now() AND u.status='approved' AND u.role IN ('agent','support')
+        ${lock ? 'FOR UPDATE OF u,s' : ''}`, [hash]);
+      if (!operator.rowCount) throw new RejectedStaffSession(hash);
+      return { ...operator.rows[0], mfa_enrolled_at: new Date(assertion.authenticated * 1000) };
+    }
     // Fence sign-out while the live Portal check was in flight.
     const current = await db.query('SELECT 1 FROM staff_onesa_sessions WHERE token_hash=$1 AND expires_at>now()' + (lock ? ' FOR UPDATE' : ''), [hash]);
     if (!current.rowCount) throw denied();

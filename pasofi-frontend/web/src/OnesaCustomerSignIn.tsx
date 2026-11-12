@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
 
 export default function OnesaCustomerSignIn({ prominent = false }: { prominent?: boolean }) {
-  const [available, setAvailable] = useState(false), [confirm, setConfirm] = useState(false);
+  const [available, setAvailable] = useState<boolean | null>(null), [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const opener = useRef<HTMLButtonElement>(null), confirmation = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (confirm) confirmation.current?.focus(); }, [confirm]);
@@ -10,7 +10,7 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     const controller = new AbortController();
     api<{origin:string|null}>('/api/onesa/availability', {signal:controller.signal})
       .then(value => { if (!controller.signal.aborted) setAvailable(value.origin === location.origin); })
-      .catch(() => {});
+      .catch(() => { if (!controller.signal.aborted) setAvailable(false); });
     return () => controller.abort();
   }, []);
   async function signIn() {
@@ -26,12 +26,29 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
       location.assign(target.href);
     } catch { setError('Onesa sign-in is temporarily unavailable. Please try again.'); setBusy(false); }
   }
-  if (!available) return null;
+  const signup = <a href="https://portal.onesa.eu/account/register">Create an Onesa account</a>;
+  function openAccount(trigger: HTMLButtonElement) {
+    opener.current = trigger;
+    setConfirm(true);
+  }
+  if (available === null) return <p role="status">Checking Company Portal sign-in…</p>;
+  if (!available && prominent) return <nav className="pf-portal-links" aria-label="Company Portal account">
+    <span>Company Portal</span>
+    <a href="https://portal.onesa.eu/account" aria-label="Sign in to Company Portal">Sign in</a>
+    <a href="https://portal.onesa.eu/account/register" aria-label="Create an Onesa account">Sign up</a>
+  </nav>;
+  if (!available) return <div className="pf-onesa-sign-in">
+    <a href="https://portal.onesa.eu/account">Sign in to Company Portal</a>
+    {signup}
+    <p>PasoFi account access requires a connection to Company Portal.</p>
+  </div>;
   return <div className={`pf-onesa-sign-in${prominent ? ' pf-onesa-sign-in-prominent' : ''}`}>
     {prominent && <div className="pf-onesa-sign-in-intro"><strong>Your Onesa account, here in PasoFi</strong><p>Sign in to open your customer account. Browsing bundles needs no account.</p></div>}
-    <button ref={opener} className={prominent ? 'pf-button pf-button-secondary' : undefined} disabled={busy} aria-expanded={confirm} onClick={() => setConfirm(true)}>Sign in with Onesa</button>
+    <button className={prominent ? 'pf-button pf-button-secondary' : undefined} disabled={busy} aria-expanded={confirm} onClick={event => openAccount(event.currentTarget)}>Sign in with Onesa</button>
+    <button className="text-button" disabled={busy} aria-expanded={confirm} onClick={event => openAccount(event.currentTarget)}>Create an Onesa account</button>
     {confirm && <div className="pf-onesa-confirmation" role="region" aria-label="Onesa customer sign-in" aria-busy={busy}>
       <h2 ref={confirmation} tabIndex={-1}>Continue to your Onesa account</h2>
+      <p>Sign in or choose Create account in Company Portal.</p>
       <p>Open your Onesa account and return to this screen. Guest purchases stay with your guest account; save its recovery details before continuing.</p>
       <div className="purchase-actions"><button className="pf-button pf-button-primary" disabled={busy} onClick={signIn}>{busy ? 'Opening Onesa…' : 'Continue with Onesa'}</button>
       <button className="pf-button pf-button-secondary" disabled={busy} onClick={() => { setConfirm(false); setError(''); opener.current?.focus(); }}>Cancel</button></div>

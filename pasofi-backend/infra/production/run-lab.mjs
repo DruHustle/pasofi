@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectRouterControl } from './router-control-config.mjs';
 import { inspectRouterFleet } from './router-fleet-config.mjs';
+import { issuer, clientId, callback, agentSubject } from './lab-portal.mjs';
 import { prepare as prepareRadius } from '../radius-production/prepare.mjs';
 
 const vercel = process.argv.length === 3 && process.argv[2] === '--vercel';
@@ -75,15 +76,15 @@ async function main() {
     if (vercel) await run(process.execPath, [join(here, 'generate-vercel-secret.mjs'), '--directory', secrets, '--add-vercel-proxy']);
     await run('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(directory, 'ca.key'), '-out', join(directory, 'ca.crt'), '-days', '1', '-subj', '/CN=PamoFi production configuration lab CA']);
     await copyFile(join(directory, 'ca.crt'), join(secrets, 'internal_ca')); await chmod(join(secrets, 'internal_ca'), 0o444);
-    for (const [name, names] of [['public', 'DNS:pamofi.test,DNS:api.pamofi.test,IP:127.0.0.1'], ['internal', 'DNS:identity.internal,DNS:prepaid.internal,DNS:network.internal,DNS:notification.internal,DNS:assistant.internal']]) {
+    for (const [name, names] of [['public', 'DNS:pamofi.test,DNS:api.pamofi.test,DNS:portal.pamofi.test,IP:127.0.0.1'], ['internal', 'DNS:identity.internal,DNS:prepaid.internal,DNS:network.internal,DNS:notification.internal,DNS:assistant.internal']]) {
       await run('openssl', ['req', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(secrets, `${name}_tls_key`), '-out', join(directory, `${name}.csr`), '-subj', `/CN=${name === 'public' ? 'pamofi.test' : 'identity.internal'}`]);
       const extension = join(directory, `${name}.ext`); await writeFile(extension, `subjectAltName=${names}\nextendedKeyUsage=serverAuth\n`);
       await run('openssl', ['x509', '-req', '-in', join(directory, `${name}.csr`), '-CA', join(directory, 'ca.crt'), '-CAkey', join(directory, 'ca.key'), '-CAcreateserial', '-out', join(secrets, `${name}_tls_cert`), '-days', '1', '-extfile', extension]);
       await chmod(join(secrets, `${name}_tls_key`), 0o444); await chmod(join(secrets, `${name}_tls_cert`), 0o444);
     }
     await writeFile(join(secrets, 'first_staff_password'), `${randomBytes(24).toString('base64url')}\n`, { mode: 0o600 });
-    for (const name of ['b2_key_id', 'b2_application_key', 'backup_cipher']) await writeFile(join(secrets, name), `${randomBytes(32).toString('hex')}\n`, { mode: 0o444 });
-    const env = { ...dockerEnvironment, PAMOFI_SECRETS_DIR: secrets, PAMOFI_DATABASE_VOLUME: volume, PAMOFI_PUBLIC_HOST: 'pamofi.test', PAMOFI_SERVICES_SUBNET: await unusedSubnet(), PAMOFI_COMMERCE_ENABLED: 'true', PAMOFI_CASH_CURRENCIES: '["USD"]', PAMOFI_AGENT_COMMISSION_BPS: '500', VOUCHER_DELIVERY_ACTIVE_KEY_ID: 'initial', RADIUS_CREDENTIAL_KEY_VERSION: '1', PAMOFI_BOOTSTRAP_UID: String(process.getuid()), PAMOFI_BOOTSTRAP_GID: String(process.getgid()), STAFF_BOOTSTRAP_EMAIL: 'operator@pamofi.invalid', STAFF_BOOTSTRAP_DISPLAY_NAME: 'Isolated lab operator', STAFF_BOOTSTRAP_REASON: 'Disposable production configuration qualification', STAFF_BOOTSTRAP_CONFIRM: 'first-admin', B2_BUCKET: `${project}-unused`, B2_REGION: 'us-west-004', BACKUP_REPOSITORY_PREFIX: `/${project}` };
+    for (const name of ['b2_key_id', 'b2_application_key', 'backup_cipher', 'pasofi_onesa_client_secret', 'lab_portal_selection']) await writeFile(join(secrets, name), `${randomBytes(32).toString('hex')}\n`, { mode: 0o444 });
+    const env = { ...dockerEnvironment, PASOFI_ONESA_CLIENT_ID: clientId, PAMOFI_SECRETS_DIR: secrets, PAMOFI_DATABASE_VOLUME: volume, PAMOFI_PUBLIC_HOST: 'pamofi.test', PAMOFI_SERVICES_SUBNET: await unusedSubnet(), PAMOFI_COMMERCE_ENABLED: 'true', PAMOFI_CASH_CURRENCIES: '["USD"]', PAMOFI_AGENT_COMMISSION_BPS: '500', VOUCHER_DELIVERY_ACTIVE_KEY_ID: 'initial', RADIUS_CREDENTIAL_KEY_VERSION: '1', PAMOFI_BOOTSTRAP_UID: String(process.getuid()), PAMOFI_BOOTSTRAP_GID: String(process.getgid()), STAFF_BOOTSTRAP_EMAIL: 'operator@pamofi.invalid', STAFF_BOOTSTRAP_DISPLAY_NAME: 'Isolated lab operator', STAFF_BOOTSTRAP_REASON: 'Disposable production configuration qualification', STAFF_BOOTSTRAP_CONFIRM: 'first-admin', B2_BUCKET: `${project}-unused`, B2_REGION: 'us-west-004', BACKUP_REPOSITORY_PREFIX: `/${project}` };
     if (vercel) {
       env.PAMOFI_PUBLIC_HOST = 'api.pamofi.test';
       env.PAMOFI_PUBLIC_ORIGIN = 'https://pamofi.test';
@@ -120,7 +121,21 @@ gosu postgres pgbackrest version
     // profiles; ordinary up still leaves migration/bootstrap processes stopped.
     const configArgs = ['compose', '-p', project, '--profile', '*', '-f', join(here, 'compose.yaml'), '-f', join(here, 'bootstrap-staff.compose.yaml')];
     if (vercel) configArgs.push('-f', join(here, 'vercel.compose.yaml'));
-    const config = JSON.parse((await docker([...configArgs, 'config', '--format', 'json'], { env })).stdout); noUnexpectedPorts(config);
+    const config = JSON.parse((await docker([...configArgs, '-f', join(here,'onesa-staff.compose.yaml'), 'config', '--format', 'json'], { env })).stdout);
+    // Exercise the registered-client overlay on an isolated TLS network with
+    // a disposable issuer. The genuine gateway and identity image remain in use.
+    config.networks.onesa_identity_egress.internal = true;
+    Object.assign(config.services.identity.environment, { PASOFI_ONESA_ISSUER:issuer, PASOFI_ONESA_REDIRECT_URI:callback });
+    config.secrets.lab_portal_selection = {file:join(secrets,'lab_portal_selection')};
+    config.services['lab-portal'] = {
+      image:env.PAMOFI_IDENTITY_IMAGE, read_only:true, cap_drop:['ALL'], security_opt:['no-new-privileges:true'],
+      entrypoint:['node','/opt/lab-portal.mjs','serve'], command:[],
+      volumes:[{type:'bind',source:join(here,'lab-portal.mjs'),target:'/opt/lab-portal.mjs',read_only:true}],
+      environment:{PASOFI_LAB_ISSUER:'disposable-compose-only',NODE_EXTRA_CA_CERTS:'/run/secrets/internal_ca'},
+      networks:{onesa_identity_egress:{aliases:['portal.pamofi.test']}},
+      secrets:['public_tls_key','public_tls_cert','internal_ca','pasofi_onesa_client_secret','lab_portal_selection'],
+    };
+    noUnexpectedPorts(config);
     // Qualify optional management wiring without enabling a worker or making
     // a router request. Only the unchanged base/split config is started below.
     const controlDirectory = join(directory, 'router-control'), nasId = 'f21a346c-f639-4a84-8511-a7d26ef080f7';
@@ -243,6 +258,15 @@ gosu postgres pgbackrest version
     for (const service of serviceNames) await compose(['--profile', 'migrate', 'run', '--rm', `${service}-migrate`], { timeout: 120000 });
     await compose(['--profile', 'bootstrap', 'run', '--rm', 'identity-bootstrap'], { timeout: 30000 });
     const repeated = await compose(['--profile', 'bootstrap', 'run', '--rm', 'identity-bootstrap'], { timeout: 30000, failureAllowed: true }); assert.notEqual(repeated.status, 0);
+    if (vercel) {
+      // The fixture owner binds the synthetic Portal subject to a pending
+      // operator. The public administrator workflow must approve its site.
+      await compose(['exec','-T','postgres','psql','-X','-v','ON_ERROR_STOP=1','-U','pamofi_bootstrap','-d','pamofi_identity'], {
+        input: `WITH applicant AS (INSERT INTO staff_users(id,email,display_name,password_hash)
+          VALUES(gen_random_uuid(),'agent@pamofi.invalid','Disposable agent','unusable') RETURNING id)
+          INSERT INTO staff_onesa_bindings(issuer,subject,staff_id) SELECT '${issuer}','${agentSubject}',id FROM applicant;`,
+      });
+    }
     await compose(['up', '-d', '--wait', '--wait-timeout', '120'], { timeout: 150000 });
     const containers = (await compose(['ps', '-q'])).stdout.trim().split(/\s+/).filter(Boolean), states = JSON.parse((await docker(['inspect', ...containers])).stdout);
     for (const state of states) {
@@ -261,7 +285,7 @@ gosu postgres pgbackrest version
       const probe = await compose(['exec', '-T', '--user', 'nginx', 'gateway', 'sh', '-c', 'test ! -r /tmp/pamofi-gateway/public.conf && test ! -r /run/secrets/vercel_proxy_token']);
       assert.equal(probe.status, 0);
     }
-    const publicResult = await run(process.execPath, [join(here, vercel ? 'lab-vercel.mjs' : 'lab-public.mjs'), httpsAddress.split(':')[1], httpAddress.split(':')[1], secrets], { timeout: 90000 }); console.log(publicResult.stdout.trim());
+    const publicResult = await run(process.execPath, [join(here, vercel ? 'lab-vercel.mjs' : 'lab-public.mjs'), httpsAddress.split(':')[1], httpAddress.split(':')[1], secrets], { env:{...dockerEnvironment,PASOFI_LAB_PROJECT:project,PASOFI_LAB_COMPOSE:rendered}, timeout: 90000 }); console.log(publicResult.stdout.trim());
     if (vercel) {
       // Qualify the explicit captive-browser entry after the unchanged split
       // deployment passes. All accounts and credentials remain in this lab.

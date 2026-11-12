@@ -2,25 +2,11 @@ import * as oidc from 'openid-client';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import type { FastifyInstance } from 'fastify';
-import { OnesaStaff, OnesaError, adminAssertion, configuredOnesaStaff, type Configuration, type Admin } from './onesa-staff.js';
+import { OnesaStaff, OnesaError, customerAssertion, configuredOnesaStaff, type Configuration, type Admin } from './onesa-staff.js';
 import { decryptMfa, encryptMfa, freshOpaque, isOpaque, mfaKey, opaqueHash } from './staff-crypto.js';
 
-const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const denied = () => new OnesaError(401, 'onesa_sign_in_rejected');
-export function customerAssertion(input: unknown, config: Configuration, now: number): Admin {
-  if (!input || typeof input !== 'object') throw denied();
-  const value = input as Record<string, unknown>;
-  const roles = value.onesa_product_roles as Record<string, unknown> | undefined;
-  if (roles?.pasofi === 'admin') return adminAssertion(input, config, now);
-  if (value.active !== true || value.iss !== config.issuer || value.aud !== config.clientId ||
-      typeof value.sub !== 'string' || !uuid.test(value.sub) || value.email_verified !== true ||
-      typeof value.email !== 'string' || !value.email.includes('@') || value.email.length > 254 ||
-      typeof value.name !== 'string' || !value.name.trim() || value.name.length > 200 ||
-      !Array.isArray(value.onesa_applications) || !value.onesa_applications.includes('pasofi') || roles?.pasofi !== 'customer' ||
-      typeof value.exp !== 'number' || !Number.isSafeInteger(value.exp) || value.exp <= now ||
-      typeof value.auth_time !== 'number' || !Number.isSafeInteger(value.auth_time) || value.auth_time > now || value.auth_time <= now - 28800) throw denied();
-  return { subject: value.sub, email: value.email, name: value.name.trim(), authenticated: value.auth_time, expires: Math.min(value.exp, value.auth_time + 28800) };
-}
+export { customerAssertion };
 export function customerReturnTo(value: unknown): string {
   return typeof value === 'string' && /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
 }

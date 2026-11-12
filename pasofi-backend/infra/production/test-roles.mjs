@@ -1,7 +1,7 @@
 // Disposable PostgreSQL qualification. Requires psql, built independent services,
 // and an explicitly acknowledged loopback test cluster with CREATE ROLE/DATABASE.
 import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes, randomUUID, createHmac } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -37,13 +37,6 @@ async function freePort() {
   const server = createServer(); await new Promise((resolve, reject) => server.once('error', reject).listen(0, '127.0.0.1', resolve));
   const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port;
 }
-function totp(secret) {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567', bytes = []; let buffer = 0, bits = 0;
-  for (const letter of secret) { buffer = (buffer << 5) | alphabet.indexOf(letter); bits += 5; if (bits >= 8) { bits -= 8; bytes.push((buffer >> bits) & 255); } }
-  const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
-  const hash = createHmac('sha1', Buffer.from(bytes)).update(counter).digest(), offset = hash[19] & 15;
-  return String((hash.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, '0');
-}
 async function stopChild() {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
   await new Promise(resolve => {
@@ -74,7 +67,7 @@ async function main() {
       const migrationUrl = new URL(admin); migrationUrl.username = migrator; migrationUrl.password = migrationPassword; migrationUrl.pathname = `/${database}`;
       const runtimeUrl = new URL(admin); runtimeUrl.username = runtime; runtimeUrl.password = runtimePassword; runtimeUrl.pathname = `/${database}`;
       const migrationFile = await file(`${service}-migration`, migrationUrl.toString()), runtimeFile = await file(`${service}-runtime`, runtimeUrl.toString());
-      Object.assign(owned.at(-1), { runtimeFile, runtimeUrl });
+      Object.assign(owned.at(-1), { runtimeFile, runtimeUrl, migrationUrl });
       const migrationEnv = { ...process.env, APP_ENV: 'production', NODE_ENV: 'production', PAMOFI_SERVICE: service, PAMOFI_ROLE_PREFIX: prefix, MIGRATION_DATABASE_URL_FILE: migrationFile };
       delete migrationEnv.DATABASE_URL; delete migrationEnv.MIGRATION_DATABASE_URL;
       const migrated = spawnSync(process.execPath, [join(here, 'entrypoint.mjs'), 'migrate'], { cwd: join(backend, `services/${service}-service`), env: migrationEnv, encoding: 'utf8', timeout: 60000 });
@@ -105,6 +98,10 @@ async function main() {
       query(ownerEnv, 'DROP TABLE public.role_probe; DROP FUNCTION public.role_probe_function()');
       if (service === 'identity') {
         query(runtimeEnv, `INSERT INTO staff_bootstrap_guard(singleton,staff_id) VALUES(true,'${randomUUID()}')`, true);
+        query(runtimeEnv, 'SELECT issuer,subject,staff_id FROM staff_onesa_bindings');
+        query(runtimeEnv, 'INSERT INTO staff_onesa_bindings(issuer,subject,staff_id) SELECT issuer,subject,staff_id FROM staff_onesa_bindings WHERE false', true);
+        query(runtimeEnv, 'UPDATE staff_onesa_bindings SET staff_id=staff_id WHERE false', true);
+        query(runtimeEnv, 'DELETE FROM staff_onesa_bindings WHERE false', true);
         const auditId = randomUUID();
         query(runtimeEnv, `INSERT INTO staff_audit_events(id,target_staff_id,action,reason,new_version,after_state) VALUES('${auditId}','${randomUUID()}','bootstrap','Synthetic privilege proof',1,'{}')`);
         query(runtimeEnv, `UPDATE staff_audit_events SET reason='Modified audit' WHERE id='${auditId}'`, true);
@@ -164,7 +161,10 @@ try {
     const identity = owned.find(item => item.service === 'identity'), port = await freePort();
     const environment = { ...process.env, APP_ENV: 'production', NODE_ENV: 'production', PAMOFI_SERVICE: 'identity', PAMOFI_ROLE_PREFIX: prefix, DATABASE_URL_FILE: identity.runtimeFile, HOST: '127.0.0.1', PORT: String(port), PUBLIC_ORIGIN: 'https://role-proof.example.test' };
     delete environment.DATABASE_URL; delete environment.PAMOFI_TRUST_PROXY_CIDRS;
-    for (const key of ['INTERNAL_IDENTITY_SECRET', 'SESSION_CREATION_SECRET', 'STAFF_MFA_ENCRYPTION_KEY']) { delete environment[key]; environment[`${key}_FILE`] = await file(key, randomBytes(32).toString('hex')); }
+    environment.PASOFI_ONESA_ISSUER = 'https://portal.example.invalid/api/v1/identity';
+    environment.PASOFI_ONESA_CLIENT_ID = 'synthetic_pasofi_role_probe';
+    environment.PASOFI_ONESA_REDIRECT_URI = environment.PUBLIC_ORIGIN + '/onesa-callback.html';
+    for (const key of ['INTERNAL_IDENTITY_SECRET', 'SESSION_CREATION_SECRET', 'STAFF_MFA_ENCRYPTION_KEY', 'PASOFI_ONESA_CLIENT_SECRET']) { delete environment[key]; environment[`${key}_FILE`] = await file(key, randomBytes(32).toString('hex')); }
     child = spawn(process.execPath, [join(here, 'entrypoint.mjs'), 'serve'], { cwd: join(backend, 'services/identity-service'), env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.resume(); child.stderr.resume();
     const base = `http://127.0.0.1:${port}`;
@@ -183,14 +183,43 @@ try {
     response = await request('/v1/session', {}, null, { 'idempotency-key': retryKey });
     assert.equal(response.status, 200); assert.equal((await response.json()).customerId, customerId);
     const email = `${randomUUID()}@runtime.invalid`, password = randomBytes(24).toString('base64url');
-    assert.equal((await request('/v1/staff/register', { email, password, displayName: 'Runtime proof' })).status, 202);
-    response = await request('/v1/staff/login', { email, password }); assert.equal(response.status, 200);
-    const challenge = response.headers.getSetCookie().find(value => value.startsWith('__Host-pamofi_staff_challenge=')).split(';')[0];
-    response = await request('/v1/staff/mfa/setup', {}, challenge); assert.equal(response.status, 200); const setup = await response.json();
-    response = await request('/v1/staff/mfa/confirm', { code: totp(setup.secret) }, challenge); assert.equal(response.status, 200); assert.equal((await response.json()).status, 'pending');
-    checks += 7;
+    for (const [path, payload] of [
+      ['register', { email, password, displayName: 'Runtime proof' }],
+      ['login', { email, password }], ['password-reset/request', { email }],
+      ['mfa/setup', {}], ['mfa/confirm', { code: '123456' }],
+    ]) {
+      response = await request('/v1/staff/' + path, payload);
+      assert.equal(response.status, 403);
+      assert.equal((await response.json()).error, 'portal_sign_in_required');
+      assert.deepEqual(response.headers.getSetCookie(), []);
+      checks++;
+    }
+    response = await request('/v1/staff/onesa/start', {});
+    assert.equal(response.status, 200);
+    const authorization = new URL((await response.json()).authorizationUrl);
+    assert.equal(authorization.origin + authorization.pathname, environment.PASOFI_ONESA_ISSUER + '/auth');
+    assert.equal(authorization.searchParams.get('redirect_uri'), environment.PASOFI_ONESA_REDIRECT_URI);
+    assert.equal(authorization.searchParams.get('acr_values'), 'urn:onesa:mfa');
+    assert.equal(authorization.searchParams.get('code_challenge_method'), 'S256');
+    const [flowCookie] = response.headers.getSetCookie();
+    assert.match(flowCookie, /^__Host-pasofi_onesa_flow=/);
+    assert.match(flowCookie, /; Secure/i);
+    checks += 3; // Guest creation, idempotent retry, and browser-bound Portal entry.
+    // Only the fixture connection may provision/revoke the synthetic binding.
+    // All HTTP handlers, including the callback, use the service's runtime role.
+    const fixtureUrl = new URL(identity.migrationUrl);
+    fixtureUrl.searchParams.set('options', '-c role=' + identity.owner);
+    const federation = spawnSync(process.execPath, ['--test', '--test-reporter=tap', 'test/onesa-staff.integration.test.mjs'], {
+      cwd: join(backend, 'services/identity-service'),
+      env: { ...process.env, PAMOFI_TEST_DATABASE_URL: identity.runtimeUrl.toString(), PAMOFI_TEST_STAFF_FIXTURE_URL: fixtureUrl.toString() },
+      encoding: 'utf8', timeout: 60000,
+    });
+    if (federation.error || federation.status !== 0) throw Error('Runtime Portal staff qualification failed: ' + (federation.error?.code || federation.stdout.slice(-2200)));
+    assert.match(federation.stdout, /# skipped 0\b/);
+    assert.match(federation.stdout, /# pass [1-9]\d*\b/);
+    checks++;
     active();
-    console.log(`Production role qualification passed ${checks} checks across five independently migrated databases, including real customer retry and staff MFA transactions.`);
+    console.log(`Production role qualification passed ${checks} checks across five independently migrated databases, including guest retry and Portal staff MFA, site scope and revocation using a synthetic issuer.`);
   } finally {
     cleaning = true;
     await stopChild();
