@@ -92,6 +92,7 @@ for (const width of [320, 390]) {
         await navigation(page).getByRole('button', { name: entry, exact: true }).click();
         await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
         await expect(page.getByText('No account is active in this browser.', { exact: false })).toBeVisible();
+        await expect(page.getByText('You can buy or redeem as a guest.', { exact: false })).toHaveCount(0);
         await navigation(page).getByRole('button', { name: 'Bundles', exact: true }).click();
         await expectEmptyBundles(page);
       });
