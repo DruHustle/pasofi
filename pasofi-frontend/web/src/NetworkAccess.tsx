@@ -27,7 +27,8 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
   const request = useRef<NetworkRequest | null>(null), live = useRef(false), generation = useRef(0);
   const session = usage?.customerId === customerId ? usage.session : null;
-  const signInBlocked = !!usage?.hold.active || !!session && (
+  const noDataRemaining = usage?.customerId === customerId && usage.totals.remainingBytes === '0';
+  const signInBlocked = noDataRemaining || !!usage?.hold.active || !!session && (
     session.state !== 'pending' || session.disconnectRequested || session.accountingAnomaly || !!session.lastAccountingAt ||
     (request.current !== null && (session.siteId !== request.current.siteId || session.nasId !== request.current.nasId))
   );
@@ -128,6 +129,7 @@ export default function NetworkAccess({ customerId, capabilities, usage, fresh, 
     <p className={`connection-state ${connected ? 'connected' : ''}`} role="status">{!fresh ? 'Connection status not verified' : usage?.hold.active ? 'Connection needs review' : !session ? 'No active hotspot session' : session.disconnectRequested ? 'Disconnect awaiting confirmation' : connected ? 'Connected · recent router report' : session.state === 'uncertain' ? 'Checking an interrupted connection' : usage?.connectivity === 'stale' ? 'Router report delayed · connection not verified' : 'Sign-in pending · not confirmed connected'}</p>
     {!session && capabilities.networkAccess && <ol className="customer-connection-guide" aria-label="How to connect"><li>Join the Wi-Fi network named by your local agent.</li><li>Prepare your sign-in below, then finish on the registered hotspot page.</li><li>Return to My WiFi to check the connection status.</li></ol>}
     {session && <p>Usage recorded for this connection: {dataAmount(session.chargedBytes)} · This connection is scheduled to end by {localDate(session.deadline)}. Check the balance above for your remaining data.</p>}
+    {capabilities.networkAccess && fresh && noDataRemaining && !session && !usage?.hold.active && <p className="notice" role="status">Your account has no remaining data for a new hotspot connection. Check your bundles and their validity.</p>}
     {message && <p className="feedback" role="status">{message}</p>}
     {!capabilities.networkAccess && <p className="notice">New hotspot connections are paused.{session ? " You can still check or disconnect your current session." : " Ask your PasoFi agent when service is available."}</p>}
     {capabilities.networkAccess && !credentials && sitesLoading && <p role="status">Loading hotspot locations…</p>}

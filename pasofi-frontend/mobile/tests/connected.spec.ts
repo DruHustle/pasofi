@@ -42,6 +42,28 @@ async function mock(page: Page, handle?: (route: Route, path: string, method: st
 }
 async function open(page: Page, origin: string) { await page.goto(origin); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click(); }
 
+test('hotspot preparation respects exhausted data and explains server-side eligibility changes', async ({ page, configuredBaseURL }) => {
+  let used = '5000000000', attempts = 0;
+  await mock(page, async (_route, path, _method, reply) => {
+    if (path === '/api/capabilities') { await reply({ ...capabilities, networkAccess: true }); return true; }
+    if (path === '/api/network/sites') { await reply({ accessPoints: [{ siteId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', nasId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', siteName: 'Test site', name: 'Test hotspot', loginUrl: 'https://hotspot.example.test/login' }] }); return true; }
+    if (path === '/api/usage') { await reply(usageSnapshot(used)); return true; }
+    if (path === '/api/network/credentials') { attempts++; await reply({ error: 'no_usable_entitlement' }, 409); return true; }
+    return false;
+  });
+  await open(page, configuredBaseURL);
+  const connect = page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true });
+  await expect(page.getByText('Your account has no remaining data for a new hotspot connection.', { exact: false })).toBeVisible();
+  await expect(connect).toBeDisabled();
+  expect(attempts).toBe(0);
+  used = '0';
+  await page.getByRole('button', { name: 'Refresh data balance' }).click();
+  await expect(connect).toBeEnabled();
+  await connect.click();
+  await expect(page.getByText('Your account has no bundle eligible for a new hotspot session.', { exact: false })).toBeVisible();
+  expect(attempts).toBe(1);
+});
+
 test('native bridge argument logging stays disabled even in debug payment builds',async()=>{
   const configuration=await readFile(new URL('../capacitor.config.ts',import.meta.url),'utf8');
   expect(configuration).toMatch(/loggingBehavior:\s*'none'/);

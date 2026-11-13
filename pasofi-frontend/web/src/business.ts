@@ -28,6 +28,9 @@ export function messageFor(error: unknown, fallback = 'This request could not be
   if (error.status === 403) return 'This action is not available for your account or assigned site. Refresh your account permissions.';
   if (error.status === 429) return 'Too many attempts. Wait a minute before trying again.';
   const messages: Record<string, string> = {
+    no_usable_entitlement: 'Your account has no bundle eligible for a new hotspot session. Check the remaining data and validity of your bundles.',
+    accounting_review_required: 'Your previous connection needs an accounting review. Contact your PasoFi agent before reconnecting.',
+    session_pending_or_active: 'A hotspot session is still open. Check its status before starting another connection.',
     cookie_not_kept: 'This browser did not keep the account cookie. Allow cookies for the configured PasoFi service, then retry. No voucher or payment was submitted.',
     version_conflict: 'This record changed while you were reviewing it. Refresh and review the current details.',
     cash_sale_site_unavailable: 'Sales are paused at this location. Return any cash received for this sale to the customer.',
