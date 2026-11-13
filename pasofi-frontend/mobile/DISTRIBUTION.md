@@ -52,6 +52,8 @@ Verification requires only the bundle, bundletool and the independently recorded
 
 Register `com.onesa.pasofi` with the owner’s Apple Developer team and create the matching App Store Connect record. Select that team in Xcode and configure the app’s release signing and distribution profile. Apple Pay entitlements default to empty. The public gateway governs customer, checkout and hotspot capabilities independently of signing. CI simulator apps cannot be installed through TestFlight or the App Store.
 
+For operator inspection, run **Build PasoFi native previews** manually on `main`. Its three-day `pasofi-ios-unsigned-iphoneos-verification-<commit>` artifact contains the checked generic arm64 device archive, the exact source commit, Xcode version and SHA-256. Extract the downloaded ZIP, check `SOURCE_COMMIT.txt`, run `shasum -a 256 --check SHA256SUMS.txt`, then `tar -xzf PasoFi-unsigned-iphoneos.xcarchive.tar.gz`. Open `Pasofi.xcarchive` in Xcode Organizer to inspect its product and build metadata. The retained artifact has no distribution signature or provisioning profile. Continue with the owner signing procedure for App Store Connect.
+
 On a Mac with the supported Xcode and a signed-in owner account, set `APPLE_TEAM_ID` to the team identifier. From this mobile directory create a Release archive for a physical iOS destination.
 
 ```sh
