@@ -8,6 +8,7 @@ import { decryptMfa, encryptMfa, freshOpaque, isOpaque, mfaKey, opaqueHash } fro
 const denied = () => new OnesaError(401, 'onesa_sign_in_rejected');
 export { customerAssertion };
 export function customerReturnTo(value: unknown): string {
+  if (value === '/#connect') return value;
   return typeof value === 'string' && /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
 }
 export class OnesaCustomer extends OnesaStaff {

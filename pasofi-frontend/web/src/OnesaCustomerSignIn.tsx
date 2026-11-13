@@ -17,8 +17,9 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     if (busy) return;
     setBusy(true); setError('');
     try {
+      const returnTo = location.pathname === '/connect' && !location.hash ? '/#connect' : '/' + location.hash;
       const result = await api<{authorizationUrl:string}>('/api/onesa/start', {
-        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({returnTo:'/' + location.hash}),
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ returnTo }),
       });
       const target = new URL(result.authorizationUrl);
       if (target.protocol !== 'https:' || target.username || target.password) throw Error();

@@ -17,7 +17,10 @@
       const session = await fetch('/api/session', { credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
       if (!session.ok || (await session.json()).customerId !== data.customerId) throw Error();
     }
-    location.replace(customer && /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(data.returnTo) ? data.returnTo : customer ? '/#account' : '/#staff');
+    const knownDestination = data.returnTo === '/#connect' ||
+      /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(data.returnTo);
+    const destination = knownDestination ? data.returnTo : '/#account';
+    location.replace(customer ? destination : '/#staff');
   } catch {
     document.getElementById('status').textContent = 'Sign-in could not be completed. Return to PasoFi and choose Sign in with Onesa again.';
   }
