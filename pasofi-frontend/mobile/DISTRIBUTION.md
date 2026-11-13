@@ -9,7 +9,7 @@ npm ci
 export VITE_PAMOFI_API_BASE_URL=https://pasofi.mobile.onesa.eu
 npm run build
 npx --no-install cap sync android
-(cd android && bash gradlew :app:assembleRelease)
+(cd android && bash gradlew :app:assembleRelease :app:bundleRelease)
 ```
 
 Use the owner’s app-signing keystore for direct downloads. Updates to an existing installation require the same signing identity. A Play upload key is appropriate for a Play submission and may differ from the app-signing certificate on customers’ devices. If Google controls that app-signing key, use an APK signed by Google for compatible direct distribution. For a first release, create the key on an owner-controlled system, keep a protected backup and record the public SHA-256 certificate fingerprint separately.
@@ -22,7 +22,7 @@ scripts/sign-release-apk.sh sign "$release_dir/app-release-unsigned.apk" "pasofi
 scripts/sign-release-apk.sh verify "pasofi-1.0.0.apk"
 ```
 
-Choose the filename for the actual version. The helper checks the package, launcher, release manifest, page alignment, APK signatures and owner certificate, then prints the file SHA-256. QA signing identities and debug builds must stay out of customer distribution. A smoke test on a supported Android phone can confirm installation and behavior on that device. Pasofi’s live customer sessions, payments, vouchers and hotspot connections each keep their existing service qualification and capability settings. An owner-signed preview can be published with those capabilities disabled. Use its public release notes to identify the offline or service-limited experience. For Play use an Android App Bundle from `:app:bundleRelease`, sign it with the registered upload key and complete the relevant release track in Play Console.
+Choose the filename for the actual version. The helper checks the package, launcher, release manifest, page alignment, APK signatures and owner certificate, then prints the file SHA-256. QA signing identities and debug builds must stay out of customer distribution. A smoke test on a supported Android phone can confirm installation and behavior on that device. Pasofi’s live customer sessions, payments, vouchers and hotspot connections each keep their existing service qualification and capability settings. An owner-signed preview can be published with those capabilities disabled. Use its public release notes to identify the offline or service-limited experience.
 
 Upload the verified APK to `https://pasofi.mobile.onesa.eu/downloads/` or to a versioned GitHub Release asset in the product’s repository. Fetch it while signed out and compare the published bytes to the verified local file, then set the website’s `VITE_ANDROID_DOWNLOAD_URL` and `VITE_ANDROID_APK_SHA256` to the verified URL and digest. The direct button downloads the APK. Android handles the install confirmation and permission for this source.
 
@@ -33,6 +33,20 @@ scripts/sign-release-apk.sh verify downloaded-release.apk
 ```
 
 With Android SDK Platform 36 and Build Tools 36.0.0 installed, run `python3 scripts/test-release-apk.py` to exercise signing and rejection of tampered, debuggable and incorrectly signed samples. The test deletes its temporary files and disposable key.
+
+### Google Play App Bundle
+
+The **Android release packaging** workflow on main builds and validates the unsigned Play input with production web assets. Download the `pasofi-android-unsigned-play-input-<commit>` GitHub Actions artifact, check `SOURCE_COMMIT.txt` against the intended main revision, and run `sha256sum --check SHA256SUMS.txt` from the extracted directory. The included `PasoFi-unsigned.aab` is the owner-signing input. A local build produces the same input at `android/app/build/outputs/bundle/release/app-release.aab`. Use JDK 21, Python 3.11+, OpenSSL and the workflow’s checksum-pinned Google bundletool JAR. Set `BUNDLETOOL_JAR` to that verified JAR.
+
+Use the **upload key certificate** SHA-256 fingerprint independently obtained from Play Console’s App integrity page for this app. Set `ANDROID_PLAY_UPLOAD_CERT_SHA256` to that fingerprint, `ANDROID_PLAY_UPLOAD_KEYSTORE` to the registered upload keystore path, and `ANDROID_PLAY_UPLOAD_ALIAS` to its alias. Supply `ANDROID_PLAY_UPLOAD_STORE_PASSWORD` and `ANDROID_PLAY_UPLOAD_KEY_PASSWORD` through the owner’s secret manager. From the mobile directory, run the following with the actual paths and version.
+
+```sh
+python3 scripts/release-bundle.py inspect-unsigned /path/to/PasoFi-unsigned.aab
+python3 scripts/release-bundle.py sign /path/to/PasoFi-unsigned.aab /path/to/PasoFi-upload.aab
+python3 scripts/release-bundle.py verify /path/to/PasoFi-upload.aab
+```
+
+Verification requires only the bundle, bundletool and the independently recorded public fingerprint. The helper checks Google’s bundle validation, the PasoFi package and launcher, target SDK, production customer origin, embedded web assets and the signature over the bundle contents. Upload the verified owner-signed AAB to the intended Play Console release track, check its version code against prior uploads, and complete review. A public store link requires a published listing.
 
 ## iOS
 

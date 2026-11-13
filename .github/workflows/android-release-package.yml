@@ -2,11 +2,17 @@ name: Android release packaging
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/android-release-package.yml"
+      - "pasofi-frontend/mobile/**"
   pull_request:
     paths:
       - ".github/workflows/android-release-package.yml"
       - "pasofi-frontend/mobile/scripts/sign-release-apk.sh"
       - "pasofi-frontend/mobile/scripts/test-release-apk.py"
+      - "pasofi-frontend/mobile/scripts/release-bundle.py"
 
 permissions:
   contents: read
@@ -45,8 +51,16 @@ jobs:
         run: |
           npm run build
           npx --no-install cap sync android
-      - name: Compile the unsigned Release APK
-        run: bash android/gradlew -p android --no-daemon :app:assembleRelease
+      - name: Compile the unsigned Release APK and Android App Bundle
+        run: bash android/gradlew -p android --no-daemon :app:assembleRelease :app:bundleRelease
+      - name: Install Google bundletool and validate the unsigned Play input
+        run: |
+          export BUNDLETOOL_JAR="$RUNNER_TEMP/bundletool.jar"
+          curl --fail --location --silent --show-error --retry 3 \
+            'https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar' -o "$BUNDLETOOL_JAR"
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  $BUNDLETOOL_JAR" | sha256sum --check -
+          echo "BUNDLETOOL_JAR=$BUNDLETOOL_JAR" >> "$GITHUB_ENV"
+          python3 scripts/release-bundle.py inspect-unsigned android/app/build/outputs/bundle/release/app-release.aab
       - name: Verify the compiled product through the signing path
         run: |
           # The ephemeral QA key and its APK stay in this run and are never uploaded.
@@ -64,3 +78,36 @@ jobs:
           export ANDROID_RELEASE_CERT_SHA256
           scripts/sign-release-apk.sh sign android/app/build/outputs/apk/release/app-release-unsigned.apk "$qa_dir/verified.apk"
           scripts/sign-release-apk.sh verify "$qa_dir/verified.apk"
+          export ANDROID_PLAY_UPLOAD_KEYSTORE="$ANDROID_RELEASE_KEYSTORE" ANDROID_PLAY_UPLOAD_ALIAS="$ANDROID_RELEASE_ALIAS"
+          export ANDROID_PLAY_UPLOAD_STORE_PASSWORD="$ANDROID_RELEASE_STORE_PASSWORD" ANDROID_PLAY_UPLOAD_KEY_PASSWORD="$ANDROID_RELEASE_KEY_PASSWORD"
+          export ANDROID_PLAY_UPLOAD_CERT_SHA256="$ANDROID_RELEASE_CERT_SHA256"
+          bundle=android/app/build/outputs/bundle/release/app-release.aab
+          python3 scripts/release-bundle.py sign "$bundle" "$qa_dir/verification.aab"
+          python3 scripts/release-bundle.py verify "$qa_dir/verification.aab"
+          if ANDROID_PLAY_UPLOAD_CERT_SHA256=$(printf '%064d' 0) python3 scripts/release-bundle.py verify "$qa_dir/verification.aab"; then
+            echo 'Accepted a different upload certificate' >&2
+            exit 1
+          fi
+          # An unsigned addition must invalidate the verification even with the right certificate.
+          python3 -c 'import sys, zipfile; z = zipfile.ZipFile(sys.argv[1], "a"); z.writestr("BUNDLE-METADATA/com.onesa.qualification/test.txt", "unsigned"); z.close()' "$qa_dir/verification.aab"
+          if python3 scripts/release-bundle.py verify "$qa_dir/verification.aab"; then
+            echo 'Accepted unsigned data inside a signed bundle' >&2
+            exit 1
+          fi
+      - name: Prepare the verified unsigned input for the owner
+        if: github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p "$RUNNER_TEMP/play-upload-input"
+          cp android/app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/play-upload-input/PasoFi-unsigned.aab"
+          cd "$RUNNER_TEMP/play-upload-input"
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD > SOURCE_COMMIT.txt
+          sha256sum PasoFi-unsigned.aab > SHA256SUMS.txt
+      - name: Retain the unsigned Play upload input
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pasofi-android-unsigned-play-input-${{ github.sha }}
+          path: ${{ runner.temp }}/play-upload-input/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
