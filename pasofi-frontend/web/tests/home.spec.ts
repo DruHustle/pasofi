@@ -69,14 +69,20 @@ test('Home account shortcuts and connection guidance preserve guest privacy and 
   await page.getByRole('button', { name: 'Check usage', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible();
   await expect(page.getByText('No account is active in this browser.', { exact: false })).toBeVisible();
-  await page.goto('/'); await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click();
-  await expect(page).toHaveURL(/#voucher$/);
+  await page.goto('/'); await expect(page.getByRole('button', { name: 'Vouchers paused', exact: true })).toBeDisabled();
   await page.goto('/'); await page.locator('.pasofi-home-guide > summary').click();
   await expect(page.getByRole('heading', { name: 'Find your hotspot', exact: true })).toBeVisible();
   await page.locator('.pasofi-home-guide').getByRole('button', { name: 'View bundles', exact: true }).click(); await expect(page).toHaveURL(/#bundles$/);
   await page.goto('/connect'); await expect(page.getByRole('heading', { name: 'Connect to PasoFi', exact: true })).toBeVisible();
   await expect(page.locator('.pasofi-home-hero, .pasofi-home-more')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Redeem voucher', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Vouchers paused', exact: true })).toBeDisabled();
+  await page.goto('/connect#voucher');
+  await expect(page.getByRole('heading', { name: 'Vouchers paused', exact: true })).toBeVisible();
+  await expect(page.getByText('Voucher redemption is currently paused.', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Voucher code', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Use a voucher', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Browse bundles', exact: true }).click();
+  await expect(page).toHaveURL(/#bundles$/);
   expect(state.mutations).toEqual([]);
 });
 
