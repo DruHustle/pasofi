@@ -76,29 +76,17 @@ for attempt in $(seq 1 30); do
 done
 
 customer=$(uuidgen | tr '[:upper:]' '[:lower:]')
-order=$(uuidgen | tr '[:upper:]' '[:lower:]')
-entitlement=$(uuidgen | tr '[:upper:]' '[:lower:]')
 site_a=$(uuidgen | tr '[:upper:]' '[:lower:]')
 site_b=$(uuidgen | tr '[:upper:]' '[:lower:]')
 nas_a=$(uuidgen | tr '[:upper:]' '[:lower:]')
 nas_b=$(uuidgen | tr '[:upper:]' '[:lower:]')
-credential_a=$(uuidgen | tr '[:upper:]' '[:lower:]')
-credential_b=$(uuidgen | tr '[:upper:]' '[:lower:]')
-request_key=$(uuidgen | tr '[:upper:]' '[:lower:]')
-user_a=$(node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))")
-user_b=$(node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))")
-password_a=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))")
-password_b=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))")
-hash_a=$(printf '%s' "$password_a" | openssl dgst -sha256 | awk '{print $NF}')
-hash_b=$(printf '%s' "$password_b" | openssl dgst -sha256 | awk '{print $NF}')
-compose exec -T postgres psql -v ON_ERROR_STOP=1 -U pamofi_prepaid_access -d pamofi_prepaid_access >/dev/null <<SQL
-INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at) VALUES('$order','$customer','$request_key','flex',100,'USD',5000000000,604800,'payment_confirmed',now()+interval '15 minutes');
-INSERT INTO purchase_entitlements(id,order_id,customer_id,bundle_id,byte_limit,validity_seconds,start_by) VALUES('$entitlement','$order','$customer','flex',5000000000,604800,now()+interval '30 days');
-SQL
-compose exec -T postgres psql -v ON_ERROR_STOP=1 -U pamofi_network -d pamofi_network >/dev/null <<SQL
-INSERT INTO radius_nas(id,site_id,client_name,enabled) VALUES('$nas_a','$site_a','nas_a',true),('$nas_b','$site_b','nas_b',true);
-INSERT INTO radius_credentials(id,username,secret_hash,customer_id,nas_id,expires_at) VALUES('$credential_a','$user_a',decode('$hash_a','hex'),'$customer','$nas_a',now()+interval '15 minutes'),('$credential_b','$user_b',decode('$hash_b','hex'),'$customer','$nas_b',now()+interval '15 minutes');
-SQL
+# An approved synthetic agent sells the voucher at B. The guest redeems it, then
+# uses it at A. Only the identity responder is synthetic; no merchant is called.
+entitlement=$(compose exec -T prepaid node --input-type=module - "$customer" "$site_b" < voucher-fixture.mjs)
+[[ "$entitlement" =~ ^[0-9a-f-]{36}$ ]]
+compose exec -T radius-api node --input-type=module - "$customer" "$site_a" "$site_b" "$nas_a" "$nas_b" < credential-fixture.mjs > "$lab_temp/issued"
+read -r user_a password_a < "$lab_temp/issued"
+read -r user_b password_b < <(sed -n '2p' "$lab_temp/issued")
 printf 'User-Name = "%s"\nUser-Password = "%s"\nAcct-Session-Id = "LAB-SESSION-A"\n' "$user_a" "$password_a" > "$lab_temp/access-a"
 printf 'User-Name = "%s"\nUser-Password = "%s"\nAcct-Session-Id = "LAB-SESSION-B"\n' "$user_b" "$password_b" > "$lab_temp/access-b"
 rad() { local nas="$1" kind="$2" secret="$3" input="$4" output="$5"; compose exec -T "$nas" /opt/bin/radclient -x -t 2 -r 2 "radius:1812" "$kind" "$secret" < "$input" > "$output" 2>&1; }
@@ -146,6 +134,18 @@ compose exec -T nas-a /opt/bin/radclient -x -t 2 -r 2 radius:1813 acct LAB_ONLY_
 grep -q 'Received Accounting-Response' "$lab_temp/stop-result"
 rad nas-b auth LAB_ONLY_nas_b_secret_26characters "$lab_temp/access-b" "$lab_temp/after-stop" || true
 grep -q 'Received Access-Reject' "$lab_temp/after-stop"
+
+# Check the customer-visible usage contract and the purchase and grant sites after Stop.
+compose exec -T prepaid node --input-type=module - "$customer" "$site_b" "$entitlement" < voucher-fixture.mjs
+matched=$(compose exec -T postgres psql -v ON_ERROR_STOP=1 -At -U pamofi_prepaid_access -d pamofi_prepaid_access -c "
+  SELECT count(*) FROM purchase_entitlements e
+  JOIN issued_vouchers v ON v.id=e.source_voucher_id
+  JOIN agent_sales a ON a.id=v.sale_id
+  JOIN access_grants g ON g.entitlement_id=e.id
+  WHERE e.id='$entitlement' AND e.customer_id='$customer' AND a.site_id='$site_b'
+    AND g.site_id='$site_a' AND g.nas_id='$nas_a' AND a.site_id<>g.site_id")
+test "$matched" = 1
+printf 'Voucher journey passed: one receipt and entitlement, cross-site access, 4294967306 bytes in owner usage, foreign access denied.\n'
 
 # A positive 2^32-byte reservation has a zero low word and a nonzero high word.
 customer_c=$(uuidgen | tr '[:upper:]' '[:lower:]')
