@@ -250,6 +250,46 @@ jobs:
           xcrun lipo -archs "$app/$executable" >> "$GITHUB_STEP_SUMMARY"
           shasum -a 256 "$app/$executable" >> "$GITHUB_STEP_SUMMARY"
           echo 'com.onesa.pasofi, generic physical iOS, Release, no distribution signature' >> "$GITHUB_STEP_SUMMARY"
+      - name: Package the verified iPhoneOS archive for owner inspection
+        if: steps.device_archive.outputs.required == 'true' && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+        run: |
+          archive="$RUNNER_TEMP/Pasofi.xcarchive"
+          app="$archive/Products/Applications/App.app"
+          output="$RUNNER_TEMP/iphoneos-verification"
+          mkdir -p "$output"
+          # Mobile release builds do not need a distribution profile, private key or merchant certificate.
+          # Xcode can ad-hoc sign Apple silicon binaries, so only a real signing authority is disallowed.
+          signing_info=$(codesign -dv --verbose=4 "$app" 2>&1 || true)
+          if grep -q '^Authority=' <<< "$signing_info"; then
+            echo 'Unexpected signing authority in the inspection archive' >&2
+            exit 1
+          fi
+          forbidden=$(find "$archive" -type f \
+            \( -iname '*.mobileprovision' -o -iname '*.provisionprofile' -o -iname '*.p12' -o -iname '*.pfx' \
+            -o -iname '*.p8' -o -iname '*.key' -o -iname '*.keychain*' \) -print -quit)
+          test -z "$forbidden"
+          node -e 'const config = require(process.argv[1]); if (config.appId !== "com.onesa.pasofi" || config.plugins?.PasoFiCustomerApi?.origin !== "https://pasofi.mobile.onesa.eu") process.exit(1)' "$app/capacitor.config.json"
+          git rev-parse HEAD > "$output/SOURCE_COMMIT.txt"
+          xcodebuild -version > "$output/XCODE_VERSION.txt"
+          printf '%s\n' 'Generic iPhoneOS Release, arm64, no distribution signature. For operator inspection.' > "$output/BUILD_CONFIGURATION.txt"
+          (
+            cd "$output"
+            COPYFILE_DISABLE=1 tar -czf PasoFi-unsigned-iphoneos.xcarchive.tar.gz -C "$RUNNER_TEMP" Pasofi.xcarchive
+            shasum -a 256 PasoFi-unsigned-iphoneos.xcarchive.tar.gz > SHA256SUMS.txt
+            shasum -a 256 --check SHA256SUMS.txt
+            tar -tzf PasoFi-unsigned-iphoneos.xcarchive.tar.gz > archive-entries.txt
+            grep -Fxq Pasofi.xcarchive/Products/Applications/App.app/Info.plist archive-entries.txt
+            rm archive-entries.txt
+          )
+      - name: Retain unsigned iPhoneOS verification archive
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && steps.device_archive.outputs.required == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pasofi-ios-unsigned-iphoneos-verification-${{ github.sha }}
+          path: ${{ runner.temp }}/iphoneos-verification/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
       - name: Package simulator app without losing executable permissions
         run: |
           mkdir -p native-artifacts
