@@ -146,3 +146,28 @@ test('a gateway outage still offers Company Portal sign-in and signup on the acc
   }
   expect(writes).toBe(0);
 });
+
+test('a customer signing in at the hotspot welcome returns to the welcome screen', async ({ page, baseURL }) => {
+  let returnTo: string | undefined;
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/onesa/start') {
+      returnTo = route.request().postDataJSON().returnTo;
+      return route.fulfill({ json: { authorizationUrl: 'https://portal.example.invalid/authorize' } });
+    }
+    const customerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const body = path === '/api/onesa/complete' ? { authenticated: true, returnTo, customerId }
+      : path === '/api/session' ? { customerId }
+      : path === '/api/onesa/availability' ? { origin: new URL(route.request().url()).origin }
+      : path === '/api/capabilities' ? paused : path === '/api/help' ? { articles: [] } : { products: [] };
+    return route.fulfill({ json: body });
+  });
+  await page.route('https://portal.example.invalid/authorize', route =>
+    route.fulfill({ status: 302, headers: { Location: new URL('/onesa-callback.html?code=test&state=test', baseURL).href } }));
+  await page.goto('/connect');
+  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue with Onesa', exact: true }).click();
+  await expect.poll(() => returnTo).toBe('/#connect');
+  await expect(page).toHaveURL(/\/#connect$/);
+  await expect(page.getByRole('button', { name: 'My WiFi', exact: true })).toBeVisible();
+});
