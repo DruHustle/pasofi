@@ -24,6 +24,28 @@ async function mock(page: Page, handle: (route: Route, path: string) => Promise<
 }
 async function open(page: Page) { await page.goto('/'); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByTestId('live-usage')).toBeVisible(); }
 
+test('hotspot preparation respects exhausted data and explains server-side eligibility changes', async ({ page }) => {
+  let used = '5000000000', attempts = 0;
+  await mock(page, async (route, path) => {
+    if (path === '/api/capabilities') { await json(route, { demo: true, networkAccess: true }); return true; }
+    if (path === '/api/network/sites') { await json(route, { accessPoints: [accessPoint()] }); return true; }
+    if (path === '/api/usage') { await json(route, usageSnapshot(used)); return true; }
+    if (path === '/api/network/credentials') { attempts++; await json(route, { error: 'no_usable_entitlement' }, 409); return true; }
+    return false;
+  });
+  await open(page);
+  const connect = page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true });
+  await expect(page.getByText('Your account has no remaining data for a new hotspot connection.', { exact: false })).toBeVisible();
+  await expect(connect).toBeDisabled();
+  expect(attempts).toBe(0);
+  used = '0';
+  await page.getByRole('button', { name: 'Refresh data balance' }).click();
+  await expect(connect).toBeEnabled();
+  await connect.click();
+  await expect(page.getByText('Your account has no bundle eligible for a new hotspot session.', { exact: false })).toBeVisible();
+  expect(attempts).toBe(1);
+});
+
 test('remaining data updates automatically from the whole-account ledger and synchronizes visible bundle cards', async ({ page }, testInfo) => {
   let used = '1000000000', historyReads = 0, networkReads = 0; const requestedIds: string[] = [];
   await page.clock.install();

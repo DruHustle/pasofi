@@ -600,6 +600,7 @@ test('registered PasoFi hotspot connects by HTTPS POST without retyping a networ
   const loginUrl = 'https://hotspot.pasofi.onesa.eu/login';
   await mock(page, async (route, path) => {
     if (path === '/api/capabilities') { await json(route, { ...capabilities, networkAccess: true }); return true; }
+    if (path === '/api/usage') { await json(route, usageSnapshot('0', { queuedBytes: '5000000000' })); return true; }
     if (path === '/api/network/sites') { await json(route, { accessPoints: [{ siteId, nasId, siteName: site.name, name: 'Test router', loginUrl }] }); return true; }
     if (path === '/api/network/credentials') { await json(route, { siteId, nasId, username: 'private-connection-user', password: 'private-connection-password', expiresAt: future(), loginUrl }); return true; }
     return false;
