@@ -370,14 +370,14 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const product = products.find(item => item.id === bundleId), method = methods.find(item => item.code === methodCode);
   const methodEligible = !!product && !!method && product.currency === method.currency && product.price_minor >= method.minMinor && product.price_minor <= method.maxMinor;
   function accessState(item: Entitlement) { if (item.revoked_at) return 'Reversed · unavailable'; if (BigInt(item.consumed_bytes) >= BigInt(item.byte_limit)) return 'Data used up'; if (!item.activated_at) return Date.parse(item.start_by) <= now ? 'Start deadline passed' : 'Queued · not connected'; return Date.parse(item.activated_at) + item.validity_seconds * 1000 <= now ? 'Validity ended' : 'Activated · check hotspot connection below'; }
-  const titles: Record<CustomerTab, string> = { access: 'Your internet', wifi: 'My WiFi', history: 'Your activity', voucher: 'Redeem a voucher', receipt: 'Buy with an agent', purchase: 'Checkout', recovery: 'Your account' };
-  const subtitles: Record<CustomerTab, string> = { access: 'A little data. A lot of possibility.', wifi: 'Your hotspot, your devices, your connection.', history: 'Keep track of your bundles and recent receipts.', voucher: 'A code away from your next connection.', receipt: 'Pay in cash. Get your data privately.', purchase: 'Your bundle. Your preferred way to pay.', recovery: 'Keep your connection close, wherever you go.' };
+  const titles: Record<CustomerTab, string> = { access: 'Your internet', wifi: 'My WiFi', history: 'Your activity', voucher: capabilities.vouchers ? 'Redeem a voucher' : 'Vouchers paused', receipt: 'Buy with an agent', purchase: 'Checkout', recovery: 'Your account' };
+  const subtitles: Record<CustomerTab, string> = { access: 'A little data. A lot of possibility.', wifi: 'Your hotspot, your devices, your connection.', history: 'Keep track of your bundles and recent receipts.', voucher: capabilities.vouchers ? 'A code away from your next connection.' : 'Keep your code to redeem when service resumes.', receipt: 'Pay in cash. Get your data privately.', purchase: 'Your bundle. Your preferred way to pay.', recovery: 'Keep your connection close, wherever you go.' };
   const sectionLinks: { tab: CustomerTab; label: string }[] = [
     { tab: 'access', label: 'My bundles' }, { tab: 'wifi', label: 'My WiFi' }, { tab: 'history', label: 'History' },
-    { tab: 'voucher', label: 'Use a voucher' }, { tab: 'receipt', label: 'Private receipt' },
+    { tab: 'voucher', label: capabilities.vouchers ? 'Use a voucher' : 'Vouchers paused' }, { tab: 'receipt', label: 'Private receipt' },
     { tab: 'purchase', label: 'Online payment' }, { tab: 'recovery', label: 'Recovery & devices' },
   ];
-  const sectionNavigation = <nav className="workspace-tabs customer-section-tabs" aria-label="Customer sections">{sectionLinks.map(link => <button key={link.tab} aria-pressed={tab === link.tab} className={tab === link.tab ? 'selected' : ''} onClick={() => selectTab(link.tab)}>{link.label}</button>)}</nav>;
+  const sectionNavigation = <nav className="workspace-tabs customer-section-tabs" aria-label="Customer sections">{sectionLinks.map(link => <button key={link.tab} disabled={link.tab === 'voucher' && !capabilities.vouchers} aria-pressed={tab === link.tab} className={tab === link.tab ? 'selected' : ''} onClick={() => selectTab(link.tab)}>{link.label}</button>)}</nav>;
   const emptyBundleGuidance = capabilities.staffSales || capabilities.paymentCheckout || capabilities.vouchers
     ? 'No bundles are shown yet. Browse bundles to check current availability.'
     : 'No bundles are shown yet. Purchases and voucher redemption are not available yet. Browse bundles to check current availability.';
@@ -398,7 +398,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     <PolicyNotice/>
     {loading && <div className="customer-loading" role="status"><span className="customer-loading-dot" />Checking your account…</div>}
     {message && <p className="feedback" role="status">{message}</p>}
-    {!loading && !owner && <p className="notice customer-session-notice">No account is active in this {usesNativeCustomerApi ? 'app' : 'browser'}. You can buy or redeem as a guest. Sign in through Company Portal to use your Onesa identity. <button className="text-button" onClick={recovered}>Recover an existing account</button></p>}
+    {!loading && !owner && <p className="notice customer-session-notice">No account is active in this {usesNativeCustomerApi ? 'app' : 'browser'}. Sign in through Company Portal to use your Onesa identity. <button className="text-button" onClick={recovered}>Recover an existing account</button></p>}
     {recoveryReminder && owner && tab !== 'recovery' && <aside className="notice customer-recovery-reminder"><strong>Keep access to your bundle.</strong><p>Save your account reference and recovery key before changing devices or {usesNativeCustomerApi ? "clearing this app’s data" : 'clearing this browser'}.</p><button className="secondary" onClick={() => { setRecoveryReminder(false); selectTab('recovery'); }}>Review recovery & devices</button></aside>}
     {(tab === 'receipt' || tab === 'purchase') && <>
       {catalogueLoading && <p role="status">Loading available bundles and locations…</p>}
@@ -409,10 +409,10 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     {checkoutPending && tab !== 'purchase' && <button className="customer-pending-checkout" onClick={() => selectTab('purchase')}><CustomerGlyph name="receipt" /><span><strong>Your checkout is saved</strong><small>Check its status before starting another payment.</small></span><CustomerGlyph name="arrow" /></button>}
 
     {tab === 'access' && <>
-      {owner ? <LiveUsage usage={usage} onBuyData={buyData} /> : !loading && <section className="customer-welcome-card"><span className="customer-welcome-icon"><CustomerGlyph name="wifi" /></span><div className="eyebrow">A WORLD OF POSSIBILITY</div><h3>Make yourself at home.</h3><p>Choose a bundle or redeem a voucher. Your data balance and connection will appear right here.</p><button className="primary" onClick={buyData}>Explore bundles<CustomerGlyph name="arrow" /></button><small>No registration form to get started.</small></section>}
+      {owner ? <LiveUsage usage={usage} onBuyData={buyData} /> : !loading && <section className="customer-welcome-card"><span className="customer-welcome-icon"><CustomerGlyph name="wifi" /></span><div className="eyebrow">A WORLD OF POSSIBILITY</div><h3>Make yourself at home.</h3><p>{capabilities.vouchers ? 'Choose a bundle or redeem a voucher.' : 'Explore the published bundles.'} Your data balance and connection will appear right here.</p><button className="primary" onClick={buyData}>Explore bundles<CustomerGlyph name="arrow" /></button><small>No registration form to get started.</small></section>}
       <div className="customer-quick-actions" aria-label="Quick actions">
         <button onClick={buyData}><span><CustomerGlyph name="data" /></span>Browse bundles</button>
-        <button onClick={() => selectTab('voucher')}><span><CustomerGlyph name="voucher" /></span>Redeem a voucher</button>
+        <button disabled={!capabilities.vouchers} onClick={() => selectTab('voucher')}><span><CustomerGlyph name="voucher" /></span>{capabilities.vouchers ? 'Redeem a voucher' : 'Vouchers paused'}</button>
         <button onClick={() => selectTab('wifi')} aria-label="Manage my WiFi"><span><CustomerGlyph name="wifi" /></span>My WiFi</button>
         <button onClick={() => selectTab('recovery')} aria-label="Manage recovery and devices"><span><CustomerGlyph name="user" /></span>My account</button>
       </div>
@@ -437,8 +437,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
 
     {tab === 'voucher' && <section className="workspace-card customer-voucher-card">
       <div className="customer-voucher-art" aria-hidden="true"><CustomerGlyph name="voucher" /><span>PASOFI</span><i /><span>YOUR NEXT CONNECTION</span></div>
-      <div className="customer-voucher-content"><div className="eyebrow">GOOD THINGS COME IN SMALL CODES</div><h3>Use your voucher</h3><p>Enter the code from your agent or private receipt. Uploads and downloads count toward the allowance. Redeeming queues the bundle; it does not start its validity or connect you.</p>
-      {!capabilities.vouchers ? <p className="notice">Voucher redemption is not enabled here yet.</p> : <form className="form-grid" onSubmit={redeem}><label>Voucher code<input className="customer-voucher-input" required maxLength={40} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Enter your voucher code" value={voucherCode} onChange={event => setVoucherCode(event.target.value.toUpperCase())} /></label><button className="primary" disabled={busy}>Redeem voucher<CustomerGlyph name="arrow" /></button></form>}
+      <div className="customer-voucher-content">{capabilities.vouchers && <><div className="eyebrow">GOOD THINGS COME IN SMALL CODES</div><h3>Use your voucher</h3><p>Enter the code from your agent or private receipt. Uploads and downloads count toward the allowance. Redeeming queues the bundle; it does not start its validity or connect you.</p></>}
+      {!capabilities.vouchers ? <><p className="notice" role="status">Voucher redemption is currently paused.</p><button className="secondary" onClick={buyData}>Browse bundles</button></> : <form className="form-grid" onSubmit={redeem}><label>Voucher code<input className="customer-voucher-input" required maxLength={40} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Enter your voucher code" value={voucherCode} onChange={event => setVoucherCode(event.target.value.toUpperCase())} /></label><button className="primary" disabled={busy}>Redeem voucher<CustomerGlyph name="arrow" /></button></form>}
       <div className="customer-private-note"><CustomerGlyph name="shield" /><span>Your voucher is private. Share it only when redeeming.</span></div></div>
     </section>}
 

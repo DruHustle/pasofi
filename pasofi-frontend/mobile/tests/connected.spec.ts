@@ -102,6 +102,31 @@ for(const platform of ['ios','android'])for(const outcome of ['completed','cance
   });
 }
 
+test('connected mobile account keeps paused vouchers inactive and preserves account recovery', async ({ page, configuredBaseURL }) => {
+  const mutations: string[] = [];
+  await mock(page, async (_route, path, method, reply) => {
+    if (method !== 'GET') mutations.push(path);
+    if (path === '/api/capabilities') {
+      await reply({ ...capabilities, vouchers: false, receiptPairing: false });
+      return true;
+    }
+    if (path === '/api/session') {
+      await reply({ error: 'not_authenticated' }, 401);
+      return true;
+    }
+    return false;
+  });
+  await open(page, configuredBaseURL);
+  await expect(page.getByText('No account is active in this browser.', { exact: false })).toBeVisible();
+  const redeem = page.getByRole('button', { name: 'Redeem a voucher', exact: true });
+  await expect(redeem).toHaveCount(0, { timeout: 3000 });
+  await expect(page.getByRole('button', { name: 'Vouchers paused', exact: true }).first()).toBeDisabled();
+  await expect(page.getByText('You can buy or redeem as a guest.', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Recover an existing account' })).toBeVisible();
+  await expect(page.getByLabel('Voucher code', { exact: true })).toHaveCount(0);
+  expect(mutations).toEqual([]);
+});
+
 test('a configured HTTPS gateway still fails closed until native cookie access is qualified', async ({ page, configuredBaseURL }) => {
   const requested: string[] = [];
   await mock(page, async (_route, path, _method, reply) => { requested.push(path); if (path === '/api/capabilities') { await reply({ ...capabilities, mobileCookies: false }); return true; } return false; });
