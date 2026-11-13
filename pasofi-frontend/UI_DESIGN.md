@@ -82,4 +82,4 @@ If the environment uses an existing Chromium executable, set `PAMOFI_CHROME_PATH
 
 The real-service commerce suite and native build workflows remain separate verification gates. No fixture result alone establishes a production payment or a physical hotspot connection.
 
-The verification workflow retains isolated UI screenshots and test context for three days in its private `pamofi-ui-evidence` artifact. These are review materials generated from synthetic test accounts, not screenshots of production customer data.
+The verification workflow retains isolated UI screenshots and test context for three days in its private `pasofi-ui-evidence` artifact. These are review materials generated from synthetic test accounts, not screenshots of production customer data.
