@@ -186,7 +186,7 @@ function App() {
         <div className="pf-page-intro"><div><span className="pf-eyebrow">WELCOME TO YOUR HOTSPOT</span><h1 tabIndex={-1}>Connect to PasoFi</h1><p>Check bundle prices and voucher availability at this hotspot.</p></div></div>
         {view === 'connect' && <section className="pf-quick-actions" aria-label="Quick actions">{([
           { label: 'View bundles', icon: 'plus' as IconName, action: (b: HTMLButtonElement) => navigate('bundles', b), disabled: false },
-          { label: 'Redeem voucher', icon: 'ticket' as IconName, action: (b: HTMLButtonElement) => openCustomer('voucher', b), disabled: !capabilities },
+          { label: capabilities?.vouchers === false ? 'Vouchers paused' : 'Redeem voucher', icon: 'ticket' as IconName, action: (b: HTMLButtonElement) => openCustomer('voucher', b), disabled: !capabilities?.vouchers },
           { label: 'My WiFi', icon: 'wifi' as IconName, action: (b: HTMLButtonElement) => openCustomer('wifi', b), disabled: !capabilities },
           { label: 'Get help', icon: 'help' as IconName, action: (b: HTMLButtonElement) => navigate('help', b), disabled: false },
         ]).map(action => <button key={action.label} disabled={action.disabled} onClick={event => action.action(event.currentTarget)}><span><Icon name={action.icon}/></span><strong>{action.label}</strong></button>)}</section>}
