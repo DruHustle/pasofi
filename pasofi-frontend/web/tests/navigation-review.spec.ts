@@ -91,7 +91,7 @@ test('handoff and staff entry routes reopen correctly and close to home', async 
   await expect(page).toHaveURL(/#staff$/);
   await page.reload();
   const staff = page.getByRole('region', { name: 'Staff workspace' });
-  await expect(staff.getByRole('link', { name: 'Sign in to Company Portal' })).toHaveAttribute('href', 'https://portal.onesa.eu/account');
+  await expect(staff.getByRole('link', { name: 'Sign in to Company Portal' })).toHaveAttribute('href', 'https://portal.onesa.eu/admin');
   await expect(staff.locator('input[type="password"]')).toHaveCount(0);
   expect(mutations).toEqual([]);
 });

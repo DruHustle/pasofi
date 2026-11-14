@@ -123,8 +123,8 @@ test('production account and staff entry use Portal when federation is unavailab
   for (const hash of ['#account', '#staff?apply=1']) {
     await page.goto('/' + hash);
     const scope = hash.startsWith('#staff') ? page.getByRole('region', { name: 'Staff workspace' }) : page;
-    await expect(scope.getByRole('link',{name:'Create an Onesa account'})).toHaveAttribute('href','https://portal.onesa.eu/account/register');
-    await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveAttribute('href','https://portal.onesa.eu/account');
+    await expect(scope.getByRole('link',{name:'Create an Onesa account'})).toHaveAttribute('href','https://portal.onesa.eu/admin?entry=register');
+    await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveAttribute('href','https://portal.onesa.eu/admin');
     await expect(scope.getByRole('button',{name:'Start a new customer account'})).toHaveCount(0);
     await expect(scope.locator('input[type="password"]')).toHaveCount(0);
   }
@@ -140,8 +140,8 @@ test('a gateway outage still offers Company Portal sign-in and signup on the acc
   for (const hash of ['#account','#staff?apply=1']) {
     await page.goto('/'+hash);
     const scope = hash.startsWith('#staff') ? page.getByRole('region',{name:'Staff workspace'}) : page.getByRole('main');
-    await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/account');
-    await expect(scope.getByRole('link',{name:'Create an Onesa account',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/account/register');
+    await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/admin');
+    await expect(scope.getByRole('link',{name:'Create an Onesa account',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/admin?entry=register');
     await expect(scope.locator('input[type="password"]')).toHaveCount(0);
   }
   expect(writes).toBe(0);
