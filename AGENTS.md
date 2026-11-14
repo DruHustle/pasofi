@@ -29,17 +29,25 @@ On macOS keep distinct module basenames; casing alone must not distinguish modul
 
 ## Identity and payment boundaries
 
-Company Portal is the identity authority. Customer federation uses the approved
-PasoFi `customer` grant, stable issuer/subject mapping, PKCE/nonce and browser-bound
-one-use flows. The existing staff administrator path requires the live global-admin
-and product-admin grants plus MFA. Customer access does not grant staff privileges.
-Never merge guest/customer/staff identities by email. Preserve guest purchases and
-explicit recovery. Portal-backed customer sessions require live introspection;
-local recovery credentials cannot bypass a revoked Portal grant. Federated sessions
-and handoffs use isolated tables so rollback cannot interpret them as guest cookies.
-Native Onesa sign-in opens the fixed configured browser origin and explicitly
-transfers a two-minute single-use code; both sides verify live Portal authority.
-The resulting native session remains independent and encrypted.
+Onesa Identity owns human accounts, approval, suspension and PasoFi role grants.
+A managed deployment uses the configured issuer at `auth.onesa.eu`, the PasoFi
+API audience, browser-bound single-use Authorization Code/PKCE and signed stable
+Onesa user IDs. Until the managed client, keys, links and staff bindings pass
+qualification in that environment, the deployed legacy integration uses the Portal
+issuer and live introspection. Legacy administrator access requires both existing
+global-admin and PasoFi-admin grants plus MFA. A customer grant alone cannot
+authorize a staff request.
+
+Keep the original issuer namespace and proven stable Onesa UUID when resolving
+existing PasoFi customers and site operators. Never merge identities by email.
+Managed staff require a matching local approval, product role, assigned site
+scope and recent provider MFA. Use the original token expiry to bound sessions
+and native one-use transfers. Local guest recovery must never bypass revoked
+federated access. Preserve guest purchase ownership, operator recovery controls,
+router telemetry and network enforcement independently of human authentication.
+The current native handoff uses a fixed system-browser origin and a two-minute
+single-use transfer into an independently encrypted native session. Direct native
+public-client PKCE and device qualification are separate release items.
 
 Stripe fulfillment requires verified signed events plus fresh provider retrieval
 bound to the stored amount, currency, account, customer, order, site and attempt.
