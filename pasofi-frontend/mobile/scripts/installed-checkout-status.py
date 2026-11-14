@@ -45,7 +45,16 @@ if __name__ == "__main__":
     try:
         adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
         tap("My PasoFi")
-        visible("No account is active in this app", allow_scroll=True)
+        end = time.monotonic() + 65
+        while time.monotonic() < end:
+            if locate("Mobile account access is not enabled by this deployment yet"):
+                print("Installed configured app reports mobile account access disabled before checkout. No payment was attempted.", flush=True)
+                raise SystemExit(0)
+            if locate("No account is active in this app"):
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError("The installed app did not show a recognized hosted access state")
         print("Installed app reached the configured customer service as a guest", flush=True)
         tap("Bundles")
         end = time.monotonic() + 55
