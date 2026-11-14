@@ -19,6 +19,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     APP_ENV:'demo',NODE_ENV:'development',PUBLIC_ORIGIN:origin,DATABASE_URL:process.env.PAMOFI_TEST_DATABASE_URL,
     STAFF_MFA_ENCRYPTION_KEY:'ab'.repeat(32),PASOFI_ONESA_MODE:'managed',PASOFI_ONESA_ISSUER:issuer,
     PASOFI_ONESA_RECORD_ISSUER:legacy,PASOFI_ONESA_CLIENT_ID:clientId,PASOFI_ONESA_CLIENT_SECRET:randomBytes(48).toString('hex'),
+    PASOFI_ONESA_IOS_CLIENT_ID:'pasofi_synthetic_ios',PASOFI_ONESA_ANDROID_CLIENT_ID:'pasofi_synthetic_android',
     PASOFI_ONESA_REDIRECT_URI:origin+'/onesa-callback.html',PASOFI_ONESA_AUDIENCE:audience,PASOFI_ONESA_PUBLIC_JWKS:JSON.stringify(jwks),
   });
   const db = new pg.Pool({ connectionString:process.env.PAMOFI_TEST_DATABASE_URL });
@@ -32,7 +33,28 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   let accessSubject = providerSubject;
   t.after(()=>app.close());
   const ns = 'https://onesa.eu/claims/';
+  const order = randomUUID();
+  let prepaid;
+  if (process.env.PAMOFI_TEST_PREPAID_DATABASE_URL) {
+    const ledger = new pg.Pool({connectionString:process.env.PAMOFI_TEST_PREPAID_DATABASE_URL});
+    await ledger.query(`INSERT INTO purchase_orders (id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at)
+      VALUES ($1,$2,$3,'flex',100,'USD',1048576,86400,'payment_confirmed',now()-interval '1 day')`, [order,customer,randomUUID()]);
+    await ledger.end();
+    const {buildApp:buildPrepaid} = await import('../../prepaid-access-service/dist/app.js');
+    const identityDatabase = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = process.env.PAMOFI_TEST_PREPAID_DATABASE_URL;
+    prepaid = buildPrepaid();
+    await prepaid.ready();
+    process.env.DATABASE_URL = identityDatabase;
+    process.env.IDENTITY_URL = 'http://127.0.0.1:19090';
+    process.env.INTERNAL_IDENTITY_SECRET = randomBytes(32).toString('hex');
+    t.after(()=>prepaid.close());
+  }
   t.mock.method(globalThis,'fetch', async (url,init)=>{
+    if (String(url) === 'http://127.0.0.1:19090/internal/v1/session') {
+      const response = await app.inject({method:'GET',url:'/internal/v1/session',headers:init.headers});
+      return new Response(response.body,{status:response.statusCode,headers:{'content-type':'application/json'}});
+    }
     if(outage) throw Error('isolated issuer unavailable');
     if(String(url)===issuer+'.well-known/openid-configuration') return Response.json({
       issuer,authorization_endpoint:issuer+'authorize',token_endpoint:issuer+'oauth/token',jwks_uri:issuer+'keys',
@@ -58,6 +80,24 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     assert.equal(query.get('audience'),audience); assert.equal(query.get('code_challenge_method'),'S256');
     if(staff) assert.equal(query.get('acr_values'),'http://schemas.openid.net/pape/policies/2007/06/multi-factor');
     return request('POST',prefix+'complete',{code:'synthetic',state:query.get('state')},cookie(start,staff?'onesa_flow':'onesa_customer_flow'));
+  }
+  const nativeToken = (azp) => new SignJWT({azp,[ns+'user_id']:stable,[ns+'products']:['pasofi'],[ns+'roles']:['customer']})
+    .setIssuer(issuer).setAudience(audience).setSubject(providerSubject).setProtectedHeader({alg:'RS256',kid:'one'}).setIssuedAt(now()).setExpirationTime(now()+300).sign(privateKey);
+  for(const platform of ['ios','android']) {
+    const token=await nativeToken(platform==='ios'?'pasofi_synthetic_ios':'pasofi_synthetic_android');
+    const native=await request('POST','onesa/native-session',{platform,accessToken:token});
+    assert.equal(native.statusCode,200,native.body); assert.equal(native.json().customerId,customer);
+    const saved=cookie(native,'demo_session');
+    assert.equal((await request('GET','session',undefined,saved)).json().customerId,customer);
+    assert.equal((await request('GET','staff/session',undefined,saved)).statusCode,401);
+    if (prepaid) {
+      const history = await prepaid.inject({method:'GET',url:'/v1/orders',headers:{cookie:saved}});
+      assert.equal(history.statusCode,200,history.body);
+      assert.equal(history.json().customerId,customer);
+      assert.deepEqual(history.json().orders.map(item=>[item.id,item.status]),[[order,'payment_confirmed']]);
+    }
+    assert.equal((await request('POST','onesa/native-session',{platform,accessToken:token},saved)).statusCode,409);
+    assert.equal((await request('POST','onesa/native-session',{platform:platform==='ios'?'android':'ios',accessToken:token})).statusCode,401);
   }
   const good=await login();
   assert.equal(good.statusCode,200,good.body);

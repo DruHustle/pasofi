@@ -36,6 +36,9 @@ public class CustomerApiPolicyTest {
         assertNull(request("POST", "/api/onesa/availability"));
         assertNull(request("GET", "/api/onesa/availability?code=private"));
         assertNull(request("POST", "/api/onesa/complete"));
+        assertTrue(request("POST", "/api/onesa/native-session").recovery());
+        assertNull(request("GET", "/api/onesa/native-session"));
+        assertNull(request("POST", "/api/onesa/native-session?token=invalid"));
     }
 
     @Test public void acceptsOnlyTheCustomerWorkflowMethodsIncludingInvoices() {

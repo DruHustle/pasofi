@@ -1,4 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { pendingNativeDestination } from './native-oidc';
 import { mobileApiConfigured } from './api';
 import Icon, { type IconName } from './Icon';
 import type { CustomerTab } from './CustomerAccess';
@@ -41,7 +43,8 @@ const navigation: { id: Exclude<Tab, 'help'>; label: string; icon: IconName }[] 
 
 export default function MobileApp() {
   const [tab, setTab] = useState<Tab>('home');
-  const [accountOpen, setAccountOpen] = useState(false), [accountTab, setAccountTab] = useState<CustomerTab>('access');
+  const [pending] = useState(() => Capacitor.isNativePlatform() ? pendingNativeDestination(sessionStorage) : null);
+  const [accountOpen, setAccountOpen] = useState(Boolean(pending)), [accountTab, setAccountTab] = useState<CustomerTab>(pending ?? 'access');
   const [selected, setSelected] = useState<string | null>(null), [category, setCategory] = useState<Category>('all');
   const [helpQuery, setHelpQuery] = useState('');
   const content = useRef<HTMLElement>(null), previousTab = useRef(tab), previousAccountOpen = useRef(accountOpen);

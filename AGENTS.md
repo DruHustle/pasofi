@@ -45,9 +45,11 @@ scope and recent provider MFA. Use the original token expiry to bound sessions
 and native one-use transfers. Local guest recovery must never bypass revoked
 federated access. Preserve guest purchase ownership, operator recovery controls,
 router telemetry and network enforcement independently of human authentication.
-The current native handoff uses a fixed system-browser origin and a two-minute
-single-use transfer into an independently encrypted native session. Direct native
-public-client PKCE and device qualification are separate release items.
+Register distinct public clients for iOS and Android. Open the system browser,
+bind the authorization code to S256, the exact callback and the original screen,
+and pass the PasoFi audience token to the private native session endpoint.
+Keep the two-minute browser handoff available during transition. Qualify installed
+builds, including shared browser sessions and device storage, before rollout.
 
 Stripe fulfillment requires verified signed events plus fresh provider retrieval
 bound to the stored amount, currency, account, customer, order, site and attempt.

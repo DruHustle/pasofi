@@ -5,7 +5,7 @@ import { decryptMfa, encryptMfa, freshOpaque, isOpaque, opaqueHash } from './sta
 
 type Store = pg.Pool | pg.PoolClient;
 export type Configuration = { issuer: string; clientId: string; clientSecret: string; callback: URL; managed?: { audience: string; recordIssuer: string; keys: JSONWebKeySet } };
-export type Admin = { subject: string; email: string; name: string; expires: number; authenticated: number; siteOperator?: true; providerSubject?: string; localRole?: string };
+export type Admin = { subject: string; email: string; name: string; expires: number; authenticated: number; siteOperator?: true; providerSubject?: string; authorizedClient?: string; localRole?: string };
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 export class OnesaError extends Error {
@@ -112,7 +112,12 @@ export class OnesaStaff {
       { client_secret: clientSecret, id_token_signed_response_alg: 'RS256' }, oidc.ClientSecretBasic(clientSecret),
       { timeout: 5, [oidc.customFetch]: (url, init) => fetch(url, { ...init, redirect: 'error' } as RequestInit) }
     ).then(client => {
-      if (client.serverMetadata().issuer !== issuer) throw denied();
+      const metadata = client.serverMetadata();
+      if (metadata.issuer !== issuer || ![metadata.authorization_endpoint,metadata.token_endpoint,metadata.jwks_uri].every(endpoint => {
+        if (!endpoint) return false;
+        const url = new URL(endpoint);
+        return url.origin === new URL(issuer).origin && !url.username && !url.password && !url.hash;
+      })) throw denied();
       oidc.enableNonRepudiationChecks(client);
       return client;
     }).catch(error => { this.discovery = undefined; throw error; });
@@ -174,7 +179,7 @@ export class OnesaStaff {
           !Number.isSafeInteger(payload.exp) || !payload.exp ||
           payload.exp <= payload.iat || payload.exp - payload.iat > 300 || !Array.isArray(products) ||
           !products.includes('pasofi') || !Array.isArray(roles)) throw denied();
-      const identity: Admin = { subject: stable.toLowerCase(), providerSubject: payload.sub, email: '', name: '',
+      const identity: Admin = { subject: stable.toLowerCase(), providerSubject: payload.sub, authorizedClient: typeof payload.azp === 'string' ? payload.azp : undefined, email: '', name: '',
         authenticated: payload.iat, expires: payload.exp };
       if (!this.staffFlow) {
         if (!roles.some(role => ['admin','agent','support','customer'].includes(role))) throw denied();
@@ -210,6 +215,7 @@ export class OnesaStaff {
     if (tokens.token_type.toLowerCase() !== 'bearer' || !tokens.access_token || tokens.access_token.length > (this.config.managed ? 16384 : 2048)) throw denied();
     const staff = await this.inspect(tokens.access_token);
     if (tokens.claims()?.sub !== (staff.providerSubject ?? staff.subject)) throw denied();
+    if (this.config.managed && staff.authorizedClient && staff.authorizedClient !== this.config.clientId) throw denied();
     const session = freshOpaque(), hash = opaqueHash(session);
     const envelope = this.protectAccess(tokens.access_token, 'onesa-session:' + hash.toString('hex'));
     await db.query('DELETE FROM staff_onesa_sessions WHERE expires_at<=now()');

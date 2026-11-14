@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
-    "test": "tsc -b --pretty false",
+    "test": "tsc -b --pretty false && node --test test/*.test.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "test:browser": "playwright test",
     "mobile:sync": "npm run build && cap sync",
@@ -15,10 +15,13 @@
   },
   "dependencies": {
     "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/browser": "8.0.5",
     "@capacitor/core": "8.6.0",
     "@capacitor/filesystem": "8.1.5",
     "@capacitor/ios": "8.6.0",
     "@capacitor/share": "8.0.3",
+    "openid-client": "6.8.9",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },

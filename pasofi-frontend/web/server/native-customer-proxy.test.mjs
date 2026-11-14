@@ -151,7 +151,7 @@ test('native marker cannot authorize staff, admin, internal, callback, demo-conf
 test('customer session, recovery, purchases, vouchers, network and invoices retain their allowed methods', async () => {
   await withProxy({}, async call => {
     const allowed = [['GET', '/api/session'], ['POST', '/api/session'], ['DELETE', '/api/session'], ['GET', '/api/recovery/status'],
-      ['POST', '/api/recovery'], ['POST', '/api/recovery/setup'], ['POST', '/api/recovery/rotate'], ['POST', '/api/handoff'], ['POST', '/api/handoff/redeem'],
+      ['POST', '/api/recovery'], ['POST', '/api/recovery/setup'], ['POST', '/api/recovery/rotate'], ['POST', '/api/handoff'], ['POST', '/api/handoff/redeem'], ['POST', '/api/onesa/native-session'],
       ['GET', '/api/orders'], ['POST', '/api/orders'], ['GET', `/api/orders/${id}/status`], ['POST', `/api/orders/${id}/checkout`],
       ['POST', `/api/orders/${id}/expire-unused`], ['POST', '/api/vouchers/redeem'], ['POST', '/api/receipt-pairings'],
       ['GET', `/api/receipt-pairings/${id}`], ['POST', `/api/receipt-pairings/${id}/cancel`], ['GET', '/api/network/sites'],

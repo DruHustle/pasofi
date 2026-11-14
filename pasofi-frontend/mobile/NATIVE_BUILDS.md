@@ -1,4 +1,27 @@
-## Onesa account sign-in through an explicit handoff
+## Managed Onesa sign-in
+
+Register separate native public clients for iOS and Android. Set
+`PASOFI_ONESA_IOS_CLIENT_ID` and `PASOFI_ONESA_ANDROID_CLIENT_ID` on the
+PasoFi identity service and register the exact callback
+`com.onesa.pasofi.identity://login/callback` on both. Register the WebView
+origins `capacitor://localhost` for iOS and `https://localhost` for Android
+for OIDC discovery, token exchange and signing-key requests. Configure the
+PasoFi audience and 300-second access tokens, with the client ID in `azp`.
+Sync iOS with `VITE_PASOFI_ONESA_ISSUER` set to the same HTTPS issuer
+(defaults to `https://auth.onesa.eu/`) and the normal compiled PasoFi origin.
+
+When the configured service advertises the platform registration, the installed
+app opens Android Custom Tabs or a non-ephemeral iOS ASWebAuthenticationSession.
+The app exchanges the code as a public client with S256, verifies the signed ID
+token, nonce and state, then submits its short-lived access token once to
+`POST /api/onesa/native-session` through the native customer transport. After
+confirming the established customer ID against the private session, it restores
+the selected account screen. A replaced or expired transaction requires a fresh
+sign-in. The app never persists the provider token. Qualify first sign-in,
+reuse of a browser session, OS return, secure storage and an existing purchase
+on each provisioned signed build.
+
+## Legacy customer handoff
 
 The customer app opens only its compiled HTTPS PasoFi origin at `/#account` in
 the system browser. `PasoFiCustomerApi.openSignIn` accepts a request ID only;

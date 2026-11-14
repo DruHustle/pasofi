@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Capacitor
 import Foundation
 import Security
@@ -12,6 +13,7 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
     public let jsName = "PasoFiCustomerApi"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "availability", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "authenticate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openSignIn", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "request", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
@@ -94,6 +96,45 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
         if let origin = configuredOrigin {
             call.resolve(["requestId": id, "configured": true, "origin": origin, "protocol": 1])
         } else { call.resolve(["requestId": id, "configured": false, "protocol": 1]) }
+    }
+
+    private var authenticationSession: ASWebAuthenticationSession?
+    private var authenticationPresentation: AuthenticationPresentation?
+
+    @objc public func authenticate(_ call: CAPPluginCall) {
+        let callback = "com.onesa.pasofi.identity://login/callback"
+        guard configuredOrigin != nil, let issuer = getConfig().getString("identityOrigin"),
+              Set(call.jsObjectRepresentation.keys) == ["authorizationUrl"],
+              let raw = call.getString("authorizationUrl"), raw.utf8.count <= 8192,
+              let url = URL(string: raw), let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              url.scheme == "https", url.user == nil, url.password == nil, url.fragment == nil,
+              let host = parts.host, url.port == nil, issuer == "https://" + host,
+              parts.queryItems?.filter({ $0.name == "redirect_uri" }).map({ $0.value }) == [callback]
+        else { reject(call, .request); return }
+        DispatchQueue.main.async {
+            guard self.authenticationSession == nil, let window = self.bridge?.viewController?.view.window
+            else { self.reject(call, .unavailable); return }
+            let anchor = AuthenticationPresentation(window)
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "com.onesa.pasofi.identity") { result, _ in
+                DispatchQueue.main.async {
+                    self.authenticationSession = nil
+                    self.authenticationPresentation = nil
+                    guard let result, let prefix = result.absoluteString.components(separatedBy: "?").first,
+                          prefix == callback, result.fragment == nil
+                    else { self.reject(call, .network); return }
+                    call.resolve(["callback": result.absoluteString])
+                }
+            }
+            session.presentationContextProvider = anchor
+            session.prefersEphemeralWebBrowserSession = false
+            self.authenticationPresentation = anchor
+            self.authenticationSession = session
+            if !session.start() {
+                self.authenticationSession = nil
+                self.authenticationPresentation = nil
+                self.reject(call, .network)
+            }
+        }
     }
 
     @objc public func openSignIn(_ call: CAPPluginCall) {
@@ -312,4 +353,10 @@ private enum CustomerKeychain {
             guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { throw CustomerApiFailure.storage }
         } else if status != errSecSuccess { throw CustomerApiFailure.storage }
     }
+}
+
+private final class AuthenticationPresentation: NSObject, ASWebAuthenticationPresentationContextProviding {
+    private let window: UIWindow
+    init(_ window: UIWindow) { self.window = window }
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor { window }
 }

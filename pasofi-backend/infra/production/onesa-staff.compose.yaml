@@ -5,6 +5,8 @@ services:
       PASOFI_ONESA_MODE: ${PASOFI_ONESA_MODE:-portal}
       PASOFI_ONESA_RECORD_ISSUER: ${PASOFI_ONESA_RECORD_ISSUER:-https://portal.onesa.eu/api/v1/identity}
       PASOFI_ONESA_AUDIENCE: ${PASOFI_ONESA_AUDIENCE:-https://api.pasofi.onesa.eu}
+      PASOFI_ONESA_IOS_CLIENT_ID: ${PASOFI_ONESA_IOS_CLIENT_ID:-}
+      PASOFI_ONESA_ANDROID_CLIENT_ID: ${PASOFI_ONESA_ANDROID_CLIENT_ID:-}
       PASOFI_ONESA_PUBLIC_JWKS: ${PASOFI_ONESA_PUBLIC_JWKS:-}
       PASOFI_ONESA_REDIRECT_URI: https://pasofi.mobile.onesa.eu/onesa-callback.html
       PASOFI_ONESA_CLIENT_ID: ${PASOFI_ONESA_CLIENT_ID:?Set the registered PasoFi confidential client ID}

@@ -20,7 +20,7 @@ struct CustomerApiRequest {
     var pathname: String { String(path.split(separator: "?", maxSplits: 1)[0]) }
     var changesIdentity: Bool {
         (path == "/api/session" && ["POST", "DELETE"].contains(method)) ||
-            (method == "POST" && ["/api/recovery", "/api/handoff/redeem"].contains(path))
+            (method == "POST" && ["/api/recovery", "/api/handoff/redeem", "/api/onesa/native-session"].contains(path))
     }
     var isPublicRead: Bool {
         method == "GET" && ["/api/capabilities", "/api/bundles", "/api/sites", "/api/help"].contains(pathname)
@@ -59,7 +59,7 @@ enum CustomerApiPolicy {
         let pieces = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
         let route = String(pieces[0])
         let getPatterns = ["/api/onesa/availability", "/api/(bundles|capabilities|sites|access|usage|help|payments/methods)", "/api/orders", "/api/orders/" + uuid + "/status", "/api/session", "/api/recovery/status", "/api/customer/invoices(?:/" + uuid + "(?:/pdf)?)?", "/api/receipt-pairings/" + uuid, "/api/network/(sites|session)"]
-        let postPatterns = ["/api/orders", "/api/orders/" + uuid + "/(checkout|mock-payment|expire-unused)", "/api/session", "/api/(recovery(?:/(setup|rotate))?|handoff(?:/redeem)?)", "/api/invoice-downloads", "/api/receipt-pairings", "/api/receipt-pairings/" + uuid + "/cancel", "/api/vouchers/redeem", "/api/network/(credentials|disconnect)"]
+        let postPatterns = ["/api/onesa/native-session", "/api/orders", "/api/orders/" + uuid + "/(checkout|mock-payment|expire-unused)", "/api/session", "/api/(recovery(?:/(setup|rotate))?|handoff(?:/redeem)?)", "/api/invoice-downloads", "/api/receipt-pairings", "/api/receipt-pairings/" + uuid + "/cancel", "/api/vouchers/redeem", "/api/network/(credentials|disconnect)"]
         let allowed = method == "GET" ? getPatterns.contains(where: { matches(route, $0) }) : method == "POST" ? postPatterns.contains(where: { matches(route, $0) }) : route == "/api/session"
         guard allowed else { throw CustomerApiFailure.request }
         let pdf = (method == "GET" && matches(route, "/api/customer/invoices/" + uuid + "/pdf")) || (method == "POST" && route == "/api/invoice-downloads")
@@ -179,7 +179,7 @@ struct CustomerSessionState: Codable, Equatable {
 
     mutating func accept(_ request: CustomerApiRequest, status: Int, body: Any?, cookie: String?, now: Date) throws {
         let create = request.method == "POST" && request.path == "/api/session" && [200, 201].contains(status)
-        let recover = request.method == "POST" && ["/api/recovery", "/api/handoff/redeem"].contains(request.path) && status == 200
+        let recover = request.method == "POST" && ["/api/recovery", "/api/handoff/redeem", "/api/onesa/native-session"].contains(request.path) && status == 200
         let logout = request.method == "DELETE" && request.path == "/api/session" && status == 204
         guard cookie == nil || create || recover || logout else { throw CustomerApiFailure.response }
         if request.method == "GET" && request.path == "/api/session" && status == 401 && token != nil {

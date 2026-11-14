@@ -219,6 +219,7 @@ async function main() {
       catch { throw Error(`${project.name}: dependencies are missing; rerun with --install`); }
     }
     await run(`${project.name}: build`, 'npm', ['run', 'build'], project.cwd, { ...env, NODE_ENV: 'production' });
+    if (project.name === 'mobile') await run('mobile: public-client protocol', 'npm', ['test'], project.cwd, env);
     if (databases && services.includes(project.name)) await run(`${project.name}: migrations`, process.execPath, ['migrate.mjs'], project.cwd, { ...env, DATABASE_URL: databases[project.name] });
   }
   if (!integration) {
@@ -262,6 +263,7 @@ async function main() {
       // The network RADIUS suite also checks the prepaid ledger; its credentials
       // suite receives the separate network URL explicitly.
       PAMOFI_TEST_DATABASE_URL: name === 'network' ? databases['prepaid-access'] : databases[name],
+      ...(name === 'identity' ? { PAMOFI_TEST_PREPAID_DATABASE_URL: databases['prepaid-access'] } : {}),
       PAMOFI_TEST_NETWORK_DATABASE_URL: databases.network,
       PAMOFI_TEST_NOTIFICATION_DATABASE_URL: databases.notification,
       PAMOFI_TEST_PREPAID_URL: address('prepaid-access'),
