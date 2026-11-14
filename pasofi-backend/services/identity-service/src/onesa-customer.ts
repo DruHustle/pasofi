@@ -2,8 +2,8 @@ import * as oidc from 'openid-client';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import type { FastifyInstance } from 'fastify';
-import { OnesaStaff, OnesaError, customerAssertion, configuredOnesaStaff, type Configuration, type Admin } from './onesa-staff.js';
-import { decryptMfa, encryptMfa, freshOpaque, isOpaque, mfaKey, opaqueHash } from './staff-crypto.js';
+import { OnesaStaff, OnesaError, customerAssertion, configuredOnesaStaff, type Admin } from './onesa-staff.js';
+import { freshOpaque, isOpaque, mfaKey, opaqueHash } from './staff-crypto.js';
 
 const denied = () => new OnesaError(401, 'onesa_sign_in_rejected');
 export { customerAssertion };
@@ -12,11 +12,12 @@ export function customerReturnTo(value: unknown): string {
   return typeof value === 'string' && /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
 }
 export class OnesaCustomer extends OnesaStaff {
+  protected get staffFlow() { return false; }
   protected assertion(input: unknown): Admin { return customerAssertion(input, this.config, Math.floor(Date.now() / 1000)); }
   async start(db: pg.Pool | pg.PoolClient, returnTo: unknown = '/#account') {
     const state = freshOpaque(), browser = freshOpaque(), verifier = oidc.randomPKCECodeVerifier(), nonce = freshOpaque();
-    const authorization = oidc.buildAuthorizationUrl(this.client, {
-      redirect_uri: this.config.callback.href, response_type: 'code', scope: 'openid email profile onesa',
+    const authorization = oidc.buildAuthorizationUrl(await this.protocolClient(), {
+      redirect_uri: this.config.callback.href, response_type: 'code', ...this.authorizationParameters,
       state, nonce, code_challenge_method: 'S256', code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
     });
     await db.query('DELETE FROM customer_onesa_flows WHERE expires_at<=now()');
@@ -30,24 +31,24 @@ export class OnesaCustomer extends OnesaStaff {
     if (!result.rowCount) throw denied();
     const url = new URL(this.config.callback);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-    const tokens = await oidc.authorizationCodeGrant(this.client, url, {
+    const tokens = await oidc.authorizationCodeGrant(await this.protocolClient(), url, {
       pkceCodeVerifier: result.rows[0].verifier, expectedNonce: result.rows[0].nonce, expectedState: params.state, idTokenExpected: true,
     }).catch(() => { throw denied(); });
-    if (tokens.token_type.toLowerCase() !== 'bearer' || !tokens.access_token || tokens.access_token.length > 2048) throw denied();
+    if (tokens.token_type.toLowerCase() !== 'bearer' || !tokens.access_token || tokens.access_token.length > (this.config.managed ? 16384 : 2048)) throw denied();
     const identity = await this.inspect(tokens.access_token);
-    if (tokens.claims()?.sub !== identity.subject) throw denied();
+    if (tokens.claims()?.sub !== (identity.providerSubject ?? identity.subject)) throw denied();
     const session = freshOpaque(), hash = opaqueHash(session);
-    const envelope = encryptMfa(tokens.access_token, this.key, 'onesa-customer:' + hash.toString('hex'));
+    const envelope = this.protectAccess(tokens.access_token, 'onesa-customer:' + hash.toString('hex'));
     const transaction = await db.connect();
     let customerId: string;
     try {
       await transaction.query('BEGIN');
-      await transaction.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [this.config.issuer + ':' + identity.subject]);
-      const existing = await transaction.query('SELECT customer_id FROM customer_onesa_identities WHERE issuer=$1 AND subject=$2', [this.config.issuer,identity.subject]);
+      await transaction.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [this.recordIssuer + ':' + identity.subject]);
+      const existing = await transaction.query('SELECT customer_id FROM customer_onesa_identities WHERE issuer=$1 AND subject=$2', [this.recordIssuer,identity.subject]);
       customerId = existing.rows[0]?.customer_id ?? randomUUID();
       if (!existing.rowCount) {
         await transaction.query('INSERT INTO customers(id) VALUES($1)',[customerId]);
-        await transaction.query('INSERT INTO customer_onesa_identities(issuer,subject,customer_id) VALUES($1,$2,$3)',[this.config.issuer,identity.subject,customerId]);
+        await transaction.query('INSERT INTO customer_onesa_identities(issuer,subject,customer_id) VALUES($1,$2,$3)',[this.recordIssuer,identity.subject,customerId]);
       }
       await transaction.query('INSERT INTO customer_onesa_sessions(token_hash,customer_id,access_ciphertext,expires_at) VALUES($1,$2,$3,to_timestamp($4))',[hash,customerId,envelope,identity.expires]);
       await transaction.query('COMMIT');
@@ -76,10 +77,11 @@ export class OnesaCustomer extends OnesaStaff {
       JOIN customer_onesa_sessions s ON s.token_hash=h.source_session_hash AND s.customer_id=h.customer_id
       JOIN customer_onesa_identities i ON i.customer_id=s.customer_id
       WHERE h.code_hash=$1 AND h.consumed_at IS NULL AND h.expires_at>now() AND s.revoked_at IS NULL AND s.expires_at>now()`,[codeHash])).rows[0];
-    if (!source || source.issuer !== this.config.issuer) throw denied();
-    const access = decryptMfa(source.access_ciphertext,this.key,'onesa-customer:'+source.token_hash.toString('hex'));
+    if (!source || source.issuer !== this.recordIssuer) throw denied();
+    let access: string;
     let assertion: Admin;
     try {
+      access = this.readAccess(source.access_ciphertext, 'onesa-customer:'+source.token_hash.toString('hex'));
       assertion = await this.inspect(access);
       if (assertion.subject !== source.subject) throw denied();
     } catch(error) {
@@ -98,7 +100,7 @@ export class OnesaCustomer extends OnesaStaff {
       const handoff=await client.query('SELECT customer_id,source_session_hash FROM customer_onesa_handoffs WHERE code_hash=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE',[codeHash]);
       if(!current.rowCount||!handoff.rowCount||current.rows[0].customer_id!==source.customer_id||handoff.rows[0].customer_id!==source.customer_id||!handoff.rows[0].source_session_hash.equals(source.token_hash)||expires<=Math.floor(Date.now()/1000))throw denied();
       await client.query('UPDATE customer_onesa_handoffs SET consumed_at=now() WHERE code_hash=$1',[codeHash]);
-      await client.query('INSERT INTO customer_onesa_sessions(token_hash,customer_id,access_ciphertext,expires_at) VALUES($1,$2,$3,to_timestamp($4))',[hash,source.customer_id,encryptMfa(access,this.key,'onesa-customer:'+hash.toString('hex')),expires]);
+      await client.query('INSERT INTO customer_onesa_sessions(token_hash,customer_id,access_ciphertext,expires_at) VALUES($1,$2,$3,to_timestamp($4))',[hash,source.customer_id,this.protectAccess(access,'onesa-customer:'+hash.toString('hex')),expires]);
       await client.query('COMMIT');
       return {customerId:source.customer_id as string,token,maxAge:Math.max(1,expires-Math.floor(Date.now()/1000))};
     } catch(error) {await client.query('ROLLBACK');throw error;} finally {client.release();}
@@ -107,9 +109,9 @@ export class OnesaCustomer extends OnesaStaff {
     const row = (await db.query(`SELECT i.issuer,i.subject,s.access_ciphertext FROM customer_onesa_identities i
       LEFT JOIN customer_onesa_sessions s ON s.token_hash=$2 AND s.customer_id=i.customer_id WHERE i.customer_id=$1`, [customerId, opaqueHash(token)])).rows[0];
     if (!row) return customerId;
-    if (row.issuer !== this.config.issuer || !row.access_ciphertext) return null;
+    if (row.issuer !== this.recordIssuer || !row.access_ciphertext) return null;
     let identity: Admin;
-    try { identity = await this.inspect(decryptMfa(row.access_ciphertext, this.key, 'onesa-customer:' + opaqueHash(token).toString('hex'))); }
+    try { identity = await this.inspect(this.readAccess(row.access_ciphertext, 'onesa-customer:' + opaqueHash(token).toString('hex'))); }
     catch (error) {
       if (error instanceof OnesaError && error.status === 401) {
         await db.query('UPDATE customer_onesa_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1 AND customer_id=$2',[opaqueHash(token),customerId]);

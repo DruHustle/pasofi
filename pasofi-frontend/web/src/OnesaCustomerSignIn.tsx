@@ -32,7 +32,7 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     opener.current = trigger;
     setConfirm(true);
   }
-  if (available === null) return <p role="status">Checking Company Portal sign-in…</p>;
+  if (available === null) return <p role="status">Checking Onesa sign-in…</p>;
   if (!available && prominent) return <nav className="pf-portal-links" aria-label="Company Portal account">
     <span>Company Portal</span>
     <a href="https://portal.onesa.eu/account" aria-label="Sign in to Company Portal">Sign in</a>
@@ -49,7 +49,7 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     <button className="text-button" disabled={busy} aria-expanded={confirm} onClick={event => openAccount(event.currentTarget)}>Create an Onesa account</button>
     {confirm && <div className="pf-onesa-confirmation" role="region" aria-label="Onesa customer sign-in" aria-busy={busy}>
       <h2 ref={confirmation} tabIndex={-1}>Continue to your Onesa account</h2>
-      <p>Sign in or choose Create account in Company Portal.</p>
+      <p>Sign in or choose Create account with Onesa.</p>
       <p>Open your Onesa account and return to this screen. Guest purchases stay with your guest account; save its recovery details before continuing.</p>
       <div className="purchase-actions"><button className="pf-button pf-button-primary" disabled={busy} onClick={signIn}>{busy ? 'Opening Onesa…' : 'Continue with Onesa'}</button>
       <button className="pf-button pf-button-secondary" disabled={busy} onClick={() => { setConfirm(false); setError(''); opener.current?.focus(); }}>Cancel</button></div>
