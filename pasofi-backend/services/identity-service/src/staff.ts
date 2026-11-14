@@ -328,8 +328,8 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     if (approved && !user.mfa_enrolled_at) {
       // An owner-bound site operator must complete current Portal MFA to obtain
       // a staff session. Product-local enrollment is unavailable in production.
-      const federated = !demo && (role === 'agent' || role === 'support') && onesa &&
-        (await client.query('SELECT 1 FROM staff_onesa_bindings WHERE staff_id=$1 AND issuer=$2', [user.id, onesa.config.issuer])).rowCount;
+      const federated = !demo && onesa && (role === 'agent' || role === 'support' || (role === 'admin' && onesa.config.managed)) &&
+        (await client.query('SELECT 1 FROM staff_onesa_bindings WHERE staff_id=$1 AND issuer=$2', [user.id, onesa.recordIssuer])).rowCount;
       if (!federated) return fail(409, 'mfa_enrollment_required');
     }
     if (user.status === 'approved' && user.role === 'admin' && (!approved || role !== 'admin')) {

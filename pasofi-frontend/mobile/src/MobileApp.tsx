@@ -1,4 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { pendingNativeDestination } from './native-oidc';
 import { mobileApiConfigured } from './api';
 import Icon, { type IconName } from './Icon';
 import type { CustomerTab } from './CustomerAccess';
@@ -41,7 +43,8 @@ const navigation: { id: Exclude<Tab, 'help'>; label: string; icon: IconName }[] 
 
 export default function MobileApp() {
   const [tab, setTab] = useState<Tab>('home');
-  const [accountOpen, setAccountOpen] = useState(false), [accountTab, setAccountTab] = useState<CustomerTab>('access');
+  const [pending] = useState(() => Capacitor.isNativePlatform() ? pendingNativeDestination(sessionStorage) : null);
+  const [accountOpen, setAccountOpen] = useState(Boolean(pending)), [accountTab, setAccountTab] = useState<CustomerTab>(pending ?? 'access');
   const [selected, setSelected] = useState<string | null>(null), [category, setCategory] = useState<Category>('all');
   const [helpQuery, setHelpQuery] = useState('');
   const content = useRef<HTMLElement>(null), previousTab = useRef(tab), previousAccountOpen = useRef(accountOpen);
@@ -114,7 +117,7 @@ export default function MobileApp() {
         <div className="mobile-page-heading"><p className="mobile-eyebrow">YOUR SPACE</p><h1 tabIndex={-1} id="mobile-account">My PasoFi.</h1><p>A simple home for your connection.</p></div>
         <div className="mobile-profile-card"><span className="mobile-profile-avatar"><Icon name="account" /></span><div><h2>Welcome to PasoFi</h2><p>{mobileApiConfigured ? 'Check your configured account service.' : 'You’re exploring the offline preview.'}</p></div><span className="mobile-label">Preview</span></div>
         {mobileApiConfigured ? <button className="mobile-primary mobile-primary-wide" onClick={() => openAccount()}>Open My PasoFi <Icon name="arrow" /></button> : <p className="mobile-account-explainer">Accounts, vouchers and devices become available when the service is ready. No account is created while you explore.</p>}
-        {mobileApiConfigured ? <p className="mobile-account-explainer">Open My PasoFi to sign in or create an account with Company Portal.</p> : <p className="mobile-account-explainer"><a href="https://portal.onesa.eu/admin" target="_blank" rel="noopener noreferrer">Sign in to Company Portal</a> · <a href="https://portal.onesa.eu/admin?entry=register" target="_blank" rel="noopener noreferrer">Create an Onesa account</a></p>}
+        {mobileApiConfigured ? <p className="mobile-account-explainer">Open My PasoFi to sign in or create an Onesa account.</p> : <p className="mobile-account-explainer"><a href="https://portal.onesa.eu/admin" target="_blank" rel="noopener noreferrer">Sign in to Company Portal</a> · <a href="https://portal.onesa.eu/admin?entry=register" target="_blank" rel="noopener noreferrer">Create an Onesa account</a></p>}
         <div className="mobile-settings-list">
           <button onClick={() => mobileApiConfigured ? openAccount('wifi') : choose('help')}><span className="mobile-setting-icon"><Icon name="devices" /></span><span><strong>My WiFi & devices</strong><small>{mobileApiConfigured ? 'Check account availability' : 'Learn how connecting will work'}</small></span><Icon name="chevron" /></button>
           <button onClick={() => mobileApiConfigured ? openAccount('recovery') : choose('help')}><span className="mobile-setting-icon"><Icon name="shield" /></span><span><strong>Account & security</strong><small>{mobileApiConfigured ? 'Recovery and device access' : 'Account access is not available yet'}</small></span><Icon name="chevron" /></button>

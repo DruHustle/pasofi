@@ -14,6 +14,7 @@ const rules = [
   [/^\/api\/recovery\/status$/, ['GET']],
   [/^\/api\/(recovery(?:\/(setup|rotate))?|handoff(?:\/redeem)?)$/, ['POST']],
   [/^\/api\/onesa\/availability$/, ['GET']],
+  [/^\/api\/onesa\/native-session$/, ['POST']],
   [/^\/api\/onesa\/(start|complete)$/, ['POST']],
   [/^\/api\/staff\/onesa\/availability$/, ['GET']],
   [/^\/api\/staff\/onesa\/(start|complete)$/, ['POST']],
@@ -55,6 +56,7 @@ const rules = [
 // authentication credential and cannot grant staff or service authority.
 const nativeCustomerRules = [
   [/^\/api\/onesa\/availability$/, ['GET']],
+  [/^\/api\/onesa\/native-session$/, ['POST']],
   [/^\/api\/(bundles|capabilities|sites|access|usage|help|payments\/methods)$/, ['GET']],
   [/^\/api\/orders$/, ['GET', 'POST']],
   [new RegExp(`^/api/orders/${UUID}/status$`), ['GET']],
@@ -266,7 +268,7 @@ function validateCookies(cookies, nativeCustomer = false) {
 function validateNativeCookieTransition(path, method, response) {
   if (!response.cookies.length) return;
   const creating = method === 'POST' && ((path === '/api/session' && [200, 201].includes(response.status)) ||
-    (['/api/recovery', '/api/handoff/redeem'].includes(path) && response.status === 200));
+    (['/api/recovery', '/api/handoff/redeem', '/api/onesa/native-session'].includes(path) && response.status === 200));
   const clearing = method === 'DELETE' && path === '/api/session' && response.status === 204;
   const parts = response.cookies[0].split(';').map(part => part.trim());
   if (!parts[0].startsWith('__Host-pamofi_session=')) throw new ProxyError(502, 'upstream_unavailable');

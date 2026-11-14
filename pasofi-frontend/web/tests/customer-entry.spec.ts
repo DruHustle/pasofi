@@ -50,7 +50,7 @@ test('configured signup starts the PasoFi interaction and retains the requested 
   });
   await page.route('https://portal-signup.example.invalid/**', route => route.fulfill({body:'Test Company Portal issuer'}));
   await page.goto('/#account');
-  await expect(page.getByText('Checking Company Portal sign-in…')).toBeVisible();
+  await expect(page.getByText('Checking Onesa sign-in…')).toBeVisible();
   await expect(page.getByRole('link', {name:'Create an Onesa account'})).toHaveCount(0);
   releaseAvailability();
   const signup = page.getByRole('button', {name:'Create an Onesa account',exact:true});

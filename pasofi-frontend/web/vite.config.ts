@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
     '^/api/(?:bundles|capabilities|sites|access|usage)(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/help(?:\\?|$)': { target: assistant, rewrite },
     '^/api/session(?:\\?|$)': { target: identity, rewrite },
-    '^/api/onesa/(?:availability|start|complete)(?:\\?|$)': { target: identity, rewrite },
+    '^/api/onesa/(?:availability|start|complete|native-session)(?:\\?|$)': { target: identity, rewrite },
     '^/api/orders(?:/[0-9a-fA-F-]+/(?:demo-confirm|checkout|status|mock-payment|expire-unused))?(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/(?:customer|staff)/invoices(?:/[0-9a-fA-F-]+(?:/pdf)?)?(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/invoice-downloads(?:\\?|$)': { target: prepaid, rewrite },

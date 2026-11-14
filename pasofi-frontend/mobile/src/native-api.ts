@@ -6,6 +6,7 @@ interface CustomerApiPlugin {
   availability(options: { requestId: string }): Promise<{ requestId: string; configured: boolean; origin?: string; protocol: number }>;
   request(options: NativeRequest): Promise<NativeResponse>;
   cancel(options: { requestId: string }): Promise<{ requestId: string }>;
+  authenticate(options: { authorizationUrl: string }): Promise<{ callback: string }>;
   openSignIn(options: { requestId: string }): Promise<{ requestId: string; opened: boolean }>;
 }
 const bridge = registerPlugin<CustomerApiPlugin>('PasoFiCustomerApi');
@@ -31,6 +32,12 @@ export async function openNativeOnesaSignIn(origin: string): Promise<void> {
     const result = await bridge.openSignIn({ requestId });
     if (result.requestId !== requestId || result.opened !== true) throw Error();
   } catch { throw new NativeApiError('request_failed'); }
+}
+
+export async function authenticateWithAppleBrowser(origin: string, authorizationUrl: string): Promise<string> {
+  await configured(origin);
+  const result = await bridge.authenticate({ authorizationUrl });
+  return result.callback;
 }
 
 // Native code owns the session cookie and account-creation retry credential.
