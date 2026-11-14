@@ -12,8 +12,13 @@ def adb(*args):
 
 
 def locate(label):
-    adb("shell", "uiautomator", "dump", "/sdcard/onesa-qualification.xml")
-    tree = ET.fromstring(adb("shell", "cat", "/sdcard/onesa-qualification.xml").strip())
+    try:
+        adb("shell", "uiautomator", "dump", "/sdcard/onesa-qualification.xml")
+        tree = ET.fromstring(adb("shell", "cat", "/sdcard/onesa-qualification.xml").strip())
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ET.ParseError):
+        # Accessibility can be temporarily unavailable while the stock system
+        # and embedded WebView finish their initial layout.
+        return None
     for node in tree.iter("node"):
         if not any(label in (node.get(attr) or "") for attr in ("text", "content-desc")):
             continue
@@ -45,6 +50,7 @@ if __name__ == "__main__":
     try:
         adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
         tap("My PasoFi")
+        print("Entered My PasoFi from the installed application", flush=True)
         end = time.monotonic() + 65
         while time.monotonic() < end:
             if locate("Mobile account access is not enabled by this deployment yet"):
