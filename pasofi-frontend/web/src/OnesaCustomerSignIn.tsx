@@ -27,7 +27,7 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
       location.assign(target.href);
     } catch { setError('Onesa sign-in is temporarily unavailable. Please try again.'); setBusy(false); }
   }
-  const signup = <a href="https://portal.onesa.eu/account/register">Create an Onesa account</a>;
+  const signup = <a href="https://portal.onesa.eu/admin?entry=register">Create an Onesa account</a>;
   function openAccount(trigger: HTMLButtonElement) {
     opener.current = trigger;
     setConfirm(true);
@@ -35,11 +35,11 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
   if (available === null) return <p role="status">Checking Onesa sign-in…</p>;
   if (!available && prominent) return <nav className="pf-portal-links" aria-label="Company Portal account">
     <span>Company Portal</span>
-    <a href="https://portal.onesa.eu/account" aria-label="Sign in to Company Portal">Sign in</a>
-    <a href="https://portal.onesa.eu/account/register" aria-label="Create an Onesa account">Sign up</a>
+    <a href="https://portal.onesa.eu/admin" aria-label="Sign in to Company Portal">Sign in</a>
+    <a href="https://portal.onesa.eu/admin?entry=register" aria-label="Create an Onesa account">Sign up</a>
   </nav>;
   if (!available) return <div className="pf-onesa-sign-in">
-    <a href="https://portal.onesa.eu/account">Sign in to Company Portal</a>
+    <a href="https://portal.onesa.eu/admin">Sign in to Company Portal</a>
     {signup}
     <p>PasoFi account access requires a connection to Company Portal.</p>
   </div>;
