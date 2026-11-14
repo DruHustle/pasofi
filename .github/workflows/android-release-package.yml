@@ -64,7 +64,7 @@ jobs:
           python3 scripts/release-bundle.py inspect-unsigned android/app/build/outputs/bundle/release/app-release.aab
       - name: Verify the compiled product through the signing path
         run: |
-          # The ephemeral QA key and its APK stay in this run and are never uploaded.
+          # The ephemeral QA key stays in this run. Retain only the tested APK.
           qa_dir=$(mktemp -d "$RUNNER_TEMP/apk-validation.XXXXXX")
           trap 'rm -rf -- "$qa_dir"' EXIT
           export ANDROID_RELEASE_KEYSTORE="$qa_dir/qa.p12" ANDROID_RELEASE_ALIAS=qa
@@ -111,6 +111,15 @@ jobs:
           script: |
             adb install "$RUNNER_TEMP/pasofi-qualification.apk"
             python3 "$GITHUB_WORKSPACE/pasofi-frontend/mobile/scripts/installed-checkout-status.py"
+      - name: Retain the installed API-configured qualification APK
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pasofi-android-configured-qualification-${{ github.sha }}
+          path: ${{ runner.temp }}/pasofi-qualification.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
       - name: Remove the qualification APK
         if: always()
         run: rm -f "$RUNNER_TEMP/pasofi-qualification.apk"
