@@ -167,7 +167,7 @@ test('unresponsive native capabilities request returns to offline preview withou
   await expect(page.getByRole('button', { name: 'Retry service connection' })).toBeVisible({ timeout: 16000 });
   await expect(page.getByRole('button', { name: '← Offline preview' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
-  expect(calls.filter(call => call.method === 'request').map(call => (call.options as NativeRequest).path)).toEqual(['/api/capabilities']);
+  expect(calls.filter(call => call.method === 'request').map(call => call.options.path)).toEqual(['/api/capabilities']);
   await page.getByRole('button', { name: '← Offline preview' }).click();
   await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
 });
