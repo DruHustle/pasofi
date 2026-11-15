@@ -18,7 +18,7 @@ The private parent protects host access. Compose mounts the JSON **individually*
 
 Use `router-control.example.json` as a field reference; its placeholders deliberately fail validation. Supply credentials privately on Oracle using an existing restricted per-device RouterOS service account. Each `nasId` must be the exact lowercase UUID in the owned NAS registry. Each `caFile` must be `/run/pamofi/routeros-ca/<nas-uuid>.pem`.
 
-The URL must be the exact `https://<reviewed-router-host>/rest/` on TCP443. An IP literal must be the selected private IPv4 tunnel address; a DNS hostname must resolve to that reviewed address. The served certificate must match the URL's hostname or IP SAN. The offline preflight checks material, not DNS resolution, the live certificate or account privileges.
+The URL must be the exact `https://<reviewed-router-host>/rest/` on TCP443. An IP literal must be the selected RFC1918 IPv4 tunnel address; a DNS hostname must resolve to exactly one reviewed RFC1918 IPv4 address. At runtime, each RouterOS request resolves the host, rejects public, IPv6, mixed or multiple answers, and pins the validated address for that HTTPS request to prevent a second DNS lookup from rebinding the credential-bearing connection. The served certificate must match the URL's hostname or IP SAN. The offline preflight checks material, not DNS resolution, the live certificate or account privileges.
 
 ```bash
 export PAMOFI_ROUTER_CONTROL_DIR=/absolute/protected/router-control
