@@ -111,8 +111,12 @@ export class StripeAdapter implements PaymentAdapter {
 export async function stripePresentation(pool:Pool,customerId:string,attemptId:string,adapter:StripeAdapter) {
  const row=(await pool.query(`SELECT a.*,o.price_minor,o.currency FROM provider_payment_attempts a
   JOIN purchase_orders o ON o.id=a.order_id WHERE a.id=$1 AND a.customer_id=$2 AND o.customer_id=$2`,[attemptId,customerId])).rows[0];
- if(!row||row.provider!==adapter.provider||!row.provider_reference||!['pending','unknown'].includes(row.state)
-  ||!adapter.config.siteIds.has(row.site_id))return null;
+ // Current site qualification gates creation of new attempts in beginProviderPayment.
+ // Do not strand a previously bound Stripe intent: its owner must still be able
+ // to complete or inspect that exact attempt, and adapter.presentation re-fetches
+ // and verifies its immutable customer/order/site/amount metadata before exposing
+ // a client secret. Unknown attempts never create a replacement on this path.
+ if(!row||row.provider!==adapter.provider||!row.provider_reference||!['pending','unknown'].includes(row.state))return null;
  return adapter.presentation({referenceNumber:row.provider_reference,attemptId:row.id,orderId:row.order_id,
   customerId:row.customer_id,siteId:row.site_id,methodCode:row.method_code,amountMinor:row.price_minor,currency:row.currency});
 }
