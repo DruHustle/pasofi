@@ -44,7 +44,7 @@ export default function MobileCustomer({ close, initialTab = 'access' }: { close
       if (value.mobileCookies !== true || (usesNativeCustomerApi && value.nativeCustomerApiVersion !== 1)) { setMessage('Mobile account access is not enabled by this deployment yet. You can continue using the offline preview.'); return; }
       setCapabilities(value);
     }).catch(error => { if (live.current && !controller.signal.aborted) setMessage(messageFor(error, 'The configured PasoFi service could not be reached. Your offline preview is still available.')); }).finally(() => { clearTimeout(timeout); if (live.current && !controller.signal.aborted) setLoading(false); });
-    const unsubscribe = onSessionChange(() => { clearTimeout(timeout); controller.abort(); setCapabilities(null); setLoading(false); setMessage('Your account changed. Reconnect to load the current account.'); });
+    const unsubscribe = onSessionChange(() => { clearTimeout(timeout); controller.abort(); setCapabilities(null); setLoading(true); setMessage('Your account changed. Refreshing the current account…'); setAttempt(value => value + 1); });
     return () => { live.current = false; clearTimeout(timeout); controller.abort(); unsubscribe(); };
   }, [attempt]);
   return <div className="mobile-customer"><div className="mobile-account-links">
