@@ -159,7 +159,10 @@ for (const platform of ['ios', 'android'] as const) {
     await page.getByRole('button',{name:'Sign in with Onesa',exact:true}).click();
     await expect(page.getByRole('button',{name:'Enter sign-in code',exact:true})).toHaveCount(0);
     await page.getByRole('button',{name:'Open Onesa sign-in in browser'}).click();
-    await expect(page.getByText('Bundle reference: '+orderId)).toBeVisible();
+    // The Android system-browser deep link is asynchronous. Wait for the
+    // server-side session exchange and protected history read, not a fixed delay.
+    await expect.poll(() => established && readHistory, { timeout: 15000 }).toBe(true);
+    await expect(page.getByText('Bundle reference: '+orderId)).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole('heading',{name:'Your activity'})).toBeVisible();
     expect(readHistory).toBe(true);expect(established).toBe(true);
     expect(await page.evaluate(()=>JSON.stringify(sessionStorage))).not.toContain('fixture-customer-token');
