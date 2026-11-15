@@ -50,6 +50,9 @@ services:
       APP_ENV: demo
       NODE_ENV: development
       INTERNAL_RADIUS_ENABLED: 'true'
+      # Exercise the customer Access-Accept path only inside this disposable lab.
+      # Production RADIUS keeps this gate false until physical-site acceptance.
+      PAMOFI_CUSTOMER_NETWORK_ENABLED: 'true'
       INTERNAL_NETWORK_SECRET: DEMO_ONLY_network_lab_key_0123456789abcdef
       PREPAID_URL: http://prepaid:3000
       RADIUS_CA_FILE: /lab/ca.crt
