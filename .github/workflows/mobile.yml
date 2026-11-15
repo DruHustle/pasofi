@@ -312,3 +312,30 @@ jobs:
           path: pasofi-frontend/mobile/native-artifacts/
           if-no-files-found: error
           retention-days: 3
+
+      - name: Compile and retain the HTTPS-configured iPhone simulator Release
+        env:
+          VITE_PAMOFI_API_BASE_URL: https://pasofi.mobile.onesa.eu
+        run: |
+          npm run build
+          npx --no-install cap copy ios
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath native-build/ios \
+            -clonedSourcePackagesDirPath "$PASOFI_SWIFTPM_DIRECTORY/SourcePackages" \
+            -packageCachePath "$PASOFI_SWIFTPM_DIRECTORY/Cache" -disablePackageRepositoryCache \
+            -disableAutomaticPackageResolution -scmProvider system CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM= ONLY_ACTIVE_ARCH=NO build
+          app="native-build/ios/Build/Products/Release-iphonesimulator/App.app"
+          node -e 'const c=require("./"+process.argv[1]+"/capacitor.config.json"); if(c.appId!=="com.onesa.pasofi" || c.plugins?.PasoFiCustomerApi?.origin!=="https://pasofi.mobile.onesa.eu")process.exit(1)' "$app"
+          grep -Fql 'https://pasofi.mobile.onesa.eu' "$app"/public/assets/*.js
+          mkdir -p "$RUNNER_TEMP/pasofi-configured"
+          tar -czf "$RUNNER_TEMP/pasofi-configured/PasoFi-configured-simulator.tar.gz" -C "$(dirname "$app")" App.app
+      - name: Upload configured simulator Release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pasofi-ios-configured-simulator-${{ github.sha }}
+          path: ${{ runner.temp }}/pasofi-configured/PasoFi-configured-simulator.tar.gz
+          retention-days: 3
+          if-no-files-found: error
+          compression-level: 0
+
