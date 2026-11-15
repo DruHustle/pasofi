@@ -6,11 +6,11 @@ import type { CustomerTab } from './CustomerAccess';
 import { api, mobileApiOrigin } from './api';
 import { authenticateWithAppleBrowser, openNativeOnesaSignIn } from './native-api';
 
-export default function OnesaSignIn({ enterCode, close, destination }: { destination: CustomerTab; enterCode: () => void; close: () => void }) {
+export default function OnesaSignIn({ enterCode, close, destination, managedReturnReady = true }: { destination: CustomerTab; enterCode: () => void; close: () => void; managedReturnReady?: boolean }) {
   const [available, setAvailable] = useState(false), [loading, setLoading] = useState(true);
   const [native,setNative] = useState<NativeRegistration | null>(null);
   const platform=nativePlatform();
-  const direct=Boolean(native && platform && native[platform]);
+  const direct=Boolean(managedReturnReady && native && platform && native[platform]);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setAvailable(false); setMessage('');
