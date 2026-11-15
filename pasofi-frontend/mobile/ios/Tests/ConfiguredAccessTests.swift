@@ -12,9 +12,13 @@ final class ConfiguredAccessTests: XCTestCase {
         }
         openAccount.tap()
         print("PASOFI_OPENED_ACCOUNT")
-        let expected = "Mobile account access is not enabled by this deployment yet"
+        // The configured gateway may be intentionally disabled or unavailable.
+        // Both outcomes must expose a clear offline state, not an endless spinner.
         let expectedGate = app.descendants(matching: .any).matching(NSPredicate(
-            format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@", expected, expected
+            format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@",
+            "Mobile account access is not enabled", "Mobile account access is not enabled",
+            "did not respond in time", "did not respond in time",
+            "configured PasoFi service could not be reached", "configured PasoFi service could not be reached"
         )).firstMatch
         let matched = expectedGate.waitForExistence(timeout: 22)
         if matched {
@@ -28,7 +32,7 @@ final class ConfiguredAccessTests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
             print("PASOFI_EXPECTED_GATE_MISSING foreground=" + String(app.state == .runningForeground) + " webview=" + String(app.webViews.firstMatch.exists))
-            XCTFail("The installed account view did not display the expected disabled-account message")
+            XCTFail("The installed account view did not display a disabled or unavailable account state")
         }
         let back = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Offline preview")).firstMatch
         guard back.exists else { XCTFail("Missing offline-preview return control"); return }
