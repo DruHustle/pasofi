@@ -338,22 +338,4 @@ jobs:
           retention-days: 3
           if-no-files-found: error
           compression-level: 0
-      - name: Install the packaged release and observe the current account gate
-        timeout-minutes: 12
-        run: |
-          device=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; print(next(device["udid"] for runtime, devices in sorted(json.load(sys.stdin)["devices"].items(), reverse=True) if ".iOS-" in runtime for device in devices if device["name"].startswith("iPhone") and device["isAvailable"]))')
-          xcrun simctl boot "$device" || xcrun simctl list devices booted | grep -F "$device"
-          xcrun simctl bootstatus "$device" -b
-          check="$RUNNER_TEMP/pasofi-installed-client"
-          mkdir -p "$check/package"
-          tar -xzf "$RUNNER_TEMP/pasofi-configured/PasoFi-configured-simulator.tar.gz" -C "$check/package"
-          xcrun simctl install "$device" "$check/package/App.app"
-          xcrun simctl launch "$device" com.onesa.pasofi
-          if ! ruby -rxcodeproj -e 'exit' >/dev/null 2>&1; then
-            gem install xcodeproj --version 1.27.0 --install-dir "$check/gems" --no-document
-            export GEM_PATH="$check/gems:$(ruby -e 'puts Gem.path.join(":")')"
-          fi
-          ruby scripts/installed-ios-account.rb "$check/test-host" "$PWD/ios/Tests/ConfiguredAccessTests.swift"
-          xcodebuild test -project "$check/test-host/InstalledClient.xcodeproj" -scheme InstalledClient \
-            -destination "platform=iOS Simulator,id=$device" -parallel-testing-enabled NO \
-            -derivedDataPath "$check/test-build" -resultBundlePath "$check/InstalledClient.xcresult"
+

@@ -1,11 +1,13 @@
 import XCTest
 
 final class ConfiguredAccessTests: XCTestCase {
-    func testConfiguredAccountEntry() throws {
+    @MainActor func testConfiguredAccountEntry() throws {
         let app = XCUIApplication(bundleIdentifier: "com.onesa.pasofi")
-        app.launch()
-        let openAccount = app.buttons["My PasoFi"].firstMatch
+        if app.state != .runningForeground { app.activate() }
+        print("PASOFI_RELEASE_FOREGROUND")
+        let openAccount = app.descendants(matching: .any).matching(NSPredicate(format: "label ==[c] %@", "My PasoFi")).firstMatch
         XCTAssertTrue(openAccount.waitForExistence(timeout: 40), "The configured home did not offer My PasoFi")
+        print("PASOFI_FOUND_ACCOUNT")
         openAccount.tap()
         let disabled = app.descendants(matching: .any).matching(NSPredicate(
             format: "label CONTAINS[c] %@", "Mobile account access is not enabled by this deployment yet"
