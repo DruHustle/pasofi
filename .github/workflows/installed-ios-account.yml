@@ -42,6 +42,24 @@ jobs:
           test -f "$archive"
           printf '%s  %s\n' "$ARCHIVE_SHA256" "$archive" | shasum -a 256 -c -
           tar -xzf "$archive" -C "$check/package"
+      - name: Prepare an isolated simulator-only default Keychain identity
+        run: |
+          check="$RUNNER_TEMP/pasofi-installed-client"
+          mkdir -p "$check/simulator-copy"
+          ditto "$check/package/App.app" "$check/simulator-copy/App.app"
+          # There is no shared access group, production team identity, merchant
+          # entitlement or signing key in this disposable simulator-only copy.
+          /usr/bin/python3 - "$check/local-entitlements.plist" <<'PYTHON'
+          import plistlib, sys
+          with open(sys.argv[1], 'wb') as stream:
+              plistlib.dump({'application-identifier': 'ONESASIM01.com.onesa.pasofi'}, stream)
+          PYTHON
+          codesign --force --sign - --timestamp=none --generate-entitlement-der \
+            --entitlements "$check/local-entitlements.plist" "$check/simulator-copy/App.app"
+          codesign --verify --strict "$check/simulator-copy/App.app"
+          codesign -d --entitlements - "$check/simulator-copy/App.app" 2>/dev/null | \
+            /usr/bin/python3 -c 'import plistlib,sys; e=plistlib.load(sys.stdin.buffer); assert e=={"application-identifier":"ONESASIM01.com.onesa.pasofi"}'
+          /usr/bin/plutil -extract CFBundleSupportedPlatforms.0 raw "$check/simulator-copy/App.app/Info.plist" | grep -Fx iPhoneSimulator
       - name: Compile the independent UI test host
         timeout-minutes: 9
         run: |
@@ -54,14 +72,14 @@ jobs:
           xcodebuild build-for-testing -project "$check/test-host/InstalledClient.xcodeproj" -scheme InstalledClient \
             -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -derivedDataPath "$check/test-build"
-      - name: Boot iPhone simulator and install the exact retained release
+      - name: Boot iPhone simulator and install the ad hoc diagnostic copy
         timeout-minutes: 12
         run: |
           device=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; print(next(d["udid"] for runtime, devices in sorted(json.load(sys.stdin)["devices"].items(), reverse=True) if ".iOS-" in runtime for d in devices if d["name"].startswith("iPhone") and d["isAvailable"]))')
           xcrun simctl boot "$device" || xcrun simctl list devices booted | grep -F "$device"
           xcrun simctl bootstatus "$device" -b
           echo "PASOFI_SIMULATOR=$device" >> "$GITHUB_ENV"
-          xcrun simctl install "$device" "$RUNNER_TEMP/pasofi-installed-client/package/App.app"
+          xcrun simctl install "$device" "$RUNNER_TEMP/pasofi-installed-client/simulator-copy/App.app"
           xcrun simctl launch "$device" com.onesa.pasofi
       - name: Observe the live account gate from My PasoFi
         timeout-minutes: 11
