@@ -2,7 +2,7 @@ import {request as httpsRequest} from 'node:https';
 import {lookup as dnsLookup} from 'node:dns/promises';
 import {closeSync,constants,fstatSync,openSync,readSync} from 'node:fs';
 import {isIP,type LookupFunction} from 'node:net';
-import {isAbsolute} from 'node:path';
+import {isAbsolute,join} from 'node:path';
 
 type ResolvedAddress={address:string;family:number};
 type RouterResolution={resolveHost?:(hostname:string)=>Promise<ResolvedAddress[]>;isPrivateAddress?:(address:string)=>boolean};
@@ -12,7 +12,7 @@ const privateIpv4=(address:string)=>{
  return a===10||(a===172&&b>=16&&b<=31)||(a===192&&b===168);
 };
 
-function readProtectedFile(path:string,maxBytes:number,forbiddenModeBits:number):Buffer {
+function readProtectedFile(path:string,maxBytes:number,forbiddenModeBits:number,requiredMode?:number):Buffer {
  let fd:number|undefined;
  try {
   // O_NOFOLLOW is required: lstat(path) followed by readFile(path) is
@@ -20,7 +20,8 @@ function readProtectedFile(path:string,maxBytes:number,forbiddenModeBits:number)
   if(!isAbsolute(path)||typeof constants.O_NOFOLLOW!=='number')throw new Error();
   fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW|(constants.O_NONBLOCK||0));
   const before=fstatSync(fd);
-  if(!before.isFile()||before.size>maxBytes||(before.mode&forbiddenModeBits)!==0)throw new Error();
+  if(!before.isFile()||before.size>maxBytes||(before.mode&forbiddenModeBits)!==0||
+     (requiredMode!==undefined&&(before.mode&0o777)!==requiredMode))throw new Error();
   const chunks:Buffer[]=[];let total=0;
   while(total<=maxBytes){
    const chunk=Buffer.alloc(Math.min(8192,maxBytes+1-total));
@@ -31,12 +32,12 @@ function readProtectedFile(path:string,maxBytes:number,forbiddenModeBits:number)
   if(total>maxBytes)throw new Error();
   const after=fstatSync(fd);
   if(!after.isFile()||after.dev!==before.dev||after.ino!==before.ino||after.size!==before.size||total!==before.size||
-     (after.mode&forbiddenModeBits)!==0)throw new Error();
+     (after.mode&forbiddenModeBits)!==0||(requiredMode!==undefined&&(after.mode&0o777)!==requiredMode))throw new Error();
   return Buffer.concat(chunks,total);
  }finally{if(fd!==undefined)closeSync(fd);}
 }
 
-export type RouterConfig={nasId:string;url:string;username:string;password:string;caFile?:string};
+export type RouterConfig={nasId:string;url:string;username:string;password:string;caFile:string};
 export class RouterUnavailable extends Error {constructor(){super('router_unavailable');}}
 export class RouterOS {
  private base:URL;
@@ -49,14 +50,12 @@ export class RouterOS {
   try {
    if(typeof config.url!=='string'||typeof config.username!=='string'||!config.username||config.username.length>128||
       typeof config.password!=='string'||!config.password||config.password.length>4096||
-      (config.caFile!==undefined&&(typeof config.caFile!=='string'||!config.caFile||!isAbsolute(config.caFile))))throw new Error();
+      typeof config.caFile!=='string'||!config.caFile||!isAbsolute(config.caFile))throw new Error();
    this.base=new URL(config.url);
    if(this.base.protocol!=='https:'||this.base.username||this.base.password||this.base.pathname!=='/rest/'||this.base.search||this.base.hash||
       (isIP(this.base.hostname)!==0&&(isIP(this.base.hostname)!==4||!this.isPrivateAddress(this.base.hostname))))throw new Error();
-   if(config.caFile!==undefined){
-    this.ca=readProtectedFile(config.caFile,65536,0o022);
-    if(!this.ca.includes('-----BEGIN CERTIFICATE-----')||this.ca.includes('PRIVATE KEY'))throw new Error();
-   }
+   this.ca=readProtectedFile(config.caFile,65536,0,0o444);
+   if(!this.ca.includes('-----BEGIN CERTIFICATE-----')||this.ca.includes('PRIVATE KEY'))throw new Error();
   }catch{throw new RouterUnavailable();}
  }
  private async call(path:string,method:'GET'|'DELETE',signal?:AbortSignal):Promise<unknown> {
@@ -100,19 +99,21 @@ export class RouterOS {
   return {absent:(await this.active(username,signal)).length===0,observedAt:new Date().toISOString()};
  }
 }
-export function configuredRouters():Map<string,RouterOS> {
+export function configuredRouters(options:{caDirectory?:string}={}):Map<string,RouterOS> {
  const path=process.env.ROUTEROS_ROUTERS_FILE;
+ const caDirectory=options.caDirectory??'/run/pamofi/routeros-ca';
+ if(!isAbsolute(caDirectory))throw new RouterUnavailable();
  if(!path||!isAbsolute(path))throw new RouterUnavailable();
  let rows:unknown;
- try{rows=JSON.parse(readProtectedFile(path,512*1024,0o077).toString('utf8'));}catch{throw new RouterUnavailable();}
+ try{rows=JSON.parse(readProtectedFile(path,512*1024,0,0o444).toString('utf8'));}catch{throw new RouterUnavailable();}
  if(!Array.isArray(rows)||!rows.length||rows.length>100)throw new RouterUnavailable();
  const result=new Map<string,RouterOS>();
  for(const row of rows){
   if(!row||typeof row!=='object'||Array.isArray(row)||Object.keys(row).some(key=>!['nasId','url','username','password','caFile'].includes(key))||
     typeof row.nasId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.nasId)||
     typeof row.url!=='string'||typeof row.username!=='string'||typeof row.password!=='string'||
-    (row.caFile!==undefined&&typeof row.caFile!=='string'))throw new RouterUnavailable();
-  const nasId=row.nasId.toLowerCase();if(result.has(nasId))throw new RouterUnavailable();
+    typeof row.caFile!=='string')throw new RouterUnavailable();
+  const nasId=row.nasId.toLowerCase();if(result.has(nasId)||row.caFile!==join(caDirectory,`${nasId}.pem`))throw new RouterUnavailable();
   result.set(nasId,new RouterOS({...row,nasId} as RouterConfig));
  }
  return result;
