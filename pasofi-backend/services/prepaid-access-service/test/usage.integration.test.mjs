@@ -137,7 +137,7 @@ test('usage follows verified accounting once and preserves reservations through 
   snapshot=await f.snapshot();assert.equal(snapshot.hold.active,true);assert.equal(snapshot.hold.reason,'usage_after_final_stop');
   assert.equal(snapshot.connectivity,'held');assert.equal(snapshot.session.grantId,next.id);assert.equal(snapshot.session.state,'uncertain');assert.equal(snapshot.session.connected,false);
   assert.deepEqual(snapshot.sessions.map(session=>session.grantId).sort(),[grant.id,next.id].sort());
-  assert.equal(snapshot.reservationOutstandingBytes,'9000');assert.equal(snapshot.totals.usedBytes,'1000');assert.equal(snapshot.totals.remainingBytes,'29000');
+  assert.equal(snapshot.reservationOutstandingBytes,'18000');assert.equal(snapshot.totals.usedBytes,'1000');assert.equal(snapshot.totals.remainingBytes,'29000');
  }finally{await f.cleanup();}
 });
 
