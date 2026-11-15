@@ -22,7 +22,14 @@ final class ConfiguredAccessTests: XCTestCase {
         )).firstMatch
         let matched = expectedGate.waitForExistence(timeout: 22)
         if matched {
-            print("PASOFI_EXPECTED_GATE_CONFIRMED")
+            let status = expectedGate.label.lowercased() + " " + String(describing: expectedGate.value).lowercased()
+            if status.contains("mobile account access is not enabled") {
+                print("PASOFI_PUBLISHED_ACCOUNT_GATE_CONFIRMED")
+            } else if status.contains("did not respond in time") {
+                print("PASOFI_GATEWAY_TIMED_OUT")
+            } else {
+                print("PASOFI_GATEWAY_UNREACHABLE")
+            }
         } else {
             // Preserve a screenshot without walking a stale accessibility tree.
             // The previous per-element snapshot could throw before reporting the
