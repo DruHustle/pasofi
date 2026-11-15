@@ -1,5 +1,5 @@
 import {request as httpsRequest} from 'node:https';
-import {closeSync,constants,fstatSync,openSync,readFileSync,readSync} from 'node:fs';
+import {closeSync,constants,fstatSync,openSync,readSync} from 'node:fs';
 import {isAbsolute} from 'node:path';
 
 function readProtectedFile(path:string,maxBytes:number,forbiddenModeBits:number):Buffer {
