@@ -5,7 +5,7 @@ import {isIP,type LookupFunction} from 'node:net';
 import {isAbsolute,join} from 'node:path';
 
 type ResolvedAddress={address:string;family:number};
-type RouterResolution={resolveHost?:(hostname:string)=>Promise<ResolvedAddress[]>;isPrivateAddress?:(address:string)=>boolean};
+type RouterResolution={resolveHost?:(hostname:string)=>Promise<ResolvedAddress[]>;isPrivateAddress?:(address:string)=>boolean;allowNonstandardPort?:boolean};
 const privateIpv4=(address:string)=>{
  if(isIP(address)!==4)return false;
  const [a,b]=address.split('.').map(Number);
@@ -48,11 +48,12 @@ export class RouterOS {
   this.resolveHost=resolution.resolveHost??(async hostname=>dnsLookup(hostname,{all:true,verbatim:true}));
   this.isPrivateAddress=resolution.isPrivateAddress??privateIpv4;
   try {
-   if(typeof config.url!=='string'||typeof config.username!=='string'||!config.username||config.username.length>128||
-      typeof config.password!=='string'||!config.password||config.password.length>4096||
+   if(typeof config.url!=='string'||config.url.length>512||typeof config.username!=='string'||!config.username||config.username.length>128||/[:\\x00-\\x20\\x7f]/.test(config.username)||
+      typeof config.password!=='string'||!config.password||config.password.length>4096||/[\\x00\\r\\n]/.test(config.password)||
       typeof config.caFile!=='string'||!config.caFile||!isAbsolute(config.caFile))throw new Error();
    this.base=new URL(config.url);
-   if(this.base.protocol!=='https:'||this.base.username||this.base.password||this.base.pathname!=='/rest/'||this.base.search||this.base.hash||
+   if(config.url!==this.base.toString()||this.base.protocol!=='https:'||this.base.username||this.base.password||this.base.port&&!resolution.allowNonstandardPort||
+      this.base.pathname!=='/rest/'||this.base.search||this.base.hash||this.base.hostname.endsWith('.local')||this.base.hostname.endsWith('.localhost')||
       (isIP(this.base.hostname)!==0&&(isIP(this.base.hostname)!==4||!this.isPrivateAddress(this.base.hostname))))throw new Error();
    this.ca=readProtectedFile(config.caFile,65536,0,0o444);
    if(!this.ca.includes('-----BEGIN CERTIFICATE-----')||this.ca.includes('PRIVATE KEY'))throw new Error();
@@ -110,10 +111,10 @@ export function configuredRouters(options:{caDirectory?:string}={}):Map<string,R
  const result=new Map<string,RouterOS>();
  for(const row of rows){
   if(!row||typeof row!=='object'||Array.isArray(row)||Object.keys(row).some(key=>!['nasId','url','username','password','caFile'].includes(key))||
-    typeof row.nasId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.nasId)||
+    typeof row.nasId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(row.nasId)||
     typeof row.url!=='string'||typeof row.username!=='string'||typeof row.password!=='string'||
     typeof row.caFile!=='string')throw new RouterUnavailable();
-  const nasId=row.nasId.toLowerCase();if(result.has(nasId)||row.caFile!==join(caDirectory,`${nasId}.pem`))throw new RouterUnavailable();
+  const nasId=row.nasId;if(result.has(nasId)||row.caFile!==join(caDirectory,`${nasId}.pem`))throw new RouterUnavailable();
   result.set(nasId,new RouterOS({...row,nasId} as RouterConfig));
  }
  return result;
