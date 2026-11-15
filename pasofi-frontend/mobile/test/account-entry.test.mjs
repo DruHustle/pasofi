@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+const apiSource = readFileSync(new URL('../src/api.ts', import.meta.url), 'utf8');
+
 const component = readFileSync(
   new URL('../src/MobileCustomer.tsx', import.meta.url),
   'utf8',
@@ -20,4 +22,9 @@ test('unreachable account gateway has a bounded offline fallback', () => {
   assert.match(component, /did not respond in time/);
   assert.match(component, /clearTimeout\(timeout\)/);
   assert.match(component, /onSessionChange\(\(\) => \{ clearTimeout\(timeout\); controller\.abort\(\); setCapabilities\(null\); setLoading\(false\)/);
+});
+
+test('invalid API origin does not advertise configured customer account access', () => {
+  assert.match(apiSource, /export const mobileApiConfigured = mobileApiOrigin !== null/);
+  assert.doesNotMatch(apiSource, /mobileApiConfigured = !!import\.meta\.env/);
 });
