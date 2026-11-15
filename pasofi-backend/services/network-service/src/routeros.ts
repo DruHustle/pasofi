@@ -1,6 +1,16 @@
 import {request as httpsRequest} from 'node:https';
+import {lookup as dnsLookup} from 'node:dns/promises';
 import {closeSync,constants,fstatSync,openSync,readSync} from 'node:fs';
+import {isIP,type LookupFunction} from 'node:net';
 import {isAbsolute} from 'node:path';
+
+type ResolvedAddress={address:string;family:number};
+type RouterResolution={resolveHost?:(hostname:string)=>Promise<ResolvedAddress[]>;isPrivateAddress?:(address:string)=>boolean};
+const privateIpv4=(address:string)=>{
+ if(isIP(address)!==4)return false;
+ const [a,b]=address.split('.').map(Number);
+ return a===10||(a===172&&b>=16&&b<=31)||(a===192&&b===168);
+};
 
 function readProtectedFile(path:string,maxBytes:number,forbiddenModeBits:number):Buffer {
  let fd:number|undefined;
@@ -31,23 +41,40 @@ export class RouterUnavailable extends Error {constructor(){super('router_unavai
 export class RouterOS {
  private base:URL;
  private ca?:Buffer;
- constructor(private config:RouterConfig){
+ private resolveHost:(hostname:string)=>Promise<ResolvedAddress[]>;
+ private isPrivateAddress:(address:string)=>boolean;
+ constructor(private config:RouterConfig,resolution:RouterResolution={}){
+  this.resolveHost=resolution.resolveHost??(async hostname=>dnsLookup(hostname,{all:true,verbatim:true}));
+  this.isPrivateAddress=resolution.isPrivateAddress??privateIpv4;
   try {
    if(typeof config.url!=='string'||typeof config.username!=='string'||!config.username||config.username.length>128||
       typeof config.password!=='string'||!config.password||config.password.length>4096||
       (config.caFile!==undefined&&(typeof config.caFile!=='string'||!config.caFile||!isAbsolute(config.caFile))))throw new Error();
    this.base=new URL(config.url);
-   if(this.base.protocol!=='https:'||this.base.username||this.base.password||this.base.pathname!=='/rest/'||this.base.search||this.base.hash)throw new Error();
+   if(this.base.protocol!=='https:'||this.base.username||this.base.password||this.base.pathname!=='/rest/'||this.base.search||this.base.hash||
+      (isIP(this.base.hostname)!==0&&(isIP(this.base.hostname)!==4||!this.isPrivateAddress(this.base.hostname))))throw new Error();
    if(config.caFile!==undefined){
     this.ca=readProtectedFile(config.caFile,65536,0o022);
     if(!this.ca.includes('-----BEGIN CERTIFICATE-----')||this.ca.includes('PRIVATE KEY'))throw new Error();
    }
   }catch{throw new RouterUnavailable();}
  }
- private call(path:string,method:'GET'|'DELETE',signal?:AbortSignal):Promise<unknown> {
+ private async call(path:string,method:'GET'|'DELETE',signal?:AbortSignal):Promise<unknown> {
+  let addresses:ResolvedAddress[];
+  try{
+   addresses=isIP(this.base.hostname)===4?[{address:this.base.hostname,family:4}]:await this.resolveHost(this.base.hostname);
+  }catch{throw new RouterUnavailable();}
+  // Router credentials must never be sent to a public or ambiguous DNS answer.
+  // Pin the single reviewed private IPv4 result for this request to prevent a
+  // second resolver lookup from rebinding the connection after validation.
+  if(addresses.length!==1||addresses[0].family!==4||!this.isPrivateAddress(addresses[0].address))throw new RouterUnavailable();
+  const pinnedLookup:LookupFunction=(_hostname,options,callback)=>{
+   if(options.all)callback(null,addresses);
+   else callback(null,addresses[0].address,4);
+  };
   return new Promise((resolve,reject)=>{
    const deadline=AbortSignal.timeout(5000);
-   const req=httpsRequest(new URL(path,this.base),{method,ca:this.ca,rejectUnauthorized:true,auth:`${this.config.username}:${this.config.password}`,headers:{accept:'application/json'},timeout:5000,signal:signal?AbortSignal.any([signal,deadline]):deadline},response=>{
+   const req=httpsRequest(new URL(path,this.base),{method,ca:this.ca,rejectUnauthorized:true,auth:`${this.config.username}:${this.config.password}`,headers:{accept:'application/json'},lookup:pinnedLookup,timeout:5000,signal:signal?AbortSignal.any([signal,deadline]):deadline},response=>{
     if(!response.statusCode||response.statusCode<200||response.statusCode>=300){response.resume();reject(new RouterUnavailable());return;}
     let length=0;const chunks:Buffer[]=[];
     response.on('data',(chunk:Buffer)=>{length+=chunk.length;if(length>1024*1024){response.destroy();reject(new RouterUnavailable());}else chunks.push(chunk);});
