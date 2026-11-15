@@ -74,7 +74,9 @@ export class StripeAdapter implements PaymentAdapter {
   if(this.config.live){if((await this.account()).charges_enabled!==true)throw Error('stripe_account_not_qualified');}
   else await this.verifyAccount();
   const intent=await this.client.paymentIntents.create({amount:input.amountMinor,currency:input.currency.toLowerCase(),
-   allowed_payment_method_types:['card'],automatic_payment_methods:{enabled:true,allow_redirects:'never'},capture_method:'automatic',metadata:metadata(input),description:'Pasofi internet bundle'},
+   // Endive rejects combining an explicit allowlist with automatic_payment_methods.
+   // Card-only still permits Apple Pay/Google Pay wallets through Stripe's card method.
+   allowed_payment_method_types:['card'],capture_method:'automatic',metadata:metadata(input),description:'Pasofi internet bundle'},
    {idempotencyKey:`pasofi-payment-${input.attemptId}`});
   if(!this.matches(intent,input))throw Error('stripe_intent_mismatch');
   return {state:'initiated' as const,referenceNumber:intent.id,redirectUrl:''};
