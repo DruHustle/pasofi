@@ -107,7 +107,8 @@ export async function recordAccounting(pool:Pool, event:TrustedAccounting) {
         // at another uncertain session. The disconnect worker selects every
         // non-closed grant, not only the one referenced by the account hold.
         await client.query(`UPDATE access_grants SET state='uncertain',accounting_anomaly=true,
-          disconnect_requested_at=COALESCE(disconnect_requested_at,now()),absent_verified_at=NULL,closed_at=NULL,last_accounting_at=now()
+          disconnect_requested_at=COALESCE(disconnect_requested_at,now()),absent_verified_at=NULL,closed_at=NULL,
+          reserved_bytes=charged_bytes,last_accounting_at=now()
           WHERE id=$1`,[grant.id]);
         await client.query("INSERT INTO grant_reconciliation_events(id,grant_id,kind,observed_at,detail) VALUES($1,$2,'late_usage',now(),$3)",[randomUUID(),grant.id,JSON.stringify({upload:event.upload.toString(),download:event.download.toString()})]);
         return {state:'uncertain',chargedBytes:grant.charged};
