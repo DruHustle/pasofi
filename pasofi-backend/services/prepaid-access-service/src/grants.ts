@@ -165,9 +165,27 @@ export async function reconcileGrant(pool:Pool,evidence:AbsenceEvidence) {
     }
     await client.query('INSERT INTO grant_reconciliation_events(id,grant_id,kind,observed_at,detail) VALUES($1,$2,$3,$4,$5)',[evidence.observationId,g.id,evidence.absent?'absent':'present',evidence.observedAt,JSON.stringify({credentialRevokedAt:evidence.credentialRevokedAt})]);
     if(g.state==='closed') {
-      // A later contradictory usage report can put a settled grant on hold.
-      // Refresh only termination evidence for an audited operator resolution.
-      await client.query('UPDATE access_grants SET credential_fenced_at=$2,absent_verified_at=CASE WHEN $3 THEN $4::timestamptz ELSE NULL END WHERE id=$1',[g.id,evidence.credentialRevokedAt,evidence.absent,evidence.observedAt]);
+      // A router sighting at or after the absence used to close this grant is
+      // contradictory physical evidence, even when accounting totals did not
+      // increase. Never silently clear the proof and allow a newer session.
+      if(!evidence.absent) {
+        if(!g.absent_verified_at || observed>=g.absent_verified_at.getTime()) {
+          await client.query(`INSERT INTO network_account_holds(customer_id,grant_id,reason)
+            VALUES($1,$2,'session_present_after_closure') ON CONFLICT(customer_id) DO NOTHING`,[g.customer_id,g.id]);
+          await client.query(`UPDATE access_grants SET state='uncertain',accounting_anomaly=true,
+            disconnect_requested_at=COALESCE(disconnect_requested_at,now())
+            WHERE customer_id=$1 AND state<>'closed'`,[g.customer_id]);
+          await client.query('UPDATE access_grants SET accounting_anomaly=true WHERE id=$1',[g.id]);
+          return {state:'uncertain',closed:false,reviewRequired:true};
+        }
+        // An out-of-order historical sighting predating the closure is harmless.
+        return {state:'closed',closed:true};
+      }
+      // Older absence receipts must not roll back an already settled proof.
+      await client.query(`UPDATE access_grants
+        SET credential_fenced_at=GREATEST(credential_fenced_at,$2::timestamptz),
+            absent_verified_at=GREATEST(absent_verified_at,$3::timestamptz)
+        WHERE id=$1`,[g.id,evidence.credentialRevokedAt,evidence.observedAt]);
       return {state:'closed',closed:true};
     }
     const complete=evidence.absent && g.accounting_started_at && g.stop_received_at && !g.accounting_anomaly &&
