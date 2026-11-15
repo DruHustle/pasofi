@@ -50,6 +50,27 @@ def tap(label, allow_scroll=False, exact=False):
     adb("shell", "input", "tap", str(x), str(y))
 
 
+def account_return_state():
+    # The fixed deep link must open the account handoff form when the service
+    # advertises it, or a clear fail-closed service gate when it does not.
+    end = time.monotonic() + 25
+    while time.monotonic() < end:
+        nodes = screen()
+        if locate("Accept a browser handoff", exact=True, nodes=nodes):
+            print("Installed app opened the account handoff form from the OS return intent.", flush=True)
+            return
+        for gate in (
+            "Mobile account access is not enabled by this deployment yet",
+            "The configured PasoFi service did not respond in time",
+            "The configured PasoFi service could not be reached",
+        ):
+            if locate(gate, nodes=nodes):
+                print("Installed app opened the account surface and preserved the fail-closed service gate: " + gate, flush=True)
+                return
+        time.sleep(1)
+    raise RuntimeError("The installed app did not expose the account handoff form or a recognized fail-closed service gate")
+
+
 
 if __name__ == "__main__":
     try:
@@ -58,6 +79,7 @@ if __name__ == "__main__":
         adb("shell", "am", "force-stop", PACKAGE)
         adb("shell", "am", "start", "-W", "-a", "android.intent.action.VIEW",
             "-c", "android.intent.category.BROWSABLE", "-d", "com.onesa.pasofi://account/handoff")
+        account_return_state()
         tap("Offline preview")
         visible("My PasoFi", exact=True)
         print("The system return opened the installed account surface; its Offline preview control returned home.", flush=True)
