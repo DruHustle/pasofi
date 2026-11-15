@@ -58,7 +58,7 @@ jobs:
             --entitlements "$check/local-entitlements.plist" "$check/simulator-copy/App.app"
           codesign --verify --strict "$check/simulator-copy/App.app"
           codesign -d --entitlements - "$check/simulator-copy/App.app" 2>/dev/null | \
-            /usr/bin/python3 -c 'import plistlib,sys; e=plistlib.load(sys.stdin.buffer); assert e=={"application-identifier":"ONESASIM01.com.onesa.pasofi"}'
+            /usr/bin/python3 -c 'import plistlib,sys; e=plistlib.loads(sys.stdin.buffer.read()); assert e=={"application-identifier":"ONESASIM01.com.onesa.pasofi"}'
           /usr/bin/plutil -extract CFBundleSupportedPlatforms.0 raw "$check/simulator-copy/App.app/Info.plist" | grep -Fx iPhoneSimulator
       - name: Compile the independent UI test host
         timeout-minutes: 9
