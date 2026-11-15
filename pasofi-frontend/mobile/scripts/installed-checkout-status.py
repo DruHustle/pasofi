@@ -79,7 +79,7 @@ def account_return_state():
         except Exception:
             resumed = False
         nodes = screen() if resumed else []
-        if locate("Accept a browser handoff", exact=True, nodes=nodes):
+        if locate("Accept an account handoff", exact=True, nodes=nodes):
             print("Installed app opened the account handoff form from the OS return intent.", flush=True)
             return
         for gate in (
