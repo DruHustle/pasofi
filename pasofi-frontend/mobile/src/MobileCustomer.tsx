@@ -48,7 +48,7 @@ export default function MobileCustomer({ close, initialTab = 'access' }: { close
     <p className="mobile-account-brand"><strong>PasoFi</strong> An Onesa Mobile product</p>
     <button onClick={close}>← Offline preview</button>
     {capabilities && usesNativeCustomerApi ? <button onClick={() => setScreen('onesa')}>Create an Onesa account</button>
-      : capabilities ? <a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">Continue with Company Portal on the PasoFi website</a>
+      : capabilities ? <a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">Continue to PasoFi account on the web</a>
       : !loading && <>
         <a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">Continue to PasoFi account on the web</a>
         <a href="https://auth.onesa.eu/register" target="_blank" rel="noopener noreferrer">Register an Onesa account</a>
