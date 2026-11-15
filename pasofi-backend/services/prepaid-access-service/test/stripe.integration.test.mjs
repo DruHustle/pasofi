@@ -43,7 +43,9 @@ test('Stripe concurrent retry, duplicate webhook and reordered delivery fulfill 
   const own=await stripePresentation(f.pool,f.customer,attempt,f.adapter);assert.ok(own?.clientSecret);
   assert.equal(await stripePresentation(f.pool,randomUUID(),attempt,f.adapter),null,'another customer cannot obtain the client secret');
   const dequalified=new StripeAdapter({...f.adapter.config,siteIds:new Set()},f.adapter.client);
-  assert.equal(await stripePresentation(f.pool,f.customer,attempt,dequalified),null,'a replay cannot expose a client secret after its site qualification is withdrawn');
+  const recovered=await stripePresentation(f.pool,f.customer,attempt,dequalified);
+  assert.equal(recovered?.clientSecret,own?.clientSecret,'a previously created, customer-bound intent remains recoverable after new-sale qualification is withdrawn');
+  assert.equal(f.calls.length,1,'recovery must not create a replacement Stripe intent');
   f.succeed();const event=f.event();await Promise.all(Array.from({length:5},()=>enqueueStripeEvent(f.pool,f.adapter,event)));
   assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM stripe_webhook_events WHERE event_id=$1',[event.id])).rows[0].n,1);
   assert.equal((await f.pool.query('SELECT requested_version::text AS n FROM payment_reconciliation_jobs WHERE attempt_id=$1',[attempt])).rows[0].n,'2');
