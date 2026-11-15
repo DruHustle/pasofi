@@ -155,6 +155,14 @@ export async function reconcileGrant(pool:Pool,evidence:AbsenceEvidence) {
     // A committed observation can be acknowledged again without refreshing its evidence.
     const now=Date.now();
     if(observed>now+5000||observed<now-60000)throw new GrantError('invalid_evidence_time');
+    if(evidence.absent) {
+      // Requests may arrive out of order. At the same observation time,
+      // positive evidence of a live session takes precedence over absence.
+      const present=await client.query(`SELECT 1 FROM grant_reconciliation_events
+        WHERE grant_id=$1 AND kind='present' AND observed_at>=$2::timestamptz LIMIT 1`,
+        [g.id,evidence.observedAt]);
+      if(present.rowCount)throw new GrantError('superseded_observation');
+    }
     await client.query('INSERT INTO grant_reconciliation_events(id,grant_id,kind,observed_at,detail) VALUES($1,$2,$3,$4,$5)',[evidence.observationId,g.id,evidence.absent?'absent':'present',evidence.observedAt,JSON.stringify({credentialRevokedAt:evidence.credentialRevokedAt})]);
     if(g.state==='closed') {
       // A later contradictory usage report can put a settled grant on hold.

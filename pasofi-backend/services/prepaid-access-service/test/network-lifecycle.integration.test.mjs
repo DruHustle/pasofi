@@ -31,7 +31,7 @@ test('verified final Stop plus independently fenced router absence releases exac
  await assert.rejects(issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'second'),{code:'session_pending_or_active'});
  const proof=evidence();
  assert.equal((await reconcileGrant(pool,{...proof,absent:false})).closed,false);
- const final={...evidence(),observationId:randomUUID()};
+ const final={...evidence(),observationId:randomUUID(),observedAt:new Date(Date.now()+1).toISOString()};
  const outcomes=await Promise.all(Array.from({length:5},()=>reconcileGrant(pool,final)));
  assert.ok(outcomes.every(x=>x.closed));
  const next=await issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'second');
@@ -51,6 +51,19 @@ test('an acknowledged observation can be retried after the freshness window with
  await assert.rejects(reconcileGrant(pool,{...proof,observationId:randomUUID()}),{code:'invalid_evidence_time'});
  const rows=await pool.query("SELECT count(*)::int AS count FROM grant_reconciliation_events WHERE grant_id=$1 AND kind IN ('absent','closed')",[event.grantId]);
  assert.equal(rows.rows[0].count,2);
+}));
+test('a delayed absence cannot close a grant after a newer positive router sighting',{skip:!url},async()=>fixture(async({pool,event,evidence,customer})=>{
+ await recordAccounting(pool,event);
+ await recordAccounting(pool,{...event,kind:'stop'});
+ const seen=evidence();
+ const base=Date.now();
+ const stamp=offset=>new Date(base+offset).toISOString();
+ assert.equal((await reconcileGrant(pool,{...seen,absent:false,observedAt:stamp(1000)})).closed,false);
+ for(const offset of [0,1000]) {
+  await assert.rejects(reconcileGrant(pool,{...seen,observationId:randomUUID(),observedAt:stamp(offset)}),{code:'superseded_observation'});
+ }
+ await assert.rejects(issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'overlapping'),{code:'session_pending_or_active'});
+ assert.equal((await reconcileGrant(pool,{...seen,observationId:randomUUID(),observedAt:stamp(2000)})).closed,true);
 }));
 test('missing Stop after NAS restart and regressing counters retain the reservation',{skip:!url},async()=>fixture(async({pool,customer,site,nas,event,evidence})=>{
  await recordAccounting(pool,event);await recordAccounting(pool,{...event,kind:'interim',upload:500n,download:200n});
