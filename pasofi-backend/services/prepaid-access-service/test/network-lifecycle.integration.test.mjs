@@ -143,6 +143,24 @@ test('operator review requires a fresh absence after a closed session is seen ag
  await reconcileGrant(pool,{...proof,observationId:randomUUID(),observedAt:new Date(time+2000).toISOString()});
  assert.equal((await resolve()).state,'closed');
 }));
+test('late accounting reopens its exact closed grant despite a pre-existing hold on another session',{skip:!url},async()=>fixture(async({pool,customer,event,evidence,grant})=>{
+ await recordAccounting(pool,event);
+ await recordAccounting(pool,{...event,kind:'stop',upload:100n,download:0n});
+ assert.equal((await reconcileGrant(pool,evidence())).closed,true);
+ const other=await issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'second-session');
+ await pool.query("UPDATE access_grants SET state='uncertain',disconnect_requested_at=now() WHERE id=$1",[other.id]);
+ await pool.query("INSERT INTO network_account_holds(customer_id,grant_id,reason) VALUES($1,$2,'existing_operator_review')",[customer,other.id]);
+ assert.equal((await recordAccounting(pool,{...event,kind:'interim',upload:200n,download:0n})).state,'uncertain');
+ const reopened=(await pool.query('SELECT state,disconnect_requested_at,closed_at,absent_verified_at FROM access_grants WHERE id=$1',[grant.id])).rows[0];
+ assert.equal(reopened.state,'uncertain');
+ assert.ok(reopened.disconnect_requested_at);
+ assert.equal(reopened.closed_at,null);
+ assert.equal(reopened.absent_verified_at,null);
+ const hold=(await pool.query('SELECT grant_id FROM network_account_holds WHERE customer_id=$1',[customer])).rows[0];
+ assert.equal(hold.grant_id,other.id,'the original account hold remains attached to its first incident');
+ const pending=await pool.query("SELECT id FROM access_grants WHERE (state<>'closed' AND disconnect_requested_at IS NOT NULL) OR id IN (SELECT grant_id FROM network_account_holds)");
+ assert.ok(pending.rows.some(row=>row.id===grant.id),'the late-usage grant is visible to the router disconnect worker');
+}));
 test('contradictory traffic after closure fences a newer grant and blocks further access',{skip:!url},async()=>fixture(async({pool,customer,event,evidence})=>{
  await recordAccounting(pool,event);await recordAccounting(pool,{...event,kind:'stop',upload:100n,download:0n});
  assert.equal((await reconcileGrant(pool,evidence())).closed,true);
