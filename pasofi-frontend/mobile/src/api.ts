@@ -13,7 +13,8 @@ export const mobileApiOrigin = (() => {
     return parsed.origin;
   } catch { return null; }
 })();
-export const mobileApiConfigured = !!import.meta.env.VITE_PAMOFI_API_BASE_URL?.trim();
+// Advertise account tools only when the configured gateway URL passed validation.
+export const mobileApiConfigured = mobileApiOrigin !== null;
 
 // Native sessions use a separate private cookie transport. Browser previews keep
 // their existing credentialed fetch contract and never fall back from native HTTP.

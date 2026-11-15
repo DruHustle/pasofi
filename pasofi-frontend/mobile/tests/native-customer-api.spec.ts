@@ -229,14 +229,29 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
     await nativeBridge(page, request => { requests.push(request); return reply({ ...capabilities, ...patch }); });
     await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
     await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible();
-    await expect(page.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/admin');
-    await expect(page.getByRole('link',{name:'Create an Onesa account',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/admin?entry=register');
+    await expect(page.getByRole('link',{name:'Continue to PasoFi account on the web',exact:true})).toHaveAttribute('href','https://pasofi.mobile.onesa.eu/#account');
+    await expect(page.getByRole('link',{name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://auth.onesa.eu/register');
     await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
     expect(requests.length).toBeGreaterThan(0); expect(new Set(requests.map(request => request.path))).toEqual(new Set(['/api/capabilities']));
     expect(await page.evaluate(() => (window as any).browserApiFetches)).toBe(0);
   });
 }
 
+
+test('unresponsive native capabilities request returns to offline preview without exposing account mutations', async ({ page, configuredBaseURL }) => {
+  const calls = await nativeBridge(page, request => request.path === '/api/capabilities'
+    ? new Promise<NativeReply>(() => {})
+    : reply({ error: 'not_authenticated' }, 401));
+  await page.goto(configuredBaseURL);
+  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await expect(page.getByText('Checking the configured PasoFi service', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry service connection' })).toBeVisible({ timeout: 16000 });
+  await expect(page.getByRole('button', { name: '← Offline preview' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
+  expect(calls.filter(call => call.method === 'request').map(call => call.options.path)).toEqual(['/api/capabilities']);
+  await page.getByRole('button', { name: '← Offline preview' }).click();
+  await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
+});
 for (const platform of ['ios', 'android'] as const) {
   test(`${platform} account creation keeps retry custody native while customer mutations preserve their idempotency keys`, async ({ page, configuredBaseURL }) => {
     const requests: NativeRequest[] = []; let hasSession = false;
