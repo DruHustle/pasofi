@@ -104,11 +104,11 @@ export async function recordAccounting(pool:Pool, event:TrustedAccounting) {
         await client.query(`INSERT INTO network_account_holds(customer_id,grant_id,reason) VALUES($1,$2,'usage_after_final_stop') ON CONFLICT(customer_id) DO NOTHING`,[grant.customer_id,grant.id]);
         await client.query("UPDATE access_grants SET state='uncertain',accounting_anomaly=true,disconnect_requested_at=COALESCE(disconnect_requested_at,now()) WHERE customer_id=$1 AND state<>'closed'",[grant.customer_id]);
         // Reopen this exact closed grant even if the customer hold already points
-        // at another uncertain session. The disconnect worker selects every
-        // non-closed grant, not only the one referenced by the account hold.
+        // at another uncertain session. Retain its original reservation until
+        // an operator reconciles final counters; the account hold prevents any
+        // new grant while every unresolved physical session is disconnected.
         await client.query(`UPDATE access_grants SET state='uncertain',accounting_anomaly=true,
-          disconnect_requested_at=COALESCE(disconnect_requested_at,now()),absent_verified_at=NULL,closed_at=NULL,
-          reserved_bytes=charged_bytes,last_accounting_at=now()
+          disconnect_requested_at=COALESCE(disconnect_requested_at,now()),absent_verified_at=NULL,closed_at=NULL,last_accounting_at=now()
           WHERE id=$1`,[grant.id]);
         await client.query("INSERT INTO grant_reconciliation_events(id,grant_id,kind,observed_at,detail) VALUES($1,$2,'late_usage',now(),$3)",[randomUUID(),grant.id,JSON.stringify({upload:event.upload.toString(),download:event.download.toString()})]);
         return {state:'uncertain',chargedBytes:grant.charged};
