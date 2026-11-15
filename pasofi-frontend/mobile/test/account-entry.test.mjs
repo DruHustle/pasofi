@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const apiSource = readFileSync(new URL('../src/api.ts', import.meta.url), 'utf8');
 
+const signInComponent = readFileSync(new URL('../src/OnesaSignIn.tsx', import.meta.url), 'utf8');
 const homeComponent = readFileSync(new URL('../src/MobileApp.tsx', import.meta.url), 'utf8');
 
 const component = readFileSync(
@@ -36,4 +37,11 @@ test('offline home account tab never links customers to Portal administration', 
   assert.match(homeComponent, /https:\/\/pasofi\.mobile\.onesa\.eu\/#account/);
   assert.match(homeComponent, /https:\/\/auth\.onesa\.eu\/register/);
   assert.doesNotMatch(homeComponent, /create an account with Company Portal/);
+});
+
+test('native Onesa sign-in fallback uses customer destinations, not admin UI', () => {
+  assert.doesNotMatch(signInComponent, /portal\.onesa\.eu\/admin/);
+  assert.match(signInComponent, /https:\/\/pasofi\.mobile\.onesa\.eu\/#account/);
+  assert.match(signInComponent, /https:\/\/auth\.onesa\.eu\/register/);
+  assert.match(signInComponent, /register through Onesa Identity/);
 });
