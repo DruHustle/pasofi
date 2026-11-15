@@ -34,6 +34,10 @@ test('RouterOS requires validated HTTPS and independently confirms removal',{tim
   chmodSync(join(dir,'cert'),0o666);
   assert.throws(()=>new RouterOS(config),{message:'router_unavailable'});
   chmodSync(join(dir,'cert'),0o644);
+  const oversizedCA=join(dir,'oversized-ca');writeFileSync(oversizedCA,Buffer.alloc(65537,0x41),{mode:0o600});
+  assert.throws(()=>new RouterOS({...config,caFile:oversizedCA}),{message:'router_unavailable'});
+  const privateCA=join(dir,'private-ca');writeFileSync(privateCA,'-----BEGIN CERTIFICATE-----\\n-----BEGIN PRIVATE KEY-----',{mode:0o600});
+  assert.throws(()=>new RouterOS({...config,caFile:privateCA}),{message:'router_unavailable'});
   assert.equal((await router.disconnect(username)).absent,true);assert.equal(deletes,1);assert.equal(requests,3);
   active=true;mode='retained';assert.equal((await router.disconnect(username)).absent,false);
   mode='foreign';const before=deletes;await assert.rejects(router.disconnect(username),{message:'router_unavailable'});assert.equal(deletes,before);
@@ -54,6 +58,7 @@ test('router registry requires an absolute private regular file and validates en
   save([config,{...config,nasId:nasId.toLowerCase()}]);assert.throws(()=>configuredRouters(),{message:'router_unavailable'});
   for(const invalid of ['-'.repeat(36),'1'.repeat(36)]){save([{...config,nasId:invalid}]);assert.throws(()=>configuredRouters(),{message:'router_unavailable'});}
   save([config],0o644);assert.throws(()=>configuredRouters(),{message:'router_unavailable'});
+  writeFileSync(path,Buffer.alloc(512*1024+1,0x20));chmodSync(path,0o600);assert.throws(()=>configuredRouters(),{message:'router_unavailable'});
   save([config]);symlinkSync(path,link);process.env.ROUTEROS_ROUTERS_FILE=link;assert.throws(()=>configuredRouters(),{message:'router_unavailable'});
   process.env.ROUTEROS_ROUTERS_FILE='routers.json';assert.throws(()=>configuredRouters(),{message:'router_unavailable'});
  }finally{if(saved===undefined)delete process.env.ROUTEROS_ROUTERS_FILE;else process.env.ROUTEROS_ROUTERS_FILE=saved;rmSync(dir,{recursive:true,force:true});}
