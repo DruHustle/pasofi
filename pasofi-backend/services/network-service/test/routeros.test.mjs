@@ -10,7 +10,7 @@ import {RouterOS,configuredRouters} from '../dist/routeros.js';
 test('RouterOS requires validated HTTPS and independently confirms removal',{timeout:30000},async()=>{
  const dir=mkdtempSync(join(tmpdir(),'pamofi-router-rest-'));let server;
  try {
-  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',join(dir,'key'),'-out',join(dir,'cert'),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=IP:127.0.0.1'],{stdio:'ignore'});
+  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',join(dir,'key'),'-out',join(dir,'cert'),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:router.invalid,IP:127.0.0.1'],{stdio:'ignore'});
   let mode='valid',active=true,deletes=0,requests=0,trickled=false;const username='customer_'+ 'a'.repeat(24);
   server=https.createServer({key:readFileSync(join(dir,'key')),cert:readFileSync(join(dir,'cert'))},(request,response)=>{
    requests++;assert.equal(request.headers.authorization,'Basic '+Buffer.from('operator:test-only-secret').toString('base64'));
@@ -27,8 +27,17 @@ test('RouterOS requires validated HTTPS and independently confirms removal',{tim
    response.end(JSON.stringify(active?[{'.id':'*A',user:mode==='foreign'?'another-customer':username}]:[]));
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  const config={nasId:'test',url:`https://127.0.0.1:${server.address().port}/rest/`,username:'operator',password:'test-only-secret',caFile:join(dir,'cert')};
-  const router=new RouterOS(config);
+  const config={nasId:'test',url:`https://router.invalid:${server.address().port}/rest/`,username:'operator',password:'test-only-secret',caFile:join(dir,'cert')};
+  const testResolution={resolveHost:async()=>[{address:'127.0.0.1',family:4}],isPrivateAddress:address=>address==='127.0.0.1'};
+  const router=new RouterOS(config,testResolution);
+  const publicRouter=new RouterOS(config,{resolveHost:async()=>[{address:'8.8.8.8',family:4}]});
+  const requestsBeforePublic=requests;
+  await assert.rejects(publicRouter.active(username),{message:'router_unavailable'});
+  assert.equal(requests,requestsBeforePublic,'public DNS answers must be rejected before credentials are sent');
+  const mixedRouter=new RouterOS(config,{resolveHost:async()=>[{address:'127.0.0.1',family:4},{address:'8.8.8.8',family:4}],isPrivateAddress:address=>address==='127.0.0.1'});
+  await assert.rejects(mixedRouter.active(username),{message:'router_unavailable'});
+  assert.equal(requests,requestsBeforePublic,'ambiguous DNS answers must be rejected before credentials are sent');
+  assert.throws(()=>new RouterOS({...config,url:`https://8.8.8.8:${server.address().port}/rest/`}),{message:'router_unavailable'});
   const caLink=join(dir,'ca-link');symlinkSync(join(dir,'cert'),caLink);
   assert.throws(()=>new RouterOS({...config,caFile:caLink}),{message:'router_unavailable'});
   chmodSync(join(dir,'cert'),0o666);
