@@ -26,6 +26,7 @@ jobs:
     env:
       BUILD_RUN: ${{ inputs.build_run || '43651135625' }}
       ARCHIVE_SHA256: ${{ inputs.archive_sha256 || 'c57cc751258e5f2eab3960817ea3c1a02f972590a77e86d9dba7259cba50af67' }}
+      EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -37,6 +38,12 @@ jobs:
           check="$RUNNER_TEMP/pasofi-installed-client"
           mkdir -p "$check/package" "$check/download"
           [[ "$BUILD_RUN" =~ ^[0-9]+$ && "$ARCHIVE_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          actual_source=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" --jq '.head_sha')
+          if [ "$actual_source" != "$EXPECTED_SOURCE_SHA" ]; then
+            echo "::error::Installed iOS acceptance cannot validate a stale release: artifact run $BUILD_RUN built $actual_source, current PR source is $EXPECTED_SOURCE_SHA."
+            echo "::error::Build the configured simulator on this exact commit, then dispatch with its run ID and SHA-256."
+            exit 1
+          fi
           gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --pattern 'pasofi-ios-configured-simulator-*' --dir "$check/download"
           archive=$(find "$check/download" -name PasoFi-configured-simulator.tar.gz -type f)
           test -f "$archive"
