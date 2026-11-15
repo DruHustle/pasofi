@@ -12,10 +12,12 @@ final class ConfiguredAccessTests: XCTestCase {
         }
         openAccount.tap()
         print("PASOFI_OPENED_ACCOUNT")
-        // The configured gateway may be intentionally disabled or unavailable.
-        // Both outcomes must expose a clear offline state, not an endless spinner.
+        // A configured service may offer the real Onesa sign-in entry, or an
+        // explicit unavailable state. Neither is allowed to remain on a spinner.
         let expectedGate = app.descendants(matching: .any).matching(NSPredicate(
-            format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@",
+            format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@",
+            "Sign in with Onesa", "Sign in with Onesa",
+            "Continue to PasoFi account on the web", "Continue to PasoFi account on the web",
             "Mobile account access is not enabled", "Mobile account access is not enabled",
             "did not respond in time", "did not respond in time",
             "configured PasoFi service could not be reached", "configured PasoFi service could not be reached"
