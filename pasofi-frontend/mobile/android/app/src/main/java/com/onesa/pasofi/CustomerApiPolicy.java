@@ -40,6 +40,11 @@ final class CustomerApiPolicy {
         boolean publicRead() { return method.equals("GET") && basePath.matches("^/api/(capabilities|bundles|sites|help|payments/methods)$"); }
     }
 
+    static boolean isAccountHandoffReturn(String action, String dataString) {
+        return "android.intent.action.VIEW".equals(action) &&
+            "com.onesa.pasofi://account/handoff".equals(dataString);
+    }
+
     static boolean validUuid(String value) { return value != null && UUID_PATTERN.matcher(value).matches(); }
     static boolean validToken(String value) { return value != null && TOKEN.matcher(value).matches(); }
     static String browserSignInUrl(String origin) { return validOrigin(origin) ? origin + "/#account" : null; }
