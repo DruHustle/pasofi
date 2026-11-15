@@ -50,12 +50,35 @@ def tap(label, allow_scroll=False, exact=False):
     adb("shell", "input", "tap", str(x), str(y))
 
 
+def account_return_diagnostics():
+    try:
+        activity = adb("shell", "dumpsys", "activity", "activities")
+        relevant = [line.strip() for line in activity.splitlines()
+                    if PACKAGE in line and any(word in line for word in ("Resumed", "resumed", "topResumed", "mResumed"))]
+        print("PasoFi activity state: " + (" | ".join(relevant[-8:]) if relevant else "not reported as resumed"), flush=True)
+    except Exception as error:
+        print("Could not inspect activity state: " + type(error).__name__, flush=True)
+    try:
+        logs = adb("logcat", "-d", "-t", "250", "AndroidRuntime:E", "*:S")
+        if logs.strip():
+            print("Android runtime errors:\\n" + logs[-8000:], flush=True)
+    except Exception as error:
+        print("Could not inspect Android runtime errors: " + type(error).__name__, flush=True)
+
+
 def account_return_state():
-    # The fixed deep link must open the account handoff form when the service
-    # advertises it, or a clear fail-closed service gate when it does not.
-    end = time.monotonic() + 25
+    # A cold-start custom-scheme intent can arrive before the WebView has an
+    # accessibility root. Wait for the exact activity and its rendered UI,
+    # rather than treating a transient null UIAutomator root as a product bug.
+    end = time.monotonic() + 60
     while time.monotonic() < end:
-        nodes = screen()
+        try:
+            activity = adb("shell", "dumpsys", "activity", "activities")
+            resumed = any(PACKAGE in line and ("mResumedActivity" in line or "topResumedActivity" in line)
+                          for line in activity.splitlines())
+        except Exception:
+            resumed = False
+        nodes = screen() if resumed else []
         if locate("Accept a browser handoff", exact=True, nodes=nodes):
             print("Installed app opened the account handoff form from the OS return intent.", flush=True)
             return
@@ -68,7 +91,8 @@ def account_return_state():
                 print("Installed app opened the account surface and preserved the fail-closed service gate: " + gate, flush=True)
                 return
         time.sleep(1)
-    raise RuntimeError("The installed app did not expose the account handoff form or a recognized fail-closed service gate")
+    account_return_diagnostics()
+    raise RuntimeError("The installed PasoFi activity did not expose the account handoff form or a recognized fail-closed service gate after cold-start; see activity and AndroidRuntime diagnostics")
 
 
 
@@ -77,8 +101,9 @@ if __name__ == "__main__":
         # A fresh process launched from the fixed browser return must enter the
         # account surface. Production can still withhold private account access.
         adb("shell", "am", "force-stop", PACKAGE)
-        adb("shell", "am", "start", "-W", "-a", "android.intent.action.VIEW",
-            "-c", "android.intent.category.BROWSABLE", "-d", "com.onesa.pasofi://account/handoff")
+        adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity",
+            "-a", "android.intent.action.VIEW", "-c", "android.intent.category.BROWSABLE",
+            "-d", "com.onesa.pasofi://account/handoff")
         account_return_state()
         tap("Offline preview")
         visible("My PasoFi", exact=True)
