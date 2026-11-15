@@ -28,7 +28,7 @@ function post(url,ca,client,body,nas){return new Promise((resolve,reject)=>{
  req.on('error',reject);req.end(JSON.stringify(body));
 });}
 test('mutual TLS and two registered NASes share one authoritative reservation', {skip:!networkUrl||!prepaidDb||!prepaidUrl,timeout:60000}, async()=>{
- const old={...process.env};Object.assign(process.env,{APP_ENV:'demo',NODE_ENV:'development',INTERNAL_RADIUS_ENABLED:'true'});
+ const old={...process.env};Object.assign(process.env,{APP_ENV:'demo',NODE_ENV:'development',INTERNAL_RADIUS_ENABLED:'true',PAMOFI_CUSTOMER_NETWORK_ENABLED:'true'});
  const dir=mkdtempSync(join(tmpdir(),'pamofi-radius-test-')),c=certs(dir),network=new pg.Pool({connectionString:networkUrl}),prepaid=new pg.Pool({connectionString:prepaidDb});
  const radius={cert:c['radius.crt'],key:c['radius.key']},other={cert:c['other.crt'],key:c['other.key']};
  const customer=randomUUID(),order=randomUUID(),entitlement=randomUUID(),sites=[randomUUID(),randomUUID()],nases=[randomUUID(),randomUUID()];
@@ -51,11 +51,14 @@ test('mutual TLS and two registered NASes share one authoritative reservation', 
   assert.equal((await post(`${base}/radius/authorize`,c['ca.crt'],radius,{...access(0),'User-Password':attr('x'.repeat(43))},'nas_0')).status,401);
   const first=await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(0),'nas_0');assert.equal(first.status,200);assert.equal(first.body['reply:Mikrotik-Total-Limit'],705032704);assert.equal(first.body['reply:Mikrotik-Total-Limit-Gigawords'],1);assert.equal(first.body['reply:Mikrotik-Rate-Limit'],'1M/3M');
   const repeat=await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(0),'nas_0');assert.equal(repeat.status,200);assert.deepEqual(repeat.body['reply:Class'],first.body['reply:Class']);assert.ok(repeat.body['reply:Session-Timeout']<=first.body['reply:Session-Timeout']);
+  process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED='false';
+  assert.equal((await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(0),'nas_0')).status,401,'paused customer network rejects even an unexpired credential');
   assert.equal((await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(1),'nas_1')).status,401);
+
   const classAttr=first.body['reply:Class'].value[0],baseEvent={'Class':attr(classAttr),'Acct-Session-Id':attr('LAB-0')};
   const start={...baseEvent,'Class':attr(Buffer.from(classAttr.slice(2),'hex').toString('utf8')),'Acct-Status-Type':attr('Start')};
   assert.equal((await post(`${base}/radius/accounting`,c['ca.crt'],radius,start,'nas_1')).status,401);
-  assert.equal((await post(`${base}/radius/accounting`,c['ca.crt'],radius,start,'nas_0')).status,204);
+  assert.equal((await post(`${base}/radius/accounting`,c['ca.crt'],radius,start,'nas_0')).status,204,'accounting remains live while new customer authentication is paused');
   const interim={...baseEvent,'Acct-Status-Type':attr('Interim-Update'),'Acct-Input-Octets':attr(10),'Acct-Input-Gigawords':attr(0),'Acct-Output-Octets':attr(0),'Acct-Output-Gigawords':attr(1)};
   assert.equal((await post(`${base}/radius/accounting`,c['ca.crt'],radius,interim,'nas_0')).status,204);
   assert.equal((await post(`${base}/radius/accounting`,c['ca.crt'],radius,interim,'nas_0')).status,204);
@@ -67,6 +70,6 @@ test('mutual TLS and two registered NASes share one authoritative reservation', 
  } finally {
   await app.close();await network.query('DELETE FROM radius_credentials WHERE customer_id=$1',[customer]);await network.query('DELETE FROM radius_nas WHERE id=ANY($1::uuid[])',[nases]);
   await prepaid.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);await prepaid.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);await prepaid.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await network.end();await prepaid.end();rmSync(dir,{recursive:true,force:true});
-  for(const k of ['APP_ENV','NODE_ENV','INTERNAL_RADIUS_ENABLED']){if(old[k]===undefined)delete process.env[k];else process.env[k]=old[k];}
+  for(const k of ['APP_ENV','NODE_ENV','INTERNAL_RADIUS_ENABLED','PAMOFI_CUSTOMER_NETWORK_ENABLED']){if(old[k]===undefined)delete process.env[k];else process.env[k]=old[k];}
  }
 });

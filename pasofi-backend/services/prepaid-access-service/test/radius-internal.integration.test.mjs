@@ -11,7 +11,7 @@ async function token(scope,issuer='network',expiry='15s') {
  return new SignJWT({scope}).setProtectedHeader({alg:'HS256'}).setIssuer(issuer).setSubject('network').setAudience('prepaid-access').setIssuedAt().setExpirationTime(expiry).sign(new TextEncoder().encode(secret));
 }
 test('lab authority requires a scoped network token and durably binds accounting', {skip:!url}, async()=>{
- const env={...process.env};Object.assign(process.env,{DATABASE_URL:url,APP_ENV:'demo',NODE_ENV:'development',INTERNAL_RADIUS_ENABLED:'true',INTERNAL_NETWORK_SECRET:secret});
+ const env={...process.env};Object.assign(process.env,{DATABASE_URL:url,APP_ENV:'demo',NODE_ENV:'development',INTERNAL_RADIUS_ENABLED:'true',PAMOFI_CUSTOMER_NETWORK_ENABLED:'true',INTERNAL_NETWORK_SECRET:secret});
  const app=buildApp(),pool=new pg.Pool({connectionString:url});
  const customer=randomUUID(),order=randomUUID(),entitlement=randomUUID(),site=randomUUID(),nas=randomUUID(),requestKey=randomUUID(),sessionId='LAB-SESSION-1';
  const grantBody={customerId:customer,siteId:site,nasId:nas,requestKey,sessionId};
@@ -26,6 +26,9 @@ test('lab authority requires a scoped network token and durably binds accounting
   assert.equal((await post('/internal/v1/radius/grants',grantBody,accountToken)).statusCode,403);
   const created=await post('/internal/v1/radius/grants',grantBody,grantToken);assert.equal(created.statusCode,200);
   const grant=created.json();assert.equal(grant.reservedBytes,'5000000000');
+  process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED='false';
+  assert.equal((await post('/internal/v1/radius/grants',grantBody,grantToken)).statusCode,404,'paused customer service blocks new grants');
+  process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED='true';
   const replay=await post('/internal/v1/radius/grants',grantBody,grantToken);assert.equal(replay.json().grantId,grant.grantId);assert.equal(replay.json().deadline,grant.deadline);
   assert.equal((await post('/internal/v1/radius/grants',{...grantBody,sessionId:'OTHER'},grantToken)).statusCode,409);
   async function assertReplayUnavailable() {
@@ -47,13 +50,15 @@ test('lab authority requires a scoped network token and durably binds accounting
   assert.equal((await post('/internal/v1/radius/accounting',{...event,kind:'interim'},accountToken)).statusCode,409);
   assert.equal((await post('/internal/v1/radius/accounting',{...event,sessionId:'OTHER'},accountToken)).statusCode,409);
   assert.equal((await post('/internal/v1/radius/accounting',{...event,upload:'18446744073709551616'},accountToken)).statusCode,409);
-  const first=await post('/internal/v1/radius/accounting',event,accountToken);assert.equal(first.statusCode,200);assert.equal(first.json().chargedBytes,'4294967306');
+  process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED='false';
+  const first=await post('/internal/v1/radius/accounting',event,accountToken);assert.equal(first.statusCode,200,'accounting remains available while customer authentication is paused');
+  process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED='true';assert.equal(first.json().chargedBytes,'4294967306');
   await assertReplayUnavailable();
   const duplicate=await post('/internal/v1/radius/accounting',event,accountToken);assert.equal(duplicate.json().chargedBytes,'4294967306');
   assert.equal((await pool.query('SELECT consumed_bytes::text FROM purchase_entitlements WHERE id=$1',[entitlement])).rows[0].consumed_bytes,'4294967306');
   process.env.APP_ENV='production';const production=buildApp();try{assert.equal((await production.inject({method:'POST',url:'/internal/v1/radius/grants',payload:grantBody,headers:{authorization:`Bearer ${grantToken}`}})).statusCode,404);}finally{await production.close();}
  }finally{
   await app.close();await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);await pool.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
-  for(const key of ['DATABASE_URL','APP_ENV','NODE_ENV','INTERNAL_RADIUS_ENABLED','INTERNAL_NETWORK_SECRET']) {if(env[key]===undefined) delete process.env[key];else process.env[key]=env[key];}
+  for(const key of ['DATABASE_URL','APP_ENV','NODE_ENV','INTERNAL_RADIUS_ENABLED','PAMOFI_CUSTOMER_NETWORK_ENABLED','INTERNAL_NETWORK_SECRET']) {if(env[key]===undefined) delete process.env[key];else process.env[key]=env[key];}
  }
 });

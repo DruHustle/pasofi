@@ -26,6 +26,7 @@ export function registerRadiusInternal(app:FastifyInstance,pool:Pool|null,demo:b
   return true;
  }
  app.post<{Body:GrantBody}>('/internal/v1/radius/grants',{schema:{body:{type:'object',additionalProperties:false,required:['customerId','siteId','nasId','requestKey','sessionId'],properties:{customerId:id,siteId:id,nasId:id,requestKey:id,sessionId:session}}}},async(request,reply)=>{
+  if(process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED!=='true')return reply.code(404).send({error:'not_found'});
   if(!await authorize(request,reply,'radius:grant'))return;
   const b=request.body;
   try {

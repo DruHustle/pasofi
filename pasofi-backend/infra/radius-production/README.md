@@ -121,9 +121,13 @@ no existing Onesa VM is assumed to belong to PamoFi.
 Both new services use the `radius-qualified` profile and require an explicit
 `PAMOFI_RADIUS_QUALIFIED=true` for controlled activation. Applying the overlay
 with false does not turn the service on. `PAMOFI_CUSTOMER_NETWORK_ENABLED`
-defaults to false, even when the RADIUS transport is enabled. Customer credential
-issuance is therefore a separate deliberate step. Keep the default gates closed
-until the selected site's controlled acceptance is ready.
+defaults to false, even when the RADIUS transport is enabled. It is passed to the
+prepaid, network and RADIUS-authority processes: false blocks new credential
+issuance and new RADIUS Access-Accepts, while accounting, Stop, NAS restart and
+reconciliation remain available so existing sessions can be settled safely.
+Customer credential issuance/authentication is therefore a separate deliberate
+step. Keep the default gates closed until the selected site's controlled
+acceptance is ready.
 
 The [site-link plan](../site-link/README.md) supplies the outbound MikroTik VPN
 and the narrow Oracle firewall scope. Docker DNAT/SNAT and source preservation
