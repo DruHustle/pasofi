@@ -19,22 +19,31 @@ export default function MobileCustomer({ close, initialTab = 'access' }: { close
     const controller = new AbortController();
     live.current = true; setLoading(true); setMessage(''); setCapabilities(null);
     if (!mobileApiOrigin) { setLoading(false); setMessage('A valid HTTPS PasoFi gateway is required. This build is still an offline preview.'); return () => { live.current = false; }; }
+    // A captive network or unreachable gateway must not leave account entry
+    // spinning indefinitely. Preserve the offline preview and do not sign in.
+    const timeout = setTimeout(() => {
+      if (!live.current || controller.signal.aborted) return;
+      controller.abort();
+      setCapabilities(null);
+      setMessage('The configured PasoFi service did not respond in time. Your offline preview is still available.');
+      setLoading(false);
+    }, 12000);
     api<Capabilities>('/api/capabilities', { signal: controller.signal }).then(value => {
       if (!live.current || controller.signal.aborted) return;
       if (value.mobileCookies !== true || (usesNativeCustomerApi && value.nativeCustomerApiVersion !== 1)) { setMessage('Mobile account access is not enabled by this deployment yet. You can continue using the offline preview.'); return; }
       setCapabilities(value);
-    }).catch(error => { if (live.current && !controller.signal.aborted) setMessage(messageFor(error, 'The configured PasoFi service could not be reached. Your offline preview is still available.')); }).finally(() => { if (live.current && !controller.signal.aborted) setLoading(false); });
-    const unsubscribe = onSessionChange(() => { controller.abort(); setCapabilities(null); setMessage('Your account changed. Reconnect to load the current account.'); });
-    return () => { live.current = false; controller.abort(); unsubscribe(); };
+    }).catch(error => { if (live.current && !controller.signal.aborted) setMessage(messageFor(error, 'The configured PasoFi service could not be reached. Your offline preview is still available.')); }).finally(() => { clearTimeout(timeout); if (live.current && !controller.signal.aborted) setLoading(false); });
+    const unsubscribe = onSessionChange(() => { clearTimeout(timeout); controller.abort(); setCapabilities(null); setLoading(false); setMessage('Your account changed. Reconnect to load the current account.'); });
+    return () => { live.current = false; clearTimeout(timeout); controller.abort(); unsubscribe(); };
   }, [attempt]);
   return <div className="mobile-customer"><div className="mobile-account-links">
     <p className="mobile-account-brand"><strong>PasoFi</strong> An Onesa Mobile product</p>
     <button onClick={close}>← Offline preview</button>
     {capabilities && usesNativeCustomerApi ? <button onClick={() => setScreen('onesa')}>Create an Onesa account</button>
-      : capabilities ? <a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">Continue with Company Portal on the PasoFi website</a>
+      : capabilities ? <a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">Continue to PasoFi account on the web</a>
       : !loading && <>
-        <a href="https://portal.onesa.eu/admin" target="_blank" rel="noopener noreferrer">Sign in to Company Portal</a>
-        <a href="https://portal.onesa.eu/admin?entry=register" target="_blank" rel="noopener noreferrer">Create an Onesa account</a>
+        <a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">Continue to PasoFi account on the web</a>
+        <a href="https://auth.onesa.eu/register" target="_blank" rel="noopener noreferrer">Register an Onesa account</a>
       </>}
     {capabilities && <>
       {usesNativeCustomerApi && <button onClick={() => setScreen('onesa')}>Sign in with Onesa</button>}
