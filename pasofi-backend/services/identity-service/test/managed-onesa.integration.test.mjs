@@ -102,6 +102,10 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   role='agent'; assert.equal((await login()).statusCode,401,'a site-operator grant cannot create a customer session');
   role='support'; assert.equal((await login()).statusCode,401,'a support grant cannot create a customer session');
   role='customer';
+  role='agent';
+  const agentNative=await nativeToken('pasofi_synthetic_ios');
+  assert.equal((await request('POST','onesa/native-session',{platform:'ios',accessToken:agentNative})).statusCode,401,'a site-operator grant cannot create a native customer session');
+  role='customer';
   const good=await login();
   assert.equal(good.statusCode,200,good.body);
   assert.equal(good.json().customerId,customer); assert.equal(good.json().returnTo,'/#history');
