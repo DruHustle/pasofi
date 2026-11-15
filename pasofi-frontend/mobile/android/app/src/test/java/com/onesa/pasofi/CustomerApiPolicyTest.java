@@ -20,6 +20,19 @@ public class CustomerApiPolicyTest {
         catch (IllegalArgumentException expected) { assertEquals("invalid_cookie", expected.getMessage()); }
     }
 
+    @Test public void acceptsOnlyTheExactAccountHandoffReturnIntent() {
+        assertTrue(CustomerApiPolicy.isAccountHandoffReturn("android.intent.action.VIEW", "com.onesa.pasofi://account/handoff"));
+        for (String[] invalid : new String[][]{
+            {"android.intent.action.MAIN", "com.onesa.pasofi://account/handoff"},
+            {"android.intent.action.VIEW", "com.onesa.pasofi://account/handoff?code=secret"},
+            {"android.intent.action.VIEW", "com.onesa.pasofi://account/handoff#fragment"},
+            {"android.intent.action.VIEW", "com.onesa.pasofi://account/other"},
+            {"android.intent.action.VIEW", "https://pasofi.mobile.onesa.eu/#account"},
+            {null, "com.onesa.pasofi://account/handoff"},
+            {"android.intent.action.VIEW", null}
+        }) assertFalse(CustomerApiPolicy.isAccountHandoffReturn(invalid[0], invalid[1]));
+    }
+
     @Test public void pinsOneCanonicalHttpsDnsOriginWithoutPathsOrCredentials() {
         assertTrue(CustomerApiPolicy.validOrigin("https://api.pasofi.test"));
         for (String value : new String[]{null, "", "http://api.pasofi.test", "https://api.pasofi.test/", "https://API.pasofi.test",
