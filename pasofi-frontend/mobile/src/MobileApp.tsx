@@ -1,12 +1,12 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { pendingNativeDestination } from './native-oidc';
 import { mobileApiConfigured } from './api';
 import Icon, { type IconName } from './Icon';
 import type { CustomerTab } from './CustomerAccess';
+import MobileCustomer from './MobileCustomer';
 import { PolicyNotice } from './Policies';
 import { policyHelpArticles } from './PolicyHelp';
-const MobileCustomer = lazy(() => import('./MobileCustomer'));
 import './mobile.css';
 
 type Tab = 'home' | 'bundles' | 'history' | 'account' | 'help';
@@ -60,7 +60,7 @@ export default function MobileApp() {
   const shownExamples = examples.filter(bundle => categories.find(item => item.id === category)!.matches(bundle.days));
   const shownQuestions = questions.filter(item => helpQuery.trim().toLowerCase().split(/\s+/).every(word => `${item.q} ${item.a}`.toLowerCase().includes(word)));
 
-  if (accountOpen) return <div className="mobile-app mobile-live-shell"><Suspense fallback={<p className="mobile-notice" role="status">Loading account tools…</p>}><MobileCustomer initialTab={accountTab} close={() => setAccountOpen(false)} /></Suspense></div>;
+  if (accountOpen) return <div className="mobile-app mobile-live-shell"><MobileCustomer initialTab={accountTab} close={() => setAccountOpen(false)} /></div>;
 
   return <div className="mobile-app">
     <a className="mobile-skip" href="#mobile-content">Skip to content</a>
