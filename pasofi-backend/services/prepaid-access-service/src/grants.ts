@@ -177,7 +177,13 @@ export async function reconcileGrant(pool:Pool,evidence:AbsenceEvidence) {
           await client.query(`UPDATE access_grants SET state='uncertain',accounting_anomaly=true,
             disconnect_requested_at=COALESCE(disconnect_requested_at,now())
             WHERE customer_id=$1 AND state<>'closed'`,[g.customer_id]);
-          await client.query('UPDATE access_grants SET accounting_anomaly=true,absent_verified_at=NULL WHERE id=$1',[g.id]);
+          // Reopen this exact grant for reconciliation as well. A customer may
+          // already have a hold tied to a different grant; ON CONFLICT above
+          // must not leave this newly observed router session invisible to the
+          // disconnect worker merely because the account was already held.
+          await client.query(`UPDATE access_grants SET state='uncertain',accounting_anomaly=true,
+            disconnect_requested_at=COALESCE(disconnect_requested_at,now()),absent_verified_at=NULL,closed_at=NULL
+            WHERE id=$1`,[g.id]);
           return {state:'uncertain',closed:false,reviewRequired:true};
         }
         // An out-of-order historical sighting predating the closure is harmless.
