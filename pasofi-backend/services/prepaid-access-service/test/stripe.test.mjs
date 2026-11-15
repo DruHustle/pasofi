@@ -49,7 +49,7 @@ test('official Stripe SDK sends one bound card intent with a stable server attem
   const body=new URLSearchParams(request.options.body),headers=new Headers(request.options.headers);
   assert.equal(request.url.pathname,'/v1/payment_intents');assert.equal(body.get('amount'),'500');assert.equal(body.get('currency'),'usd');
   assert.equal(body.get('allowed_payment_method_types[0]'),'card');assert.equal(body.get('capture_method'),'automatic');
-  assert.equal(body.get('automatic_payment_methods[allow_redirects]'),'never');
+  assert.equal(body.has('automatic_payment_methods[enabled]'),false,'Endive forbids combining an allowlist with automatic methods');
   assert.equal(body.get('metadata[pasofi_attempt_id]'),t.attemptId);assert.equal(body.get('metadata[pasofi_order_id]'),t.orderId);
   assert.equal(body.get('metadata[pasofi_customer_id]'),t.customerId);assert.equal(body.get('metadata[pasofi_site_id]'),t.siteId);
   assert.equal(headers.get('idempotency-key'),`pasofi-payment-${t.attemptId}`);assert.equal(headers.get('stripe-version'),'2026-10-28.endive');
