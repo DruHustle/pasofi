@@ -21,6 +21,7 @@ function clientFor(c,t,change=()=>({}),requests=[]){
 
 test('Stripe configuration fails closed across environment, key mode, merchant and site qualification',()=>{
  const c=config(),env={PAMOFI_PAYMENTS_ENABLED:'true',PAMOFI_PAYMENT_PROVIDER:'stripe',PAMOFI_PAYMENT_MODE:'sandbox',APP_ENV:'demo',NODE_ENV:'development',
+  PAMOFI_CUSTOMER_NETWORK_ENABLED:'false',PAMOFI_RADIUS_QUALIFIED:'false',PAMOFI_ROUTER_CONTROL_QUALIFIED:'false',
   STRIPE_SECRET_KEY:c.secretKey,STRIPE_PUBLISHABLE_KEY:c.publishableKey,STRIPE_WEBHOOK_SECRET:c.webhookSecret,STRIPE_ACCOUNT_ID:c.accountId,
   STRIPE_MERCHANT_COUNTRY:c.country,STRIPE_QUALIFIED_SITE_IDS_JSON:JSON.stringify([randomUUID()]),STRIPE_PRODUCTION_QUALIFIED:'false',STRIPE_APPLE_PAY_ENABLED:'false',STRIPE_APPLE_PAY_MERCHANT_ID:'',STRIPE_GOOGLE_PAY_ENABLED:'false'};
  const saved=Object.fromEntries(Object.keys(env).map(key=>[key,process.env[key]]));
