@@ -14,6 +14,10 @@ export function stripeConfiguration(demo:boolean):StripeConfiguration|null {
  const env=process.env,mode=env.PAMOFI_PAYMENT_MODE;
  if(env.PAMOFI_PAYMENT_PROVIDER!=='stripe')return null;
  const live=mode==='production';
+ // Live checkout is downstream of a qualified physical service, not a merchant
+ // account alone. Require the same explicit RADIUS, customer-network and
+ // RouterOS-reconciler gates that protect paid session issuance/termination.
+ if(live&&(env.PAMOFI_CUSTOMER_NETWORK_ENABLED!=='true'||env.PAMOFI_RADIUS_QUALIFIED!=='true'||env.PAMOFI_ROUTER_CONTROL_QUALIFIED!=='true'))return null;
  // Sandbox fulfillment belongs only to the existing isolated demo environment.
  // A test Stripe key must never issue a bundle into a production ledger.
  if(live ? demo||env.APP_ENV!=='production'||env.NODE_ENV!=='production'||env.STRIPE_PRODUCTION_QUALIFIED!=='true'

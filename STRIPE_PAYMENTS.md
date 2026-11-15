@@ -62,6 +62,9 @@ country, not a sample test fixture's country or the hotspot's location.
 | `STRIPE_SECRET_KEY` | Matching server-only secret key; production loads it through `STRIPE_SECRET_KEY_FILE` |
 | `STRIPE_WEBHOOK_SECRET` | Endpoint-specific signing secret; production loads it through `STRIPE_WEBHOOK_SECRET_FILE` |
 | `STRIPE_QUALIFIED_SITE_IDS_JSON` | Nonempty JSON array of explicitly accepted site UUIDs |
+| `PAMOFI_CUSTOMER_NETWORK_ENABLED=true` | Required for live checkout; supplied by the qualified RADIUS overlay |
+| `PAMOFI_RADIUS_QUALIFIED=true` | Required for live checkout; the actual private RADIUS authority must be qualified |
+| `PAMOFI_ROUTER_CONTROL_QUALIFIED=true` | Required for live checkout; the private RouterOS reconciler must be qualified for session termination |
 | `STRIPE_APPLE_PAY_ENABLED` | Advertise Apple Pay configuration only when true |
 | `STRIPE_APPLE_PAY_MERCHANT_ID` | Provisioned Apple merchant identifier; must match the signed app's entitlement |
 | `STRIPE_GOOGLE_PAY_ENABLED` | Permit the Google Pay option; SDK still checks device availability |
@@ -71,6 +74,8 @@ Sandbox Stripe attempts use the distinct `stripe_test` ledger identity and their
 invoices are marked simulated. Sandbox mode is rejected for a production ledger,
 even if test credentials are present. Existing mock-only demonstration remains
 available; legacy providers remain disabled.
+
+Live `stripeConfiguration` fails closed unless all three customer-network/RADIUS/RouterOS flags above are explicitly `true`, in addition to the merchant attestation and nonempty qualified-site list. The RADIUS overlay supplies the first two flags to prepaid; the RouterOS overlay supplies the third to prepaid and enables the network reconciler with the same attestation. Applying only the Stripe overlay, or setting merchant credentials/`STRIPE_PRODUCTION_QUALIFIED` without the physical-service gates, cannot expose live checkout. Keep each flag false until the corresponding site evidence is recorded.
 
 The optional production overlay is
 `pasofi-backend/infra/production/stripe-payments.compose.yaml`. It reads two private

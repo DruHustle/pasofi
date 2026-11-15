@@ -35,7 +35,13 @@ test('Stripe configuration fails closed across environment, key mode, merchant a
   assert.ok(stripeConfiguration(true),'pausing new payments retains verification of existing attempts');
   Object.assign(process.env,env,{PAMOFI_PAYMENT_MODE:'production',APP_ENV:'production',NODE_ENV:'production',STRIPE_SECRET_KEY:synthetic('sk','live'),STRIPE_PUBLISHABLE_KEY:synthetic('pk','live')});
   assert.equal(stripeConfiguration(false),null,'credentials alone cannot qualify live checkout');
-  process.env.STRIPE_PRODUCTION_QUALIFIED='true';assert.deepEqual(paymentConfiguration(false),{enabled:true,mode:'production'});
+  process.env.STRIPE_PRODUCTION_QUALIFIED='true';
+  assert.equal(stripeConfiguration(false),null,'merchant attestation alone cannot qualify an uncommissioned hotspot');
+  for(const gate of ['PAMOFI_CUSTOMER_NETWORK_ENABLED','PAMOFI_RADIUS_QUALIFIED','PAMOFI_ROUTER_CONTROL_QUALIFIED']){
+   for(const value of ['false',undefined]){if(value===undefined)delete process.env[gate];else process.env[gate]=value;assert.equal(stripeConfiguration(false),null,`${gate} must be explicitly qualified`);}
+   process.env[gate]='true';
+  }
+  assert.deepEqual(paymentConfiguration(false),{enabled:true,mode:'production'});
  }finally{for(const [key,value]of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}}
 });
 
