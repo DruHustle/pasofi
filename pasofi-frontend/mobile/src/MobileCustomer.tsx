@@ -10,11 +10,12 @@ import { onSessionChange } from './session';
 import Icon from './Icon';
 import './customer.css';
 
-export default function MobileCustomer({ close, initialTab = 'access' }: { close: () => void; initialTab?: CustomerTab }) {
+export default function MobileCustomer({ close, initialTab = 'access', handoffReturn }: { close: () => void; initialTab?: CustomerTab; handoffReturn: number }) {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null), [message, setMessage] = useState(''), [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<'account' | 'recover' | 'handoff' | 'onesa'>('account'), [attempt, setAttempt] = useState(0);
   const [activeTab, setActiveTab] = useState<CustomerTab>(initialTab);
   const live = useRef(false);
+  useEffect(() => { if (handoffReturn) setScreen('handoff'); }, [handoffReturn]);
   useEffect(() => {
     const controller = new AbortController();
     live.current = true; setLoading(true); setMessage(''); setCapabilities(null);

@@ -53,6 +53,14 @@ def tap(label, allow_scroll=False, exact=False):
 
 if __name__ == "__main__":
     try:
+        # A fresh process launched from the fixed browser return must enter the
+        # account surface. Production can still withhold private account access.
+        adb("shell", "am", "force-stop", PACKAGE)
+        adb("shell", "am", "start", "-W", "-a", "android.intent.action.VIEW",
+            "-c", "android.intent.category.BROWSABLE", "-d", "com.onesa.pasofi://account/handoff")
+        tap("Offline preview")
+        visible("My PasoFi", exact=True)
+        print("The system return opened the installed account surface; its Offline preview control returned home.", flush=True)
         adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
         tap("My PasoFi", exact=True)
         print("Entered My PasoFi from the installed application", flush=True)

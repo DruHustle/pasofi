@@ -61,7 +61,14 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
     const runtime = window as any;
     runtime.CapacitorCustomPlatform = { name: platform };
     runtime.Capacitor = {
-      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: ['availability', 'request', 'cancel', 'openSignIn'].map(name => ({ name, rtype: 'promise' })) }],
+      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: [...['availability', 'request', 'cancel', 'openSignIn'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }, { name: 'removeListener', rtype: 'callback' }] }],
+      nativeCallback: (_plugin: string, method: string, input: {eventName: string}, callback: () => void) => {
+        if (input.eventName === 'accountHandoffReturn') {
+          if (method === 'addListener') runtime.__returnToHandoff = callback;
+          if (method === 'removeListener' && runtime.__returnToHandoff === callback) delete runtime.__returnToHandoff;
+        }
+        return 'synthetic-listener';
+      },
       nativePromise: (plugin: string, method: string, input: Record<string, unknown>) => {
         if (plugin !== 'PasoFiCustomerApi' || absent) return Promise.reject(Error('Native plugin unavailable'));
         return runtime.__syntheticCustomerApi(method, input).then((value: any) => {
@@ -101,7 +108,9 @@ for (const platform of ['ios', 'android'] as const) for (const entry of ['Sign i
   const opened = calls.filter(call => call.method === 'openSignIn');
   expect(opened).toHaveLength(1); expect(Object.keys(opened[0].options)).toEqual(['requestId']);
   expect(recovered).toBe(false);
-  await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click();
+  if (entry === 'Sign in with Onesa') await page.evaluate(() => (window as any).__returnToHandoff());
+  else await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click();
+  await expect(page.getByRole('heading', {name: 'Accept an account handoff'})).toBeVisible();
   await page.getByLabel('One-time handoff code').fill(handoffCode);
   await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled();
   await page.getByRole('checkbox', { name: /my own PasoFi account/ }).check();

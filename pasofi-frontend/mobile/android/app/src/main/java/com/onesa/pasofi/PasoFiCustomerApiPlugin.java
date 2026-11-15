@@ -88,6 +88,14 @@ public final class PasoFiCustomerApiPlugin extends Plugin {
     }
 
     @Override
+    protected void handleOnNewIntent(Intent intent) {
+        if (Intent.ACTION_VIEW.equals(intent.getAction()) &&
+                "com.onesa.pasofi://account/handoff".equals(intent.getDataString())) {
+            notifyListeners("accountHandoffReturn", new JSObject(), true);
+        }
+    }
+
+    @Override
     public void load() {
         // An Activity recreation cannot leave a previous plugin writing this store.
         synchronized (ACTIVE_LOCK) {

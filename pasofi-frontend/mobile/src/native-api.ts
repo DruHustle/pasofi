@@ -1,8 +1,9 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
 type NativeResponse = { requestId: string; status: number; data: unknown; contentType: string; retryAfterMs?: number };
 type NativeRequest = { requestId: string; path: string; method: 'GET' | 'POST' | 'DELETE'; responseType: 'json' | 'pdf'; data?: string; idempotencyKey?: string };
 interface CustomerApiPlugin {
+  addListener(name: 'accountHandoffReturn', listener: () => void): Promise<PluginListenerHandle>;
   availability(options: { requestId: string }): Promise<{ requestId: string; configured: boolean; origin?: string; protocol: number }>;
   request(options: NativeRequest): Promise<NativeResponse>;
   cancel(options: { requestId: string }): Promise<{ requestId: string }>;
@@ -10,6 +11,13 @@ interface CustomerApiPlugin {
 }
 const bridge = registerPlugin<CustomerApiPlugin>('PasoFiCustomerApi');
 export const usesNativeCustomerApi = Capacitor.isNativePlatform();
+export function onAccountHandoffReturn(listener: () => void): () => void {
+  if (!usesNativeCustomerApi || !Capacitor.isPluginAvailable('PasoFiCustomerApi')) return () => {};
+  let active = true;
+  const handle = bridge.addListener('accountHandoffReturn', () => { if (active) listener(); }).catch(() => undefined);
+  return () => { active = false; void handle.then(subscription => subscription?.remove()).catch(() => undefined); };
+}
+
 export class NativeApiError extends Error { constructor(public code: string) { super(code); } }
 let ready: Promise<void> | undefined;
 

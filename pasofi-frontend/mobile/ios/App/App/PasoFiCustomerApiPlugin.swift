@@ -57,6 +57,16 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
         }
     }
 
+    static func consumeAccountReturn(_ url: URL) -> Bool {
+        guard url.scheme == "com.onesa.pasofi", url.host == "account" else { return false }
+        // Consume malformed links here too. No URL, code or customer data enters JS.
+        if url.absoluteString == "com.onesa.pasofi://account/handoff" {
+            let plugin = ownerQueue.sync { owner }
+            plugin?.notifyListeners("accountHandoffReturn", data: [:], retainUntilConsumed: true)
+        }
+        return true
+    }
+
     private func abandonDocument() {
         generation &+= 1
         identityChangeInProgress = false

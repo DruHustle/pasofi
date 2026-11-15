@@ -4,8 +4,10 @@ import Icon, { type IconName } from './Icon';
 import type { CustomerTab } from './CustomerAccess';
 import { PolicyNotice } from './Policies';
 import { policyHelpArticles } from './PolicyHelp';
-const MobileCustomer = lazy(() => import('./MobileCustomer'));
+import { onAccountHandoffReturn } from './native-api';
 import './mobile.css';
+
+const MobileCustomer = lazy(() => import('./MobileCustomer'));
 
 type Tab = 'home' | 'bundles' | 'history' | 'account' | 'help';
 type Category = 'all' | 'daily' | 'short' | 'weekly' | 'longer' | 'monthly';
@@ -43,6 +45,12 @@ export default function MobileApp() {
   const [tab, setTab] = useState<Tab>('home');
   const [accountOpen, setAccountOpen] = useState(false), [accountTab, setAccountTab] = useState<CustomerTab>('access');
   const [selected, setSelected] = useState<string | null>(null), [category, setCategory] = useState<Category>('all');
+  const [handoffReturn, setHandoffReturn] = useState(0);
+  useEffect(() => onAccountHandoffReturn(() => {
+    if (!mobileApiConfigured) return;
+    setHandoffReturn(previous => previous + 1);
+    setAccountOpen(true);
+  }), []);
   const [helpQuery, setHelpQuery] = useState('');
   const content = useRef<HTMLElement>(null), previousTab = useRef(tab), previousAccountOpen = useRef(accountOpen);
   useEffect(() => {
@@ -57,7 +65,7 @@ export default function MobileApp() {
   const shownExamples = examples.filter(bundle => categories.find(item => item.id === category)!.matches(bundle.days));
   const shownQuestions = questions.filter(item => helpQuery.trim().toLowerCase().split(/\s+/).every(word => `${item.q} ${item.a}`.toLowerCase().includes(word)));
 
-  if (accountOpen) return <div className="mobile-app mobile-live-shell"><Suspense fallback={<p className="mobile-notice" role="status">Loading account tools…</p>}><MobileCustomer initialTab={accountTab} close={() => setAccountOpen(false)} /></Suspense></div>;
+  if (accountOpen) return <div className="mobile-app mobile-live-shell"><Suspense fallback={<p className="mobile-notice" role="status">Loading account tools…</p>}><MobileCustomer initialTab={accountTab} handoffReturn={handoffReturn} close={() => { setHandoffReturn(0); setAccountOpen(false); }} /></Suspense></div>;
 
   return <div className="mobile-app">
     <a className="mobile-skip" href="#mobile-content">Skip to content</a>

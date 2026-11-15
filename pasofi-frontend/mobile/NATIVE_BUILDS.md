@@ -11,7 +11,11 @@ and [Apple external URL opening](https://developer.apple.com/documentation/uikit
 The app first requires `/api/onesa/availability` to advertise the exact configured
 origin and `handoff: true`. Older deployments remain unavailable. The customer signs
 in with Onesa in the browser, opens Account and creates a two-minute one-use handoff
-code, then returns to the app, pastes the code and explicitly confirms ownership.
+code and copies it. The browser’s return link, `com.onesa.pasofi://account/handoff`,
+opens the installed app at the handoff form. This fixed link carries no code, query
+or fragment. The customer pastes the code and explicitly confirms ownership.
+After redemption the app checks its own session and resumes the chosen account
+tab. The link can only select the handoff screen and cannot grant account access.
 The existing private native `/api/handoff/redeem` transport accepts the separately
 issued host-only session cookie; no cookie or provider token is passed through
 JavaScript. The server must validate the source's current Portal grant, expiry and
