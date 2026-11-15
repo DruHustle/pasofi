@@ -48,8 +48,8 @@ export class RouterOS {
   this.resolveHost=resolution.resolveHost??(async hostname=>dnsLookup(hostname,{all:true,verbatim:true}));
   this.isPrivateAddress=resolution.isPrivateAddress??privateIpv4;
   try {
-   if(typeof config.url!=='string'||config.url.length>512||typeof config.username!=='string'||!config.username||config.username.length>128||/[:\\x00-\\x20\\x7f]/.test(config.username)||
-      typeof config.password!=='string'||!config.password||config.password.length>4096||/[\\x00\\r\\n]/.test(config.password)||
+   if(typeof config.url!=='string'||config.url.length>512||typeof config.username!=='string'||!config.username||config.username.length>128||/[:\x00-\x20\x7f]/.test(config.username)||
+      typeof config.password!=='string'||!config.password||config.password.length>4096||/[\x00\r\n]/.test(config.password)||
       typeof config.caFile!=='string'||!config.caFile||!isAbsolute(config.caFile))throw new Error();
    this.base=new URL(config.url);
    if(config.url!==this.base.toString()||this.base.protocol!=='https:'||this.base.username||this.base.password||this.base.port&&!resolution.allowNonstandardPort||
