@@ -1,6 +1,30 @@
 import {request as httpsRequest} from 'node:https';
-import {lstatSync,readFileSync} from 'node:fs';
+import {closeSync,constants,fstatSync,openSync,readFileSync,readSync} from 'node:fs';
 import {isAbsolute} from 'node:path';
+
+function readProtectedFile(path:string,maxBytes:number,forbiddenModeBits:number):Buffer {
+ let fd:number|undefined;
+ try {
+  // O_NOFOLLOW is required: lstat(path) followed by readFile(path) is
+  // vulnerable to a symlink swap between validation and opening the file.
+  if(!isAbsolute(path)||typeof constants.O_NOFOLLOW!=='number')throw new Error();
+  fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW|(constants.O_NONBLOCK||0));
+  const before=fstatSync(fd);
+  if(!before.isFile()||before.size>maxBytes||(before.mode&forbiddenModeBits)!==0)throw new Error();
+  const chunks:Buffer[]=[];let total=0;
+  while(total<=maxBytes){
+   const chunk=Buffer.alloc(Math.min(8192,maxBytes+1-total));
+   const count=readSync(fd,chunk,0,chunk.length,total);
+   if(count===0)break;
+   chunks.push(chunk.subarray(0,count));total+=count;
+  }
+  if(total>maxBytes)throw new Error();
+  const after=fstatSync(fd);
+  if(!after.isFile()||after.dev!==before.dev||after.ino!==before.ino||after.size!==before.size||total!==before.size||
+     (after.mode&forbiddenModeBits)!==0)throw new Error();
+  return Buffer.concat(chunks,total);
+ }finally{if(fd!==undefined)closeSync(fd);}
+}
 
 export type RouterConfig={nasId:string;url:string;username:string;password:string;caFile?:string};
 export class RouterUnavailable extends Error {constructor(){super('router_unavailable');}}
@@ -11,13 +35,11 @@ export class RouterOS {
   try {
    if(typeof config.url!=='string'||typeof config.username!=='string'||!config.username||config.username.length>128||
       typeof config.password!=='string'||!config.password||config.password.length>4096||
-      (config.caFile!==undefined&&(typeof config.caFile!=='string'||!isAbsolute(config.caFile))))throw new Error();
+      (config.caFile!==undefined&&(typeof config.caFile!=='string'||!config.caFile||!isAbsolute(config.caFile))))throw new Error();
    this.base=new URL(config.url);
    if(this.base.protocol!=='https:'||this.base.username||this.base.password||this.base.pathname!=='/rest/'||this.base.search||this.base.hash)throw new Error();
-   if(config.caFile){
-    const stat=lstatSync(config.caFile);
-    if(!stat.isFile()||stat.isSymbolicLink()||stat.size>65536||(stat.mode&0o022))throw new Error();
-    this.ca=readFileSync(config.caFile);
+   if(config.caFile!==undefined){
+    this.ca=readProtectedFile(config.caFile,65536,0o022);
     if(!this.ca.includes('-----BEGIN CERTIFICATE-----')||this.ca.includes('PRIVATE KEY'))throw new Error();
    }
   }catch{throw new RouterUnavailable();}
@@ -54,9 +76,8 @@ export class RouterOS {
 export function configuredRouters():Map<string,RouterOS> {
  const path=process.env.ROUTEROS_ROUTERS_FILE;
  if(!path||!isAbsolute(path))throw new RouterUnavailable();
- const stat=lstatSync(path);
- if(!stat.isFile()||stat.isSymbolicLink()||stat.size>512*1024||(stat.mode&0o077))throw new RouterUnavailable();
- const rows=JSON.parse(readFileSync(path,'utf8')) as unknown;
+ let rows:unknown;
+ try{rows=JSON.parse(readProtectedFile(path,512*1024,0o077).toString('utf8'));}catch{throw new RouterUnavailable();}
  if(!Array.isArray(rows)||!rows.length||rows.length>100)throw new RouterUnavailable();
  const result=new Map<string,RouterOS>();
  for(const row of rows){
