@@ -1,5 +1,6 @@
 import {request as httpsRequest} from 'node:https';
-import {readFileSync} from 'node:fs';
+import {lstatSync,readFileSync} from 'node:fs';
+import {isAbsolute} from 'node:path';
 
 export type RouterConfig={nasId:string;url:string;username:string;password:string;caFile?:string};
 export class RouterUnavailable extends Error {constructor(){super('router_unavailable');}}
@@ -7,9 +8,19 @@ export class RouterOS {
  private base:URL;
  private ca?:Buffer;
  constructor(private config:RouterConfig){
-  this.base=new URL(config.url);
-  if(this.base.protocol!=='https:'||this.base.username||this.base.password||this.base.pathname!=='/rest/'||this.base.search||this.base.hash||!config.username||!config.password)throw new RouterUnavailable();
-  if(config.caFile)this.ca=readFileSync(config.caFile);
+  try {
+   if(typeof config.url!=='string'||typeof config.username!=='string'||!config.username||config.username.length>128||
+      typeof config.password!=='string'||!config.password||config.password.length>4096||
+      (config.caFile!==undefined&&(typeof config.caFile!=='string'||!isAbsolute(config.caFile))))throw new Error();
+   this.base=new URL(config.url);
+   if(this.base.protocol!=='https:'||this.base.username||this.base.password||this.base.pathname!=='/rest/'||this.base.search||this.base.hash)throw new Error();
+   if(config.caFile){
+    const stat=lstatSync(config.caFile);
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.size>65536||(stat.mode&0o022))throw new Error();
+    this.ca=readFileSync(config.caFile);
+    if(!this.ca.includes('-----BEGIN CERTIFICATE-----')||this.ca.includes('PRIVATE KEY'))throw new Error();
+   }
+  }catch{throw new RouterUnavailable();}
  }
  private call(path:string,method:'GET'|'DELETE',signal?:AbortSignal):Promise<unknown> {
   return new Promise((resolve,reject)=>{
@@ -41,14 +52,20 @@ export class RouterOS {
  }
 }
 export function configuredRouters():Map<string,RouterOS> {
- const path=process.env.ROUTEROS_ROUTERS_FILE;if(!path)throw new RouterUnavailable();
- const rows=JSON.parse(readFileSync(path,'utf8')) as RouterConfig[];
+ const path=process.env.ROUTEROS_ROUTERS_FILE;
+ if(!path||!isAbsolute(path))throw new RouterUnavailable();
+ const stat=lstatSync(path);
+ if(!stat.isFile()||stat.isSymbolicLink()||stat.size>512*1024||(stat.mode&0o077))throw new RouterUnavailable();
+ const rows=JSON.parse(readFileSync(path,'utf8')) as unknown;
  if(!Array.isArray(rows)||!rows.length||rows.length>100)throw new RouterUnavailable();
  const result=new Map<string,RouterOS>();
  for(const row of rows){
-  if(!row||typeof row.nasId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.nasId))throw new RouterUnavailable();
+  if(!row||typeof row!=='object'||Array.isArray(row)||Object.keys(row).some(key=>!['nasId','url','username','password','caFile'].includes(key))||
+    typeof row.nasId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.nasId)||
+    typeof row.url!=='string'||typeof row.username!=='string'||typeof row.password!=='string'||
+    (row.caFile!==undefined&&typeof row.caFile!=='string'))throw new RouterUnavailable();
   const nasId=row.nasId.toLowerCase();if(result.has(nasId))throw new RouterUnavailable();
-  result.set(nasId,new RouterOS({...row,nasId}));
+  result.set(nasId,new RouterOS({...row,nasId} as RouterConfig));
  }
  return result;
 }

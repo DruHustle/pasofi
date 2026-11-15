@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import https from 'node:https';
-import {mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
+import {chmodSync,mkdtempSync,readFileSync,rmSync,symlinkSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -29,6 +29,11 @@ test('RouterOS requires validated HTTPS and independently confirms removal',{tim
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const config={nasId:'test',url:`https://127.0.0.1:${server.address().port}/rest/`,username:'operator',password:'test-only-secret',caFile:join(dir,'cert')};
   const router=new RouterOS(config);
+  const caLink=join(dir,'ca-link');symlinkSync(join(dir,'cert'),caLink);
+  assert.throws(()=>new RouterOS({...config,caFile:caLink}),{message:'router_unavailable'});
+  chmodSync(join(dir,'cert'),0o666);
+  assert.throws(()=>new RouterOS(config),{message:'router_unavailable'});
+  chmodSync(join(dir,'cert'),0o644);
   assert.equal((await router.disconnect(username)).absent,true);assert.equal(deletes,1);assert.equal(requests,3);
   active=true;mode='retained';assert.equal((await router.disconnect(username)).absent,false);
   mode='foreign';const before=deletes;await assert.rejects(router.disconnect(username),{message:'router_unavailable'});assert.equal(deletes,before);
@@ -39,13 +44,17 @@ test('RouterOS requires validated HTTPS and independently confirms removal',{tim
   mode='trickle';await assert.rejects(router.active(username),{message:'router_unavailable'});assert.equal(trickled,true);
  } finally {if(server)await new Promise(resolve=>server.close(resolve));rmSync(dir,{recursive:true,force:true});}
 });
-test('router registry normalizes NAS UUIDs and rejects malformed or case-duplicate IDs',()=>{
- const dir=mkdtempSync(join(tmpdir(),'pamofi-router-registry-')),path=join(dir,'routers.json'),saved=process.env.ROUTEROS_ROUTERS_FILE;
+test('router registry requires an absolute private regular file and validates entries',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'pamofi-router-registry-')),path=join(dir,'routers.json'),link=join(dir,'routers-link.json'),saved=process.env.ROUTEROS_ROUTERS_FILE;
  process.env.ROUTEROS_ROUTERS_FILE=path;
  const nasId='ABCDEFAB-CDEF-4ABC-8ABC-ABCDEFABCDEF',config={nasId,url:'https://router.invalid/rest/',username:'test',password:'test-only-password'};
+ const save=(rows,mode=0o600)=>{writeFileSync(path,JSON.stringify(rows));chmodSync(path,mode);};
  try {
-  writeFileSync(path,JSON.stringify([config]));assert.ok(configuredRouters().has(nasId.toLowerCase()));
-  writeFileSync(path,JSON.stringify([config,{...config,nasId:nasId.toLowerCase()}]));assert.throws(()=>configuredRouters(),{message:'router_unavailable'});
-  for(const invalid of ['-'.repeat(36),'1'.repeat(36)]){writeFileSync(path,JSON.stringify([{...config,nasId:invalid}]));assert.throws(()=>configuredRouters(),{message:'router_unavailable'});}
+  save([config]);assert.ok(configuredRouters().has(nasId.toLowerCase()));
+  save([config,{...config,nasId:nasId.toLowerCase()}]);assert.throws(()=>configuredRouters(),{message:'router_unavailable'});
+  for(const invalid of ['-'.repeat(36),'1'.repeat(36)]){save([{...config,nasId:invalid}]);assert.throws(()=>configuredRouters(),{message:'router_unavailable'});}
+  save([config],0o644);assert.throws(()=>configuredRouters(),{message:'router_unavailable'});
+  save([config]);symlinkSync(path,link);process.env.ROUTEROS_ROUTERS_FILE=link;assert.throws(()=>configuredRouters(),{message:'router_unavailable'});
+  process.env.ROUTEROS_ROUTERS_FILE='routers.json';assert.throws(()=>configuredRouters(),{message:'router_unavailable'});
  }finally{if(saved===undefined)delete process.env.ROUTEROS_ROUTERS_FILE;else process.env.ROUTEROS_ROUTERS_FILE=saved;rmSync(dir,{recursive:true,force:true});}
 });
