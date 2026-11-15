@@ -11,6 +11,7 @@ test('unconfigured native customers are not sent to Portal administration', () =
   assert.doesNotMatch(component, /portal\.onesa\.eu\/admin/);
   assert.match(component, /https:\/\/pasofi\.mobile\.onesa\.eu\/#account/);
   assert.match(component, /https:\/\/auth\.onesa\.eu\/register/);
+  assert.doesNotMatch(component, /Continue with Company Portal on the PasoFi website/);
 });
 
 test('unreachable account gateway has a bounded offline fallback', () => {
