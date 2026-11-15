@@ -124,6 +124,8 @@ test('a later router sighting reopens its closed grant even when another account
  assert.equal(hold.grant_id,other.id,'the pre-existing account hold remains intact');
  const pending=await pool.query("SELECT id FROM access_grants WHERE (state<>'closed' AND disconnect_requested_at IS NOT NULL) OR id IN (SELECT grant_id FROM network_account_holds)");
  assert.ok(pending.rows.some(row=>row.id===grant.id),'the reopened grant is visible to the reconciliation worker');
+ const uncertain=await pool.query("SELECT id FROM access_grants WHERE customer_id=$1 AND state='uncertain'",[customer]);
+ assert.deepEqual(new Set(uncertain.rows.map(row=>row.id)),new Set([grant.id,other.id]),'both independently observed sessions remain fenced and reconcilable');
 }));
 test('operator review requires a fresh absence after a closed session is seen again',{skip:!url},async()=>fixture(async({pool,grant,event,evidence})=>{
  await recordAccounting(pool,event);
