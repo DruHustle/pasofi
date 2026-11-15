@@ -107,6 +107,24 @@ test('closed grant rejects later router presence while preserving older absence 
  assert.equal((await pool.query('SELECT state,accounting_anomaly FROM access_grants WHERE id=$1',[next.id])).rows[0].state,'uncertain');
  await assert.rejects(issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'another'),{code:'accounting_review_required'});
 }));
+test('a later router sighting reopens its closed grant even when another account hold already exists',{skip:!url},async()=>fixture(async({pool,customer,event,evidence,grant})=>{
+ await recordAccounting(pool,event);
+ await recordAccounting(pool,{...event,kind:'stop'});
+ const proof=evidence();
+ assert.equal((await reconcileGrant(pool,proof)).closed,true);
+ const other=await issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'other-session');
+ await pool.query("INSERT INTO network_account_holds(customer_id,grant_id,reason) VALUES($1,$2,'existing_operator_review')",[customer,other.id]);
+ const sighting={...proof,observationId:randomUUID(),absent:false,observedAt:new Date(Date.parse(proof.observedAt)+1000).toISOString()};
+ assert.deepEqual(await reconcileGrant(pool,sighting),{state:'uncertain',closed:false,reviewRequired:true});
+ const reopened=(await pool.query('SELECT state,disconnect_requested_at,closed_at FROM access_grants WHERE id=$1',[grant.id])).rows[0];
+ assert.equal(reopened.state,'uncertain');
+ assert.ok(reopened.disconnect_requested_at,'the disconnect worker must retry this exact router session');
+ assert.equal(reopened.closed_at,null);
+ const hold=(await pool.query('SELECT grant_id,reason FROM network_account_holds WHERE customer_id=$1',[customer])).rows[0];
+ assert.equal(hold.grant_id,other.id,'the pre-existing account hold remains intact');
+ const pending=await pool.query("SELECT id FROM access_grants WHERE (state<>'closed' AND disconnect_requested_at IS NOT NULL) OR id IN (SELECT grant_id FROM network_account_holds)");
+ assert.ok(pending.rows.some(row=>row.id===grant.id),'the reopened grant is visible to the reconciliation worker');
+}));
 test('operator review requires a fresh absence after a closed session is seen again',{skip:!url},async()=>fixture(async({pool,grant,event,evidence})=>{
  await recordAccounting(pool,event);
  await recordAccounting(pool,{...event,kind:'stop'});
