@@ -218,3 +218,19 @@ struct CustomerSessionState: Codable, Equatable {
         }
     }
 }
+
+
+// Scene-delegate cold-start URLs can arrive before Capacitor has loaded the
+// customer plugin. SceneDelegate serializes access to this queue with ownerQueue.
+final class AccountHandoffReturnQueue {
+    private var pending = false
+
+    func recordBeforePluginLoad() {
+        pending = true
+    }
+
+    func takePending() -> Bool {
+        defer { pending = false }
+        return pending
+    }
+}
