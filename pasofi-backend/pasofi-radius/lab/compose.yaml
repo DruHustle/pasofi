@@ -36,6 +36,8 @@ services:
       APP_ENV: demo
       NODE_ENV: development
       INTERNAL_RADIUS_ENABLED: 'true'
+      # This disposable RADIUS lab exercises customer Access-Accept; production remains explicitly disabled.
+      PAMOFI_CUSTOMER_NETWORK_ENABLED: 'true'
       INTERNAL_NETWORK_SECRET: DEMO_ONLY_network_lab_key_0123456789abcdef
     depends_on:
       prepaid-migrate: {condition: service_completed_successfully}
