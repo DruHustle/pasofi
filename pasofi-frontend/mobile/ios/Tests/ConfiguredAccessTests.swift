@@ -27,7 +27,7 @@ final class ConfiguredAccessTests: XCTestCase {
             attachment.name = "PasoFi guest account gate"
             attachment.lifetime = .keepAlways
             add(attachment)
-            print("PASOFI_EXPECTED_GATE_MISSING foreground=\\(app.state == .runningForeground) webview=\\(app.webViews.firstMatch.exists)")
+            print("PASOFI_EXPECTED_GATE_MISSING foreground=" + String(app.state == .runningForeground) + " webview=" + String(app.webViews.firstMatch.exists))
             XCTFail("The installed account view did not display the expected disabled-account message")
         }
         let back = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Offline preview")).firstMatch
