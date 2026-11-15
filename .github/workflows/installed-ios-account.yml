@@ -8,11 +8,6 @@ on:
       archive_sha256:
         description: The released simulator tar.gz checksum
         required: true
-  pull_request:
-    paths:
-      - '.github/workflows/installed-ios-account.yml'
-      - 'pasofi-frontend/mobile/scripts/installed-ios-account.rb'
-      - 'pasofi-frontend/mobile/ios/Tests/ConfiguredAccessTests.swift'
 permissions:
   contents: read
   actions: read
@@ -24,8 +19,8 @@ jobs:
       run:
         working-directory: pasofi-frontend/mobile
     env:
-      BUILD_RUN: ${{ inputs.build_run || '43651135625' }}
-      ARCHIVE_SHA256: ${{ inputs.archive_sha256 || 'c57cc751258e5f2eab3960817ea3c1a02f972590a77e86d9dba7259cba50af67' }}
+      BUILD_RUN: ${{ inputs.build_run }}
+      ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
       EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
