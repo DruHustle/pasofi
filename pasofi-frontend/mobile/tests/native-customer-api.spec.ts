@@ -64,8 +64,14 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
     runtime.CapacitorCustomPlatform = { name: platform };
     runtime.Capacitor = {
       PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: ['availability', 'request', 'cancel', 'openSignIn', 'authenticate'].map(name => ({ name, rtype: 'promise' })) }],
-      nativeCallback: (_plugin: string, method: string, _options: object, callback: (event: object)=>void) => {
-        if (method === 'addListener') runtime.__identityReturn = callback;
+      nativeCallback: (plugin: string, method: string, options: Record<string, unknown>, callback: (event: object)=>void) => {
+        // App.addListener may be used by other parts of the app. Route only the
+        // appUrlOpen subscription to the simulated deep-link return; otherwise
+        // an unrelated listener can overwrite the callback and hide an Android
+        // sign-in regression.
+        if (plugin === 'App' && method === 'addListener' && options.eventName === 'appUrlOpen') {
+          runtime.__identityReturn = callback;
+        }
         return Promise.resolve('identity-listener');
       },
       nativePromise: async (plugin: string, method: string, input: Record<string, unknown>) => {
@@ -73,6 +79,7 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
         if (plugin === 'Browser' && method === 'close') return;
         if (plugin === 'Browser' && method === 'open') {
           const {callback} = await runtime.__syntheticCustomerApi('authenticate',{authorizationUrl:input.url});
+          if (typeof runtime.__identityReturn !== 'function') throw Error('appUrlOpen listener was not registered');
           runtime.__identityReturn({url:callback});
           return;
         }
