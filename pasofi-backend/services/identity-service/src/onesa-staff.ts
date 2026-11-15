@@ -181,14 +181,29 @@ export class OnesaStaff {
           !products.includes('pasofi') || !Array.isArray(roles)) throw denied();
       const identity: Admin = { subject: stable.toLowerCase(), providerSubject: payload.sub, authorizedClient: typeof payload.azp === 'string' ? payload.azp : undefined, email: '', name: '',
         authenticated: payload.iat, expires: payload.exp };
-      if (!this.staffFlow) {
-        if (!roles.some(role => ['admin','agent','support','customer'].includes(role))) throw denied();
-        return identity;
-      }
+      const globalRoles = payload.onesa_roles;
+      const globalAdmin = Array.isArray(globalRoles) && globalRoles.includes('global_admin');
       const mfa = payload[ns + 'mfa_time'];
+      const freshMfa = typeof mfa === 'number' && Number.isSafeInteger(mfa) && mfa <= now && mfa + 300 > now;
+      if (!this.staffFlow) {
+        // Staff-only grants must never be enough to create a customer session.
+        // A global administrator may also use the customer service, but only
+        // with both grants and the same fresh MFA requirement as staff entry.
+        if (roles.includes('customer')) return identity;
+        if (roles.includes('admin') && globalAdmin && freshMfa) {
+          return { ...identity, authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
+        }
+        throw denied();
+      }
       const localRole = roles.find(role => ['admin','agent','support'].includes(role));
-      if (!localRole || typeof mfa !== 'number' || !Number.isSafeInteger(mfa) || mfa > now || mfa + 300 <= now) throw denied();
-      return { ...identity, localRole, siteOperator: true as const, authenticated: mfa, expires: Math.min(payload.exp, mfa + 300) };
+      if (!localRole || !freshMfa) throw denied();
+      if (localRole === 'admin') {
+        // A global administrator uses the global grant path, not an owner-
+        // provisioned site-operator binding. Product-admin alone is insufficient.
+        if (!globalAdmin) throw denied();
+        return { ...identity, authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
+      }
+      return { ...identity, localRole, siteOperator: true as const, authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
     }
     const { clientId, clientSecret, issuer } = this.config;
     const encode = (value: string) => new URLSearchParams({ c: value }).toString().slice(2);
