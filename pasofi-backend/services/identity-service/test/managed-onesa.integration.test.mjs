@@ -29,7 +29,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   await db.query("INSERT INTO staff_users(id,email,display_name,password_hash,status,role,site_ids) VALUES($1,$2,'Operator','disabled','approved','agent',$3)",
     [operator,operator+'@example.invalid',[site]]);
   await db.query('INSERT INTO staff_onesa_bindings(issuer,subject,staff_id) VALUES($1,$2,$3)',[legacy,stable,operator]);
-  let app = buildApp(), outage = false, role = 'customer', aud = audience, factor = now(), query, lifetime = 300;
+  let app = buildApp(), outage = false, role = 'customer', globalRoles = [], aud = audience, factor = now(), query, lifetime = 300;
   let accessSubject = providerSubject;
   t.after(()=>app.close());
   const ns = 'https://onesa.eu/claims/';
@@ -67,7 +67,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     const sign=(claims,target,subject,ttl)=>new SignJWT(claims).setIssuer(issuer).setAudience(target).setSubject(subject)
       .setProtectedHeader({alg:'RS256',kid:'one'}).setIssuedAt(now()).setExpirationTime(now()+ttl).sign(privateKey);
     return Response.json({token_type:'Bearer',access_token:await sign({
-      [ns+'user_id']:stable,[ns+'products']:['pasofi'],[ns+'roles']:[role],[ns+'mfa_time']:factor,
+      [ns+'user_id']:stable,[ns+'products']:['pasofi'],[ns+'roles']:[role],[ns+'mfa_time']:factor,onesa_roles:globalRoles,
     },aud,accessSubject,lifetime),id_token:await sign({nonce:query.get('nonce'),auth_time:now()},clientId,providerSubject,300)});
   });
   const request=(method,path,payload,cookie)=>app.inject({method,url:'/v1/'+path,headers:{origin,...(cookie?{cookie}:{})},...(payload?{payload}:{})});
@@ -81,7 +81,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     if(staff) assert.equal(query.get('acr_values'),'http://schemas.openid.net/pape/policies/2007/06/multi-factor');
     return request('POST',prefix+'complete',{code:'synthetic',state:query.get('state')},cookie(start,staff?'onesa_flow':'onesa_customer_flow'));
   }
-  const nativeToken = (azp) => new SignJWT({azp,[ns+'user_id']:stable,[ns+'products']:['pasofi'],[ns+'roles']:['customer']})
+  const nativeToken = (azp) => new SignJWT({azp,[ns+'user_id']:stable,[ns+'products']:['pasofi'],[ns+'roles']:[role],onesa_roles:globalRoles,[ns+'mfa_time']:factor})
     .setIssuer(issuer).setAudience(audience).setSubject(providerSubject).setProtectedHeader({alg:'RS256',kid:'one'}).setIssuedAt(now()).setExpirationTime(now()+300).sign(privateKey);
   for(const platform of ['ios','android']) {
     const token=await nativeToken(platform==='ios'?'pasofi_synthetic_ios':'pasofi_synthetic_android');
@@ -99,6 +99,9 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     assert.equal((await request('POST','onesa/native-session',{platform,accessToken:token},saved)).statusCode,409);
     assert.equal((await request('POST','onesa/native-session',{platform:platform==='ios'?'android':'ios',accessToken:token})).statusCode,401);
   }
+  role='agent'; assert.equal((await login()).statusCode,401,'a site-operator grant cannot create a customer session');
+  role='support'; assert.equal((await login()).statusCode,401,'a support grant cannot create a customer session');
+  role='customer';
   const good=await login();
   assert.equal(good.statusCode,200,good.body);
   assert.equal(good.json().customerId,customer); assert.equal(good.json().returnTo,'/#history');
@@ -109,8 +112,11 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   const redeemed=await request('POST','handoff/redeem',{handoffCode:handoff.json().handoffCode});
   assert.equal(redeemed.json().customerId,customer);assert.equal((await request('POST','handoff/redeem',{handoffCode:handoff.json().handoffCode})).statusCode,401);
   assert.equal((await login(true)).statusCode,401);
-  role='admin';assert.equal((await login(true)).statusCode,401);
-  role='agent';factor=now()-301;assert.equal((await login(true)).statusCode,401);
+  role='admin';globalRoles=[];assert.equal((await login(true)).statusCode,401,'product-admin without global-admin is rejected');
+  globalRoles=['global_admin'];factor=now();const globalAdmin=await login(true);assert.equal(globalAdmin.statusCode,200,globalAdmin.body);
+  const adminSession=await request('GET','staff/session',undefined,cookie(globalAdmin,'staff_session'));
+  assert.equal(adminSession.json().role,'admin');assert.deepEqual(adminSession.json().siteIds,[]);
+  role='agent';globalRoles=[];factor=now()-301;assert.equal((await login(true)).statusCode,401);
   factor=now();const staff=await login(true);assert.equal(staff.statusCode,200,staff.body);
   const staffCookie=cookie(staff,'staff_session');
   const me=await request('GET','staff/session',undefined,staffCookie);assert.equal(me.json().staffId,operator);assert.deepEqual(me.json().siteIds,[site]);
