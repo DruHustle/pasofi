@@ -29,46 +29,47 @@ test('RouterOS requires validated HTTPS and independently confirms removal',{tim
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const config={nasId:'test',url:`https://router.invalid:${server.address().port}/rest/`,username:'operator',password:'test-only-secret',caFile:join(dir,'cert')};
-  const testResolution={resolveHost:async()=>[{address:'127.0.0.1',family:4}],isPrivateAddress:address=>address==='127.0.0.1'};
+  const testResolution={resolveHost:async()=>[{address:'127.0.0.1',family:4}],isPrivateAddress:address=>address==='127.0.0.1',allowNonstandardPort:true};
   const router=new RouterOS(config,testResolution);
-  const publicRouter=new RouterOS(config,{resolveHost:async()=>[{address:'8.8.8.8',family:4}]});
+  const publicRouter=new RouterOS(config,{resolveHost:async()=>[{address:'8.8.8.8',family:4}],allowNonstandardPort:true});
   const requestsBeforePublic=requests;
   await assert.rejects(publicRouter.active(username),{message:'router_unavailable'});
   assert.equal(requests,requestsBeforePublic,'public DNS answers must be rejected before credentials are sent');
-  const mixedRouter=new RouterOS(config,{resolveHost:async()=>[{address:'127.0.0.1',family:4},{address:'8.8.8.8',family:4}],isPrivateAddress:address=>address==='127.0.0.1'});
+  const mixedRouter=new RouterOS(config,{resolveHost:async()=>[{address:'127.0.0.1',family:4},{address:'8.8.8.8',family:4}],isPrivateAddress:address=>address==='127.0.0.1',allowNonstandardPort:true});
   await assert.rejects(mixedRouter.active(username),{message:'router_unavailable'});
   assert.equal(requests,requestsBeforePublic,'ambiguous DNS answers must be rejected before credentials are sent');
-  assert.throws(()=>new RouterOS({...config,url:`https://8.8.8.8:${server.address().port}/rest/`}),{message:'router_unavailable'});
+  assert.throws(()=>new RouterOS({...config,url:'https://8.8.8.8/rest/'}),{message:'router_unavailable'});
   const caLink=join(dir,'ca-link');symlinkSync(join(dir,'cert'),caLink);
-  assert.throws(()=>new RouterOS({...config,caFile:caLink}),{message:'router_unavailable'});
+  assert.throws(()=>new RouterOS({...config,caFile:caLink},testResolution),{message:'router_unavailable'});
   chmodSync(join(dir,'cert'),0o666);
-  assert.throws(()=>new RouterOS(config),{message:'router_unavailable'});
+  assert.throws(()=>new RouterOS(config,testResolution),{message:'router_unavailable'});
   chmodSync(join(dir,'cert'),0o444);
   const oversizedCA=join(dir,'oversized-ca');writeFileSync(oversizedCA,Buffer.alloc(65537,0x41),{mode:0o444});
-  assert.throws(()=>new RouterOS({...config,caFile:oversizedCA}),{message:'router_unavailable'});
+  assert.throws(()=>new RouterOS({...config,caFile:oversizedCA},testResolution),{message:'router_unavailable'});
   const privateCA=join(dir,'private-ca');writeFileSync(privateCA,'-----BEGIN CERTIFICATE-----\\n-----BEGIN PRIVATE KEY-----',{mode:0o444});
-  assert.throws(()=>new RouterOS({...config,caFile:privateCA}),{message:'router_unavailable'});
+  assert.throws(()=>new RouterOS({...config,caFile:privateCA},testResolution),{message:'router_unavailable'});
   assert.equal((await router.disconnect(username)).absent,true);assert.equal(deletes,1);assert.equal(requests,3);
   active=true;mode='retained';assert.equal((await router.disconnect(username)).absent,false);
   mode='foreign';const before=deletes;await assert.rejects(router.disconnect(username),{message:'router_unavailable'});assert.equal(deletes,before);
   mode='redirect';await assert.rejects(router.disconnect(username),{message:'router_unavailable'});
-  assert.throws(()=>new RouterOS({...config,caFile:undefined}),{message:'router_unavailable'});
+  assert.throws(()=>new RouterOS({...config,caFile:undefined},testResolution),{message:'router_unavailable'});
   assert.throws(()=>new RouterOS({...config,url:'http://127.0.0.1/rest/'}),{message:'router_unavailable'});
   assert.throws(()=>new RouterOS({...config,url:'https://user:password@router.example/rest/'}),{message:'router_unavailable'});
   mode='trickle';await assert.rejects(router.active(username),{message:'router_unavailable'});assert.equal(trickled,true);
  } finally {if(server)await new Promise(resolve=>server.close(resolve));rmSync(dir,{recursive:true,force:true});}
 });
-test('router registry requires an absolute private regular file and validates entries',()=>{
+test('router registry requires an absolute read-only file and validates entries',()=>{
  const dir=mkdtempSync(join(tmpdir(),'pamofi-router-registry-')),path=join(dir,'routers.json'),link=join(dir,'routers-link.json'),caDirectory=join(dir,'ca'),saved=process.env.ROUTEROS_ROUTERS_FILE;
  mkdirSync(caDirectory,{mode:0o755});
  process.env.ROUTEROS_ROUTERS_FILE=path;
- const nasId='ABCDEFAB-CDEF-4ABC-8ABC-ABCDEFABCDEF',caFile=join(caDirectory,nasId.toLowerCase()+'.pem');
+ const nasId='abcdefab-cdef-4abc-8abc-abcdefabcdef',caFile=join(caDirectory,nasId+'.pem');
  writeFileSync(caFile,'-----BEGIN CERTIFICATE-----\\nZm9v\\n-----END CERTIFICATE-----',{mode:0o444});
  const config={nasId,url:'https://router.invalid/rest/',username:'test',password:'test-only-password',caFile};
  const save=(rows,mode=0o444)=>{try{chmodSync(path,0o600);}catch{}writeFileSync(path,JSON.stringify(rows));chmodSync(path,mode);};
  try {
   save([config]);assert.ok(configuredRouters({caDirectory}).has(nasId.toLowerCase()));
-  save([config,{...config,nasId:nasId.toLowerCase()}]);assert.throws(()=>configuredRouters({caDirectory}),{message:'router_unavailable'});
+  save([config,{...config,nasId}]);assert.throws(()=>configuredRouters({caDirectory}),{message:'router_unavailable'});
+  save([{...config,nasId:nasId.toUpperCase()}]);assert.throws(()=>configuredRouters({caDirectory}),{message:'router_unavailable'});
   for(const invalid of ['-'.repeat(36),'1'.repeat(36)]){save([{...config,nasId:invalid}]);assert.throws(()=>configuredRouters({caDirectory}),{message:'router_unavailable'});}
   save([{...config,caFile:join(caDirectory,'other.pem')}]);assert.throws(()=>configuredRouters({caDirectory}),{message:'router_unavailable'});
   save([{...config,caFile:undefined}]);assert.throws(()=>configuredRouters({caDirectory}),{message:'router_unavailable'});
