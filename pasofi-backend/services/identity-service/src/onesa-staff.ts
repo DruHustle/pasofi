@@ -195,15 +195,17 @@ export class OnesaStaff {
         }
         throw denied();
       }
-      const localRole = roles.find(role => ['admin','agent','support'].includes(role));
-      if (!localRole || !freshMfa) throw denied();
-      if (localRole === 'admin') {
-        // A global administrator uses the global grant path, not an owner-
-        // provisioned site-operator binding. Product-admin alone is insufficient.
-        if (!globalAdmin) throw denied();
+      // Admin is a privileged grant, so it must never fall through to an
+      // agent/support binding merely because the issuer ordered those roles
+      // differently in the array. Multiple local roles are ambiguous as well.
+      if (roles.includes('admin')) {
+        if (!globalAdmin || !freshMfa) throw denied();
         return { ...identity, authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
       }
-      return { ...identity, localRole, siteOperator: true as const, authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
+      const localRoles = roles.filter(role => role === 'agent' || role === 'support');
+      if (localRoles.length !== 1 || !freshMfa) throw denied();
+      return { ...identity, localRole: localRoles[0] as 'agent' | 'support', siteOperator: true as const,
+        authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
     }
     const { clientId, clientSecret, issuer } = this.config;
     const encode = (value: string) => new URLSearchParams({ c: value }).toString().slice(2);
