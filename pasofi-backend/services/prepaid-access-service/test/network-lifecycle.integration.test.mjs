@@ -81,6 +81,29 @@ test('reconciliation rejects wrong contexts and stale or future observations',{s
  await assert.rejects(reconcileGrant(pool,{...evidence(),observedAt:new Date(Date.now()+120000).toISOString()}),{code:'invalid_evidence_time'});
  await assert.rejects(reconcileGrant(pool,{...evidence(),credentialRevokedAt:new Date(0).toISOString()}),{code:'invalid_evidence_time'});
 }));
+test('closed grant rejects later router presence while preserving older absence evidence',{skip:!url},async()=>fixture(async({pool,customer,event,evidence,grant})=>{
+ await recordAccounting(pool,event);
+ await recordAccounting(pool,{...event,kind:'stop'});
+ const original=evidence(),time=Date.parse(original.observedAt);
+ const final={...original,observedAt:new Date(time+2000).toISOString()};
+ assert.equal((await reconcileGrant(pool,final)).closed,true);
+ const next=await issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'next');
+ // A delayed older absence or presence must not erase the final proof or
+ // unnecessarily hold a customer whose router was already known to be absent.
+ assert.equal((await reconcileGrant(pool,{...original,observationId:randomUUID()})).closed,true);
+ assert.equal((await reconcileGrant(pool,{...original,observationId:randomUUID(),absent:false})).closed,true);
+ const saved=(await pool.query('SELECT absent_verified_at,accounting_anomaly FROM access_grants WHERE id=$1',[grant.id])).rows[0];
+ assert.equal(saved.absent_verified_at.getTime(),time+2000);
+ assert.equal(saved.accounting_anomaly,false);
+ // A *newer* sighting of that same fenced session contradicts closure,
+ // even with zero new bytes, so the customer and newer grant are frozen.
+ const sighting={...original,observationId:randomUUID(),absent:false,observedAt:new Date(time+3000).toISOString()};
+ assert.deepEqual(await reconcileGrant(pool,sighting),{state:'uncertain',closed:false,reviewRequired:true});
+ const hold=await pool.query('SELECT reason FROM network_account_holds WHERE customer_id=$1',[customer]);
+ assert.equal(hold.rows[0].reason,'session_present_after_closure');
+ assert.equal((await pool.query('SELECT state,accounting_anomaly FROM access_grants WHERE id=$1',[next.id])).rows[0].state,'uncertain');
+ await assert.rejects(issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'another'),{code:'accounting_review_required'});
+}));
 test('contradictory traffic after closure fences a newer grant and blocks further access',{skip:!url},async()=>fixture(async({pool,customer,event,evidence})=>{
  await recordAccounting(pool,event);await recordAccounting(pool,{...event,kind:'stop',upload:100n,download:0n});
  assert.equal((await reconcileGrant(pool,evidence())).closed,true);
