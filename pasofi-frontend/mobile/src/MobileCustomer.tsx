@@ -15,12 +15,15 @@ export default function MobileCustomer({ close, initialTab = 'access' }: { close
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null), [message, setMessage] = useState(''), [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<'account' | 'recover' | 'handoff' | 'onesa'>('account'), [attempt, setAttempt] = useState(0);
   const [activeTab, setActiveTab] = useState<CustomerTab>(initialTab);
+  const [nativeReturnReady,setNativeReturnReady]=useState(!usesNativeCustomerApi),[nativeReturnFailed,setNativeReturnFailed]=useState(false);
   const live = useRef(false);
   useEffect(()=>{
     let mounted=true;
     const listener=watchNativeReturn(destination=>{
       if(mounted){setActiveTab(destination);setScreen('account');setAttempt(n=>n+1);}
-    },()=>{if(mounted)setMessage('Onesa sign-in could not finish. Your existing account is available; try sign-in again.');});
+    },()=>{if(mounted)setMessage('Onesa sign-in could not finish. Your existing account is available; try sign-in again.');})
+      .then(stop=>{if(mounted)setNativeReturnReady(true);return stop;})
+      .catch(()=>{if(mounted){setNativeReturnFailed(true);setMessage('Secure browser return is unavailable. Use the one-time account handoff instead.');}return ()=>{};});
     return ()=>{mounted=false;void listener.then(stop=>stop()).catch(()=>{});};
   },[]);
   useEffect(() => {
@@ -62,7 +65,10 @@ export default function MobileCustomer({ close, initialTab = 'access' }: { close
   </div>
     {loading && <p className="mobile-notice" role="status">Checking the configured PasoFi service…</p>}
     {message && <div className="mobile-notice"><div><p role="status">{message}</p><button className="mobile-primary" onClick={() => setAttempt(value => value + 1)}>Retry service connection</button></div></div>}
-    {capabilities && (screen === 'onesa' ? <OnesaSignIn destination={activeTab} close={() => setScreen('account')} enterCode={() => setScreen('handoff')} /> : screen === 'account' ? <CustomerAccess key={`account-${attempt}`} capabilities={capabilities} initialTab={activeTab} onNavigate={setActiveTab} close={close} recovered={() => setScreen('recover')} /> : screen === 'recover' ? <Recovery close={() => setScreen('account')} recovered={() => setScreen('account')} /> : <Handoff close={() => setScreen('account')} recovered={() => setScreen('account')} />)}
+    {capabilities && (screen === 'onesa' ? nativeReturnReady
+      ? <OnesaSignIn destination={activeTab} close={() => setScreen('account')} enterCode={() => setScreen('handoff')} managedReturnReady={!nativeReturnFailed} />
+      : <p role="status">Preparing the secure sign-in return…</p>
+      : screen === 'account' ? <CustomerAccess key={`account-${attempt}`} capabilities={capabilities} initialTab={activeTab} onNavigate={setActiveTab} close={close} recovered={() => setScreen('recover')} /> : screen === 'recover' ? <Recovery close={() => setScreen('account')} recovered={() => setScreen('account')} /> : <Handoff close={() => setScreen('account')} recovered={() => setScreen('account')} />)}
     {capabilities && <nav className="mobile-nav" aria-label="Account navigation">
       <button aria-current={screen === 'account' && (activeTab === 'access' || activeTab === 'wifi' || activeTab === 'voucher') ? 'page' : undefined} onClick={() => { setScreen('account'); setActiveTab('access'); }}><span className="mobile-nav-icon"><Icon name="home" /></span>Home</button>
       <button aria-current={screen === 'account' && (activeTab === 'purchase' || activeTab === 'receipt') ? 'page' : undefined} onClick={() => { setScreen('account'); setActiveTab('purchase'); }}><span className="mobile-nav-icon"><Icon name="bundles" /></span>Bundles</button>
