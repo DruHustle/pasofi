@@ -5,6 +5,7 @@ import {randomUUID} from 'node:crypto';
 import pg from 'pg';
 import Fastify from 'fastify';
 import {issueGrant,recordAccounting,reconcileGrant,markNasRestart} from '../dist/grants.js';
+import {resolveNetworkReview} from '../dist/network-admin.js';
 import {registerCustomerNetwork} from '../dist/network-lifecycle.js';
 const url=process.env.PAMOFI_TEST_DATABASE_URL;
 async function fixture(work){
@@ -19,6 +20,7 @@ async function fixture(work){
   await work({pool,customer,site,nas,grant,event,evidence,entitlement});
  } finally {
   await pool.query('DELETE FROM network_account_holds WHERE customer_id=$1',[customer]);
+  await pool.query('DELETE FROM network_operator_resolutions WHERE grant_id IN (SELECT id FROM access_grants WHERE customer_id=$1)',[customer]);
   await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);
   await pool.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);
   await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();
@@ -99,10 +101,27 @@ test('closed grant rejects later router presence while preserving older absence 
  // even with zero new bytes, so the customer and newer grant are frozen.
  const sighting={...original,observationId:randomUUID(),absent:false,observedAt:new Date(time+3000).toISOString()};
  assert.deepEqual(await reconcileGrant(pool,sighting),{state:'uncertain',closed:false,reviewRequired:true});
+ assert.deepEqual(await reconcileGrant(pool,sighting),{state:'uncertain',closed:false,reviewRequired:true});
  const hold=await pool.query('SELECT reason FROM network_account_holds WHERE customer_id=$1',[customer]);
  assert.equal(hold.rows[0].reason,'session_present_after_closure');
  assert.equal((await pool.query('SELECT state,accounting_anomaly FROM access_grants WHERE id=$1',[next.id])).rows[0].state,'uncertain');
  await assert.rejects(issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'another'),{code:'accounting_review_required'});
+}));
+test('operator review requires a fresh absence after a closed session is seen again',{skip:!url},async()=>fixture(async({pool,grant,event,evidence})=>{
+ await recordAccounting(pool,event);
+ await recordAccounting(pool,{...event,kind:'stop'});
+ const proof=evidence(),time=Date.parse(proof.observedAt);
+ await reconcileGrant(pool,proof);
+ await reconcileGrant(pool,{...proof,observationId:randomUUID(),absent:false,observedAt:new Date(time+1000).toISOString()});
+ const resolve=async()=>{
+  const row=(await pool.query('SELECT review_version::text AS version FROM access_grants WHERE id=$1',[grant.id])).rows[0];
+  return resolveNetworkReview(pool,grant.id,randomUUID(),randomUUID(),{
+   expectedVersion:row.version,finalUpload:'0',finalDownload:'0',reason:'Verify final session counters',evidenceReference:'fixture-router-observation'
+  });
+ };
+ await assert.rejects(resolve(),{code:'fresh_independent_absence_required'});
+ await reconcileGrant(pool,{...proof,observationId:randomUUID(),observedAt:new Date(time+2000).toISOString()});
+ assert.equal((await resolve()).state,'closed');
 }));
 test('contradictory traffic after closure fences a newer grant and blocks further access',{skip:!url},async()=>fixture(async({pool,customer,event,evidence})=>{
  await recordAccounting(pool,event);await recordAccounting(pool,{...event,kind:'stop',upload:100n,download:0n});

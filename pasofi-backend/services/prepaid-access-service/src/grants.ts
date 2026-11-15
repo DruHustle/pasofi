@@ -150,6 +150,8 @@ export async function reconcileGrant(pool:Pool,evidence:AbsenceEvidence) {
     if(previous.rowCount) {
       const p=previous.rows[0];
       if(p.grant_id!==g.id||p.kind!==(evidence.absent?'absent':'present')||p.observed_at.getTime()!==observed||Date.parse(p.detail.credentialRevokedAt)!==revoked)throw new GrantError('evidence_conflict');
+      const hold=await client.query('SELECT 1 FROM network_account_holds WHERE customer_id=$1 AND grant_id=$2',[g.customer_id,g.id]);
+      if(hold.rowCount)return {state:'uncertain',closed:false,reviewRequired:true};
       return {state:g.state,closed:g.state==='closed'};
     }
     // A committed observation can be acknowledged again without refreshing its evidence.
@@ -175,7 +177,7 @@ export async function reconcileGrant(pool:Pool,evidence:AbsenceEvidence) {
           await client.query(`UPDATE access_grants SET state='uncertain',accounting_anomaly=true,
             disconnect_requested_at=COALESCE(disconnect_requested_at,now())
             WHERE customer_id=$1 AND state<>'closed'`,[g.customer_id]);
-          await client.query('UPDATE access_grants SET accounting_anomaly=true WHERE id=$1',[g.id]);
+          await client.query('UPDATE access_grants SET accounting_anomaly=true,absent_verified_at=NULL WHERE id=$1',[g.id]);
           return {state:'uncertain',closed:false,reviewRequired:true};
         }
         // An out-of-order historical sighting predating the closure is harmless.
