@@ -39,6 +39,19 @@ test('verified final Stop plus independently fenced router absence releases exac
  assert.notEqual(next.id,grant.id);
  assert.equal((await recordAccounting(pool,{...event,kind:'stop',upload:150n,download:500n})).state,'closed');
 }));
+test('an acknowledged observation can be retried after the freshness window without applying it again',{skip:!url},async t=>fixture(async({pool,event,evidence})=>{
+ await recordAccounting(pool,event);
+ await recordAccounting(pool,{...event,kind:'stop'});
+ const proof=evidence();
+ assert.equal((await reconcileGrant(pool,proof)).closed,true);
+ const future=Date.parse(proof.observedAt)+120000;
+ t.mock.method(Date,'now',()=>future);
+ assert.deepEqual(await reconcileGrant(pool,proof),{state:'closed',closed:true});
+ await assert.rejects(reconcileGrant(pool,{...proof,absent:false}),{code:'evidence_conflict'});
+ await assert.rejects(reconcileGrant(pool,{...proof,observationId:randomUUID()}),{code:'invalid_evidence_time'});
+ const rows=await pool.query("SELECT count(*)::int AS count FROM grant_reconciliation_events WHERE grant_id=$1 AND kind IN ('absent','closed')",[event.grantId]);
+ assert.equal(rows.rows[0].count,2);
+}));
 test('missing Stop after NAS restart and regressing counters retain the reservation',{skip:!url},async()=>fixture(async({pool,customer,site,nas,event,evidence})=>{
  await recordAccounting(pool,event);await recordAccounting(pool,{...event,kind:'interim',upload:500n,download:200n});
  assert.equal((await markNasRestart(pool,site,nas)).affected,1);

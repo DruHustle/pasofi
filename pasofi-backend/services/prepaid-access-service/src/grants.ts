@@ -137,7 +137,7 @@ export async function recordAccounting(pool:Pool, event:TrustedAccounting) {
 export type AbsenceEvidence={grantId:string;siteId:string;nasId:string;generation:string;sessionId:string;observationId:string;observedAt:string;credentialRevokedAt:string;absent:boolean};
 export async function reconcileGrant(pool:Pool,evidence:AbsenceEvidence) {
   const observed=Date.parse(evidence.observedAt),revoked=Date.parse(evidence.credentialRevokedAt);
-  if(!Number.isFinite(observed)||!Number.isFinite(revoked)||revoked>observed||observed>Date.now()+5000||observed<Date.now()-60000) throw new GrantError('invalid_evidence_time');
+  if(!Number.isFinite(observed)||!Number.isFinite(revoked)||revoked>observed) throw new GrantError('invalid_evidence_time');
   return transaction(pool,async client=>{
     const owner=await client.query('SELECT customer_id FROM access_grants WHERE id=$1',[evidence.grantId]);
     if(!owner.rowCount)throw new GrantError('unknown_grant');
@@ -152,6 +152,9 @@ export async function reconcileGrant(pool:Pool,evidence:AbsenceEvidence) {
       if(p.grant_id!==g.id||p.kind!==(evidence.absent?'absent':'present')||p.observed_at.getTime()!==observed||Date.parse(p.detail.credentialRevokedAt)!==revoked)throw new GrantError('evidence_conflict');
       return {state:g.state,closed:g.state==='closed'};
     }
+    // A committed observation can be acknowledged again without refreshing its evidence.
+    const now=Date.now();
+    if(observed>now+5000||observed<now-60000)throw new GrantError('invalid_evidence_time');
     await client.query('INSERT INTO grant_reconciliation_events(id,grant_id,kind,observed_at,detail) VALUES($1,$2,$3,$4,$5)',[evidence.observationId,g.id,evidence.absent?'absent':'present',evidence.observedAt,JSON.stringify({credentialRevokedAt:evidence.credentialRevokedAt})]);
     if(g.state==='closed') {
       // A later contradictory usage report can put a settled grant on hold.
