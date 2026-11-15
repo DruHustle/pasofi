@@ -33,6 +33,17 @@ export async function readUsageSnapshot(pool:Pool,customerId:string,entitlementI
      AND NOT EXISTS(SELECT 1 FROM account_hold) AS recently_connected
    FROM access_grants g CROSS JOIN snapshot_clock c WHERE g.customer_id=$1 AND g.state<>'closed'
   ),
+  session_payload AS MATERIALIZED (
+   SELECT g.issued_at,g.id,jsonb_build_object(
+    'grantId',g.id,'entitlementId',g.entitlement_id,'siteId',g.site_id,'nasId',g.nas_id,'state',g.state,
+    'issuedAt',g.issued_at,'deadline',g.deadline,'lastAccountingAt',g.last_accounting_at,
+    'reservedBytes',g.reserved_bytes::text,'chargedBytes',g.charged_bytes::text,
+    'reservationOutstandingBytes',(g.reserved_bytes-g.charged_bytes)::text,
+    'disconnectRequested',g.disconnect_requested_at IS NOT NULL,'accountingAnomaly',g.accounting_anomaly,
+    'accountingStale',g.accounting_stale,'connected',COALESCE(g.recently_connected,false)
+   ) AS value
+   FROM live g
+  ),
   totals AS (
    SELECT jsonb_build_object(
     'bundleCount',(count(*) FILTER(WHERE is_current))::integer,
@@ -61,14 +72,10 @@ export async function readUsageSnapshot(pool:Pool,customerId:string,entitlementI
    'lifetimeAccountedBytes',t.lifetime_accounted,
    'reservationOutstandingBytes',(SELECT COALESCE(sum(reserved_bytes-charged_bytes),0)::text FROM live),
    'lastAccountingAt',(SELECT last_accounting_at FROM access_grants WHERE customer_id=$1 ORDER BY last_accounting_at DESC NULLS LAST LIMIT 1),
-   'session',(SELECT jsonb_build_object(
-    'grantId',g.id,'entitlementId',g.entitlement_id,'siteId',g.site_id,'nasId',g.nas_id,'state',g.state,
-    'issuedAt',g.issued_at,'deadline',g.deadline,'lastAccountingAt',g.last_accounting_at,
-    'reservedBytes',g.reserved_bytes::text,'chargedBytes',g.charged_bytes::text,
-    'reservationOutstandingBytes',(g.reserved_bytes-g.charged_bytes)::text,
-    'disconnectRequested',g.disconnect_requested_at IS NOT NULL,'accountingAnomaly',g.accounting_anomaly,
-    'accountingStale',g.accounting_stale,'connected',COALESCE(g.recently_connected,false)
-   ) FROM live g),
+   -- Keep the historical single-session field deterministic for older clients,
+   -- while exposing every unresolved physical session for reconciliation-aware UI.
+   'session',(SELECT value FROM session_payload ORDER BY issued_at DESC,id DESC LIMIT 1),
+   'sessions',COALESCE((SELECT jsonb_agg(value ORDER BY issued_at DESC,id DESC) FROM session_payload),'[]'::jsonb),
    'hold',jsonb_build_object('active',EXISTS(SELECT 1 FROM account_hold),
     'reason',(SELECT reason FROM account_hold),'since',(SELECT created_at FROM account_hold)),
    'connectivity',CASE
