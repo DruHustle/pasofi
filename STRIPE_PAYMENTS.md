@@ -75,7 +75,7 @@ invoices are marked simulated. Sandbox mode is rejected for a production ledger,
 even if test credentials are present. Existing mock-only demonstration remains
 available; legacy providers remain disabled.
 
-Live `stripeConfiguration` fails closed unless all three customer-network/RADIUS/RouterOS flags above are explicitly `true`, in addition to the merchant attestation and nonempty qualified-site list. The RADIUS overlay supplies the first two flags to prepaid; the RouterOS overlay supplies the third to prepaid and enables the network reconciler with the same attestation. Applying only the Stripe overlay, or setting merchant credentials/`STRIPE_PRODUCTION_QUALIFIED` without the physical-service gates, cannot expose live checkout. Keep each flag false until the corresponding site evidence is recorded.
+Live **new checkout** fails closed unless all three customer-network/RADIUS/RouterOS flags above are explicitly `true`, in addition to the merchant attestation and nonempty qualified-site list. The RADIUS overlay supplies the first two flags to prepaid; the RouterOS overlay supplies the third to prepaid and enables the network reconciler with the same attestation. Applying only the Stripe overlay, or setting merchant credentials/`STRIPE_PRODUCTION_QUALIFIED` without the physical-service gates, cannot expose live checkout. Keep each flag false until the corresponding site evidence is recorded. The Stripe adapter remains configured for signed callbacks and reconciliation of existing money while new checkout is paused by `PAMOFI_PAYMENTS_ENABLED` or any of these physical-service gates.
 
 The optional production overlay is
 `pasofi-backend/infra/production/stripe-payments.compose.yaml`. It reads two private
