@@ -87,12 +87,17 @@ public final class PasoFiCustomerApiPlugin extends Plugin {
         Failure(String code) { super(code); this.code = code; }
     }
 
+    private void deliverAccountHandoffReturn(Intent intent) {
+        if (intent == null || !CustomerApiPolicy.isAccountHandoffReturn(intent.getAction(), intent.getDataString())) return;
+        // Remove the consumed marker so a recreated plugin cannot replay it.
+        intent.setData(null);
+        notifyListeners("accountHandoffReturn", new JSObject(), true);
+    }
+
     @Override
     protected void handleOnNewIntent(Intent intent) {
-        if (Intent.ACTION_VIEW.equals(intent.getAction()) &&
-                "com.onesa.pasofi://account/handoff".equals(intent.getDataString())) {
-            notifyListeners("accountHandoffReturn", new JSObject(), true);
-        }
+        if (getActivity() != null) getActivity().setIntent(intent);
+        deliverAccountHandoffReturn(intent);
     }
 
     @Override
@@ -105,6 +110,9 @@ public final class PasoFiCustomerApiPlugin extends Plugin {
         String configured = getConfig().getString("origin");
         origin = CustomerApiPolicy.validOrigin(configured) ? configured : null;
         bridge.addWebViewListener(pageListener);
+        // A browser may cold-start the app with the return intent. Android does
+        // not call handleOnNewIntent for the initial onCreate intent.
+        if (getActivity() != null) deliverAccountHandoffReturn(getActivity().getIntent());
         // Capacitor installs a process-global CookieHandler even when its fetch
         // patch is off. This client never reads or writes that shared cookie jar.
         client = CustomerHttpTransport.client();
