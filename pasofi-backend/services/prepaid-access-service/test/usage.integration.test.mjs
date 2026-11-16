@@ -109,6 +109,7 @@ test('usage follows verified accounting once and preserves reservations through 
   let snapshot=await f.snapshot();
   assert.equal(snapshot.connectivity,'pending');assert.equal(snapshot.session.connected,false);assert.equal(snapshot.session.lastAccountingAt,null);
   assert.equal(snapshot.session.siteId,site);assert.equal(snapshot.session.nasId,nas);
+  assert.equal(snapshot.sessions.length,1);assert.equal(snapshot.sessions[0].grantId,grant.id);
   assert.equal(snapshot.reservationOutstandingBytes,'10000');assert.equal(snapshot.totals.remainingBytes,'30000');
   assert.deepEqual(snapshot.entitlementUpdates.map(e=>e.id),[entitlement]);
   await recordAccounting(f.pool,event);await recordAccounting(f.pool,event);
@@ -130,11 +131,13 @@ test('usage follows verified accounting once and preserves reservations through 
   const observedAt=new Date().toISOString();
   await reconcileGrant(f.pool,{grantId:grant.id,siteId:site,nasId:nas,generation:grant.generation,sessionId:'usage-session',observationId:randomUUID(),observedAt,credentialRevokedAt:observedAt,absent:true});
   snapshot=await f.snapshot();assert.equal(snapshot.session,null);assert.equal(snapshot.connectivity,'none');assert.equal(snapshot.reservationOutstandingBytes,'0');assert.ok(snapshot.lastAccountingAt);
+  assert.deepEqual(snapshot.sessions,[]);
   const next=await issueGrant(f.pool,f.customer,site,nas,randomUUID(),'usage-next-session');
   await recordAccounting(f.pool,{...event,kind:'interim',upload:700n,download:400n});
   snapshot=await f.snapshot();assert.equal(snapshot.hold.active,true);assert.equal(snapshot.hold.reason,'usage_after_final_stop');
   assert.equal(snapshot.connectivity,'held');assert.equal(snapshot.session.grantId,next.id);assert.equal(snapshot.session.state,'uncertain');assert.equal(snapshot.session.connected,false);
-  assert.equal(snapshot.reservationOutstandingBytes,'9000');assert.equal(snapshot.totals.usedBytes,'1000');assert.equal(snapshot.totals.remainingBytes,'29000');
+  assert.deepEqual(snapshot.sessions.map(session=>session.grantId).sort(),[grant.id,next.id].sort());
+  assert.equal(snapshot.reservationOutstandingBytes,'18000');assert.equal(snapshot.totals.usedBytes,'1000');assert.equal(snapshot.totals.remainingBytes,'29000');
  }finally{await f.cleanup();}
 });
 

@@ -250,7 +250,14 @@ async function main() {
   const servers = [];
   for (const name of services) {
     await ports[name].release();
-    servers.push(launch(`${name}: isolated demo server`, process.execPath, ['dist/server.js'], serviceDirectory(name), { ...demoEnv, PAMOFI_PAYMENTS_ENABLED:'false', DATABASE_URL: databases[name], PORT: String(ports[name].port) }));
+    // The synthetic RADIUS integration test authorizes against this isolated
+    // prepaid service. Enable its customer-network gate only in this disposable
+    // demo server; production defaults and the later browser server stay disabled.
+    servers.push(launch(`${name}: isolated demo server`, process.execPath, ['dist/server.js'], serviceDirectory(name), {
+      ...demoEnv, PAMOFI_PAYMENTS_ENABLED:'false',
+      ...(name === 'prepaid-access' ? { PAMOFI_CUSTOMER_NETWORK_ENABLED:'true' } : {}),
+      DATABASE_URL: databases[name], PORT: String(ports[name].port)
+    }));
   }
   await Promise.all(services.map((name, index) => ready(servers[index], `${address(name)}/health/ready`, name === 'prepaid-access' ? 'prepaid-access' : name)));
   for (const name of services) {

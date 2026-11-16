@@ -125,11 +125,19 @@ created_containers+=("$restore_name")
 wait_ready "$restore_name"
 actual=$(docker exec "$restore_name" psql -X -A -t -v ON_ERROR_STOP=1 -U pamofi_prepaid_access -d pamofi_prepaid_access -c "SELECT e.consumed_bytes::text||':'||g.charged_bytes::text||':'||g.state||':'||(SELECT count(*) FROM event_outbox WHERE id='99999999-9999-4999-8999-999999999999' AND status='pending') FROM purchase_entitlements e JOIN access_grants g ON g.entitlement_id=e.id WHERE e.id='33333333-3333-4333-8333-333333333333'" | tr -d '\r\n')
 [[ "$actual" == '12345:12345:uncertain:1' ]] || { printf 'Restored grant/ledger/outbox invariant failed: %s\n' "$actual" >&2; exit 1; }
-if duplicate_output=$(docker exec "$restore_name" psql -X -v ON_ERROR_STOP=1 -U pamofi_prepaid_access -d pamofi_prepaid_access -c "INSERT INTO access_grants(id,customer_id,entitlement_id,site_id,nas_id,request_key,generation,state,reserved_bytes,deadline,accounting_session_id) SELECT 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',customer_id,entitlement_id,site_id,nas_id,'cccccccc-cccc-4ccc-8ccc-cccccccccccc','dddddddd-dddd-4ddd-8ddd-dddddddddddd','pending',reserved_bytes,now()+interval '1 hour','another-lab-session' FROM access_grants WHERE id='44444444-4444-4444-8444-444444444444'" 2>&1); then
- printf 'Restored database allowed a second live grant\n' >&2; exit 1
+# Multiple independently observed uncertain sessions must survive restore.
+# The partial unique index protects issuable (pending/active) grants; application
+# issuance separately blocks every non-closed session and customer account hold.
+docker exec "$restore_name" psql -X -v ON_ERROR_STOP=1 -U pamofi_prepaid_access -d pamofi_prepaid_access -c "INSERT INTO access_grants(id,customer_id,entitlement_id,site_id,nas_id,request_key,generation,state,reserved_bytes,deadline,accounting_session_id) SELECT 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',customer_id,entitlement_id,site_id,nas_id,'cccccccc-cccc-4ccc-8ccc-cccccccccccc','dddddddd-dddd-4ddd-8ddd-dddddddddddd','uncertain',reserved_bytes,now()+interval '1 hour','second-uncertain-lab-session' FROM access_grants WHERE id='44444444-4444-4444-8444-444444444444'" >/dev/null
+uncertain_count=$(docker exec "$restore_name" psql -X -A -t -v ON_ERROR_STOP=1 -U pamofi_prepaid_access -d pamofi_prepaid_access -c "SELECT count(*) FROM access_grants WHERE customer_id=(SELECT customer_id FROM access_grants WHERE id='44444444-4444-4444-8444-444444444444') AND state='uncertain'" | tr -d '\r\n')
+[[ "$uncertain_count" == 2 ]] || { printf 'Restored database did not preserve independently uncertain sessions: %s\n' "$uncertain_count" >&2; exit 1; }
+# A second pending/active grant for the same customer must still hit the index.
+docker exec "$restore_name" psql -X -v ON_ERROR_STOP=1 -U pamofi_prepaid_access -d pamofi_prepaid_access -c "INSERT INTO access_grants(id,customer_id,entitlement_id,site_id,nas_id,request_key,generation,state,reserved_bytes,deadline,accounting_session_id) SELECT 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',customer_id,entitlement_id,site_id,nas_id,'ffffffff-ffff-4fff-8fff-ffffffffffff','11111111-aaaa-4111-8111-111111111111','pending',reserved_bytes,now()+interval '1 hour','first-pending-lab-session' FROM access_grants WHERE id='44444444-4444-4444-8444-444444444444'" >/dev/null
+if duplicate_output=$(docker exec "$restore_name" psql -X -v ON_ERROR_STOP=1 -U pamofi_prepaid_access -d pamofi_prepaid_access -c "INSERT INTO access_grants(id,customer_id,entitlement_id,site_id,nas_id,request_key,generation,state,reserved_bytes,deadline,accounting_session_id) SELECT '22222222-aaaa-4222-8222-222222222222',customer_id,entitlement_id,site_id,nas_id,'33333333-aaaa-4333-8333-333333333333','44444444-aaaa-4444-8444-444444444444','pending',reserved_bytes,now()+interval '1 hour','second-pending-lab-session' FROM access_grants WHERE id='44444444-4444-4444-8444-444444444444'" 2>&1); then
+ printf 'Restored database allowed a second issuable grant\n' >&2; exit 1
 fi
-if [[ "$duplicate_output" != *'one_live_or_uncertain_grant_per_customer'* ]]; then
- printf 'The duplicate-grant check failed for an unexpected reason\n' >&2; exit 1
+if [[ "$duplicate_output" != *'one_issuable_grant_per_customer'* ]]; then
+ printf 'The duplicate issuable-grant check failed for an unexpected reason\n' >&2; exit 1
 fi
 identity=$(docker exec "$restore_name" psql -X -A -t -v ON_ERROR_STOP=1 -U pamofi_identity -d pamofi_identity -c "SELECT count(*) FROM customers WHERE id='11111111-1111-4111-8111-111111111111'" | tr -d '\r\n')
 [[ "$identity" == 1 ]]
