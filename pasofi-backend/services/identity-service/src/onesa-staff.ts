@@ -178,33 +178,23 @@ export class OnesaStaff {
       if (typeof stable !== 'string' || !uuid.test(stable) || typeof payload.sub !== 'string' || !payload.sub || !Number.isSafeInteger(payload.iat) || !payload.iat ||
           !Number.isSafeInteger(payload.exp) || !payload.exp ||
           payload.exp <= payload.iat || payload.exp - payload.iat > 300 || !Array.isArray(products) ||
-          !products.includes('pasofi') || !Array.isArray(roles)) throw denied();
+          products.length !== 1 || products[0] !== 'pasofi' || !Array.isArray(roles)) throw denied();
       const identity: Admin = { subject: stable.toLowerCase(), providerSubject: payload.sub, authorizedClient: typeof payload.azp === 'string' ? payload.azp : undefined, email: '', name: '',
         authenticated: payload.iat, expires: payload.exp };
-      const globalRoles = payload.onesa_roles;
-      const globalAdmin = Array.isArray(globalRoles) && globalRoles.includes('global_admin');
       const mfa = payload[ns + 'mfa_time'];
       const freshMfa = typeof mfa === 'number' && Number.isSafeInteger(mfa) && mfa <= now && mfa + 300 > now;
       if (!this.staffFlow) {
-        // Staff-only grants must never be enough to create a customer session.
-        // A global administrator may also use the customer service, but only
-        // with both grants and the same fresh MFA requirement as staff entry.
+        // Customer access requires its own product grant. Legacy global roles
+        // are outside the managed resource-token contract.
         if (roles.includes('customer')) return identity;
-        if (roles.includes('admin') && globalAdmin && freshMfa) {
-          return { ...identity, authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
-        }
         throw denied();
       }
-      // Admin is a privileged grant, so it must never fall through to an
-      // agent/support binding merely because the issuer ordered those roles
-      // differently in the array. Multiple local roles are ambiguous as well.
-      if (roles.includes('admin')) {
-        if (!globalAdmin || !freshMfa) throw denied();
-        return { ...identity, authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
-      }
-      const localRoles = roles.filter(role => role === 'agent' || role === 'support');
+      // Every managed staff role, including administrator, needs its matching
+      // approved local binding. Multiple staff roles cannot select a weaker
+      // binding based on claim order or bypass product-owned approval.
+      const localRoles = roles.filter(role => role === 'admin' || role === 'agent' || role === 'support');
       if (localRoles.length !== 1 || !freshMfa) throw denied();
-      return { ...identity, localRole: localRoles[0] as 'agent' | 'support', siteOperator: true as const,
+      return { ...identity, localRole: localRoles[0] as 'admin' | 'agent' | 'support', siteOperator: true as const,
         authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
     }
     const { clientId, clientSecret, issuer } = this.config;

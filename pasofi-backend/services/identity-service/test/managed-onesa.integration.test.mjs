@@ -29,7 +29,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   await db.query("INSERT INTO staff_users(id,email,display_name,password_hash,status,role,site_ids) VALUES($1,$2,'Operator','disabled','approved','agent',$3)",
     [operator,operator+'@example.invalid',[site]]);
   await db.query('INSERT INTO staff_onesa_bindings(issuer,subject,staff_id) VALUES($1,$2,$3)',[legacy,stable,operator]);
-  let app = buildApp(), outage = false, role = 'customer', extraRoles = [], globalRoles = [], aud = audience, factor = now(), query, lifetime = 300;
+  let app = buildApp(), outage = false, role = 'customer', extraRoles = [], globalRoles = [], products = ['pasofi'], aud = audience, factor = now(), query, lifetime = 300;
   let accessSubject = providerSubject;
   t.after(()=>app.close());
   const ns = 'https://onesa.eu/claims/';
@@ -67,7 +67,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     const sign=(claims,target,subject,ttl)=>new SignJWT(claims).setIssuer(issuer).setAudience(target).setSubject(subject)
       .setProtectedHeader({alg:'RS256',kid:'one'}).setIssuedAt(now()).setExpirationTime(now()+ttl).sign(privateKey);
     return Response.json({token_type:'Bearer',access_token:await sign({
-      [ns+'user_id']:stable,[ns+'products']:['pasofi'],[ns+'roles']:[role,...extraRoles],[ns+'mfa_time']:factor,onesa_roles:globalRoles,
+      [ns+'user_id']:stable,[ns+'products']:products,[ns+'roles']:[role,...extraRoles],[ns+'mfa_time']:factor,onesa_roles:globalRoles,
     },aud,accessSubject,lifetime),id_token:await sign({nonce:query.get('nonce'),auth_time:now()},clientId,providerSubject,300)});
   });
   const request=(method,path,payload,cookie)=>app.inject({method,url:'/v1/'+path,headers:{origin,...(cookie?{cookie}:{})},...(payload?{payload}:{})});
@@ -81,7 +81,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     if(staff) assert.equal(query.get('acr_values'),'http://schemas.openid.net/pape/policies/2007/06/multi-factor');
     return request('POST',prefix+'complete',{code:'synthetic',state:query.get('state')},cookie(start,staff?'onesa_flow':'onesa_customer_flow'));
   }
-  const nativeToken = (azp) => new SignJWT({azp,[ns+'user_id']:stable,[ns+'products']:['pasofi'],[ns+'roles']:[role,...extraRoles],onesa_roles:globalRoles,[ns+'mfa_time']:factor})
+  const nativeToken = (azp) => new SignJWT({azp,[ns+'user_id']:stable,[ns+'products']:products,[ns+'roles']:[role,...extraRoles],onesa_roles:globalRoles,[ns+'mfa_time']:factor})
     .setIssuer(issuer).setAudience(audience).setSubject(providerSubject).setProtectedHeader({alg:'RS256',kid:'one'}).setIssuedAt(now()).setExpirationTime(now()+300).sign(privateKey);
   for(const platform of ['ios','android']) {
     const token=await nativeToken(platform==='ios'?'pasofi_synthetic_ios':'pasofi_synthetic_android');
@@ -121,10 +121,22 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   const redeemed=await request('POST','handoff/redeem',{handoffCode:handoff.json().handoffCode});
   assert.equal(redeemed.json().customerId,customer);assert.equal((await request('POST','handoff/redeem',{handoffCode:handoff.json().handoffCode})).statusCode,401);
   assert.equal((await login(true)).statusCode,401);
-  role='admin';globalRoles=[];assert.equal((await login(true)).statusCode,401,'product-admin without global-admin is rejected');
-  globalRoles=['global_admin'];factor=now();const globalAdmin=await login(true);assert.equal(globalAdmin.statusCode,200,globalAdmin.body);
-  const adminSession=await request('GET','staff/session',undefined,cookie(globalAdmin,'staff_session'));
+  role='admin';globalRoles=[];assert.equal((await login(true)).statusCode,401,'product-admin cannot use an agent binding');
+  globalRoles=['global_admin'];factor=now();
+  assert.equal((await login(true)).statusCode,401,'legacy global-admin cannot bypass the local product role approval');
+  assert.equal((await login()).statusCode,401,'an admin-only grant cannot create a customer session');
+  globalRoles=[];
+  await db.query("UPDATE staff_users SET role='admin',site_ids='{}',version=version+1 WHERE id=$1",[operator]);
+  const approvedAdmin=await login(true);assert.equal(approvedAdmin.statusCode,200,approvedAdmin.body);
+  const adminCookie=cookie(approvedAdmin,'staff_session');
+  const adminSession=await request('GET','staff/session',undefined,adminCookie);
+  assert.equal(adminSession.json().staffId,operator);
   assert.equal(adminSession.json().role,'admin');assert.deepEqual(adminSession.json().siteIds,[]);
+  await db.query("UPDATE staff_users SET role='agent',site_ids=$2,version=version+1 WHERE id=$1",[operator,[site]]);
+  assert.equal((await request('GET','staff/session',undefined,adminCookie)).statusCode,401,'a changed local approval retires the managed administrator session');
+  role='customer';products=['pasofi','smart-farmer'];
+  assert.equal((await login()).statusCode,401,'roles cannot be interpreted across multiple product namespaces');
+  products=['pasofi'];
   role='agent';globalRoles=[];factor=now()-301;assert.equal((await login(true)).statusCode,401);
   factor=now();const staff=await login(true);assert.equal(staff.statusCode,200,staff.body);
   const staffCookie=cookie(staff,'staff_session');
