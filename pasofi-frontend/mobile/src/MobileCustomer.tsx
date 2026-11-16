@@ -23,7 +23,7 @@ export default function MobileCustomer({ close, initialTab = 'access' }: { close
       if(mounted){setActiveTab(destination);setScreen('account');setAttempt(n=>n+1);}
     },()=>{if(mounted)setMessage('Onesa sign-in could not finish. Your existing account is available; try sign-in again.');})
       .then(stop=>{if(mounted)setNativeReturnReady(true);return stop;})
-      .catch(()=>{if(mounted){setNativeReturnFailed(true);setMessage('Secure browser return is unavailable. Use the one-time account handoff instead.');}return ()=>{};});
+      .catch(()=>{if(mounted){setNativeReturnFailed(true);setNativeReturnReady(true);setMessage('Secure browser return is unavailable. Use the one-time account handoff instead.');}return ()=>{};});
     return ()=>{mounted=false;void listener.then(stop=>stop()).catch(()=>{});};
   },[]);
   useEffect(() => {

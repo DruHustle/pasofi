@@ -130,6 +130,20 @@ test('failed Android launch inspection removes its partially initialized return 
   expect(outcome).toEqual({ rejected: true, listeners: 0 });
 });
 
+test('failed Android return setup leaves the qualified manual handoff available', async ({ page, configuredBaseURL }) => {
+  await nativeBridge(page, request => request.path === '/api/capabilities' ? reply(capabilities)
+    : request.path === '/api/onesa/availability' ? reply({ origin: apiOrigin, handoff: true })
+    : reply({ error: 'not_authenticated' }, 401), {
+    platform: 'android', authenticate: async () => '', launchUrlFailure: true,
+  });
+  await page.goto(configuredBaseURL);
+  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
+  await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click({ timeout: 5000 });
+  await expect(page.getByLabel('One-time handoff code')).toBeVisible();
+  await expect(page.getByText('Preparing the secure sign-in return…')).toHaveCount(0);
+});
+
 for (const platform of ['ios', 'android'] as const) {
   test(`${platform} managed browser callback returns to protected history with the existing entitlement`, async ({page,configuredBaseURL})=>{
     const issuer='https://id.pasofi.test/', callback='com.onesa.pasofi.identity://login/callback';
