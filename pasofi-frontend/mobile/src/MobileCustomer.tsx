@@ -33,7 +33,7 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
       if (!live.current || controller.signal.aborted) return;
       if (value.mobileCookies !== true || (usesNativeCustomerApi && value.nativeCustomerApiVersion !== 1)) { setMessage('Mobile account access is not enabled by this deployment yet. You can continue using the offline preview.'); return; }
       setCapabilities(value);
-    }).catch(error => { if (live.current && !controller.signal.aborted) setMessage(messageFor(error, 'The configured PasoFi service could not be reached. Your offline preview is still available.')); }).finally(() => { clearTimeout(timeout); if (live.current && !controller.signal.aborted) setLoading(false); });
+    }).catch(error => { if (live.current && !controller.signal.aborted) setMessage(messageFor(error, 'The configured PasoFi service could not be reached. Your offline preview is still available.', { readOnly: true })); }).finally(() => { clearTimeout(timeout); if (live.current && !controller.signal.aborted) setLoading(false); });
     const unsubscribe = onSessionChange(() => { clearTimeout(timeout); controller.abort(); setCapabilities(null); setLoading(false); setMessage('Your account changed. Reconnect to load the current account.'); });
     return () => { live.current = false; clearTimeout(timeout); controller.abort(); unsubscribe(); };
   }, [attempt]);

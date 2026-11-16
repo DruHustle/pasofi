@@ -191,6 +191,18 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
   });
 }
 
+test('unavailable native capabilities keep the read-only fallback and do not imply a completed mutation', async ({ page, configuredBaseURL }) => {
+  const calls = await nativeBridge(page, () => reply({ error: 'unavailable' }, 503));
+  await page.goto(configuredBaseURL);
+  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await expect(page.getByText('The configured PasoFi service could not be reached.', { exact: false })).toBeVisible();
+  await expect(page.getByText('A request may still have completed', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Start a new customer account' })).toHaveCount(0);
+  expect(calls.filter(call => call.method === 'request').every(call => call.options.method === 'GET' && call.options.path === '/api/capabilities')).toBe(true);
+  await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
+  await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
+});
+
 test('unresponsive native capabilities request returns to offline preview without exposing account mutations', async ({ page, configuredBaseURL }) => {
   const calls = await nativeBridge(page, request => request.path === '/api/capabilities'
     ? new Promise<NativeReply>(() => {})
