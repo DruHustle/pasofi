@@ -15,7 +15,14 @@ export function paymentConfiguration(demo:boolean):Configuration {
  // An explicit unsupported provider must not silently become a simulation.
  // An unset selector preserves the existing demo-only mock configuration.
  const provider=process.env.PAMOFI_PAYMENT_PROVIDER;
- if(provider==='stripe'){const stripe=stripeConfiguration(demo);return stripe?{enabled:true,mode:stripe.live?'production':'sandbox'}:{enabled:false,mode:'disabled'};}
+ if(provider==='stripe'){
+  const stripe=stripeConfiguration(demo);if(!stripe)return {enabled:false,mode:'disabled'};
+  // These are new-sale gates only. Keep the Stripe adapter configured for
+  // signed callbacks and reconciliation of money already received when a site
+  // or router is paused, but never expose a new checkout without live service.
+  if(stripe.live&&(process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED!=='true'||process.env.PAMOFI_RADIUS_QUALIFIED!=='true'||process.env.PAMOFI_ROUTER_CONTROL_QUALIFIED!=='true'))return {enabled:false,mode:'disabled'};
+  return {enabled:true,mode:stripe.live?'production':'sandbox'};
+ }
  if(provider!==undefined&&provider!=='mock')return {enabled:false,mode:'disabled'};
  if(raw==='mock'&&demo)return {enabled:true,mode:'mock'};
  // Unqualified legacy providers stay disabled; only the explicitly selected,

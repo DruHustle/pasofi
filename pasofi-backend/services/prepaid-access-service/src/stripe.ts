@@ -74,7 +74,9 @@ export class StripeAdapter implements PaymentAdapter {
   if(this.config.live){if((await this.account()).charges_enabled!==true)throw Error('stripe_account_not_qualified');}
   else await this.verifyAccount();
   const intent=await this.client.paymentIntents.create({amount:input.amountMinor,currency:input.currency.toLowerCase(),
-   allowed_payment_method_types:['card'],automatic_payment_methods:{enabled:true,allow_redirects:'never'},capture_method:'automatic',metadata:metadata(input),description:'Pasofi internet bundle'},
+   // Endive rejects combining an explicit allowlist with automatic_payment_methods.
+   // Card-only still permits Apple Pay/Google Pay wallets through Stripe's card method.
+   allowed_payment_method_types:['card'],capture_method:'automatic',metadata:metadata(input),description:'Pasofi internet bundle'},
    {idempotencyKey:`pasofi-payment-${input.attemptId}`});
   if(!this.matches(intent,input))throw Error('stripe_intent_mismatch');
   return {state:'initiated' as const,referenceNumber:intent.id,redirectUrl:''};
@@ -109,6 +111,11 @@ export class StripeAdapter implements PaymentAdapter {
 export async function stripePresentation(pool:Pool,customerId:string,attemptId:string,adapter:StripeAdapter) {
  const row=(await pool.query(`SELECT a.*,o.price_minor,o.currency FROM provider_payment_attempts a
   JOIN purchase_orders o ON o.id=a.order_id WHERE a.id=$1 AND a.customer_id=$2 AND o.customer_id=$2`,[attemptId,customerId])).rows[0];
+ // Current site qualification gates creation of new attempts in beginProviderPayment.
+ // Do not strand a previously bound Stripe intent: its owner must still be able
+ // to complete or inspect that exact attempt, and adapter.presentation re-fetches
+ // and verifies its immutable customer/order/site/amount metadata before exposing
+ // a client secret. Unknown attempts never create a replacement on this path.
  if(!row||row.provider!==adapter.provider||!row.provider_reference||!['pending','unknown'].includes(row.state))return null;
  return adapter.presentation({referenceNumber:row.provider_reference,attemptId:row.id,orderId:row.order_id,
   customerId:row.customer_id,siteId:row.site_id,methodCode:row.method_code,amountMinor:row.price_minor,currency:row.currency});

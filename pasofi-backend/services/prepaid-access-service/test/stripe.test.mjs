@@ -21,6 +21,7 @@ function clientFor(c,t,change=()=>({}),requests=[]){
 
 test('Stripe configuration fails closed across environment, key mode, merchant and site qualification',()=>{
  const c=config(),env={PAMOFI_PAYMENTS_ENABLED:'true',PAMOFI_PAYMENT_PROVIDER:'stripe',PAMOFI_PAYMENT_MODE:'sandbox',APP_ENV:'demo',NODE_ENV:'development',
+  PAMOFI_CUSTOMER_NETWORK_ENABLED:'false',PAMOFI_RADIUS_QUALIFIED:'false',PAMOFI_ROUTER_CONTROL_QUALIFIED:'false',
   STRIPE_SECRET_KEY:c.secretKey,STRIPE_PUBLISHABLE_KEY:c.publishableKey,STRIPE_WEBHOOK_SECRET:c.webhookSecret,STRIPE_ACCOUNT_ID:c.accountId,
   STRIPE_MERCHANT_COUNTRY:c.country,STRIPE_QUALIFIED_SITE_IDS_JSON:JSON.stringify([randomUUID()]),STRIPE_PRODUCTION_QUALIFIED:'false',STRIPE_APPLE_PAY_ENABLED:'false',STRIPE_APPLE_PAY_MERCHANT_ID:'',STRIPE_GOOGLE_PAY_ENABLED:'false'};
  const saved=Object.fromEntries(Object.keys(env).map(key=>[key,process.env[key]]));
@@ -35,7 +36,17 @@ test('Stripe configuration fails closed across environment, key mode, merchant a
   assert.ok(stripeConfiguration(true),'pausing new payments retains verification of existing attempts');
   Object.assign(process.env,env,{PAMOFI_PAYMENT_MODE:'production',APP_ENV:'production',NODE_ENV:'production',STRIPE_SECRET_KEY:synthetic('sk','live'),STRIPE_PUBLISHABLE_KEY:synthetic('pk','live')});
   assert.equal(stripeConfiguration(false),null,'credentials alone cannot qualify live checkout');
-  process.env.STRIPE_PRODUCTION_QUALIFIED='true';assert.deepEqual(paymentConfiguration(false),{enabled:true,mode:'production'});
+  process.env.STRIPE_PRODUCTION_QUALIFIED='true';
+  assert.ok(stripeConfiguration(false),'verified merchant configuration remains available for existing-money reconciliation');
+  for(const gate of ['PAMOFI_CUSTOMER_NETWORK_ENABLED','PAMOFI_RADIUS_QUALIFIED','PAMOFI_ROUTER_CONTROL_QUALIFIED']){
+   for(const value of ['false',undefined]){
+    if(value===undefined)delete process.env[gate];else process.env[gate]=value;
+    assert.ok(stripeConfiguration(false),`${gate} must not stop signed reconciliation of existing money`);
+    assert.deepEqual(paymentConfiguration(false),{enabled:false,mode:'disabled'},`${gate} must block new live checkout`);
+   }
+   process.env[gate]='true';
+  }
+  assert.deepEqual(paymentConfiguration(false),{enabled:true,mode:'production'});
  }finally{for(const [key,value]of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}}
 });
 
@@ -49,7 +60,7 @@ test('official Stripe SDK sends one bound card intent with a stable server attem
   const body=new URLSearchParams(request.options.body),headers=new Headers(request.options.headers);
   assert.equal(request.url.pathname,'/v1/payment_intents');assert.equal(body.get('amount'),'500');assert.equal(body.get('currency'),'usd');
   assert.equal(body.get('allowed_payment_method_types[0]'),'card');assert.equal(body.get('capture_method'),'automatic');
-  assert.equal(body.get('automatic_payment_methods[allow_redirects]'),'never');
+  assert.equal(body.has('automatic_payment_methods[enabled]'),false,'Endive forbids combining an allowlist with automatic methods');
   assert.equal(body.get('metadata[pasofi_attempt_id]'),t.attemptId);assert.equal(body.get('metadata[pasofi_order_id]'),t.orderId);
   assert.equal(body.get('metadata[pasofi_customer_id]'),t.customerId);assert.equal(body.get('metadata[pasofi_site_id]'),t.siteId);
   assert.equal(headers.get('idempotency-key'),`pasofi-payment-${t.attemptId}`);assert.equal(headers.get('stripe-version'),'2026-10-28.endive');

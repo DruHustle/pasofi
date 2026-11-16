@@ -64,6 +64,9 @@ export function buildRadiusApp(options:Options) {
  }
  app.post<{Body:RadiusInput}>('/radius/authorize',async(request,reply)=>{
   try {
+   // Pausing customer service must reject new Access-Accepts while leaving the
+   // accounting endpoint live so existing sessions can still be settled.
+   if(process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED!=='true')throw new RadiusInvalid();
    const nas=await registeredNas(request),body=request.body;
    const name=value(body,'User-Name'),password=value(body,'User-Password'),sessionId=value(body,'Acct-Session-Id');
    if(!/^[A-Za-z0-9_-]{16,128}$/.test(name) || !/^[A-Za-z0-9_-]{32,128}$/.test(password) || !session.test(sessionId)) throw new RadiusInvalid();
@@ -73,6 +76,7 @@ export function buildRadiusApp(options:Options) {
    if(!Buffer.isBuffer(stored) || stored.length!==32 || !timingSafeEqual(actual,stored) || rows.rowCount!==1) throw new RadiusInvalid();
    const credential=rows.rows[0];
    const grant=await ledger('/internal/v1/radius/grants','radius:grant',{customerId:credential.customer_id,siteId:nas.site_id,nasId:nas.id,requestKey:credential.id,sessionId});
+   if(process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED!=='true')throw new RadiusInvalid();
    // Revocation, expiry or a NAS registry change can occur while the ledger
    // request is in flight. Recheck the live local authority before emitting
    // Access-Accept; a stale successful grant response is not sufficient.

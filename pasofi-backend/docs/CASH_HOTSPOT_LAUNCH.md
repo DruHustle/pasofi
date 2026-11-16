@@ -30,7 +30,7 @@ The gates have separate purposes:
 | `sales_locations.enabled` and `status_version` | New sales availability at one location. The approved-admin action below changes these only; it does not qualify Wi-Fi. |
 | `PAMOFI_RADIUS_QUALIFIED`, `radius-qualified` profile | Prepared/qualified private RADIUS transport and authority. Customer credential issuance remains separate. |
 | `radius_nas.enabled` in the network database | Trusted NAS eligibility for authentication **and accounting**. It is not the sales-location status. |
-| `PAMOFI_CUSTOMER_NETWORK_ENABLED` in prepaid and network | Customer temporary-credential issuance. The public `networkAccess` capability also checks its required authority/configuration. |
+| `PAMOFI_CUSTOMER_NETWORK_ENABLED` in prepaid, network and `radius-api` | Customer temporary-credential issuance and new RADIUS Access-Accepts. Accounting, Stop and reconciliation remain available while paused. The public `networkAccess` capability also checks its required authority/configuration. |
 | `PAMOFI_ROUTER_CONTROL_QUALIFIED` | Input to `router-control.compose.yaml`, mapped to `NETWORK_RECONCILER_ENABLED`. Required for the managed disconnect/absence cycle. |
 | `salesLocationStatus`, `routerFleet`, `routerFleetWrite` capabilities | Availability of specific administration contracts. None enables commerce or customer connections. Fleet administration and session reconciliation use separate configuration. |
 

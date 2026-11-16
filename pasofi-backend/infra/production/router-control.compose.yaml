@@ -1,6 +1,11 @@
 # Optional RouterOS management wiring. Default base/RADIUS deployments leave the
 # reconciler disabled. Use true only for a reviewed controlled activation.
 services:
+  # The prepaid process must observe the same router-control attestation so
+  # live checkout cannot be enabled while session termination is unqualified.
+  prepaid-access:
+    environment:
+      PAMOFI_ROUTER_CONTROL_QUALIFIED: ${PAMOFI_ROUTER_CONTROL_QUALIFIED:?Set explicit router-control qualification to true or false}
   network:
     environment:
       NETWORK_RECONCILER_ENABLED: ${PAMOFI_ROUTER_CONTROL_QUALIFIED:?Set explicit router-control qualification to true or false}

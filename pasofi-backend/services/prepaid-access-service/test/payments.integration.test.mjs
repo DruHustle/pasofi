@@ -50,9 +50,16 @@ test('ambiguous initiation blocks re-initiation and used access reversal is revi
   status='reversed';assert.equal((await reconcileProviderPayment(pool,started.attemptId,adapter)).state,'pending_review');
   assert.equal((await reconcileProviderPayment(pool,started.attemptId,adapter)).state,'pending_review');
   status='verified_success';assert.equal((await reconcileProviderPayment(pool,started.attemptId,adapter)).state,'pending_review');
-  const ent=(await pool.query('SELECT revoked_at,consumed_bytes::text FROM purchase_entitlements WHERE order_id=$1',[order])).rows[0];assert.equal(ent.revoked_at,null);assert.equal(ent.consumed_bytes,'3');
+  const ent=(await pool.query('SELECT revoked_at,consumed_bytes::text FROM purchase_entitlements WHERE order_id=$1',[order])).rows[0];
+  assert.ok(ent.revoked_at,'used entitlement is revoked immediately after payment reversal');
+  assert.equal(ent.consumed_bytes,'3');
+  const fenced=(await pool.query('SELECT state,disconnect_requested_at FROM access_grants WHERE id=$1',[grant.id])).rows[0];
+  assert.equal(fenced.state,'uncertain');
+  assert.ok(fenced.disconnect_requested_at,'the NAS must be disconnected independently');
+  assert.equal((await pool.query('SELECT reason FROM network_account_holds WHERE customer_id=$1',[customer])).rows[0].reason,'payment_reversal_active_access');
+  await assert.rejects(issueGrant(pool,customer,site,randomUUID(),randomUUID(),'another-session'),{code:'accounting_review_required'});
   assert.equal((await pool.query("SELECT id FROM payment_reviews WHERE order_id=$1 AND reason='consumed_reversal'",[order])).rowCount,1);
- }finally{await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);for(const id of [order,uncertainOrder]){await pool.query('DELETE FROM payment_reviews WHERE order_id=$1',[id]);await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[id]);await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[id]);await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[id]);await cleanupInvoiceEvidence(pool,{orderIds:[id]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[id]);}await pool.end();}
+ }finally{await pool.query('DELETE FROM network_account_holds WHERE customer_id=$1',[customer]);await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);for(const id of [order,uncertainOrder]){await pool.query('DELETE FROM payment_reviews WHERE order_id=$1',[id]);await pool.query('DELETE FROM verified_charges WHERE order_id=$1',[id]);await pool.query('DELETE FROM purchase_entitlements WHERE order_id=$1',[id]);await pool.query('DELETE FROM provider_payment_attempts WHERE order_id=$1',[id]);await cleanupInvoiceEvidence(pool,{orderIds:[id]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[id]);}await pool.end();}
 });
 
 test('late initiation response recovers a reference after timeout monitoring',{skip:!url},async()=>{
