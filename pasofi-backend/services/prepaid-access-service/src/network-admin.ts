@@ -18,8 +18,10 @@ export async function resolveNetworkReview(pool:Pool,grantId:string,actorId:stri
   const g=(await client.query(`SELECT *,review_version::text AS version,absent_verified_at>=clock_timestamp()-interval '60 seconds' AND absent_verified_at<=clock_timestamp()+interval '5 seconds' AS fresh FROM access_grants WHERE id=$1 FOR UPDATE`,[grantId])).rows[0];
   if(g.version!==input.expectedVersion)throw new NetworkReviewError('stale_review');
   const hold=(await client.query('SELECT grant_id FROM network_account_holds WHERE customer_id=$1 FOR UPDATE',[g.customer_id])).rows[0];
-  if(g.state!=='uncertain'&&hold?.grant_id!==grantId)throw new NetworkReviewError('review_not_required');
-  if((await client.query("SELECT 1 FROM access_grants WHERE customer_id=$1 AND id<>$2 AND state<>'closed'",[g.customer_id,grantId])).rowCount)throw new NetworkReviewError('another_session_unresolved');
+  if(g.state!=='uncertain'&&hold?.grant_id!==g.id)throw new NetworkReviewError('review_not_required');
+  // Resolve each independently fenced session under the customer lock. The
+  // grant carrying the account hold must be the last one to settle.
+  if((!hold || hold.grant_id===g.id) && (await client.query("SELECT 1 FROM access_grants WHERE customer_id=$1 AND id<>$2 AND state<>'closed'",[g.customer_id,g.id])).rowCount)throw new NetworkReviewError('another_session_unresolved');
   const late=(await client.query("SELECT MAX((detail->>'upload')::numeric)::text AS upload,MAX((detail->>'download')::numeric)::text AS download,MAX(observed_at) AS observed_at FROM grant_reconciliation_events WHERE grant_id=$1 AND kind='late_usage'",[grantId])).rows[0];
   const requiredAt=Math.max(g.issued_at.getTime(),g.last_accounting_at?.getTime()??0,late.observed_at?.getTime()??0);
   if(!g.fresh||!g.absent_verified_at||!g.credential_fenced_at||g.credential_fenced_at.getTime()<g.issued_at.getTime()||g.credential_fenced_at.getTime()>g.absent_verified_at.getTime()||g.absent_verified_at.getTime()<requiredAt)throw new NetworkReviewError('fresh_independent_absence_required');

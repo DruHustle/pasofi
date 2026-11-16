@@ -13,10 +13,11 @@ production Compose still sets `PAMOFI_PAYMENTS_ENABLED=false` and
 2. Checkout commits one provider attempt before contacting Stripe. Its UUID is
    the Stripe idempotency key, with immutable order/customer/site metadata.
    Concurrent retries use the same attempt and PaymentIntent. An ambiguous
-   initiation can be retried only within 23 hours of the original committed
-   attempt, safely inside Stripe's minimum 24-hour API v1 retention. After that,
-   the service preserves the unknown result for reconciliation; it never creates
-   a replacement using a potentially expired Stripe idempotency key.
+   initiation can be sent to Stripe again only while the order is payable,
+   the quote is valid, and the original attempt is less than 23 hours old.
+   Once any of those conditions lapses, the service retains the attempt for
+   reconciliation. A known intent can still be retrieved and an already captured
+   payment can still be credited after the quote expires.
 3. The web app mounts Stripe's Payment Element for cards. Native apps present
    Stripe PaymentSheet for cards and the available, configured platform wallet.
    Stripe owns card collection and authentication. No raw card number, CVC or
@@ -116,6 +117,7 @@ Use **Your account** snapshot events, not Connect or organization-wide events.
 Pin the endpoint to the integration's Stripe API version `2026-10-28.endive` and
 subscribe to:
 
+- `payment_intent.created`
 - `payment_intent.succeeded`
 - `payment_intent.payment_failed`
 - `payment_intent.processing`
@@ -124,6 +126,11 @@ subscribe to:
 - `charge.dispute.created`
 - `charge.dispute.updated`
 - `charge.dispute.closed`
+
+If the service loses the creation response, the creation event can recover the
+original intent before the customer has entered payment details. The service
+retrieves the intent from Stripe and checks the stored purchase terms. Access
+is issued only after a separate check confirms capture.
 
 Both gateway variants expose only this exact callback path for POST. The Vercel
 browser API proxy does not accept arbitrary callbacks. Signature verification is

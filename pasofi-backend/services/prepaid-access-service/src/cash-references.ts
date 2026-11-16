@@ -21,7 +21,7 @@ export async function lookupCashReference(pool: Pool, code: string, siteId: stri
     FROM receipt_pairings p
     JOIN sales_locations l ON l.id=p.site_id
     JOIN bundle_versions b ON b.id=p.bundle_id
-    LEFT JOIN cash_shifts s ON s.agent_id=$3 AND s.site_id=p.site_id AND s.currency=p.currency AND s.closed_at IS NULL
+    LEFT JOIN cash_shifts s ON s.agent_id=$3 AND s.site_id=p.site_id AND s.currency=p.currency AND s.closed_at IS NULL AND NOT s.refund_only
     LEFT JOIN agent_site_inventory i ON i.agent_id=$3 AND i.site_id=p.site_id AND i.bundle_id=p.bundle_id
    WHERE p.code_hash=$1 AND p.site_id=$2`, [referenceHash(code),siteId,agentId]);
  const row=rows[0];

@@ -124,7 +124,7 @@ export async function stripePresentation(pool:Pool,customerId:string,attemptId:s
 // A signed event wakes the existing reconciliation worker. Only a fresh Stripe
 // retrieval matching immutable order terms can reach transactional fulfillment.
 export async function enqueueStripeEvent(pool:Pool,adapter:StripeAdapter,event:Stripe.Event):Promise<void> {
- const supported=new Set(['payment_intent.succeeded','payment_intent.payment_failed','payment_intent.processing','payment_intent.canceled',
+ const supported=new Set(['payment_intent.created','payment_intent.succeeded','payment_intent.payment_failed','payment_intent.processing','payment_intent.canceled',
   'charge.refunded','charge.dispute.created','charge.dispute.updated','charge.dispute.closed']);
  if(!supported.has(event.type))return;
  if(event.livemode!==adapter.config.live||event.account!==undefined||!/^evt_[A-Za-z0-9]{1,128}$/.test(event.id))throw Error('stripe_event_scope_mismatch');

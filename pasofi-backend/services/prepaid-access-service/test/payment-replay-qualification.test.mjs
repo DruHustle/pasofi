@@ -8,13 +8,17 @@ import {StripeAdapter,stripePresentation} from '../dist/stripe.js';
 // transport are isolated fixtures; no account, credential, network or charge is used.
 function fixture({reference=null,ageSeconds=60}={}){
  const customerId=randomUUID(),orderId=randomUUID(),requestKey=randomUUID(),siteId=randomUUID(),attemptId=randomUUID();
- const order={id:orderId,customer_id:customerId,price_minor:500,currency:'USD',status:'awaiting_payment',quote_valid:true,expired_unused_at:null};
+ const order={id:orderId,customer_id:customerId,price_minor:500,currency:'USD',status:'awaiting_payment',quote_expires_at:new Date(Date.now()+60000),expired_unused_at:null};
  const attempt={id:attemptId,order_id:orderId,customer_id:customerId,request_key:requestKey,site_id:siteId,method_code:'STRIPE_CARD',provider:'stripe_test',
   state:reference?'pending':'unknown',provider_reference:reference,redirect_url:null,created_at:new Date(Date.now()-ageSeconds*1000).toISOString()};
  const events=[],writes=[];
  const query=async(sql,args=[])=>{
   if(sql==='BEGIN'||sql==='COMMIT'||sql==='ROLLBACK'||sql.startsWith('SELECT pg_advisory'))return {rows:[],rowCount:0};
-  if(sql.startsWith('SELECT *,quote_expires_at'))return args[0]===orderId&&args[1]===customerId?{rows:[{...order}],rowCount:1}:{rows:[],rowCount:0};
+  if(sql.startsWith('SELECT * FROM purchase_orders WHERE id=$1 AND customer_id=$2 FOR UPDATE'))return args[0]===orderId&&args[1]===customerId?{rows:[{...order}],rowCount:1}:{rows:[],rowCount:0};
+  if(sql.startsWith("SELECT status='awaiting_payment' AND expired_unused_at IS NULL")) {
+   assert.equal(args[0],orderId);
+   return {rows:[{payable:order.status==='awaiting_payment' && !order.expired_unused_at && order.quote_expires_at.getTime()>Date.now()}],rowCount:1};
+  }
   if(sql.startsWith('SELECT * FROM provider_payment_attempts WHERE customer_id'))return {rows:[{...attempt}],rowCount:1};
   if(sql.startsWith('WITH updated AS')){writes.push(args);return {rows:[{state:args[1],redirect_url:args[3]}],rowCount:1};}
   if(sql.startsWith('SELECT a.*,o.price_minor,o.currency'))return args[0]===attemptId&&args[1]===customerId?{rows:[{...attempt,price_minor:500,currency:'USD'}],rowCount:1}:{rows:[],rowCount:0};

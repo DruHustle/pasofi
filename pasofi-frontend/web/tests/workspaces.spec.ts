@@ -660,3 +660,29 @@ test('a rejected shift close releases the old count before the agent settles a r
   expect(requests.map(item=>item.counted)).toEqual([100,50]);
   expect(requests[1].key).not.toBe(requests[0].key);
 });
+
+test('an agent can open a refund drawer while sales and all sale locations are paused', async ({page})=>{
+  const posts: unknown[]=[];
+  await mock(page, async (route,path,method)=>{
+    if(path==='/api/capabilities'){await json(route,{...capabilities,staffSales:false});return true;}
+    if(path==='/api/staff/session'){await json(route,staff());return true;}
+    if(path==='/api/staff/sites'){await json(route,{sites:[]});return true;}
+    if(path==='/api/staff/inventory'){await json(route,{inventory:[]});return true;}
+    if(path==='/api/staff/sales'){await json(route,{sales:[],hasMore:false,nextOffset:null});return true;}
+    if(path==='/api/staff/cash-shifts'){
+      if(method==='POST'){posts.push(route.request().postDataJSON());await json(route,{replayed:false},201);}
+      else await json(route,{shifts:[],currencies:['USD'],refundOptions:posts.length?[]:[{siteId,siteName:'Paused site',currency:'ZWG'}]});
+      return true;
+    }
+    return false;
+  });
+  await openStaff(page);
+  await expect(page.getByRole('button',{name:'Open shift',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'Open refund shift for Paused site · ZWG'}).click();
+  await page.getByLabel('Opening cash float').fill('2.50');
+  await page.getByRole('checkbox',{name:'I have counted the cash and confirm this amount.'}).check();
+  await page.getByRole('button',{name:'Confirm refund-only shift'}).click();
+  await expect(page.getByText('Cash shift saved.',{exact:false})).toBeVisible();
+  expect(posts).toEqual([{siteId,currency:'ZWG',openingMinor:250,refundOnly:true}]);
+  await expect(page.getByRole('button',{name:'Open shift',exact:true})).toBeDisabled();
+});

@@ -2,7 +2,7 @@ import { ApiError } from './api';
 
 export type Capabilities = {
   demo: boolean; paymentMode: 'disabled' | 'mock' | 'sandbox' | 'production';
-  paymentCheckout: boolean; vouchers: boolean; receiptPairing: boolean;
+  paymentCheckout: boolean; vouchers: boolean; receiptPairing: boolean; cashReceiptRecovery?: boolean;
   invoices?: boolean; invoiceEmail?: boolean; invoiceSms?: boolean;
   staffSales: boolean; inventoryAllocation?: boolean; salesLocationStatus?: boolean; deliverySms: boolean; networkAccess: boolean; mobileCookies: boolean;
   routerFleet?: boolean; routerFleetWrite?: boolean;
@@ -33,6 +33,7 @@ export function messageFor(error: unknown, fallback = 'This request could not be
     session_pending_or_active: 'A hotspot session is still open. Check its status before starting another connection.',
     cookie_not_kept: 'This browser did not keep the account cookie. Allow cookies for the configured PasoFi service, then retry. No voucher or payment was submitted.',
     version_conflict: 'This record changed while you were reviewing it. Refresh and review the current details.',
+    sale_not_recorded: 'No sale was found for this request. New sales are paused. Check sales history before returning any cash.',
     cash_sale_site_unavailable: 'Sales are paused at this location. Return any cash received for this sale to the customer.',
     site_unavailable: 'New sales are paused or unavailable at this sales location. Paid receipts and existing allowances remain available.',
     staff_changed: 'This staff record changed. Refresh and review the latest details.',

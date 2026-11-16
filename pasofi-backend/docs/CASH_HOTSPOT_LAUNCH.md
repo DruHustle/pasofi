@@ -26,7 +26,7 @@ The gates have separate purposes:
 
 | Existing source/configuration | Meaning |
 | --- | --- |
-| `PAMOFI_COMMERCE_ENABLED` in prepaid | Global receipt pairing, voucher redemption and agent sales availability, also requiring the valid delivery keyring and configuration. This is broader than pausing one selling location. |
+| `PAMOFI_COMMERCE_ENABLED` in prepaid | Controls new receipt pairings, voucher redemption and new agent sales across all locations. With a working database and retained delivery keys, authorized users can still read existing private receipts and an agent can retry an already-recorded sale. |
 | `sales_locations.enabled` and `status_version` | New sales availability at one location. The approved-admin action below changes these only; it does not qualify Wi-Fi. |
 | `PAMOFI_RADIUS_QUALIFIED`, `radius-qualified` profile | Prepared/qualified private RADIUS transport and authority. Customer credential issuance remains separate. |
 | `radius_nas.enabled` in the network database | Trusted NAS eligibility for authentication **and accounting**. It is not the sales-location status. |
@@ -44,7 +44,7 @@ In the extracted qualified Mac release folder, run:
 /bin/bash ./release-deploy.command
 ```
 
-Supply only the established installation references. Review the preflight's exact service/overlay/database scope before its apply step. The [deployment engine](../local-tools/manual%20deployment/RELEASE_DEPLOY.md) retains the complete existing overlay order, named database volume, secrets and launch gates. It runs owned pending migrations and role grants before replacing applications. This release adds prepaid `031_sales_location_status.sql`; retain all earlier applied migrations, including the paid-invoice migration `030_paid_invoices.sql`.
+Supply only the established installation references. Review the preflight's exact service/overlay/database scope before its apply step. The [deployment engine](../local-tools/manual%20deployment/RELEASE_DEPLOY.md) retains the complete existing overlay order, named database volume, secrets and launch gates. It runs owned pending migrations and role grants before replacing applications. Verify that the prepaid migration history includes `034_refund_only_cash_shifts.sql` before starting this release. It adds refund-only drawers and preserves existing shifts.
 
 Check the deployment's private completion/rollback record and actual running images. A later failure can leave completed migrations or some replaced applications; use the recorded state to recover. Check readiness through the real gateway and authenticated staff session, not just a static homepage.
 
@@ -162,7 +162,7 @@ Verify an actual scheduled check and alert receipt, external HTTPS monitoring, q
 
 ## 9. Pause, drain and roll back safely
 
-1. **Pause new cash sales locally** using the audited sales-location action and a reason. Refresh its current version/status and tell the operating staff through the established process. The per-location pause retains receipts, idempotent sale recovery, stock and account history. Avoid using the broader global commerce gate for an ordinary location pause; it also gates receipt-pairing/redemption/private-voucher routes.
+1. **Pause new cash sales locally** using the audited sales-location action and a reason. Refresh its current version/status and tell the operating staff through the established process. The per-location pause retains receipts, idempotent sale recovery, stock and account history. Use the global commerce switch when issuing new cash sales, creating new pairings and redeeming vouchers must pause across all locations. With identity, the database and the delivery keys available, an agent can recover an already-recorded sale using the same request, and a customer can retrieve the private receipt. When the original drawer has closed and the usual shift is unavailable, the assigned issuing agent can open a refund-only shift for an approved refund in the sale currency.
 2. **Pause new network credentials** with the reviewed customer-network gate in prepaid/network. This does not itself disconnect an existing session or instantly revoke an already-issued temporary credential. Preserve customer session/usage reads and disconnect requests. Keep the authority, tunnel, runtime ledger and reconciler available to settle sessions.
 3. **Drain and account.** Obtain the final Stop/absence/closed evidence for active sessions, or retain explicit unresolved holds. Do not set `radius_nas.enabled=false` first: both authentication and accounting require an enabled registered NAS, so that could reject the final accounting needed for safe settlement. Do not stop RADIUS/private HTTPS simply because the sale screen is paused.
 4. **Perform the scoped maintenance.** After the drain decision, disable the exact NAS/transport only when the reviewed maintenance plan requires it. Handle `pamofi-radius-ensure.timer` before any planned protected RADIUS stop/replacement; otherwise it may restore the very containers being stopped. Keep the local recovery path and unrelated site's service intact. An urgent safety outage may require immediate network isolation; record remaining sessions as uncertain and reconcile before reopening.

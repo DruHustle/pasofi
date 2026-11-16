@@ -96,6 +96,11 @@ export async function recordAccounting(pool:Pool, event:TrustedAccounting) {
     if(grant.site_id!==event.siteId || grant.nas_id!==event.nasId || grant.generation!==event.generation) throw new GrantError('grant_context_mismatch');
     if(!grant.accounting_session_id || grant.accounting_session_id!==event.sessionId) throw new GrantError('session_mismatch');
     if(!grant.accounting_started_at && event.kind!=='start') throw new GrantError('start_required');
+    // The RADIUS adapter sends zero counters on Start. A retransmission for
+    // this same session is no new usage or evidence that it is still online.
+    if(grant.accounting_started_at && event.kind==='start' && event.upload===0n && event.download===0n) {
+      return {state:grant.state,chargedBytes:grant.charged};
+    }
     const oldUp=BigInt(grant.upload), oldDown=BigInt(grant.download);
     if(grant.state==='closed') {
       if(event.upload>oldUp || event.download>oldDown) {

@@ -58,6 +58,56 @@ test('Stripe concurrent retry, duplicate webhook and reordered delivery fulfill 
  }finally{await f.cleanup();}
 });
 
+test('creation event recovers an unpaid checkout while the original Stripe response is lost', {skip: !url}, async () => {
+ const f = await fixture();
+ try {
+  const create = f.adapter.client.paymentIntents.create;
+  f.adapter.client.paymentIntents.create = async (body, options) => {
+   await create(body, options);
+   const event = f.event('payment_intent.created');
+   await enqueueStripeEvent(f.pool, f.adapter, event);
+   await enqueueStripeEvent(f.pool, f.adapter, event);
+   throw Error('response lost after creation');
+  };
+  const started = await f.start();
+  assert.equal(started.state, 'pending');
+  const presentation = await stripePresentation(f.pool, f.customer, started.attemptId, f.adapter);
+  assert.equal(presentation?.clientSecret, [...f.intents.values()][0].client_secret);
+  assert.equal(await stripePresentation(f.pool, randomUUID(), started.attemptId, f.adapter), null);
+  assert.equal((await reconcileProviderPayment(f.pool, started.attemptId, f.adapter)).state, 'pending');
+  assert.equal((await f.pool.query('SELECT id FROM purchase_entitlements WHERE order_id=$1', [f.order])).rowCount, 0);
+  assert.equal((await f.start()).attemptId, started.attemptId);
+  assert.equal(f.calls.length, 1);
+  f.succeed();
+  await enqueueStripeEvent(f.pool, f.adapter, f.event());
+  assert.equal((await reconcileProviderPayment(f.pool, started.attemptId, f.adapter)).state, 'fulfilled');
+  assert.equal((await f.pool.query('SELECT id FROM paid_invoices WHERE order_id=$1', [f.order])).rowCount, 1);
+ } finally {
+  await f.cleanup();
+ }
+});
+
+test('an expired quote preserves an uncertain Stripe attempt for webhook recovery without another create call',{skip:!url},async()=>{
+ const f=await fixture();
+ try{
+  f.loseResponse(true);
+  const started=await f.start();
+  assert.equal(started.state,'unknown');
+  await f.pool.query("UPDATE purchase_orders SET quote_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",[f.order]);
+  const uncertain=await f.start();
+  assert.equal(uncertain.attemptId,started.attemptId);assert.equal(uncertain.state,'unknown');
+  assert.equal(f.calls.length,1);
+  assert.equal(await stripePresentation(f.pool,f.customer,started.attemptId,f.adapter),null);
+  await enqueueStripeEvent(f.pool,f.adapter,f.event('payment_intent.created'));
+  const known=await f.start();
+  assert.equal(known.attemptId,started.attemptId);assert.equal(known.state,'pending');
+  assert.ok((await stripePresentation(f.pool,f.customer,known.attemptId,f.adapter))?.clientSecret);
+  assert.equal(f.calls.length,1);
+  f.succeed();await enqueueStripeEvent(f.pool,f.adapter,f.event());
+  assert.equal((await reconcileProviderPayment(f.pool,started.attemptId,f.adapter)).state,'fulfilled');
+ }finally{await f.cleanup();}
+});
+
 test('verified webhook recovers the original Stripe reference after a lost create response without creating another intent',{skip:!url},async()=>{
  const f=await fixture();try{
   f.loseResponse(true);const started=await f.start();assert.equal(started.state,'unknown');assert.equal(f.intents.size,1);

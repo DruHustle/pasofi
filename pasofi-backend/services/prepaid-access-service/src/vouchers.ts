@@ -24,10 +24,9 @@ async function makeVoucher(client:PoolClient,saleId:string,parentId:string|null,
 }
 // These domain functions are called only after the commerce boundary resolves
 // the current MFA-verified staff role and enforces its approved site scope.
-export type SaleOptions={siteInventory?:boolean;commissionBps?:number;siteName?:string;delivery?:'receipt'|'sms'|'both';pairingCode?:string;phone?:string;simulation?:boolean;payment?:unknown;invoiceDelivery?:unknown};
+export type SaleOptions={replayOnly?:boolean;siteInventory?:boolean;commissionBps?:number;siteName?:string;delivery?:'receipt'|'sms'|'both';pairingCode?:string;phone?:string;simulation?:boolean;payment?:unknown;invoiceDelivery?:unknown};
 export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bundleId:string, requestKey:string, deliveryKey:DeliveryKeys,options:SaleOptions={}) {
  const commissionBps=options.commissionBps??0,delivery=options.delivery??'receipt';
- if(!Number.isInteger(commissionBps)||commissionBps<0||commissionBps>10000)throw new VoucherError('invalid_commission');
  const payment=options.payment&&typeof options.payment==='object'&&!Array.isArray(options.payment)?options.payment as Record<string,unknown>:null;
  const intent={siteId,bundleId,delivery,pairingCode:options.pairingCode??null,phone:options.phone??null};
  const legacyFingerprint=digest(JSON.stringify(intent));
@@ -44,6 +43,8 @@ export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bund
     if(!voucher.rowCount) throw new VoucherError('delivery_unavailable');
     return {saleId:sale.id,voucherId:voucher.rows[0].id,code:format(decrypt(voucher.rows[0],deliveryKey)),replayed:true};
   }
+  if(options.replayOnly)throw new VoucherError('sale_not_recorded');
+  if(!Number.isInteger(commissionBps)||commissionBps<0||commissionBps>10000)throw new VoucherError('invalid_commission');
   // Serialize a new sale with a location pause. The boundary's earlier read
   // cannot prevent a concurrent status change. Holding a shared row lock until
   // commit means a confirmed pause blocks subsequent sales, while replay above
@@ -65,7 +66,7 @@ export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bund
   if(options.siteInventory&&(!Number.isSafeInteger(payment!.amountMinor)||payment!.amountMinor!==product.rows[0].price_minor||payment!.currency!==product.rows[0].currency))throw new VoucherError('cash_amount_mismatch');
   let shiftId:string|null=null;
   if(options.siteInventory){
-   const shift=(await client.query('SELECT id FROM cash_shifts WHERE agent_id=$1 AND site_id=$2 AND currency=$3 AND closed_at IS NULL FOR UPDATE',[agentId,siteId,product.rows[0].currency])).rows[0];
+   const shift=(await client.query('SELECT id FROM cash_shifts WHERE agent_id=$1 AND site_id=$2 AND currency=$3 AND closed_at IS NULL AND NOT refund_only FOR UPDATE',[agentId,siteId,product.rows[0].currency])).rows[0];
    if(!shift)throw new VoucherError('shift_required');shiftId=shift.id;
   }
   const stock=options.siteInventory?

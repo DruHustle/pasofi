@@ -18,8 +18,8 @@ Keep the folder's files together. Leave `source.tar.gz` compressed. Folder names
 | --- | --- |
 | Preferred existing SSH alias | `onesa-portal-worker` — provided address `100.80.225.21` |
 | Existing fallback SSH alias | `onesa-portal-worker-public` — provided address `92.5.170.138` |
-| Public website | `https://pasofi.onesa.eu` |
-| Backend HTTPS boundary | `https://api.pamofi.onesa.eu` |
+| Public website | `https://pasofi.mobile.onesa.eu` |
+| Backend HTTPS boundary | `https://api.pasofi.onesa.eu` |
 | Source release and archive checksum | Included in `release.json` |
 | Existing project, ordered Compose overlays and environment files | Read automatically from the running installation's recorded metadata |
 | Expected PostgreSQL cluster | Independently retained server record, checked against the running database |
