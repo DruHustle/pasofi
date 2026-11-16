@@ -103,7 +103,13 @@ export async function recordAccounting(pool:Pool, event:TrustedAccounting) {
         // ignored packet or a second debit against a newly reserved allowance.
         await client.query(`INSERT INTO network_account_holds(customer_id,grant_id,reason) VALUES($1,$2,'usage_after_final_stop') ON CONFLICT(customer_id) DO NOTHING`,[grant.customer_id,grant.id]);
         await client.query("UPDATE access_grants SET state='uncertain',accounting_anomaly=true,disconnect_requested_at=COALESCE(disconnect_requested_at,now()) WHERE customer_id=$1 AND state<>'closed'",[grant.customer_id]);
-        await client.query('UPDATE access_grants SET accounting_anomaly=true,last_accounting_at=now() WHERE id=$1',[grant.id]);
+        // Reopen this exact closed grant even if the customer hold already points
+        // at another uncertain session. Retain its original reservation until
+        // an operator reconciles final counters; the account hold prevents any
+        // new grant while every unresolved physical session is disconnected.
+        await client.query(`UPDATE access_grants SET state='uncertain',accounting_anomaly=true,
+          disconnect_requested_at=COALESCE(disconnect_requested_at,now()),absent_verified_at=NULL,closed_at=NULL,last_accounting_at=now()
+          WHERE id=$1`,[grant.id]);
         await client.query("INSERT INTO grant_reconciliation_events(id,grant_id,kind,observed_at,detail) VALUES($1,$2,'late_usage',now(),$3)",[randomUUID(),grant.id,JSON.stringify({upload:event.upload.toString(),download:event.download.toString()})]);
         return {state:'uncertain',chargedBytes:grant.charged};
       }
@@ -137,7 +143,7 @@ export async function recordAccounting(pool:Pool, event:TrustedAccounting) {
 export type AbsenceEvidence={grantId:string;siteId:string;nasId:string;generation:string;sessionId:string;observationId:string;observedAt:string;credentialRevokedAt:string;absent:boolean};
 export async function reconcileGrant(pool:Pool,evidence:AbsenceEvidence) {
   const observed=Date.parse(evidence.observedAt),revoked=Date.parse(evidence.credentialRevokedAt);
-  if(!Number.isFinite(observed)||!Number.isFinite(revoked)||revoked>observed||observed>Date.now()+5000||observed<Date.now()-60000) throw new GrantError('invalid_evidence_time');
+  if(!Number.isFinite(observed)||!Number.isFinite(revoked)||revoked>observed) throw new GrantError('invalid_evidence_time');
   return transaction(pool,async client=>{
     const owner=await client.query('SELECT customer_id FROM access_grants WHERE id=$1',[evidence.grantId]);
     if(!owner.rowCount)throw new GrantError('unknown_grant');
@@ -150,13 +156,50 @@ export async function reconcileGrant(pool:Pool,evidence:AbsenceEvidence) {
     if(previous.rowCount) {
       const p=previous.rows[0];
       if(p.grant_id!==g.id||p.kind!==(evidence.absent?'absent':'present')||p.observed_at.getTime()!==observed||Date.parse(p.detail.credentialRevokedAt)!==revoked)throw new GrantError('evidence_conflict');
+      const hold=await client.query('SELECT 1 FROM network_account_holds WHERE customer_id=$1 AND grant_id=$2',[g.customer_id,g.id]);
+      if(hold.rowCount)return {state:'uncertain',closed:false,reviewRequired:true};
       return {state:g.state,closed:g.state==='closed'};
+    }
+    // A committed observation can be acknowledged again without refreshing its evidence.
+    const now=Date.now();
+    if(observed>now+5000||observed<now-60000)throw new GrantError('invalid_evidence_time');
+    if(evidence.absent) {
+      // Requests may arrive out of order. At the same observation time,
+      // positive evidence of a live session takes precedence over absence.
+      const present=await client.query(`SELECT 1 FROM grant_reconciliation_events
+        WHERE grant_id=$1 AND kind='present' AND observed_at>=$2::timestamptz LIMIT 1`,
+        [g.id,evidence.observedAt]);
+      if(present.rowCount)throw new GrantError('superseded_observation');
     }
     await client.query('INSERT INTO grant_reconciliation_events(id,grant_id,kind,observed_at,detail) VALUES($1,$2,$3,$4,$5)',[evidence.observationId,g.id,evidence.absent?'absent':'present',evidence.observedAt,JSON.stringify({credentialRevokedAt:evidence.credentialRevokedAt})]);
     if(g.state==='closed') {
-      // A later contradictory usage report can put a settled grant on hold.
-      // Refresh only termination evidence for an audited operator resolution.
-      await client.query('UPDATE access_grants SET credential_fenced_at=$2,absent_verified_at=CASE WHEN $3 THEN $4::timestamptz ELSE NULL END WHERE id=$1',[g.id,evidence.credentialRevokedAt,evidence.absent,evidence.observedAt]);
+      // A router sighting at or after the absence used to close this grant is
+      // contradictory physical evidence, even when accounting totals did not
+      // increase. Never silently clear the proof and allow a newer session.
+      if(!evidence.absent) {
+        if(!g.absent_verified_at || observed>=g.absent_verified_at.getTime()) {
+          await client.query(`INSERT INTO network_account_holds(customer_id,grant_id,reason)
+            VALUES($1,$2,'session_present_after_closure') ON CONFLICT(customer_id) DO NOTHING`,[g.customer_id,g.id]);
+          await client.query(`UPDATE access_grants SET state='uncertain',accounting_anomaly=true,
+            disconnect_requested_at=COALESCE(disconnect_requested_at,now())
+            WHERE customer_id=$1 AND state<>'closed'`,[g.customer_id]);
+          // Reopen this exact grant for reconciliation as well. A customer may
+          // already have a hold tied to a different grant; ON CONFLICT above
+          // must not leave this newly observed router session invisible to the
+          // disconnect worker merely because the account was already held.
+          await client.query(`UPDATE access_grants SET state='uncertain',accounting_anomaly=true,
+            disconnect_requested_at=COALESCE(disconnect_requested_at,now()),absent_verified_at=NULL,closed_at=NULL
+            WHERE id=$1`,[g.id]);
+          return {state:'uncertain',closed:false,reviewRequired:true};
+        }
+        // An out-of-order historical sighting predating the closure is harmless.
+        return {state:'closed',closed:true};
+      }
+      // Older absence receipts must not roll back an already settled proof.
+      await client.query(`UPDATE access_grants
+        SET credential_fenced_at=GREATEST(credential_fenced_at,$2::timestamptz),
+            absent_verified_at=GREATEST(absent_verified_at,$3::timestamptz)
+        WHERE id=$1`,[g.id,evidence.credentialRevokedAt,evidence.observedAt]);
       return {state:'closed',closed:true};
     }
     const complete=evidence.absent && g.accounting_started_at && g.stop_received_at && !g.accounting_anomaly &&
