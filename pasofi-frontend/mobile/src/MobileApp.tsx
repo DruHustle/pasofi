@@ -47,7 +47,8 @@ export default function MobileApp() {
   const [selected, setSelected] = useState<string | null>(null), [category, setCategory] = useState<Category>('all');
   const [handoffReturn, setHandoffReturn] = useState(0);
   useEffect(() => onAccountHandoffReturn(() => {
-    if (!mobileApiConfigured) return;
+    // The OS return must open a safe account surface even in an unconfigured
+    // build. MobileCustomer enforces the service gate before any handoff.
     setHandoffReturn(previous => previous + 1);
     setAccountOpen(true);
   }), []);
