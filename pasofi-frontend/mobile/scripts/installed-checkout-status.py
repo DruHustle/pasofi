@@ -1,5 +1,7 @@
 """Operate the installed qualification APK via Android's accessibility tree."""
 import re
+import os
+from pathlib import Path
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -51,6 +53,22 @@ def tap(label, allow_scroll=False, exact=False):
 
 
 def account_return_diagnostics():
+    # This qualification run is a fresh install with no account, credentials,
+    # or payment input. Retain its public first-run UI when acceptance fails.
+    nodes = screen()
+    labels = list(dict.fromkeys(node.get(key) for node in nodes
+                               for key in ("text", "content-desc") if node.get(key)))
+    print("Observed public first-run accessibility labels:", labels[:40], flush=True)
+    evidence = os.environ.get("PASOFI_ANDROID_EVIDENCE_DIR")
+    if evidence:
+        try:
+            directory = Path(evidence)
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "first-run.xml").write_text(adb("shell", "cat", "/sdcard/onesa-qualification.xml"))
+            with (directory / "first-run.png").open("wb") as output:
+                subprocess.run(["adb", "exec-out", "screencap", "-p"], stdout=output, check=True, timeout=20)
+        except Exception as error:
+            print("Could not retain first-run UI: " + type(error).__name__, flush=True)
     try:
         activity = adb("shell", "dumpsys", "activity", "activities")
         relevant = [line.strip() for line in activity.splitlines()
@@ -91,7 +109,6 @@ def account_return_state():
                 print("Installed app opened the account surface and preserved the fail-closed service gate: " + gate, flush=True)
                 return
         time.sleep(1)
-    account_return_diagnostics()
     raise RuntimeError("The installed PasoFi activity did not expose the account handoff form or a recognized fail-closed service gate after cold-start; see activity and AndroidRuntime diagnostics")
 
 
@@ -144,5 +161,8 @@ if __name__ == "__main__":
             adb("shell", "input", "swipe", "480", "1180", "480", "440", "360")
         else:
             raise RuntimeError("Configured checkout state did not appear")
+    except Exception:
+        account_return_diagnostics()
+        raise
     finally:
         adb("shell", "rm", "-f", "/sdcard/onesa-qualification.xml")
