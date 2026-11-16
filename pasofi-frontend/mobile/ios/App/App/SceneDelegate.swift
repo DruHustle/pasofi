@@ -33,7 +33,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-        let otherURLs = Set(URLContexts.filter { !PasoFiStripePlugin.consumeReturnURL($0.url) })
+        let otherURLs = Set(URLContexts.filter { !PasoFiStripePlugin.consumeReturnURL($0.url) && !PasoFiCustomerApiPlugin.consumeAccountReturn($0.url) })
         if !otherURLs.isEmpty {
             SceneDelegateProxy.shared.scene(scene, openURLContexts: otherURLs)
         }

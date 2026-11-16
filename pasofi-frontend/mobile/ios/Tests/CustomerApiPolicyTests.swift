@@ -21,6 +21,12 @@ struct CustomerApiPolicyTests {
         try CustomerApiPolicy.request(id: id, path: path, method: method, responseType: type, data: data, key: key)
     }
     static func main() throws {
+        var accountReturnQueue = AccountHandoffReturnQueue()
+        check(!accountReturnQueue.takePending(), "No cold-start account return is pending by default")
+        accountReturnQueue.recordBeforePluginLoad()
+        check(accountReturnQueue.takePending(), "Cold-start account return is retained until plugin load")
+        check(!accountReturnQueue.takePending(), "Cold-start account return is delivered only once")
+
         check(CustomerApiPolicy.origin(origin) == origin, "Public HTTPS origin accepted")
         check(CustomerApiPolicy.browserSignInURL(origin)?.absoluteString == origin + "/#account", "Only fixed public sign-in destination")
         _ = try request("/api/onesa/availability"); checks += 1

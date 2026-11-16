@@ -21,6 +21,7 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
 
     private static let ownerQueue = DispatchQueue(label: "com.onesa.pasofi.customer-api")
     private static weak var owner: PasoFiCustomerApiPlugin?
+    private static let accountReturnQueue = AccountHandoffReturnQueue()
     private let stateQueue = PasoFiCustomerApiPlugin.ownerQueue
     private var configuredOrigin: String?
     private var state: CustomerSessionState?
@@ -50,13 +51,35 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
 
     public override func load() {
         let origin = CustomerApiPolicy.origin(getConfig().getString("origin") ?? "")
-        stateQueue.sync {
+        let deliverPendingReturn = stateQueue.sync {
             // A recreated view controller cannot race its predecessor's private
             // state commit. Admission and persistence use this same process queue.
             Self.owner?.abandonDocument()
             Self.owner = self
             configuredOrigin = origin
+            return Self.accountReturnQueue.takePending()
         }
+        if deliverPendingReturn {
+            notifyListeners("accountHandoffReturn", data: [:], retainUntilConsumed: true)
+        }
+    }
+
+    static func consumeAccountReturn(_ url: URL) -> Bool {
+        guard url.scheme == "com.onesa.pasofi", url.host == "account" else { return false }
+        // Consume malformed links here too. No URL, code or customer data enters JS.
+        if url.absoluteString == "com.onesa.pasofi://account/handoff" {
+            let plugin = ownerQueue.sync { () -> PasoFiCustomerApiPlugin? in
+                guard let plugin = owner else {
+                    // SceneDelegate may receive the cold-start URL before the
+                    // Capacitor bridge has constructed this plugin.
+                    accountReturnQueue.recordBeforePluginLoad()
+                    return nil
+                }
+                return plugin
+            }
+            plugin?.notifyListeners("accountHandoffReturn", data: [:], retainUntilConsumed: true)
+        }
+        return true
     }
 
     private func abandonDocument() {

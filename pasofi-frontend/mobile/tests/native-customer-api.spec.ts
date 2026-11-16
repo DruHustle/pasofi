@@ -48,7 +48,7 @@ const test = base.extend<{}, { configuredBaseURL: string }>({
 // modules and React capability gate execute unchanged. Platform cookie/Keychain
 // behavior is covered separately by the Android and Swift policy tests.
 async function nativeBridge(page: Page, handler: (request: NativeRequest) => NativeReply | NativeFailure | Promise<NativeReply | NativeFailure>,
-  options: { platform?: 'ios' | 'android'; availability?: Record<string, unknown>; absent?: boolean; launchUrlFailure?: boolean; authenticate?: (url: string) => Promise<string>; cancel?: (requestId: string) => void } = {}) {
+  options: { platform?: 'ios' | 'android'; availability?: Record<string, unknown>; absent?: boolean; handoffPending?: boolean; launchUrlFailure?: boolean; authenticate?: (url: string) => Promise<string>; cancel?: (requestId: string) => void } = {}) {
   const calls: { method: string; options: Record<string, unknown> }[] = [];
   await page.exposeFunction('__syntheticCustomerApi', async (method: string, input: Record<string, unknown>) => {
     calls.push({ method, options: input });
@@ -59,17 +59,24 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
     if (method === 'request') return { requestId: input.requestId, ...await handler(input as NativeRequest) };
     throw Error('Unexpected native method');
   });
-  await page.addInitScript(({ platform, absent, apiOrigin, managed, launchUrlFailure }) => {
+  await page.addInitScript(({ platform, absent, apiOrigin, managed, launchUrlFailure, handoffPending }) => {
     const runtime = window as any;
     let nextListener = 0;
     const identityListeners = new Map<string, (event: { url: string }) => void>();
+    const handoffListeners = new Map<string, (event: object) => void>();
+    let pendingHandoff = handoffPending ? crypto.randomUUID() : null;
+    runtime.__pendingHandoffReturn = () => pendingHandoff;
+    runtime.__returnToHandoff = () => {
+      pendingHandoff = crypto.randomUUID();
+      for (const listener of [...handoffListeners.values()]) listener({});
+    };
     runtime.__identityListenerCount = () => identityListeners.size;
     runtime.__deliverIdentityReturn = (url: string) => {
       for (const listener of [...identityListeners.values()]) listener({ url });
     };
     runtime.CapacitorCustomPlatform = { name: platform };
     runtime.Capacitor = {
-      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: ['availability', 'request', 'cancel', 'openSignIn', 'authenticate'].map(name => ({ name, rtype: 'promise' })) }],
+      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: [...['availability', 'request', 'cancel', 'openSignIn', 'authenticate', 'accountHandoffReturnState', 'acknowledgeAccountHandoffReturn', 'removeListener'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }] }],
       nativeCallback: (plugin: string, method: string, options: Record<string, unknown>, callback: (event: object)=>void) => {
         // Match Capacitor's multiple subscriptions and per-handle removal.
         // StrictMode can overlap asynchronous mount/unmount registrations;
@@ -77,6 +84,9 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
         const id = String(++nextListener);
         if (plugin === 'App' && method === 'addListener' && options.eventName === 'appUrlOpen') {
           identityListeners.set(id, callback);
+        }
+        if (plugin === 'PasoFiCustomerApi' && method === 'addListener' && options.eventName === 'accountHandoffReturn') {
+          handoffListeners.set(id, callback);
         }
         return id;
       },
@@ -94,6 +104,12 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
           return;
         }
         if (plugin !== 'PasoFiCustomerApi' || absent) return Promise.reject(Error('Native plugin unavailable'));
+        if (method === 'removeListener') { handoffListeners.delete(String(input.callbackId)); return; }
+        if (method === 'accountHandoffReturnState') return { eventId: pendingHandoff };
+        if (method === 'acknowledgeAccountHandoffReturn') {
+          if (pendingHandoff === input.eventId) pendingHandoff = null;
+          return;
+        }
         return runtime.__syntheticCustomerApi(method, input).then((value: any) => {
           if (value?.nativeFailure) throw Object.assign(new Error(value.nativeFailure.message || value.nativeFailure.code), { code: value.nativeFailure.code });
           return value;
@@ -111,7 +127,7 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
       if (String(input).startsWith(apiOrigin)) { runtime.browserApiFetches++; return Promise.reject(Error('Unexpected browser API fallback')); }
       return originalFetch(input, init);
     };
-  }, { platform: options.platform || 'ios', absent: !!options.absent, apiOrigin, managed: Boolean(options.authenticate), launchUrlFailure: Boolean(options.launchUrlFailure) });
+  }, { platform: options.platform || 'ios', absent: !!options.absent, apiOrigin, managed: Boolean(options.authenticate), launchUrlFailure: Boolean(options.launchUrlFailure), handoffPending: Boolean(options.handoffPending) });
   return calls;
 }
 
@@ -230,7 +246,9 @@ for (const platform of ['ios', 'android'] as const) for (const entry of ['Sign i
   const opened = calls.filter(call => call.method === 'openSignIn');
   expect(opened).toHaveLength(1); expect(Object.keys(opened[0].options)).toEqual(['requestId']);
   expect(recovered).toBe(false);
-  await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click();
+  if (entry === 'Sign in with Onesa') await page.evaluate(() => (window as any).__returnToHandoff());
+  else await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click();
+  await expect(page.getByRole('heading', {name: 'Accept an account handoff'})).toBeVisible();
   await page.getByLabel('One-time handoff code').fill(handoffCode);
   await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled();
   await page.getByRole('checkbox', { name: /my own PasoFi account/ }).check();
@@ -451,4 +469,31 @@ test('aborting an active native request cancels its exact request ID and cannot 
   expect(calls.find(call => call.method === 'cancel')?.options.requestId).toBe(pending!.requestId);
   pending!.resolve(reply({ customerId }));
   expect(await page.evaluate(() => (window as any).nativePending)).toEqual({ accepted: false });
+});
+
+
+test('Android cold-start return survives a missed notification and is acknowledged after navigation', async ({ page, configuredBaseURL }) => {
+  await nativeBridge(page, request => request.path === '/api/capabilities' ? reply(capabilities)
+    : reply({ error: 'not_authenticated' }, 401), { platform: 'android', handoffPending: true });
+  await page.goto(configuredBaseURL);
+  await expect(page.getByRole('heading', { name: 'Accept an account handoff' })).toBeVisible({ timeout: 5000 });
+  await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
+  await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
+  await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).__returnToHandoff());
+  await expect(page.getByRole('heading', { name: 'Accept an account handoff' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
+});
+
+
+test('unavailable native capabilities keep the read-only fallback and do not imply a completed mutation', async ({ page, configuredBaseURL }) => {
+  const calls = await nativeBridge(page, () => reply({ error: 'unavailable' }, 503));
+  await page.goto(configuredBaseURL);
+  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await expect(page.getByText('The configured PasoFi service could not be reached.', { exact: false })).toBeVisible();
+  await expect(page.getByText('A request may still have completed', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Start a new customer account' })).toHaveCount(0);
+  expect(calls.filter(call => call.method === 'request').every(call => call.options.method === 'GET' && call.options.path === '/api/capabilities')).toBe(true);
+  await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
+  await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
 });

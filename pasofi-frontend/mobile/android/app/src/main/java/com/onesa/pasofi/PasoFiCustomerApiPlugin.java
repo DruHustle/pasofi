@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -50,6 +51,8 @@ public final class PasoFiCustomerApiPlugin extends Plugin {
     private CustomerSessionStore store;
     private CustomerSessionState state;
     private boolean initialized, storageFailed, destroyed;
+    private Intent pendingAccountReturnIntent;
+    private String pendingAccountReturnId;
     private long pageGeneration;
     private final WebViewListener pageListener = new WebViewListener() {
         @Override public void onPageStarted(WebView view) {
@@ -87,6 +90,53 @@ public final class PasoFiCustomerApiPlugin extends Plugin {
         Failure(String code) { super(code); this.code = code; }
     }
 
+    private void deliverAccountHandoffReturn(Intent intent) {
+        synchronized (gate) {
+            if (intent == null || !CustomerApiPolicy.isAccountHandoffReturn(intent.getAction(), intent.getDataString())) return;
+            // A notification can race the WebView's first page or listener setup.
+            // Keep the credential-free intent until the active page acknowledges
+            // navigation, including across Activity recreation before that point.
+            if (pendingAccountReturnIntent != intent || pendingAccountReturnId == null) {
+                pendingAccountReturnIntent = intent;
+                pendingAccountReturnId = UUID.randomUUID().toString();
+            }
+        }
+        notifyListeners("accountHandoffReturn", new JSObject(), true);
+    }
+
+    @PluginMethod
+    public void accountHandoffReturnState(PluginCall call) {
+        if (call.getData().length() != 0) { reject(call, "native_request_rejected"); return; }
+        synchronized (gate) {
+            if (destroyed) return;
+            JSObject result = new JSObject();
+            result.put("eventId", pendingAccountReturnId == null ? JSONObject.NULL : pendingAccountReturnId);
+            call.resolve(result);
+        }
+    }
+
+    @PluginMethod
+    public void acknowledgeAccountHandoffReturn(PluginCall call) {
+        String eventId = call.getString("eventId");
+        if (call.getData().length() != 1 || !CustomerApiPolicy.validUuid(eventId)) { reject(call, "native_request_rejected"); return; }
+        synchronized (gate) {
+            if (destroyed) return;
+            // An old page's acknowledgement must not consume a newer return.
+            if (eventId.equals(pendingAccountReturnId)) {
+                pendingAccountReturnIntent.setData(null);
+                pendingAccountReturnIntent = null;
+                pendingAccountReturnId = null;
+            }
+            call.resolve();
+        }
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        if (getActivity() != null) getActivity().setIntent(intent);
+        deliverAccountHandoffReturn(intent);
+    }
+
     @Override
     public void load() {
         // An Activity recreation cannot leave a previous plugin writing this store.
@@ -97,6 +147,9 @@ public final class PasoFiCustomerApiPlugin extends Plugin {
         String configured = getConfig().getString("origin");
         origin = CustomerApiPolicy.validOrigin(configured) ? configured : null;
         bridge.addWebViewListener(pageListener);
+        // A browser may cold-start the app with the return intent. Android does
+        // not call handleOnNewIntent for the initial onCreate intent.
+        if (getActivity() != null) deliverAccountHandoffReturn(getActivity().getIntent());
         // Capacitor installs a process-global CookieHandler even when its fetch
         // patch is off. This client never reads or writes that shared cookie jar.
         client = CustomerHttpTransport.client();

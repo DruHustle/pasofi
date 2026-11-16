@@ -102,6 +102,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Observe the published checkout state in the installed application
+        id: installed
+        env:
+          PASOFI_ANDROID_EVIDENCE_DIR: ${{ runner.temp }}/pasofi-android-first-run
         uses: reactivecircus/android-emulator-runner@b530d96654c385303d652368551fb075bc2f0b6b
         with:
           api-level: 35
@@ -112,11 +115,16 @@ jobs:
             adb install "$RUNNER_TEMP/pasofi-qualification.apk"
             python3 "$GITHUB_WORKSPACE/pasofi-frontend/mobile/scripts/installed-checkout-status.py"
       - name: Identify the installed QA build
+        if: always()
         run: |
           cd "$RUNNER_TEMP"
-          sha256sum pasofi-qualification.apk > SHA256SUMS.txt
+          if [[ -f pasofi-qualification.apk ]]; then
+            sha256sum pasofi-qualification.apk > SHA256SUMS.txt
+          fi
           git -C "$GITHUB_WORKSPACE" rev-parse HEAD > SOURCE_COMMIT.txt
-      - name: Retain the installed API-configured qualification APK
+          printf '%s\n' '${{ steps.installed.outcome }}' > INSTALLED_CHECK_STATUS.txt
+      - name: Retain the API-configured qualification APK and first-run diagnostics
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: pasofi-android-configured-qualification-${{ github.sha }}
@@ -124,6 +132,8 @@ jobs:
             ${{ runner.temp }}/pasofi-qualification.apk
             ${{ runner.temp }}/SHA256SUMS.txt
             ${{ runner.temp }}/SOURCE_COMMIT.txt
+            ${{ runner.temp }}/INSTALLED_CHECK_STATUS.txt
+            ${{ runner.temp }}/pasofi-android-first-run/
           if-no-files-found: error
           compression-level: 0
           retention-days: 3
