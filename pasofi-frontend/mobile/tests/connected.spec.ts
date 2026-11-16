@@ -178,6 +178,34 @@ test('qualified mobile API session and voucher redemption use credentialed HTTPS
   const transports = await page.evaluate(() => (window as any).apiTransport); expect(transports.length).toBeGreaterThan(4); expect(transports.every((request: { credentials: string; mode: string; redirect: string }) => request.credentials === 'include' && request.mode === 'cors' && request.redirect === 'error')).toBe(true); expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('DEMOVOUCHER'); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); await page.screenshot({ path: testInfo.outputPath('mobile-api-queued-360.png'), fullPage: true });
 });
 
+test('mobile keeps a replayed redemption confirmed while bundle history recovers', async ({ page, configuredBaseURL }) => {
+  let redemptionCalls = 0, failBundleRead = true;
+  await mock(page, async (_route, path, _method, reply) => {
+    if (path === '/api/vouchers/redeem') {
+      redemptionCalls++;
+      await reply({ entitlementId, replayed: true });
+      return true;
+    }
+    if (path === '/api/access' && redemptionCalls) {
+      if (failBundleRead) await reply({ error: 'service_unavailable' }, 503);
+      else await reply({ entitlements: [{ id: entitlementId, bundle_id: 'flex', byte_limit: '5000000000', consumed_bytes: '0', validity_seconds: 604800, activated_at: null, revoked_at: null, start_by: new Date(Date.now() + 86400000).toISOString() }], hasMore: false, nextOffset: null });
+      return true;
+    }
+    return false;
+  });
+  await open(page, configuredBaseURL);
+  await page.getByRole('button', { name: 'Use a voucher', exact: true }).click();
+  await page.getByLabel('Voucher code', { exact: true }).fill('DEMOVOUCHER234567');
+  await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click();
+  await expect(page.getByText('Your bundle list could not be refreshed.', { exact: false })).toBeVisible();
+  await expect(page.getByText('This voucher was already redeemed into your account.', { exact: true })).toBeVisible();
+  failBundleRead = false;
+  await page.getByRole('button', { name: 'Refresh bundles', exact: true }).click();
+  await expect(page.getByText('Queued · not connected', { exact: true })).toBeVisible();
+  await expect(page.getByText('Your bundle list could not be refreshed.', { exact: false })).toHaveCount(0);
+  expect(redemptionCalls).toBe(1);
+});
+
 test('a gateway that cannot retain the mobile cookie never redeems a voucher', async ({ page, configuredBaseURL }) => {
   let redemptions = 0;
   await mock(page, async (_route, path, method, reply) => {

@@ -41,6 +41,23 @@ test('verified final Stop plus independently fenced router absence releases exac
  assert.notEqual(next.id,grant.id);
  assert.equal((await recordAccounting(pool,{...event,kind:'stop',upload:150n,download:500n})).state,'closed');
 }));
+test('a delayed Accounting-Start retry leaves metered usage intact and permits reconnection at another site',{skip:!url},async()=>fixture(async({pool,customer,event,evidence})=>{
+ await recordAccounting(pool,event);
+ const usage={...event,upload:300n,download:700n};
+ await recordAccounting(pool,{...usage,kind:'interim'});
+ const snapshot=async()=>(await pool.query(`SELECT state,accounting_anomaly,last_accounting_at::text,review_version::text
+   FROM access_grants WHERE id=$1`,[event.grantId])).rows[0];
+ const active=await snapshot();
+ assert.deepEqual(await recordAccounting(pool,event),{state:'active',chargedBytes:'1000'});
+ assert.deepEqual(await snapshot(),active);
+ await recordAccounting(pool,{...usage,kind:'stop'});
+ const stopped=await snapshot();
+ assert.deepEqual(await recordAccounting(pool,event),{state:'uncertain',chargedBytes:'1000'});
+ assert.deepEqual(await snapshot(),stopped);
+ assert.equal((await reconcileGrant(pool,evidence())).closed,true);
+ const next=await issueGrant(pool,customer,randomUUID(),randomUUID(),randomUUID(),'next-site-session');
+ assert.equal(next.reserved_bytes,'9000');
+}));
 test('an acknowledged observation can be retried after the freshness window without applying it again',{skip:!url},async t=>fixture(async({pool,event,evidence})=>{
  await recordAccounting(pool,event);
  await recordAccounting(pool,{...event,kind:'stop'});

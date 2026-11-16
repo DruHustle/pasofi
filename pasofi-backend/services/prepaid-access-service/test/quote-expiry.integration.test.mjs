@@ -56,7 +56,9 @@ test('initiation which commits first prevents quote disposal while its provider 
  }finally{release();if(pending)await pending.catch(()=>{});await f.cleanup();}
 });
 
-test('an initiation begun before expiry cannot charge after concurrent unused-quote closure',{skip:!url},async()=>{
+for (const closeQuote of [false, true]) test(
+ `an initiation delayed past expiry cannot charge ${closeQuote ? 'after explicit quote closure' : 'after natural expiry'}`,
+ {skip: !url}, async () => {
  const f=await fixture(),blocker=await f.pool.connect(),key=randomUUID();let pending,calls=0;
  const adapter={provider:'pesepay',initiate:async()=>{calls++;return {state:'unknown'};},check:async()=>({state:'unknown'})};
  try{
@@ -74,7 +76,7 @@ test('an initiation begun before expiry cannot charge after concurrent unused-qu
   // time but still valid to that waiting transaction, without timing sleeps.
   const changed=await f.pool.query("UPDATE purchase_orders SET quote_expires_at=(SELECT xact_start+interval '1 microsecond' FROM pg_stat_activity WHERE pid=$2) WHERE id=$1 RETURNING quote_expires_at<=clock_timestamp() AS expired",[f.order,waiter.pid]);
   assert.equal(changed.rows[0].expired,true);
-  assert.equal((await expireUnusedOrder(f.pool,f.customer,f.order)).safeToRequote,true);
+  if (closeQuote) assert.equal((await expireUnusedOrder(f.pool,f.customer,f.order)).safeToRequote,true);
   await blocker.query('COMMIT');
   const outcome=await pending;
   assert.equal(outcome.error?.code,'order_not_payable');

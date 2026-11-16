@@ -116,6 +116,7 @@ Use **Your account** snapshot events, not Connect or organization-wide events.
 Pin the endpoint to the integration's Stripe API version `2026-10-28.endive` and
 subscribe to:
 
+- `payment_intent.created`
 - `payment_intent.succeeded`
 - `payment_intent.payment_failed`
 - `payment_intent.processing`
@@ -124,6 +125,11 @@ subscribe to:
 - `charge.dispute.created`
 - `charge.dispute.updated`
 - `charge.dispute.closed`
+
+If the service loses the creation response, the creation event can recover the
+original intent before the customer has entered payment details. The service
+retrieves the intent from Stripe and checks the stored purchase terms. Access
+is issued only after a separate check confirms capture.
 
 Both gateway variants expose only this exact callback path for POST. The Vercel
 browser API proxy does not accept arbitrary callbacks. Signature verification is

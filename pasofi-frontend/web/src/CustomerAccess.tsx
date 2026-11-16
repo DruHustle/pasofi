@@ -48,6 +48,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const [voucherCode, setVoucherCode] = useState(''), [pairing, setPairing] = useState<Pairing | null>(null), [pairingState, setPairingState] = useState(''), [receipt, setReceipt] = useState<Receipt | null>(null);
   const [sites, setSites] = useState<Site[]>([]), [products, setProducts] = useState<Product[]>([]), [bundleId, setBundleId] = useState(selectedBundle?.id ?? requestedBundleId ?? ''), [siteId, setSiteId] = useState('');
   const [referencePending, setReferencePending] = useState(false);
+  const [bundleListUnavailable, setBundleListUnavailable] = useState(false);
+  const pairingRevision = useRef(0);
   const [methods, setMethods] = useState<PaymentMethod[]>([]), [methodCode, setMethodCode] = useState(''), [methodsLoading, setMethodsLoading] = useState(false);
   const [order, setOrder] = useState<Order | null>(null), [payment, setPayment] = useState<PaymentStatus | null>(null), [redirectUrl, setRedirectUrl] = useState('');
   const [checkoutPending, setCheckoutPending] = useState(false);
@@ -80,7 +82,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   function invalidateAccount(expectedOwner?: string) {
     if (expectedOwner && ownerRef.current !== expectedOwner) return;
     ++generation.current; ownerRef.current = null; lastUsage.current = null; invoiceChoiceExplicit.current = false; clearSessionSecrets();
-    if (live.current) { setOwner(null); setAccess([]); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setReferencePending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setCheckoutPending(false); setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
+    if (live.current) { setOwner(null); setAccess([]); setBundleListUnavailable(false); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setReferencePending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setCheckoutPending(false); setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
   }
   function mergeUsage(snapshot: UsageSnapshot) {
     if (snapshot.customerId !== ownerRef.current || !live.current) return;
@@ -107,7 +109,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     const revision = generation.current, id = await identity();
     const result = await api<{ customerId: string; entitlements: Entitlement[]; hasMore: boolean; nextOffset: number | null }>(`/api/access${more && nextOffset !== null ? `?offset=${nextOffset}` : ''}`);
     if (isCurrent(revision) && result.customerId !== id) { invalidateAccount(id); throw new ApiError(401, 'session_changed'); }
-    if (isCurrent(revision) && ownerRef.current === id) { setAccess(previous => { const rows = more ? [...new Map([...previous, ...result.entitlements].map(item => [item.id, item])).values()] : result.entitlements; return rows.map(item => withUsage(item, lastUsage.current?.customerId === id ? lastUsage.current : null)); }); setNextOffset(result.hasMore ? result.nextOffset : null); }
+    if (isCurrent(revision) && ownerRef.current === id) { setBundleListUnavailable(false); setAccess(previous => { const rows = more ? [...new Map([...previous, ...result.entitlements].map(item => [item.id, item])).values()] : result.entitlements; return rows.map(item => withUsage(item, lastUsage.current?.customerId === id ? lastUsage.current : null)); }); setNextOffset(result.hasMore ? result.nextOffset : null); }
   }
   useEffect(() => {
     live.current = true; const revision = generation.current; heading.current?.focus();
@@ -162,12 +164,13 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   }, [siteId, bundleId, capabilities.paymentCheckout]);
   useEffect(() => {
     if (!pairing || pairingState !== 'pending' || polling.current || document.hidden) return;
-    polling.current = true; const revision = generation.current;
+    polling.current = true; const revision = generation.current, referenceVersion = pairingRevision.current;
+    const stillPending = () => isCurrent(revision) && pairingRevision.current === referenceVersion;
     void (async () => {
       try {
         const id = await identity();
         const result = await api<{ status: string; receipt?: Receipt }>(`/api/receipt-pairings/${pairing.id}`);
-        if (!isCurrent(revision)) return;
+        if (!stillPending()) return;
         setPairingState(result.status);
         if (result.receipt) {
           setReceipt(result.receipt);
@@ -179,7 +182,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
           try { finishMutation(`customer:${id}`, 'receipt-pairing'); } catch { /* The server already settled this reference. */ }
         }
       }
-      catch (error) { if (isCurrent(revision)) setMessage(messageFor(error)); }
+      catch (error) { if (stillPending()) setMessage(messageFor(error)); }
       finally { polling.current = false; }
     })();
   }, [now, pairing, pairingState]);
@@ -208,8 +211,10 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
         try { sessionStorage.removeItem(`pamofi.operation:customer:${id}:paid-receipt`); } catch { /* Redemption has already succeeded. */ }
         setReceipt(null);
       }
-      setVoucherCode(''); setRecoveryReminder(true); setMessage(result.replayed ? 'This voucher was already redeemed into your account. Your existing bundle is shown below.' : 'Voucher redeemed. Your bundle is queued; time starts only after a successful hotspot connection.'); selectTab('access');
-      await refreshAccess(); await usage.refresh();
+      setVoucherCode(''); setRecoveryReminder(true); setMessage(result.replayed ? 'This voucher was already redeemed into your account.' : 'Voucher redeemed. Your bundle is queued; time starts only after a successful hotspot connection.'); selectTab('access');
+      try { await refreshAccess(); }
+      catch { if (isCurrent(revision)) setBundleListUnavailable(true); }
+      if (isCurrent(revision)) await usage.refresh();
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'The voucher response could not be confirmed. Retrying the same voucher is safe and cannot create a second bundle.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
@@ -222,6 +227,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       throw error;
     });
     if (!isCurrent(revision)) return;
+    ++pairingRevision.current;
     setPairing(result.pairing);
     // A committed receipt must still be fetched even after its reference expires.
     const terminal = ['cancelled', 'expired'].includes(result.pairing.status ?? '');
@@ -245,7 +251,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     try {
       const id = await identity();
       await api(`/api/receipt-pairings/${pairing.id}/cancel`, { method: 'POST' });
-      if (isCurrent(revision)) { finishMutation(`customer:${id}`, 'receipt-pairing'); setReferencePending(false); setPairingState('cancelled'); setMessage('Unpaid reference cancelled. You can choose another bundle or location.'); }
+      if (isCurrent(revision)) { ++pairingRevision.current; finishMutation(`customer:${id}`, 'receipt-pairing'); setReferencePending(false); setPairingState('cancelled'); setMessage('Unpaid reference cancelled. You can choose another bundle or location.'); }
     } catch (error) { if (isCurrent(revision)) { setMessage(messageFor(error)); setNow(Date.now()); } }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
@@ -384,7 +390,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     : 'No bundles are shown yet. Purchases and voucher redemption are not available yet. Browse bundles to check current availability.';
   const bundleList = (history = false) => <section className="workspace-card customer-bundles-panel">
     <div className="workspace-section-head"><div><div className="eyebrow">{history ? 'YOUR ACCOUNT ACTIVITY' : 'READY FOR YOUR EVERYDAY'}</div><h3>{history ? 'Bundle history' : 'Your bundles'}</h3></div>{owner && <button className="text-button" disabled={busy} onClick={() => reloadBundles()}>Refresh bundles</button>}</div>
-    {access.length === 0 ? <div className="customer-empty-state"><span className="customer-empty-icon"><CustomerGlyph name={history ? 'history' : 'voucher'} /></span><h4>{history ? 'Your story starts here.' : 'Your next connection starts here.'}</h4><p>{history ? 'When a bundle is added to this account, its allowance and validity will appear here.' : emptyBundleGuidance}</p>{capabilities.receiptPairing && <button className="primary" onClick={() => selectTab('receipt')}>Receive an agent receipt</button>}</div> : <ul className="access-list customer-bundle-list" ref={accessList}>{access.map(item => <li key={item.id} data-entitlement-id={item.id}>
+    {bundleListUnavailable && <p className="notice" role="status">Your bundle list could not be refreshed. Select Refresh bundles to check it again.</p>}
+    {access.length === 0 ? !bundleListUnavailable && <div className="customer-empty-state"><span className="customer-empty-icon"><CustomerGlyph name={history ? 'history' : 'voucher'} /></span><h4>{history ? 'Your story starts here.' : 'Your next connection starts here.'}</h4><p>{history ? 'When a bundle is added to this account, its allowance and validity will appear here.' : emptyBundleGuidance}</p>{capabilities.receiptPairing && <button className="primary" onClick={() => selectTab('receipt')}>Receive an agent receipt</button>}</div> : <ul className="access-list customer-bundle-list" ref={accessList}>{access.map(item => <li key={item.id} data-entitlement-id={item.id}>
       <div className="customer-bundle-row"><span className="customer-record-icon"><CustomerGlyph name="wifi" /></span><div><strong>{item.bundle_id.toUpperCase()} · {Number(item.byte_limit) / 1e9} GB</strong><span>{accessState(item)}</span></div></div>
       <small>{(Number(item.consumed_bytes) / 1e9).toFixed(3)} GB accounted · {item.activated_at ? `Activated ${localDate(item.activated_at)}` : `Start by ${localDate(item.start_by)}`}</small>
       {history && <small>Bundle reference: {item.id}</small>}

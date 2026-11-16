@@ -11,7 +11,7 @@ export async function beginProviderPayment(pool:Pool,customerId:string,orderId:s
  customerId=customerId.toLowerCase();orderId=orderId.toLowerCase();requestKey=requestKey.toLowerCase();siteId=siteId.toLowerCase();
  const attempt=await tx(pool,async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`${customerId}:${requestKey}`]);
-  const order=await client.query('SELECT *,quote_expires_at>now() AS quote_valid FROM purchase_orders WHERE id=$1 AND customer_id=$2 FOR UPDATE',[orderId,customerId]);
+  const order=await client.query('SELECT *,quote_expires_at>clock_timestamp() AS quote_valid FROM purchase_orders WHERE id=$1 AND customer_id=$2 FOR UPDATE',[orderId,customerId]);
   if(!order.rowCount)throw new PaymentError('order_not_found');
   const previous=await client.query('SELECT * FROM provider_payment_attempts WHERE customer_id=$1 AND request_key=$2',[customerId,requestKey]);
   if(previous.rowCount){if(previous.rows[0].order_id!==orderId || previous.rows[0].site_id!==siteId || previous.rows[0].method_code!==methodCode || previous.rows[0].provider!==adapter.provider)throw new PaymentError('idempotency_conflict');return {created:false,row:previous.rows[0],order:order.rows[0]};}
@@ -47,7 +47,12 @@ export async function beginProviderPayment(pool:Pool,customerId:string,orderId:s
     INSERT INTO payment_reconciliation_jobs(attempt_id) SELECT id FROM updated WHERE provider_reference IS NOT NULL
     ON CONFLICT (attempt_id) DO NOTHING
    ) SELECT state,redirect_url FROM updated`,[attempt.row.id,initiated.state==='initiated'?'pending':'unknown',initiated.referenceNumber??null,initiated.state==='initiated'?initiated.redirectUrl:null]);
-  return {attemptId:attempt.row.id,state:row.rows[0]?.state??'unknown',redirectUrl:row.rows[0]?.redirect_url??null};
+  // A webhook or a simultaneous retry can bind the intent before this response arrives.
+  // Read the committed outcome in a new statement, after the conditional update has waited.
+  const saved = row.rows[0] ?? (await pool.query(
+    'SELECT state,redirect_url FROM provider_payment_attempts WHERE id=$1', [attempt.row.id]
+  )).rows[0];
+  return {attemptId:attempt.row.id,state:saved.state,redirectUrl:saved.redirect_url};
  }catch(error){
   // The remote call may already have created a charge. Never initiate again.
   const pgError=error as {code?:string;constraint?:string};

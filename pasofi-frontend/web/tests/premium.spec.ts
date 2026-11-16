@@ -223,3 +223,55 @@ test('cash reference keeps the selected terms through a lost response, reload an
   await expect(page.getByLabel('Cash bundle')).toBeEnabled();
   expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':receipt-pairing')))).toEqual([]);
 });
+
+test('confirmed voucher redemption survives a failed bundle read and a read-only retry', async ({ page }) => {
+  const state = await fixture(page, { guest: true });
+  let failNextRead = true;
+  await page.route('**/api/access', async route => {
+    if (state.redemptions && failNextRead) {
+      failNextRead = false;
+      return json(route, { error: 'service_unavailable' }, 503);
+    }
+    return route.fallback();
+  });
+  await page.goto('/#voucher');
+  await page.getByLabel('Voucher code', { exact: true }).fill('TESTVOUCHER234567');
+  await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click();
+  await expect(page.getByText('Your bundle list could not be refreshed.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Voucher redeemed. Your bundle is queued;', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Refresh bundles', exact: true }).click();
+  await expect(page.getByText('Queued · not connected', { exact: true })).toBeVisible();
+  await expect(page.getByText('Your bundle list could not be refreshed.', { exact: false })).toHaveCount(0);
+  expect(state.redemptions).toBe(1);
+});
+
+test('a cancelled cash reference cannot overwrite a replacement when its status arrives late', async ({ page }) => {
+  await fixture(page);
+  let oldPoll: Route | undefined;
+  let created = 0;
+  const replacement = 'ffffffff-ffff-4fff-8fff-fffffffffffe';
+  await page.route('**/api/receipt-pairings**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/cancel')) return json(route, { status: 'cancelled' });
+    if (path.endsWith(pairingId)) { oldPoll = route; return; }
+    if (path.endsWith(replacement)) return json(route, { status: 'pending' });
+    created++;
+    return json(route, { pairing: { id: created === 1 ? pairingId : replacement, code: created === 1 ? 'ABCD234567' : 'JKLM234567', expiresAt: new Date(Date.now() + 300000).toISOString() } }, 201);
+  });
+  await page.goto('/#receipt?bundle=flex');
+  const create = page.getByRole('button', { name: 'Create private pairing code' });
+  await create.click();
+  await expect.poll(() => !!oldPoll).toBe(true);
+  await page.getByRole('button', { name: 'Cancel unpaid reference' }).click();
+  await expect(page.getByText('Reference cancelled', { exact: true })).toBeVisible();
+  await create.click();
+  await expect(page.getByText('JKLM234567', { exact: true })).toBeVisible();
+  const delivered = page.waitForResponse(response => new URL(response.url()).pathname.endsWith(pairingId));
+  await json(oldPoll!, { status: 'cancelled' });
+  await (await delivered).finished();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByText(/Waiting for your receipt/)).toBeVisible();
+  await expect(page.getByLabel('Cash bundle')).toBeDisabled();
+  expect(await page.evaluate(() => Object.keys(sessionStorage).some(key => key.endsWith(':receipt-pairing')))).toBe(true);
+  expect(created).toBe(2);
+});

@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import pg from 'pg';
-import {issueGrant,recordAccounting} from '../dist/grants.js';
+import {issueGrant,recordAccounting,reconcileGrant} from '../dist/grants.js';
 import {resolveNetworkReview} from '../dist/network-admin.js';
 const url=process.env.PAMOFI_TEST_DATABASE_URL;
 async function fixture(){const pool=new pg.Pool({connectionString:url,max:10}),customer=randomUUID(),order=randomUUID(),entitlement=randomUUID(),site=randomUUID(),nas=randomUUID();await pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at) VALUES($1,$2,$3,'mini',50,'USD',5000,3600,'payment_confirmed',now()+interval '15 minutes')",[order,customer,randomUUID()]);await pool.query("INSERT INTO purchase_entitlements(id,order_id,customer_id,bundle_id,byte_limit,validity_seconds,start_by) VALUES($1,$2,$3,'mini',5000,3600,now()+interval '1 day')",[entitlement,order,customer]);const grant=await issueGrant(pool,customer,site,nas,randomUUID(),`operator-${randomUUID()}`);const row=(await pool.query('SELECT accounting_session_id FROM access_grants WHERE id=$1',[grant.id])).rows[0];const event={grantId:grant.id,siteId:site,nasId:nas,generation:grant.generation,sessionId:row.accounting_session_id,kind:'start',upload:100n,download:200n};await recordAccounting(pool,event);await recordAccounting(pool,{...event,kind:'interim',upload:50n});const fresh=async()=>{await pool.query('UPDATE access_grants SET absent_verified_at=clock_timestamp(),credential_fenced_at=issued_at WHERE id=$1',[grant.id]);return (await pool.query('SELECT review_version::text AS version FROM access_grants WHERE id=$1',[grant.id])).rows[0].version;};const cleanup=async()=>{await pool.query('DELETE FROM network_account_holds WHERE customer_id=$1',[customer]);await pool.query('DELETE FROM network_operator_resolutions WHERE grant_id IN (SELECT id FROM access_grants WHERE customer_id=$1)',[customer]);await pool.query('DELETE FROM access_grants WHERE customer_id=$1',[customer]);await pool.query('DELETE FROM purchase_entitlements WHERE id=$1',[entitlement]);await cleanupInvoiceEvidence(pool,{orderIds:[order]});await pool.query('DELETE FROM purchase_orders WHERE id=$1',[order]);await pool.end();};return {pool,customer,order,entitlement,grant,event,fresh,cleanup,site,nas};}
@@ -20,9 +20,25 @@ test('operator resolution requires fresh absence, bounded final counters and an 
  assert.equal((await f.pool.query('SELECT consumed_bytes::text FROM purchase_entitlements WHERE id=$1',[f.entitlement])).rows[0].consumed_bytes,'360');assert.equal((await f.pool.query('SELECT 1 FROM network_account_holds WHERE customer_id=$1',[f.customer])).rowCount,0);assert.equal((await f.pool.query('SELECT 1 FROM network_operator_resolutions WHERE grant_id=$1',[f.grant.id])).rowCount,1);
  await assert.rejects(resolveNetworkReview(f.pool,f.grant.id,actor,key,{...evidence(version),finalDownload:'241'}),{code:'idempotency_conflict'});
  }finally{await f.cleanup();}});
-test('late usage and another unresolved session prevent a premature release of the hold',{skip:!url},async()=>{const f=await fixture(),actor=randomUUID();try{
- await f.pool.query("UPDATE access_grants SET state='closed',closed_at=now() WHERE id=$1",[f.grant.id]);const second=await issueGrant(f.pool,f.customer,f.site,f.nas,randomUUID(),`second-${randomUUID()}`);
- await recordAccounting(f.pool,{...f.event,kind:'interim',upload:200n,download:400n});let version=await f.fresh();await assert.rejects(resolveNetworkReview(f.pool,f.grant.id,actor,randomUUID(),{...evidence(version),finalUpload:'200',finalDownload:'400'}),{code:'another_session_unresolved'});
- await f.pool.query("UPDATE access_grants SET state='closed',closed_at=now() WHERE id=$1",[second.id]);version=await f.fresh();await assert.rejects(resolveNetworkReview(f.pool,f.grant.id,actor,randomUUID(),evidence(version)),{code:'final_usage_not_bounded'});
- const result=await resolveNetworkReview(f.pool,f.grant.id,actor,randomUUID(),{...evidence(version),finalUpload:'200',finalDownload:'400'});assert.equal(result.chargedBytes,'600');assert.equal(result.additionalBytes,'300');assert.equal((await f.pool.query('SELECT consumed_bytes::text FROM purchase_entitlements WHERE id=$1',[f.entitlement])).rows[0].consumed_bytes,'600');
+test('operators can settle separately fenced sessions without prematurely clearing the account hold',{skip:!url},async()=>{const f=await fixture(),actor=randomUUID();try{
+ const resolve=(id,version,upload,download)=>resolveNetworkReview(f.pool,id,actor,randomUUID(),{...evidence(version),finalUpload:upload,finalDownload:download});
+ await resolve(f.grant.id,await f.fresh(),'100','200');
+ const site=randomUUID(),nas=randomUUID(),sessionId=`second-${randomUUID()}`;
+ const second=await issueGrant(f.pool,f.customer,site,nas,randomUUID(),sessionId);
+ const context={grantId:second.id,siteId:site,nasId:nas,generation:second.generation,sessionId};
+ await recordAccounting(f.pool,{...context,kind:'start',upload:0n,download:0n});
+ await recordAccounting(f.pool,{...f.event,kind:'interim',upload:200n,download:400n});
+ const version=await f.fresh();
+ await assert.rejects(resolve(f.grant.id.toUpperCase(),version,'200','400'),{code:'another_session_unresolved'});
+ const secondaryVersion=async()=>(await f.pool.query('SELECT review_version::text AS version FROM access_grants WHERE id=$1',[second.id])).rows[0].version;
+ await assert.rejects(resolve(second.id,await secondaryVersion(),'25','50'),{code:'fresh_independent_absence_required'});
+ const time=new Date().toISOString();
+ await reconcileGrant(f.pool,{...context,observationId:randomUUID(),observedAt:time,credentialRevokedAt:time,absent:true});
+ assert.equal((await resolve(second.id,await secondaryVersion(),'25','50')).additionalBytes,'75');
+ await assert.rejects(issueGrant(f.pool,f.customer,site,nas,randomUUID(),'too-early'),{code:'accounting_review_required'});
+ await assert.rejects(resolveNetworkReview(f.pool,f.grant.id,actor,randomUUID(),evidence(version)),{code:'final_usage_not_bounded'});
+ const result=await resolve(f.grant.id,version,'200','400');
+ assert.equal(result.chargedBytes,'600');assert.equal(result.additionalBytes,'300');
+ const next=await issueGrant(f.pool,f.customer,site,nas,randomUUID(),'reconnected');
+ assert.equal(next.reserved_bytes,'4325');
  }finally{await f.cleanup();}});
