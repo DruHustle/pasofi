@@ -21,7 +21,7 @@ export type Staff = {
 };
 export const money = (minor: number, currency = 'USD') => new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(minor / 100);
 export const localDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-export function messageFor(error: unknown, fallback = 'This request could not be completed. Please try again.') {
+export function messageFor(error: unknown, fallback = 'This request could not be completed. Please try again.', options: { readOnly?: boolean } = {}) {
   if (!(error instanceof ApiError)) return fallback;
   if (error.code === 'session_changed') return 'Your account changed. Close My PasoFi and reopen it before continuing.';
   if (error.status === 401) return 'Your session or verification has expired. Sign in again to continue.';
@@ -73,7 +73,7 @@ export function messageFor(error: unknown, fallback = 'This request could not be
     session_already_exists: usesNativeCustomerApi ? 'This app already has a customer account. Sign out of that account before accepting a handoff.' : 'This browser already has a customer account. Sign out of that account before accepting a handoff.',
     invalid_handoff: 'The handoff code has expired, was already used, or could not be verified. Create a new one on the original device.',
   };
-  return messages[error.code] ?? (error.status >= 500 ? 'The service is temporarily unavailable. A request may still have completed; check its status before retrying.' : fallback);
+  return messages[error.code] ?? (error.status >= 500 && !options.readOnly ? 'The service is temporarily unavailable. A request may still have completed; check its status before retrying.' : fallback);
 }
 
 // Mutation retries survive panel closes/reloads. Requests are scoped by the authenticated owner.

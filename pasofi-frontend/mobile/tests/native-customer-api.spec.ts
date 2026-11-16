@@ -1,4 +1,5 @@
 import { test as base, expect, type Page } from '@playwright/test';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
@@ -47,37 +48,181 @@ const test = base.extend<{}, { configuredBaseURL: string }>({
 // modules and React capability gate execute unchanged. Platform cookie/Keychain
 // behavior is covered separately by the Android and Swift policy tests.
 async function nativeBridge(page: Page, handler: (request: NativeRequest) => NativeReply | NativeFailure | Promise<NativeReply | NativeFailure>,
-  options: { platform?: 'ios' | 'android'; availability?: Record<string, unknown>; absent?: boolean; cancel?: (requestId: string) => void } = {}) {
+  options: { platform?: 'ios' | 'android'; availability?: Record<string, unknown>; absent?: boolean; handoffPending?: boolean; launchUrlFailure?: boolean; authenticate?: (url: string) => Promise<string>; cancel?: (requestId: string) => void } = {}) {
   const calls: { method: string; options: Record<string, unknown> }[] = [];
   await page.exposeFunction('__syntheticCustomerApi', async (method: string, input: Record<string, unknown>) => {
     calls.push({ method, options: input });
     if (method === 'availability') return { requestId: input.requestId, configured: true, origin: apiOrigin, protocol: 1, ...options.availability };
     if (method === 'openSignIn') return { requestId: input.requestId, opened: true };
+    if (method === 'authenticate' && options.authenticate) return {callback: await options.authenticate(String(input.authorizationUrl))};
     if (method === 'cancel') { options.cancel?.(String(input.requestId)); return { requestId: input.requestId }; }
     if (method === 'request') return { requestId: input.requestId, ...await handler(input as NativeRequest) };
     throw Error('Unexpected native method');
   });
-  await page.addInitScript(({ platform, absent, apiOrigin }) => {
+  await page.addInitScript(({ platform, absent, apiOrigin, managed, launchUrlFailure, handoffPending }) => {
     const runtime = window as any;
+    let nextListener = 0;
+    const identityListeners = new Map<string, (event: { url: string }) => void>();
+    const handoffListeners = new Map<string, (event: object) => void>();
+    let pendingHandoff = handoffPending ? crypto.randomUUID() : null;
+    runtime.__pendingHandoffReturn = () => pendingHandoff;
+    runtime.__returnToHandoff = () => {
+      pendingHandoff = crypto.randomUUID();
+      for (const listener of [...handoffListeners.values()]) listener({});
+    };
+    runtime.__identityListenerCount = () => identityListeners.size;
+    runtime.__deliverIdentityReturn = (url: string) => {
+      for (const listener of [...identityListeners.values()]) listener({ url });
+    };
     runtime.CapacitorCustomPlatform = { name: platform };
     runtime.Capacitor = {
-      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: ['availability', 'request', 'cancel', 'openSignIn'].map(name => ({ name, rtype: 'promise' })) }],
-      nativePromise: (plugin: string, method: string, input: Record<string, unknown>) => {
+      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: [...['availability', 'request', 'cancel', 'openSignIn', 'authenticate', 'accountHandoffReturnState', 'acknowledgeAccountHandoffReturn', 'removeListener'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }] }],
+      nativeCallback: (plugin: string, method: string, options: Record<string, unknown>, callback: (event: object)=>void) => {
+        // Match Capacitor's multiple subscriptions and per-handle removal.
+        // StrictMode can overlap asynchronous mount/unmount registrations;
+        // a stale listener must not replace the still-mounted subscription.
+        const id = String(++nextListener);
+        if (plugin === 'App' && method === 'addListener' && options.eventName === 'appUrlOpen') {
+          identityListeners.set(id, callback);
+        }
+        if (plugin === 'PasoFiCustomerApi' && method === 'addListener' && options.eventName === 'accountHandoffReturn') {
+          handoffListeners.set(id, callback);
+        }
+        return id;
+      },
+      nativePromise: async (plugin: string, method: string, input: Record<string, unknown>) => {
+        if (plugin === 'App' && method === 'removeListener') { identityListeners.delete(String(input.callbackId)); return; }
+        if (plugin === 'App' && method === 'getLaunchUrl') {
+          if (launchUrlFailure) throw Error('Synthetic launch URL failure');
+          return;
+        }
+        if (plugin === 'Browser' && method === 'close') return;
+        if (plugin === 'Browser' && method === 'open') {
+          const {callback} = await runtime.__syntheticCustomerApi('authenticate',{authorizationUrl:input.url});
+          if (!identityListeners.size) throw Error('appUrlOpen listener was not registered');
+          runtime.__deliverIdentityReturn(callback);
+          return;
+        }
         if (plugin !== 'PasoFiCustomerApi' || absent) return Promise.reject(Error('Native plugin unavailable'));
+        if (method === 'removeListener') { handoffListeners.delete(String(input.callbackId)); return; }
+        if (method === 'accountHandoffReturnState') return { eventId: pendingHandoff };
+        if (method === 'acknowledgeAccountHandoffReturn') {
+          if (pendingHandoff === input.eventId) pendingHandoff = null;
+          return;
+        }
         return runtime.__syntheticCustomerApi(method, input).then((value: any) => {
           if (value?.nativeFailure) throw Object.assign(new Error(value.nativeFailure.message || value.nativeFailure.code), { code: value.nativeFailure.code });
           return value;
         });
       },
     };
+    if (managed && platform === 'android') {
+      runtime.Capacitor.PluginHeaders.push(
+        {name:'App',methods:[{name:'addListener',rtype:'callback'},{name:'removeListener',rtype:'promise'},{name:'getLaunchUrl',rtype:'promise'}]},
+        {name:'Browser',methods:[{name:'open',rtype:'promise'},{name:'close',rtype:'promise'}]});
+    }
     runtime.browserApiFetches = 0;
     const originalFetch = window.fetch;
     window.fetch = (input, init) => {
       if (String(input).startsWith(apiOrigin)) { runtime.browserApiFetches++; return Promise.reject(Error('Unexpected browser API fallback')); }
       return originalFetch(input, init);
     };
-  }, { platform: options.platform || 'ios', absent: !!options.absent, apiOrigin });
+  }, { platform: options.platform || 'ios', absent: !!options.absent, apiOrigin, managed: Boolean(options.authenticate), launchUrlFailure: Boolean(options.launchUrlFailure), handoffPending: Boolean(options.handoffPending) });
   return calls;
+}
+
+test('failed Android launch inspection removes its partially initialized return listener', async ({ page, configuredBaseURL }) => {
+  await nativeBridge(page, () => reply(capabilities), {
+    platform: 'android', authenticate: async () => '', launchUrlFailure: true,
+  });
+  await page.goto(configuredBaseURL);
+  const outcome = await page.evaluate(async () => {
+    const modulePath = '/src/native-oidc-ui.ts';
+    const { watchNativeReturn } = await import(modulePath);
+    let rejected = false;
+    try { await watchNativeReturn(() => {}, () => {}); } catch { rejected = true; }
+    return { rejected, listeners: (window as any).__identityListenerCount() };
+  });
+  expect(outcome).toEqual({ rejected: true, listeners: 0 });
+});
+
+test('failed Android return setup leaves the qualified manual handoff available', async ({ page, configuredBaseURL }) => {
+  await nativeBridge(page, request => request.path === '/api/capabilities' ? reply(capabilities)
+    : request.path === '/api/onesa/availability' ? reply({ origin: apiOrigin, handoff: true })
+    : reply({ error: 'not_authenticated' }, 401), {
+    platform: 'android', authenticate: async () => '', launchUrlFailure: true,
+  });
+  await page.goto(configuredBaseURL);
+  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
+  await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click({ timeout: 5000 });
+  await expect(page.getByLabel('One-time handoff code')).toBeVisible();
+  await expect(page.getByText('Preparing the secure sign-in return…')).toHaveCount(0);
+});
+
+for (const platform of ['ios', 'android'] as const) {
+  test(`${platform} managed browser callback returns to protected history with the existing entitlement`, async ({page,configuredBaseURL})=>{
+    const issuer='https://id.pasofi.test/', callback='com.onesa.pasofi.identity://login/callback';
+    const registrations={issuer,audience:'https://api.pasofi.test',ios:'pasofi_apple_test_client',android:'pasofi_android_test_client'};
+    const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
+    const encode=(value:unknown)=>Buffer.from(JSON.stringify(value)).toString('base64url');
+    let authorization: URLSearchParams | undefined, established=false, readHistory=false;
+    await page.route(issuer+'**',async route=>{
+      const url=new URL(route.request().url());
+      const headers={'access-control-allow-origin':'*','access-control-allow-methods':'POST, GET, OPTIONS',
+        'access-control-allow-headers':'*','cache-control':'no-store'};
+      if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
+      if(url.pathname==='/.well-known/openid-configuration')return route.fulfill({headers,json:{
+        issuer,authorization_endpoint:issuer+'authorize',token_endpoint:issuer+'token',jwks_uri:issuer+'keys',
+        response_types_supported:['code'],subject_types_supported:['public'],id_token_signing_alg_values_supported:['RS256']}});
+      if(url.pathname==='/keys')return route.fulfill({headers,json:{keys:[
+        {...publicKey.export({format:'jwk'}),kid:'fixture',alg:'RS256',use:'sig'}]}});
+      expect(url.pathname).toBe('/token');
+      const body=new URLSearchParams(route.request().postData()!);
+      expect(body.get('client_id')).toBe(registrations[platform]);expect(body.get('redirect_uri')).toBe(callback);
+      expect(createHash('sha256').update(body.get('code_verifier')!).digest('base64url')).toBe(authorization?.get('code_challenge'));
+      const now=Math.floor(Date.now()/1000), signable=encode({alg:'RS256',kid:'fixture'})+'.'+encode({
+        iss:issuer,sub:'existing-account',aud:registrations[platform],iat:now,exp:now+300,nonce:authorization!.get('nonce')});
+      const id_token=signable+'.'+sign('sha256',Buffer.from(signable),privateKey).toString('base64url');
+      return route.fulfill({headers,json:{token_type:'Bearer',access_token:'fixture-customer-token',id_token}});
+    });
+    await nativeBridge(page,req=>{
+      if(req.path==='/api/capabilities')return reply(capabilities);
+      if(req.path==='/api/onesa/availability')return reply({origin:apiOrigin,handoff:true,native:registrations});
+      if(req.path==='/api/onesa/native-session'){
+        expect(req.method).toBe('POST');expect(JSON.parse(req.data!)).toEqual({accessToken:'fixture-customer-token',platform});
+        established=true;return reply({customerId});
+      }
+      if(req.path==='/api/session')return established?reply({customerId}):reply({error:'not_authenticated'},401);
+      if(req.path==='/api/access' && established){
+        readHistory=true;
+        return reply({customerId,entitlements:[{id:orderId,bundle_id:'flex',byte_limit:'1000000000',consumed_bytes:'0',
+          validity_seconds:86400,purchased_at:'2024-01-01T00:00:00Z',start_by:'2030-01-01T00:00:00Z',activated_at:null,revoked_at:null}],hasMore:false,nextOffset:null});
+      }
+      if(req.path==='/api/sites')return reply({sites:[]});
+      if(req.path==='/api/bundles')return reply({products:[]});
+      return reply({error:'unavailable'},503);
+    },{platform,authenticate:async value=>{
+      const url=new URL(value);expect(url.origin+'/').toBe(issuer);authorization=url.searchParams;
+      expect(authorization.get('code_challenge_method')).toBe('S256');expect(authorization.get('redirect_uri')).toBe(callback);
+      expect(authorization.get('prompt')).toBeNull();
+      return callback+'?code=sample&state='+authorization.get('state');
+    }});
+    await page.goto(configuredBaseURL);
+    await page.getByRole('button',{name:'My PasoFi',exact:true}).click();
+    await page.getByRole('button',{name:'History',exact:true}).first().click();
+    await page.getByRole('button',{name:'Sign in with Onesa',exact:true}).click();
+    await expect(page.getByRole('button',{name:'Enter sign-in code',exact:true})).toHaveCount(0);
+    await page.getByRole('button',{name:'Open Onesa sign-in in browser'}).click();
+    // The Android system-browser deep link is asynchronous. Wait for the
+    // server-side session exchange and protected history read, not a fixed delay.
+    await expect.poll(() => established && readHistory, { timeout: 15000 }).toBe(true);
+    await expect(page.getByText('Bundle reference: '+orderId)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading',{name:'Your activity'})).toBeVisible();
+    expect(readHistory).toBe(true);expect(established).toBe(true);
+    expect(await page.evaluate(()=>JSON.stringify(sessionStorage))).not.toContain('fixture-customer-token');
+    expect(await page.evaluate(()=>(window as any).browserApiFetches)).toBe(0);
+  });
 }
 
 for (const platform of ['ios', 'android'] as const) for (const entry of ['Sign in with Onesa', 'Create an Onesa account']) test(`${platform} ${entry} opens only the native browser command and explicitly accepts a one-use code`, async ({ page, configuredBaseURL }) => {
@@ -101,7 +246,9 @@ for (const platform of ['ios', 'android'] as const) for (const entry of ['Sign i
   const opened = calls.filter(call => call.method === 'openSignIn');
   expect(opened).toHaveLength(1); expect(Object.keys(opened[0].options)).toEqual(['requestId']);
   expect(recovered).toBe(false);
-  await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click();
+  if (entry === 'Sign in with Onesa') await page.evaluate(() => (window as any).__returnToHandoff());
+  else await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click();
+  await expect(page.getByRole('heading', {name: 'Accept an account handoff'})).toBeVisible();
   await page.getByLabel('One-time handoff code').fill(handoffCode);
   await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled();
   await page.getByRole('checkbox', { name: /my own PasoFi account/ }).check();
@@ -157,6 +304,7 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
   });
 }
 
+
 test('unresponsive native capabilities request returns to offline preview without exposing account mutations', async ({ page, configuredBaseURL }) => {
   const calls = await nativeBridge(page, request => request.path === '/api/capabilities'
     ? new Promise<NativeReply>(() => {})
@@ -171,7 +319,6 @@ test('unresponsive native capabilities request returns to offline preview withou
   await page.getByRole('button', { name: '← Offline preview' }).click();
   await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
 });
-
 for (const platform of ['ios', 'android'] as const) {
   test(`${platform} account creation keeps retry custody native while customer mutations preserve their idempotency keys`, async ({ page, configuredBaseURL }) => {
     const requests: NativeRequest[] = []; let hasSession = false;
@@ -322,4 +469,31 @@ test('aborting an active native request cancels its exact request ID and cannot 
   expect(calls.find(call => call.method === 'cancel')?.options.requestId).toBe(pending!.requestId);
   pending!.resolve(reply({ customerId }));
   expect(await page.evaluate(() => (window as any).nativePending)).toEqual({ accepted: false });
+});
+
+
+test('Android cold-start return survives a missed notification and is acknowledged after navigation', async ({ page, configuredBaseURL }) => {
+  await nativeBridge(page, request => request.path === '/api/capabilities' ? reply(capabilities)
+    : reply({ error: 'not_authenticated' }, 401), { platform: 'android', handoffPending: true });
+  await page.goto(configuredBaseURL);
+  await expect(page.getByRole('heading', { name: 'Accept an account handoff' })).toBeVisible({ timeout: 5000 });
+  await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
+  await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
+  await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).__returnToHandoff());
+  await expect(page.getByRole('heading', { name: 'Accept an account handoff' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
+});
+
+
+test('unavailable native capabilities keep the read-only fallback and do not imply a completed mutation', async ({ page, configuredBaseURL }) => {
+  const calls = await nativeBridge(page, () => reply({ error: 'unavailable' }, 503));
+  await page.goto(configuredBaseURL);
+  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await expect(page.getByText('The configured PasoFi service could not be reached.', { exact: false })).toBeVisible();
+  await expect(page.getByText('A request may still have completed', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Start a new customer account' })).toHaveCount(0);
+  expect(calls.filter(call => call.method === 'request').every(call => call.options.method === 'GET' && call.options.path === '/api/capabilities')).toBe(true);
+  await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
+  await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
 });

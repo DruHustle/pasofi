@@ -11,6 +11,9 @@ if (configured) {
   customerOrigin = url.origin;
 }
 
+const issuer = new URL(process.env.VITE_PASOFI_ONESA_ISSUER || 'https://auth.onesa.eu/');
+if (issuer.protocol !== 'https:' || issuer.href !== issuer.origin + '/') throw Error('Expected a public HTTPS identity origin.');
+
 const config: CapacitorConfig = {
   appId: 'com.onesa.pasofi',
   appName: 'PasoFi',
@@ -18,7 +21,7 @@ const config: CapacitorConfig = {
   // Capacitor debug logs otherwise include native call arguments, including a
   // payment's client secret. Keep bridge argument logging disabled in all builds.
   loggingBehavior: 'none',
-  plugins: { PasoFiCustomerApi: { origin: customerOrigin } },
+  plugins: { PasoFiCustomerApi: { origin: customerOrigin, identityOrigin: issuer.origin } },
   // Bundle the app. Remote WebView URLs are for development only.
 };
 

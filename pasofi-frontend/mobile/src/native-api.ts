@@ -1,15 +1,51 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
 type NativeResponse = { requestId: string; status: number; data: unknown; contentType: string; retryAfterMs?: number };
 type NativeRequest = { requestId: string; path: string; method: 'GET' | 'POST' | 'DELETE'; responseType: 'json' | 'pdf'; data?: string; idempotencyKey?: string };
 interface CustomerApiPlugin {
+  addListener(name: 'accountHandoffReturn', listener: () => void): Promise<PluginListenerHandle>;
+  accountHandoffReturnState(): Promise<{ eventId: string | null }>;
+  acknowledgeAccountHandoffReturn(options: { eventId: string }): Promise<void>;
   availability(options: { requestId: string }): Promise<{ requestId: string; configured: boolean; origin?: string; protocol: number }>;
   request(options: NativeRequest): Promise<NativeResponse>;
   cancel(options: { requestId: string }): Promise<{ requestId: string }>;
+  authenticate(options: { authorizationUrl: string }): Promise<{ callback: string }>;
   openSignIn(options: { requestId: string }): Promise<{ requestId: string; opened: boolean }>;
 }
 const bridge = registerPlugin<CustomerApiPlugin>('PasoFiCustomerApi');
 export const usesNativeCustomerApi = Capacitor.isNativePlatform();
+export function onAccountHandoffReturn(listener: () => void): () => void {
+  if (!usesNativeCustomerApi || !Capacitor.isPluginAvailable('PasoFiCustomerApi')) return () => {};
+  let active = true;
+  const android = Capacitor.getPlatform() === 'android';
+  let reading = false, requested = false, delivered: string | undefined;
+  const receive = () => {
+    if (!active) return;
+    if (!android) { listener(); return; }
+    requested = true;
+    if (reading) return;
+    reading = true;
+    void (async () => {
+      try {
+        while (active && requested) {
+          requested = false;
+          const { eventId } = await bridge.accountHandoffReturnState();
+          if (!active || typeof eventId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(eventId)) continue;
+          if (eventId !== delivered) { listener(); delivered = eventId; }
+          if (!active) return;
+          await bridge.acknowledgeAccountHandoffReturn({ eventId });
+          requested = true; // A newer OS return may have arrived before this acknowledgement.
+        }
+      } catch { /* Leave the native marker pending for the next active subscription. */ }
+      finally { reading = false; }
+    })();
+  };
+  const handle = bridge.addListener('accountHandoffReturn', receive).catch(() => undefined);
+  // Recover a cold-start notification that arrived before the page subscribed.
+  if (android) void handle.then(receive);
+  return () => { active = false; void handle.then(subscription => subscription?.remove()).catch(() => undefined); };
+}
+
 export class NativeApiError extends Error { constructor(public code: string) { super(code); } }
 let ready: Promise<void> | undefined;
 
@@ -31,6 +67,12 @@ export async function openNativeOnesaSignIn(origin: string): Promise<void> {
     const result = await bridge.openSignIn({ requestId });
     if (result.requestId !== requestId || result.opened !== true) throw Error();
   } catch { throw new NativeApiError('request_failed'); }
+}
+
+export async function authenticateWithAppleBrowser(origin: string, authorizationUrl: string): Promise<string> {
+  await configured(origin);
+  const result = await bridge.authenticate({ authorizationUrl });
+  return result.callback;
 }
 
 // Native code owns the session cookie and account-creation retry credential.

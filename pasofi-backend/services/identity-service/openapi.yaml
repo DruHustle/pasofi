@@ -208,9 +208,29 @@ paths:
       summary: Read the configured Onesa customer sign-in origin and handoff capability
       responses:
         '200': {description: Canonical customer origin, or null when unconfigured}
+  /v1/onesa/native-session:
+    post:
+      summary: Establish a native customer session from a platform-issued PasoFi access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [platform, accessToken]
+              properties:
+                platform: {type: string, enum: [ios, android]}
+                accessToken: {type: string, minLength: 100, maxLength: 12000, writeOnly: true}
+      responses:
+        '200': {description: Original customer ID and a separate host-only native session cookie}
+        '401': {description: Token, platform client or customer access rejected}
+        '403': {description: Origin rejected}
+        '409': {description: Existing session requires explicit sign-out}
+        '503': {description: Managed client or database unavailable}
   /v1/onesa/start:
     post:
-      summary: Start a browser-bound Portal customer flow with PKCE and nonce
+      summary: Start a browser-bound Onesa customer flow with PKCE and nonce
       requestBody:
         required: true
         content:
@@ -226,7 +246,7 @@ paths:
         '503': {description: Identity or Portal configuration unavailable}
   /v1/onesa/complete:
     post:
-      summary: Open a Portal-backed customer session without merging guest identities
+      summary: Open an Onesa-backed customer session without merging guest identities
       requestBody:
         required: true
         content:

@@ -24,7 +24,12 @@ test('unreachable account gateway has a bounded offline fallback', () => {
   assert.match(component, /12000\)/);
   assert.match(component, /did not respond in time/);
   assert.match(component, /clearTimeout\(timeout\)/);
-  assert.match(component, /onSessionChange\(\(\) => \{ clearTimeout\(timeout\); controller\.abort\(\); setCapabilities\(null\); setLoading\(false\)/);
+  const sessionChange = component.match(/onSessionChange\(\(\) => \{([^}]*)\}\)/)?.[1] ?? "";
+  assert.match(sessionChange, /clearTimeout\(timeout\)/);
+  assert.match(sessionChange, /controller\.abort\(\)/);
+  assert.match(sessionChange, /setCapabilities\(null\)/);
+  assert.match(sessionChange, /setLoading\(true\)/);
+  assert.match(sessionChange, /setAttempt\(value => value \+ 1\)/);
 });
 
 test('invalid API origin does not advertise configured customer account access', () => {

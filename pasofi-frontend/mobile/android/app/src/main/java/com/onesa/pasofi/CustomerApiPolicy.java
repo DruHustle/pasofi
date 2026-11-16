@@ -35,9 +35,14 @@ final class CustomerApiPolicy {
         boolean creation() { return method.equals("POST") && basePath.equals("/api/session"); }
         boolean logout() { return method.equals("DELETE") && basePath.equals("/api/session"); }
         boolean sessionRead() { return method.equals("GET") && basePath.equals("/api/session"); }
-        boolean recovery() { return method.equals("POST") && (basePath.equals("/api/recovery") || basePath.equals("/api/handoff/redeem")); }
+        boolean recovery() { return method.equals("POST") && (basePath.equals("/api/recovery") || basePath.equals("/api/handoff/redeem") || basePath.equals("/api/onesa/native-session")); }
         boolean changesIdentity() { return creation() || logout() || recovery(); }
         boolean publicRead() { return method.equals("GET") && basePath.matches("^/api/(capabilities|bundles|sites|help|payments/methods)$"); }
+    }
+
+    static boolean isAccountHandoffReturn(String action, String dataString) {
+        return "android.intent.action.VIEW".equals(action) &&
+            "com.onesa.pasofi://account/handoff".equals(dataString);
     }
 
     static boolean validUuid(String value) { return value != null && UUID_PATTERN.matcher(value).matches(); }
@@ -87,7 +92,7 @@ final class CustomerApiPolicy {
             path.matches("^/api/orders/" + UUID + "/status$") || path.matches("^/api/customer/invoices(?:/" + UUID + "(?:/pdf)?)?$") ||
             path.matches("^/api/receipt-pairings/" + UUID + "$" );
         if (!method.equals("POST")) return false;
-        return path.matches("^/api/(orders|recovery(?:/(setup|rotate))?|handoff(?:/redeem)?|invoice-downloads|receipt-pairings|vouchers/redeem|network/credentials|network/disconnect)$") ||
+        return path.matches("^/api/(orders|onesa/native-session|recovery(?:/(setup|rotate))?|handoff(?:/redeem)?|invoice-downloads|receipt-pairings|vouchers/redeem|network/credentials|network/disconnect)$") ||
             path.matches("^/api/orders/" + UUID + "/(checkout|mock-payment|expire-unused)$") ||
             path.matches("^/api/receipt-pairings/" + UUID + "/cancel$");
     }

@@ -21,11 +21,20 @@ struct CustomerApiPolicyTests {
         try CustomerApiPolicy.request(id: id, path: path, method: method, responseType: type, data: data, key: key)
     }
     static func main() throws {
+        var accountReturnQueue = AccountHandoffReturnQueue()
+        check(!accountReturnQueue.takePending(), "No cold-start account return is pending by default")
+        accountReturnQueue.recordBeforePluginLoad()
+        check(accountReturnQueue.takePending(), "Cold-start account return is retained until plugin load")
+        check(!accountReturnQueue.takePending(), "Cold-start account return is delivered only once")
+
         check(CustomerApiPolicy.origin(origin) == origin, "Public HTTPS origin accepted")
         check(CustomerApiPolicy.browserSignInURL(origin)?.absoluteString == origin + "/#account", "Only fixed public sign-in destination")
         _ = try request("/api/onesa/availability"); checks += 1
         rejects("Availability cannot mutate") { _ = try request("/api/onesa/availability", "POST") }
         rejects("Availability does not accept private query") { _ = try request("/api/onesa/availability?code=private") }
+        _ = try request("/api/onesa/native-session","POST"); checks += 1
+        rejects("Native session requires POST") { _ = try request("/api/onesa/native-session") }
+        rejects("Native session never accepts credentials in the query") { _ = try request("/api/onesa/native-session?token=invalid","POST") }
         rejects("Native does not exchange browser OIDC credentials") { _ = try request("/api/onesa/complete", "POST") }
         for invalid in ["http://pasofi.example.test", "https://user@pasofi.example.test", "https://pasofi.example.test/", "https://pasofi.example.test/api", "https://pasofi.example.test:8443", "https://127.0.0.1", "https://pasofi.local", "https://sub.localhost", "https://pasofi.example.test?route=evil"] {
             check(CustomerApiPolicy.origin(invalid) == nil && CustomerApiPolicy.browserSignInURL(invalid) == nil, "Unexpected origin rejected")

@@ -1,5 +1,7 @@
 """Operate the installed qualification APK via Android's accessibility tree."""
 import re
+import os
+from pathlib import Path
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -50,9 +52,79 @@ def tap(label, allow_scroll=False, exact=False):
     adb("shell", "input", "tap", str(x), str(y))
 
 
+def account_return_diagnostics():
+    # This qualification run is a fresh install with no account, credentials,
+    # or payment input. Retain its public first-run UI when acceptance fails.
+    nodes = screen()
+    labels = list(dict.fromkeys(node.get(key) for node in nodes
+                               for key in ("text", "content-desc") if node.get(key)))
+    print("Observed public first-run accessibility labels:", labels[:40], flush=True)
+    evidence = os.environ.get("PASOFI_ANDROID_EVIDENCE_DIR")
+    if evidence:
+        try:
+            directory = Path(evidence)
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "first-run.xml").write_text(adb("shell", "cat", "/sdcard/onesa-qualification.xml"))
+            with (directory / "first-run.png").open("wb") as output:
+                subprocess.run(["adb", "exec-out", "screencap", "-p"], stdout=output, check=True, timeout=20)
+        except Exception as error:
+            print("Could not retain first-run UI: " + type(error).__name__, flush=True)
+    try:
+        activity = adb("shell", "dumpsys", "activity", "activities")
+        relevant = [line.strip() for line in activity.splitlines()
+                    if PACKAGE in line and any(word in line for word in ("Resumed", "resumed", "topResumed", "mResumed"))]
+        print("PasoFi activity state: " + (" | ".join(relevant[-8:]) if relevant else "not reported as resumed"), flush=True)
+    except Exception as error:
+        print("Could not inspect activity state: " + type(error).__name__, flush=True)
+    try:
+        logs = adb("logcat", "-d", "-t", "250", "AndroidRuntime:E", "*:S")
+        if logs.strip():
+            print("Android runtime errors:\\n" + logs[-8000:], flush=True)
+    except Exception as error:
+        print("Could not inspect Android runtime errors: " + type(error).__name__, flush=True)
+
+
+def account_return_state():
+    # A cold-start custom-scheme intent can arrive before the WebView has an
+    # accessibility root. Wait for the exact activity and its rendered UI,
+    # rather than treating a transient null UIAutomator root as a product bug.
+    end = time.monotonic() + 60
+    while time.monotonic() < end:
+        try:
+            activity = adb("shell", "dumpsys", "activity", "activities")
+            resumed = any(PACKAGE in line and ("mResumedActivity" in line or "topResumedActivity" in line)
+                          for line in activity.splitlines())
+        except Exception:
+            resumed = False
+        nodes = screen() if resumed else []
+        if locate("Accept an account handoff", exact=True, nodes=nodes):
+            print("Installed app opened the account handoff form from the OS return intent.", flush=True)
+            return
+        for gate in (
+            "Mobile account access is not enabled by this deployment yet",
+            "The configured PasoFi service did not respond in time",
+            "The configured PasoFi service could not be reached",
+        ):
+            if locate(gate, nodes=nodes):
+                print("Installed app opened the account surface and preserved the fail-closed service gate: " + gate, flush=True)
+                return
+        time.sleep(1)
+    raise RuntimeError("The installed PasoFi activity did not expose the account handoff form or a recognized fail-closed service gate after cold-start; see activity and AndroidRuntime diagnostics")
+
+
 
 if __name__ == "__main__":
     try:
+        # A fresh process launched from the fixed browser return must enter the
+        # account surface. Production can still withhold private account access.
+        adb("shell", "am", "force-stop", PACKAGE)
+        adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity",
+            "-a", "android.intent.action.VIEW", "-c", "android.intent.category.BROWSABLE",
+            "-d", "com.onesa.pasofi://account/handoff")
+        account_return_state()
+        tap("Offline preview")
+        visible("My PasoFi", exact=True)
+        print("The system return opened the installed account surface; its Offline preview control returned home.", flush=True)
         adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
         tap("My PasoFi", exact=True)
         print("Entered My PasoFi from the installed application", flush=True)
@@ -89,5 +161,8 @@ if __name__ == "__main__":
             adb("shell", "input", "swipe", "480", "1180", "480", "440", "360")
         else:
             raise RuntimeError("Configured checkout state did not appear")
+    except Exception:
+        account_return_diagnostics()
+        raise
     finally:
         adb("shell", "rm", "-f", "/sdcard/onesa-qualification.xml")

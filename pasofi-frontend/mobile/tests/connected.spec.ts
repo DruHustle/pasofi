@@ -560,8 +560,12 @@ for (const change of ['signed_out', 'recovered'] as const) {
     state.owner = '99999999-9999-4999-8999-999999999999';
     await page.evaluate(change => { const channel = new BroadcastChannel('pamofi.session'); channel.postMessage(change); channel.close(); }, change);
     await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), preparedRequestStorage)).toBeNull();
-    await page.getByRole('button', { name: 'Retry service connection', exact: true }).click();
-    await expect(page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' })).toHaveValue('');
+    // The session-change listener remounts the customer workspace and clears
+    // its selected router. The refresh message is intentionally transient:
+    // the new capabilities request immediately replaces the old account view.
+    const hotspot = page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' });
+    await expect(hotspot).toBeVisible();
+    await expect(hotspot).toHaveValue('');
     await prepareRecoveryRequest(page);
     expect(state.requests).toHaveLength(2); expect(state.requests[1].requestKey).not.toBe(firstKey);
     expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)!).customerId, preparedRequestStorage)).toBe(state.owner);
