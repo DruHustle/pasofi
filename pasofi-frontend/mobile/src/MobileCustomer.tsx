@@ -19,7 +19,7 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
   useEffect(() => {
     const controller = new AbortController();
     live.current = true; setLoading(true); setMessage(''); setCapabilities(null);
-    if (!mobileApiOrigin) { setLoading(false); setMessage('A valid HTTPS PasoFi gateway is required. This build is still an offline preview.'); return () => { live.current = false; }; }
+    if (!mobileApiOrigin) { setLoading(false); setMessage('Mobile account access is not enabled by this deployment yet. A valid HTTPS PasoFi gateway is required. Your offline preview is still available.'); return () => { live.current = false; }; }
     // A captive network or unreachable gateway must not leave account entry
     // spinning indefinitely. Preserve the offline preview and do not sign in.
     const timeout = setTimeout(() => {
