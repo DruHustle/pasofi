@@ -168,7 +168,8 @@ jobs:
 
   mac-deployment:
     name: Verify Mac deployment launcher
-    runs-on: macos-15
+    # Use standard Intel capacity for the macOS 15 shell/Python launcher checks.
+    runs-on: macos-15-intel
     timeout-minutes: 10
     steps:
       - name: Check out source
