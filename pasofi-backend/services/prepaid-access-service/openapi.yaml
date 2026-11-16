@@ -161,6 +161,7 @@ paths:
                   paymentCheckout: {type: boolean}
                   vouchers: {type: boolean}
                   receiptPairing: {type: boolean}
+                  cashReceiptRecovery: {type: boolean, description: Existing paid receipts and exact agent sale retries can be recovered.}
                   staffSales: {type: boolean}
                   salesLocationStatus: {type: boolean, description: Supports versioned admin sales-location enable/pause decisions. This capability does not enable commerce or customer Wi-Fi. Clients must require true before showing the new action.}
                   deliverySms: {type: boolean}

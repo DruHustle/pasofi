@@ -8,7 +8,7 @@ const orderId = 'ffffffff-ffff-4fff-8fff-ffffffffffff', invoiceId = '11111111-11
 const future = () => new Date(Date.now() + 900_000).toISOString();
 const product = { id: 'flex', price_minor: 100, currency: 'USD', byte_limit: '10000000000', validity_seconds: 604800 };
 const staff = { staffId, email: 'agent@example.invalid', displayName: 'Example agent', status: 'approved', role: 'agent', siteIds: [siteId], version: 1, mfaEnrolled: true, mfaVerified: true };
-const capabilities = { demo: true, paymentMode: 'mock', paymentCheckout: true, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: true, networkAccess: false, mobileCookies: false, invoices: true, invoiceEmail: true, invoiceSms: true };
+const capabilities = { demo: true, paymentMode: 'mock', paymentCheckout: true, vouchers: true, receiptPairing: true, staffSales: true, cashReceiptRecovery: true, deliverySms: true, networkAccess: false, mobileCookies: false, invoices: true, invoiceEmail: true, invoiceSms: true };
 const invoice = { id: invoiceId, number: 'PF-000001', issuedAt: '2026-11-05T12:00:00Z', paidAt: '2026-11-05T12:00:00Z', currency: 'USD', totalMinor: 100, sourceType: 'cash', saleId, orderId: null, simulation: true, requestedChannel: 'email' };
 const invoicePage = { invoices: [invoice], hasMore: false, nextOffset: null };
 const sale = () => ({ id: saleId, agentId: staffId, siteId, siteName: 'Example site', bundleId: product.id, priceMinor: 100, commissionMinor: 10, commissionBps: 1000, currency: 'USD', byteLimit: product.byte_limit, validitySeconds: product.validity_seconds, soldAt: new Date().toISOString(), startBy: future(), delivery: 'receipt', simulation: true });
@@ -97,10 +97,30 @@ for (const voucherAvailable of [true, false]) {
   });
 }
 
-test('cash invoice delivery remains exact across a lost response and a paused email provider', async ({ page }, testInfo) => {
+test('a customer opens their paid cash receipt from invoice history during a sales pause', async ({page}) => {
+  const pairingId = '22222222-2222-4222-8222-222222222222';
+  const caps = {...capabilities, staffSales:false, receiptPairing:false, vouchers:false};
+  let writes = 0;
+  await mock(page, caps, async (route, path, method) => {
+    if (method === 'POST' && (path === '/api/vouchers/redeem' || path === '/api/receipt-pairings')) writes++;
+    if (path === '/api/customer/invoices') { await json(route, {...invoicePage, invoices:[{...invoice, pairingId}]}); return true; }
+    if (path === `/api/receipt-pairings/${pairingId}`) {
+      await json(route, {status:'ready', receipt:{sale:sale(), voucher:{id:saleId, code:'PRIVATEPAIDVOUCHER', state:'valid'}}}); return true;
+    }
+    return false;
+  });
+  await customer(page, 'History');
+  await page.locator('.invoice-history summary').click();
+  await page.getByRole('button', {name:'View paid receipt'}).click();
+  await expect(page.getByLabel('Private voucher', {exact:true})).toHaveValue('PRIVATEPAIDVOUCHER');
+  await expect(page.getByRole('button', {name:"Redeem this receipt's voucher"})).toBeDisabled();
+  expect(writes).toBe(0);
+});
+
+test('cash sale and invoice recovery reuse the original request after a lost response and a global sales pause', async ({ page }, testInfo) => {
   const writes: { key: string; body: unknown }[] = [];
   await mock(page, capabilities, async (route, path, method) => {
-    if (path === '/api/capabilities') { await json(route, { ...capabilities, invoiceEmail: writes.length === 0 }); return true; }
+    if (path === '/api/capabilities') { await json(route, { ...capabilities, staffSales: writes.length === 0, invoiceEmail: writes.length === 0 }); return true; }
     if (path === '/api/staff/sales') {
       if (method === 'POST') {
         writes.push({ key: route.request().headers()['idempotency-key'], body: route.request().postDataJSON() });

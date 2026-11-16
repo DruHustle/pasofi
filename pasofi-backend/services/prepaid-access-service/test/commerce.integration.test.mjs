@@ -37,6 +37,37 @@ async function setup(options={}){
  async function cleanup(){await app.close();await new Promise(resolve=>server.close(resolve));await pool.query('DELETE FROM commerce_audit WHERE actor_id=ANY($1::uuid[])',[[admin,agent,otherAgent,support]]);await pool.query('DELETE FROM receipt_pairings WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM access_grants WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM payment_reviews WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM verified_charges WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_entitlements WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM provider_payment_attempts WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await cleanupInvoiceEvidence(pool,{customerIds:[customer,otherCustomer]});await pool.query('DELETE FROM mock_payment_records WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM event_outbox WHERE aggregate_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM agent_sale_deliveries WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM cash_refund_events WHERE refund_id IN (SELECT r.id FROM cash_refunds r JOIN agent_sales s ON s.id=r.sale_id WHERE s.agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM cash_refunds WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM issued_vouchers WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await cleanupInvoiceEvidence(pool,{agentIds:[agent,otherAgent]});await pool.query('DELETE FROM agent_sales WHERE agent_id=ANY($1::uuid[])',[[agent,otherAgent]]);await pool.query('DELETE FROM inventory_allocations WHERE actor_id=$1',[admin]);await pool.query('DELETE FROM agent_site_inventory WHERE site_id=ANY($1::uuid[])',[[site,otherSite]]);await pool.query('DELETE FROM cash_shifts WHERE agent_id=ANY($1::uuid[])',[[agent,otherAgent]]);await pool.query('DELETE FROM sales_locations WHERE id=ANY($1::uuid[])',[[site,otherSite]]);await pool.end();for(const [k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
  await call('POST','/v1/admin/sites',{id:site,name:options.siteName??'Test site one'});await call('POST','/v1/admin/sites',{id:otherSite,name:'Test site two'});if(options.shifts!==false&&env.PAMOFI_COMMERCE_ENABLED==='true'){for(const who of ['agent','other'])for(const siteId of staff[who].siteIds){const opened=await call('POST','/v1/staff/cash-shifts',{siteId,currency:'USD',openingMinor:0},who);assert.equal(opened.statusCode,201);}}return {pool,app,call,cleanup,site,otherSite,customer,otherCustomer,admin,agent,otherAgent,support,staff,targetIdentity};
 }
+test('a global sales pause preserves exact retries and private paid receipts without issuing new vouchers',{skip:!url},async()=>{
+ const f=await setup(),key=randomUUID();
+ let paused;
+ try{
+  const stock=await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:2,reason:'Exercise recovery of an already paid sale'});
+  assert.equal(stock.statusCode,201);
+  const pairing=(await f.call('POST','/v1/receipt-pairings',{siteId:f.site,bundleId:'mini'},'customer')).json().pairing;
+  const payload={siteId:f.site,bundleId:'mini',pairingCode:pairing.code,delivery:'receipt',payment:{method:'cash',confirmed:true,amountMinor:50,currency:'USD'}};
+  const sale=(await f.call('POST','/v1/staff/sales',payload,'agent',key)).json().sale;
+  const receiptPath=`/v1/staff/sales/${sale.id}/receipt`,pairPath=`/v1/receipt-pairings/${pairing.id}`;
+  const receipt=(await f.call('GET',receiptPath,undefined,'agent')).json().receipt;
+  assert.ok(receipt.voucher.code);
+  process.env.PAMOFI_COMMERCE_ENABLED='false';
+  paused=buildApp();
+  const read=(path,cookie)=>paused.inject({url:path,headers:{cookie}});
+  const retry=(attemptKey,body=payload)=>paused.inject({method:'POST',url:'/v1/staff/sales',headers:{origin,cookie:'staff=agent','idempotency-key':attemptKey},payload:body});
+  const caps=(await paused.inject({url:'/v1/capabilities'})).json();
+  assert.equal(caps.staffSales,false);assert.equal(caps.vouchers,false);assert.equal(caps.receiptPairing,false);assert.equal(caps.cashReceiptRecovery,true);
+  assert.deepEqual((await read(receiptPath,'staff=agent')).json().receipt,receipt);
+  assert.deepEqual((await read(pairPath,'customer=main')).json().receipt,receipt);
+  assert.equal((await read(receiptPath,'staff=other')).statusCode,404);
+  assert.equal((await read(receiptPath,'staff=support')).statusCode,403);
+  assert.equal((await read(pairPath,'customer=other')).statusCode,404);
+  assert.equal((await read(pairPath,'')).statusCode,401);
+  const recovered=await retry(key);assert.equal(recovered.statusCode,200);assert.deepEqual(recovered.json().sale,sale);assert.equal(recovered.json().replayed,true);
+  assert.equal((await retry(key,{...payload,bundleId:'flex'})).json().error,'idempotency_conflict');
+  assert.equal((await retry(randomUUID())).json().error,'sale_not_recorded');
+  assert.equal((await f.pool.query('SELECT quantity FROM agent_site_inventory WHERE agent_id=$1 AND site_id=$2',[f.agent,f.site])).rows[0].quantity,1);
+  assert.equal((await paused.inject({method:'POST',url:'/v1/vouchers/redeem',headers:{origin,cookie:'customer=main'},payload:{code:receipt.voucher.code}})).statusCode,404);
+ }finally{if(paused)await paused.close();await f.cleanup();}
+});
 test('configured migration origin reaches the authenticated guard and foreign origins remain blocked',{skip:!url},async()=>{
  const f=await setup({env:{PUBLIC_ORIGIN_ALIASES:JSON.stringify(['https://pasofi.onesa.eu'])}});
  try{
@@ -872,4 +903,61 @@ test('an independent supervisor may withdraw a redeemed unused bundle but cannot
   assert.equal((await f.call('POST','/v1/vouchers/redeem',{code:receipt.voucher.code},'customer')).json().error,'voucher_refunded');
   assert.equal((await f.pool.query('SELECT id FROM purchase_entitlements WHERE source_voucher_id=$1',[receipt.voucher.id])).rowCount,1);
  }finally{await f.cleanup();}
+});
+
+test('paused sales allow the issuing agent to settle approved refunds without reopening sales', {skip:!url}, async()=>{
+ const f=await setup();
+ let paused;
+ try {
+  const {sale}=await refundableSale(f);
+  const close=(id,countedMinor)=>f.call('POST',`/v1/staff/cash-shifts/${id}/close`,{countedMinor,note:'Return counted drawer to the cashier'},'agent');
+  assert.equal((await close(sale.shiftId,50)).statusCode,200);
+  const shifts='/v1/staff/cash-shifts', refundPath='/v1/staff/cash-refunds';
+  const requested=await f.call('POST',refundPath,{saleId:sale.id,reason:'Customer requests unused allowance refund'},'agent');
+  assert.equal(requested.statusCode,201);
+  const refundId=requested.json().refund.id;
+  assert.equal((await f.call('PATCH',`/v1/admin/sites/${f.site}`,{enabled:false,expectedVersion:'1',reason:'Pause sales for hotspot maintenance'})).statusCode,200);
+  const normal={siteId:f.site,currency:'USD',openingMinor:50}, refundShift={...normal,refundOnly:true};
+  const options=async(who)=>(await f.call('GET',shifts,undefined,who)).json().refundOptions;
+  assert.deepEqual(await options('agent'),[]);
+  assert.equal((await f.call('POST',shifts,refundShift,'agent')).json().error,'refund_not_approved');
+  assert.equal((await f.call('POST',`/v1/admin/cash-refunds/${refundId}/decision`,{decision:'approved',note:'Independently reviewed unused allowance'})).statusCode,200);
+  assert.deepEqual(await options('agent'),[{siteId:f.site,siteName:'Test site one',currency:'USD'}]);
+  assert.deepEqual(await options('other'),[]);
+  assert.equal((await f.call('POST',shifts,normal,'agent')).json().error,'site_unavailable');
+  assert.equal((await f.call('POST',shifts,refundShift,'other')).json().error,'refund_not_approved');
+  assert.equal((await f.call('POST',shifts,{...refundShift,currency:'EUR'},'agent')).json().error,'refund_not_approved');
+  f.staff.agent.siteIds=[];
+  assert.deepEqual(await options('agent'),[]);
+  assert.equal((await f.call('POST',shifts,refundShift,'agent')).statusCode,403);
+  f.staff.agent.siteIds=[f.site];
+
+  process.env.PAMOFI_COMMERCE_ENABLED='false';
+  paused=buildApp();
+  const key=randomUUID(),open=(body)=>paused.inject({method:'POST',url:shifts,headers:{origin,cookie:'staff=agent','idempotency-key':key},payload:body});
+  assert.equal((await open(normal)).json().error,'commerce_disabled');
+  const opened=await open(refundShift);
+  assert.equal(opened.statusCode,201);
+  const shift=opened.json().shift;
+  assert.equal(shift.refundOnly,true);
+  assert.equal((await open(refundShift)).json().shift.id,shift.id);
+  assert.equal((await open(normal)).json().error,'idempotency_conflict');
+  assert.deepEqual(await options('agent'),[]);
+
+  // Resuming commerce cannot convert the open refund drawer into a sales shift.
+  assert.equal((await f.call('PATCH',`/v1/admin/sites/${f.site}`,{enabled:true,expectedVersion:'2',reason:'Restore public site after maintenance'})).statusCode,200);
+  const {pairing}= (await f.call('POST','/v1/receipt-pairings',{siteId:f.site,bundleId:'mini'},'customer')).json();
+  assert.equal((await f.call('POST','/v1/staff/cash-references/lookup',{siteId:f.site,code:pairing.code},'agent')).json().error,'shift_required');
+  const newSale={siteId:f.site,bundleId:'mini',delivery:'receipt',pairingCode:pairing.code,payment:{method:'cash',confirmed:true,amountMinor:50,currency:'USD'}};
+  assert.equal((await f.call('POST','/v1/staff/sales',newSale,'agent')).json().error,'shift_required');
+  const pausedPost=(path,body)=>paused.inject({method:'POST',url:path,headers:{origin,cookie:'staff=agent','idempotency-key':randomUUID()},payload:body});
+  const reserved=await pausedPost(`${refundPath}/${refundId}/prepare-payout`,{});
+  assert.equal(reserved.json().refund.payoutShiftId,shift.id);
+  assert.equal((await pausedPost(`${refundPath}/${refundId}/payout`,{confirmed:true})).json().refund.state,'paid');
+  const closed=(await close(shift.id,0)).json().shift;
+  assert.equal(closed.differenceMinor,'0');
+  assert.equal(closed.saleCount,'0');
+  assert.equal(closed.refundsMinor,'50');
+  assert.equal((await f.call('POST',shifts,refundShift,'agent')).json().error,'refund_not_approved');
+ }finally{if(paused)await paused.close();await f.cleanup();}
 });

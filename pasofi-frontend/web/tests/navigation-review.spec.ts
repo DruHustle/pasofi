@@ -23,7 +23,7 @@ async function guest(page: Page, overrides: Partial<Capabilities> = {}, catalogu
   return mutations;
 }
 
-for (const [route, title] of [['checkout', 'Checkout'], ['receipt', 'Buy with an agent']] as const) {
+for (const [route, title] of [['checkout', 'Checkout'], ['receipt', 'Private receipts']] as const) {
   test(`${route} direct entry and reload preserve the screen without submitting anything`, async ({ page }) => {
     const mutations = await guest(page);
     await page.goto(`/#${route}`);
@@ -31,6 +31,12 @@ for (const [route, title] of [['checkout', 'Checkout'], ['receipt', 'Buy with an
     await expect(page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Bundles', exact: true })).toHaveAttribute('aria-current', 'page');
     await page.reload();
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+    if (route === 'receipt') {
+      await expect(page.getByText('Cash purchases are currently paused.', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'View purchase history' })).toBeEnabled();
+      await expect(page.getByText(/pay the exact cash amount|ask the agent for this published bundle/i)).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Create private pairing code' })).toHaveCount(0);
+    }
     await page.getByRole('button', { name: 'Close customer workspace', exact: true }).click();
     await expect(page).toHaveURL(/#home$/);
     expect(mutations).toEqual([]);
@@ -73,7 +79,7 @@ test('customer tools keep distinct routes through back and forward navigation', 
   await sections.getByRole('button', { name: 'Online payment', exact: true }).click();
   await expect(page).toHaveURL(/#checkout\?bundle=daily$/);
   await page.goBack();
-  await expect(page.getByRole('heading', { name: 'Buy with an agent', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Private receipts', exact: true })).toBeVisible();
   await page.goForward();
   await expect(page.getByRole('heading', { name: 'Checkout', exact: true })).toBeVisible();
   expect(mutations).toEqual([]);

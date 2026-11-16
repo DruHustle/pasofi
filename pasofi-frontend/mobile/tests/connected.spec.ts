@@ -178,6 +178,25 @@ test('qualified mobile API session and voucher redemption use credentialed HTTPS
   const transports = await page.evaluate(() => (window as any).apiTransport); expect(transports.length).toBeGreaterThan(4); expect(transports.every((request: { credentials: string; mode: string; redirect: string }) => request.credentials === 'include' && request.mode === 'cors' && request.redirect === 'error')).toBe(true); expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('DEMOVOUCHER'); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); await page.screenshot({ path: testInfo.outputPath('mobile-api-queued-360.png'), fullPage: true });
 });
 
+test('mobile private receipts lead to history when cash purchases are paused', async ({ page, configuredBaseURL }) => {
+  const writes: string[] = [];
+  await mock(page, async (_route, path, method, reply) => {
+    if (method !== 'GET') writes.push(path);
+    if (path !== '/api/capabilities') return false;
+    await reply({ ...capabilities, staffSales: false, receiptPairing: false });
+    return true;
+  });
+  await open(page, configuredBaseURL);
+  await page.getByRole('button', { name: 'Private receipt', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Private receipts', exact: true })).toBeVisible();
+  await expect(page.getByText('Cash purchases are currently paused.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/pay the exact cash amount|ask the agent for this published bundle/i)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Create private pairing code' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'View purchase history' }).click();
+  await expect(page.getByRole('heading', { name: 'Your activity' })).toBeVisible();
+  expect(writes).toEqual([]);
+});
+
 test('mobile keeps a replayed redemption confirmed while bundle history recovers', async ({ page, configuredBaseURL }) => {
   let redemptionCalls = 0, failBundleRead = true;
   await mock(page, async (_route, path, _method, reply) => {
