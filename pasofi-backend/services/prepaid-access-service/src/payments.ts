@@ -132,8 +132,23 @@ export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapte
    const entitlement=charge.fulfilled_entitlement_id?await client.query('SELECT * FROM purchase_entitlements WHERE id=$1 FOR UPDATE',[charge.fulfilled_entitlement_id]):{rowCount:0,rows:[]};
    const grants=entitlement.rowCount?await client.query("SELECT id FROM access_grants WHERE entitlement_id=$1 AND state <> 'closed'",[entitlement.rows[0].id]):{rowCount:0};
    const safe=entitlement.rowCount && !entitlement.rows[0].activated_at && BigInt(entitlement.rows[0].consumed_bytes)===0n && !grants.rowCount;
-   if(safe)await client.query('UPDATE purchase_entitlements SET revoked_at=now() WHERE id=$1',[entitlement.rows[0].id]);
-   else if(entitlement.rowCount)await client.query("INSERT INTO payment_reviews(id,order_id,charge_id,reason) VALUES ($1,$2,$3,'consumed_reversal') ON CONFLICT DO NOTHING",[randomUUID(),a.order_id,charge.id]);
+   if(entitlement.rowCount) {
+     // A reversed charge no longer funds future traffic, whether or not its
+     // allowance has already been used. Review records are not access gates.
+     await client.query('UPDATE purchase_entitlements SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1',[entitlement.rows[0].id]);
+     if(grants.rowCount) {
+       // A live NAS session may continue using its previously granted quota.
+       // Fence issuance and request a physical disconnect until reconciled.
+       await client.query(`INSERT INTO network_account_holds(customer_id,grant_id,reason)
+         SELECT $1,id,'payment_reversal_active_access' FROM access_grants
+         WHERE entitlement_id=$2 AND state<>'closed' ORDER BY issued_at LIMIT 1
+         ON CONFLICT(customer_id) DO NOTHING`,[a.customer_id,entitlement.rows[0].id]);
+       await client.query(`UPDATE access_grants SET state='uncertain',
+         disconnect_requested_at=COALESCE(disconnect_requested_at,now())
+         WHERE entitlement_id=$1 AND state<>'closed'`,[entitlement.rows[0].id]);
+     }
+   }
+   if(!safe && entitlement.rowCount)await client.query("INSERT INTO payment_reviews(id,order_id,charge_id,reason) VALUES ($1,$2,$3,'consumed_reversal') ON CONFLICT DO NOTHING",[randomUUID(),a.order_id,charge.id]);
    await client.query("UPDATE verified_charges SET state='reversed',updated_at=now() WHERE id=$1",[charge.id]);
    await client.query("UPDATE provider_payment_attempts SET state='reversed',updated_at=now() WHERE id=$1",[attemptId]);
    return {state:safe||!entitlement.rowCount?'reversed':'pending_review'};

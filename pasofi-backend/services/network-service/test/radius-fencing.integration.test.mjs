@@ -29,7 +29,7 @@ function authorize(endpoint,c,body,clientName){return new Promise((resolve,rejec
   request.on('error',reject);request.end(JSON.stringify(body));
 });}
 test('credential revocation, expiry and NAS disablement during grant lookup prevent Access-Accept',{skip:!database,timeout:30000},async()=>{
-  const env={APP_ENV:'demo',NODE_ENV:'development',INTERNAL_RADIUS_ENABLED:'true'},saved=Object.fromEntries(Object.keys(env).map(key=>[key,process.env[key]]));Object.assign(process.env,env);
+  const env={APP_ENV:'demo',NODE_ENV:'development',INTERNAL_RADIUS_ENABLED:'true',PAMOFI_CUSTOMER_NETWORK_ENABLED:'true'},saved=Object.fromEntries(Object.keys(env).map(key=>[key,process.env[key]]));Object.assign(process.env,env);
   const dir=mkdtempSync(join(tmpdir(),'pamofi-radius-fencing-')),c=certificates(dir),pool=new pg.Pool({connectionString:database,max:3});
   const customer=randomUUID(),nas=randomUUID(),site=randomUUID(),clientName=`fence_${randomUUID().replaceAll('-','')}`;
   let barrier,server,app;

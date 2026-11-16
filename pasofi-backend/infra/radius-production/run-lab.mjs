@@ -88,6 +88,7 @@ try{
   const radius=rendered.services.radius;
   assert.equal(radius.image,radiusImage);assert.equal(rendered.services['radius-api'].ports?.length||0,0);
   assert.equal(rendered.services['radius-api'].environment.PAMOFI_ROLE_PREFIX,'pamo_lab');
+  assert.equal(rendered.services['radius-api'].environment.PAMOFI_CUSTOMER_NETWORK_ENABLED,'false','RADIUS transport must not enable customer authentication');
   assert.deepEqual(radius.ports.map(port=>({ip:port.host_ip,target:port.target,published:port.published,protocol:port.protocol})).sort((a,b)=>a.target-b.target),[{ip:serverIp,target:1812,published:'1812',protocol:'udp'},{ip:serverIp,target:1813,published:'1813',protocol:'udp'}]);
   assert.equal(radius.environment.PAMOFI_RADIUS_QUALIFIED,'true');
   for(const svc of ['network','prepaid-access'])assert.equal(rendered.services[svc].environment.PAMOFI_CUSTOMER_NETWORK_ENABLED,'false');

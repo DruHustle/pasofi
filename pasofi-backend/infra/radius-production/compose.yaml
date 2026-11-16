@@ -34,6 +34,7 @@ services:
       NODE_ENV: production
       PAMOFI_ROLE_PREFIX: ${PAMOFI_ROLE_PREFIX:-pamofi}
       PAMOFI_RADIUS_QUALIFIED: ${PAMOFI_RADIUS_QUALIFIED:?Set explicit RADIUS qualification}
+      PAMOFI_CUSTOMER_NETWORK_ENABLED: ${PAMOFI_CUSTOMER_NETWORK_ENABLED:-false}
       DATABASE_URL_FILE: /run/secrets/network_runtime_url
       INTERNAL_NETWORK_SECRET_FILE: /run/secrets/internal_network_secret
       PREPAID_URL: https://prepaid.internal
