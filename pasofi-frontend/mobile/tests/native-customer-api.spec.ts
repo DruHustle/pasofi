@@ -48,7 +48,7 @@ const test = base.extend<{}, { configuredBaseURL: string }>({
 // modules and React capability gate execute unchanged. Platform cookie/Keychain
 // behavior is covered separately by the Android and Swift policy tests.
 async function nativeBridge(page: Page, handler: (request: NativeRequest) => NativeReply | NativeFailure | Promise<NativeReply | NativeFailure>,
-  options: { platform?: 'ios' | 'android'; availability?: Record<string, unknown>; absent?: boolean; authenticate?: (url: string) => Promise<string>; cancel?: (requestId: string) => void } = {}) {
+  options: { platform?: 'ios' | 'android'; availability?: Record<string, unknown>; absent?: boolean; launchUrlFailure?: boolean; authenticate?: (url: string) => Promise<string>; cancel?: (requestId: string) => void } = {}) {
   const calls: { method: string; options: Record<string, unknown> }[] = [];
   await page.exposeFunction('__syntheticCustomerApi', async (method: string, input: Record<string, unknown>) => {
     calls.push({ method, options: input });
@@ -59,28 +59,38 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
     if (method === 'request') return { requestId: input.requestId, ...await handler(input as NativeRequest) };
     throw Error('Unexpected native method');
   });
-  await page.addInitScript(({ platform, absent, apiOrigin, managed }) => {
+  await page.addInitScript(({ platform, absent, apiOrigin, managed, launchUrlFailure }) => {
     const runtime = window as any;
+    let nextListener = 0;
+    const identityListeners = new Map<string, (event: { url: string }) => void>();
+    runtime.__identityListenerCount = () => identityListeners.size;
+    runtime.__deliverIdentityReturn = (url: string) => {
+      for (const listener of [...identityListeners.values()]) listener({ url });
+    };
     runtime.CapacitorCustomPlatform = { name: platform };
     runtime.Capacitor = {
       PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: ['availability', 'request', 'cancel', 'openSignIn', 'authenticate'].map(name => ({ name, rtype: 'promise' })) }],
       nativeCallback: (plugin: string, method: string, options: Record<string, unknown>, callback: (event: object)=>void) => {
-        // App.addListener may be used by other parts of the app. Route only the
-        // appUrlOpen subscription to the simulated deep-link return; otherwise
-        // an unrelated listener can overwrite the callback and hide an Android
-        // sign-in regression.
+        // Match Capacitor's multiple subscriptions and per-handle removal.
+        // StrictMode can overlap asynchronous mount/unmount registrations;
+        // a stale listener must not replace the still-mounted subscription.
+        const id = String(++nextListener);
         if (plugin === 'App' && method === 'addListener' && options.eventName === 'appUrlOpen') {
-          runtime.__identityReturn = callback;
+          identityListeners.set(id, callback);
         }
-        return Promise.resolve('identity-listener');
+        return id;
       },
       nativePromise: async (plugin: string, method: string, input: Record<string, unknown>) => {
-        if (plugin === 'App' && ['getLaunchUrl','removeListener'].includes(method)) return;
+        if (plugin === 'App' && method === 'removeListener') { identityListeners.delete(String(input.callbackId)); return; }
+        if (plugin === 'App' && method === 'getLaunchUrl') {
+          if (launchUrlFailure) throw Error('Synthetic launch URL failure');
+          return;
+        }
         if (plugin === 'Browser' && method === 'close') return;
         if (plugin === 'Browser' && method === 'open') {
           const {callback} = await runtime.__syntheticCustomerApi('authenticate',{authorizationUrl:input.url});
-          if (typeof runtime.__identityReturn !== 'function') throw Error('appUrlOpen listener was not registered');
-          runtime.__identityReturn({url:callback});
+          if (!identityListeners.size) throw Error('appUrlOpen listener was not registered');
+          runtime.__deliverIdentityReturn(callback);
           return;
         }
         if (plugin !== 'PasoFiCustomerApi' || absent) return Promise.reject(Error('Native plugin unavailable'));
@@ -101,9 +111,24 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
       if (String(input).startsWith(apiOrigin)) { runtime.browserApiFetches++; return Promise.reject(Error('Unexpected browser API fallback')); }
       return originalFetch(input, init);
     };
-  }, { platform: options.platform || 'ios', absent: !!options.absent, apiOrigin, managed: Boolean(options.authenticate) });
+  }, { platform: options.platform || 'ios', absent: !!options.absent, apiOrigin, managed: Boolean(options.authenticate), launchUrlFailure: Boolean(options.launchUrlFailure) });
   return calls;
 }
+
+test('failed Android launch inspection removes its partially initialized return listener', async ({ page, configuredBaseURL }) => {
+  await nativeBridge(page, () => reply(capabilities), {
+    platform: 'android', authenticate: async () => '', launchUrlFailure: true,
+  });
+  await page.goto(configuredBaseURL);
+  const outcome = await page.evaluate(async () => {
+    const modulePath = '/src/native-oidc-ui.ts';
+    const { watchNativeReturn } = await import(modulePath);
+    let rejected = false;
+    try { await watchNativeReturn(() => {}, () => {}); } catch { rejected = true; }
+    return { rejected, listeners: (window as any).__identityListenerCount() };
+  });
+  expect(outcome).toEqual({ rejected: true, listeners: 0 });
+});
 
 for (const platform of ['ios', 'android'] as const) {
   test(`${platform} managed browser callback returns to protected history with the existing entitlement`, async ({page,configuredBaseURL})=>{

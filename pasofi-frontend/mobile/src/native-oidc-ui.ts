@@ -68,8 +68,17 @@ export async function watchNativeReturn(onSuccess: (destination: CustomerTab) =>
   const handle = await App.addListener('appUrlOpen', (event) => {
     void finish(event.url);
   });
-  const launched = await App.getLaunchUrl();
-  if (launched && isNativeCallback(launched.url)) void finish(launched.url);
+  try {
+    const launched = await App.getLaunchUrl();
+    if (launched && isNativeCallback(launched.url)) void finish(launched.url);
+  } catch (error) {
+    // The caller cannot receive a cleanup function after initialization fails.
+    // Disable and remove the already-registered listener before it falls back
+    // to manual handoff, so a later callback cannot establish an unseen session.
+    active = false;
+    await handle.remove().catch(() => {});
+    throw error;
+  }
   return () => {
     active = false;
     void handle.remove();
