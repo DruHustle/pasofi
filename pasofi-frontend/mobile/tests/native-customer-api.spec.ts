@@ -47,7 +47,7 @@ const test = base.extend<{}, { configuredBaseURL: string }>({
 // modules and React capability gate execute unchanged. Platform cookie/Keychain
 // behavior is covered separately by the Android and Swift policy tests.
 async function nativeBridge(page: Page, handler: (request: NativeRequest) => NativeReply | NativeFailure | Promise<NativeReply | NativeFailure>,
-  options: { platform?: 'ios' | 'android'; availability?: Record<string, unknown>; absent?: boolean; cancel?: (requestId: string) => void } = {}) {
+  options: { platform?: 'ios' | 'android'; availability?: Record<string, unknown>; absent?: boolean; handoffPending?: boolean; cancel?: (requestId: string) => void } = {}) {
   const calls: { method: string; options: Record<string, unknown> }[] = [];
   await page.exposeFunction('__syntheticCustomerApi', async (method: string, input: Record<string, unknown>) => {
     calls.push({ method, options: input });
@@ -57,20 +57,32 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
     if (method === 'request') return { requestId: input.requestId, ...await handler(input as NativeRequest) };
     throw Error('Unexpected native method');
   });
-  await page.addInitScript(({ platform, absent, apiOrigin }) => {
+  await page.addInitScript(({ platform, absent, apiOrigin, handoffPending }) => {
     const runtime = window as any;
+    let pending = handoffPending ? crypto.randomUUID() : null;
+    let nextListener = 0;
+    const listeners = new Map<string, () => void>();
+    runtime.__pendingHandoffReturn = () => pending;
+    runtime.__returnToHandoff = () => {
+      pending = crypto.randomUUID();
+      for (const listener of [...listeners.values()]) listener();
+    };
     runtime.CapacitorCustomPlatform = { name: platform };
     runtime.Capacitor = {
-      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: [...['availability', 'request', 'cancel', 'openSignIn'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }, { name: 'removeListener', rtype: 'callback' }] }],
+      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: [...['availability', 'request', 'cancel', 'openSignIn', 'accountHandoffReturnState', 'acknowledgeAccountHandoffReturn', 'removeListener'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }] }],
       nativeCallback: (_plugin: string, method: string, input: {eventName: string}, callback: () => void) => {
-        if (input.eventName === 'accountHandoffReturn') {
-          if (method === 'addListener') runtime.__returnToHandoff = callback;
-          if (method === 'removeListener' && runtime.__returnToHandoff === callback) delete runtime.__returnToHandoff;
-        }
-        return 'synthetic-listener';
+        const id = String(++nextListener);
+        if (input.eventName === 'accountHandoffReturn' && method === 'addListener') listeners.set(id, callback);
+        return id;
       },
       nativePromise: (plugin: string, method: string, input: Record<string, unknown>) => {
         if (plugin !== 'PasoFiCustomerApi' || absent) return Promise.reject(Error('Native plugin unavailable'));
+        if (method === 'removeListener') { listeners.delete(String(input.callbackId)); return Promise.resolve(); }
+        if (method === 'accountHandoffReturnState') return Promise.resolve({ eventId: pending });
+        if (method === 'acknowledgeAccountHandoffReturn') {
+          if (pending === input.eventId) pending = null;
+          return Promise.resolve();
+        }
         return runtime.__syntheticCustomerApi(method, input).then((value: any) => {
           if (value?.nativeFailure) throw Object.assign(new Error(value.nativeFailure.message || value.nativeFailure.code), { code: value.nativeFailure.code });
           return value;
@@ -83,9 +95,22 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
       if (String(input).startsWith(apiOrigin)) { runtime.browserApiFetches++; return Promise.reject(Error('Unexpected browser API fallback')); }
       return originalFetch(input, init);
     };
-  }, { platform: options.platform || 'ios', absent: !!options.absent, apiOrigin });
+  }, { platform: options.platform || 'ios', absent: !!options.absent, apiOrigin, handoffPending: !!options.handoffPending });
   return calls;
 }
+
+test('Android cold-start return survives a missed notification and is acknowledged after navigation', async ({ page, configuredBaseURL }) => {
+  await nativeBridge(page, request => request.path === '/api/capabilities' ? reply(capabilities)
+    : reply({ error: 'not_authenticated' }, 401), { platform: 'android', handoffPending: true });
+  await page.goto(configuredBaseURL);
+  await expect(page.getByRole('heading', { name: 'Accept an account handoff' })).toBeVisible({ timeout: 5000 });
+  await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
+  await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
+  await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).__returnToHandoff());
+  await expect(page.getByRole('heading', { name: 'Accept an account handoff' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
+});
 
 for (const platform of ['ios', 'android'] as const) for (const entry of ['Sign in with Onesa', 'Create an Onesa account']) test(`${platform} ${entry} opens only the native browser command and explicitly accepts a one-use code`, async ({ page, configuredBaseURL }) => {
   let recovered = false;

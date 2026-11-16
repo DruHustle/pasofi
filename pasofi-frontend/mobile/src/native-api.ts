@@ -4,6 +4,8 @@ type NativeResponse = { requestId: string; status: number; data: unknown; conten
 type NativeRequest = { requestId: string; path: string; method: 'GET' | 'POST' | 'DELETE'; responseType: 'json' | 'pdf'; data?: string; idempotencyKey?: string };
 interface CustomerApiPlugin {
   addListener(name: 'accountHandoffReturn', listener: () => void): Promise<PluginListenerHandle>;
+  accountHandoffReturnState(): Promise<{ eventId: string | null }>;
+  acknowledgeAccountHandoffReturn(options: { eventId: string }): Promise<void>;
   availability(options: { requestId: string }): Promise<{ requestId: string; configured: boolean; origin?: string; protocol: number }>;
   request(options: NativeRequest): Promise<NativeResponse>;
   cancel(options: { requestId: string }): Promise<{ requestId: string }>;
@@ -14,7 +16,32 @@ export const usesNativeCustomerApi = Capacitor.isNativePlatform();
 export function onAccountHandoffReturn(listener: () => void): () => void {
   if (!usesNativeCustomerApi || !Capacitor.isPluginAvailable('PasoFiCustomerApi')) return () => {};
   let active = true;
-  const handle = bridge.addListener('accountHandoffReturn', () => { if (active) listener(); }).catch(() => undefined);
+  const android = Capacitor.getPlatform() === 'android';
+  let reading = false, requested = false, delivered: string | undefined;
+  const receive = () => {
+    if (!active) return;
+    if (!android) { listener(); return; }
+    requested = true;
+    if (reading) return;
+    reading = true;
+    void (async () => {
+      try {
+        while (active && requested) {
+          requested = false;
+          const { eventId } = await bridge.accountHandoffReturnState();
+          if (!active || typeof eventId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(eventId)) continue;
+          if (eventId !== delivered) { listener(); delivered = eventId; }
+          if (!active) return;
+          await bridge.acknowledgeAccountHandoffReturn({ eventId });
+          requested = true; // A newer OS return may have arrived before this acknowledgement.
+        }
+      } catch { /* Leave the native marker pending for the next active subscription. */ }
+      finally { reading = false; }
+    })();
+  };
+  const handle = bridge.addListener('accountHandoffReturn', receive).catch(() => undefined);
+  // Recover a cold-start notification that arrived before the page subscribed.
+  if (android) void handle.then(receive);
   return () => { active = false; void handle.then(subscription => subscription?.remove()).catch(() => undefined); };
 }
 
