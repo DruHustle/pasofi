@@ -87,6 +87,27 @@ test('creation event recovers an unpaid checkout while the original Stripe respo
  }
 });
 
+test('an expired quote preserves an uncertain Stripe attempt for webhook recovery without another create call',{skip:!url},async()=>{
+ const f=await fixture();
+ try{
+  f.loseResponse(true);
+  const started=await f.start();
+  assert.equal(started.state,'unknown');
+  await f.pool.query("UPDATE purchase_orders SET quote_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",[f.order]);
+  const uncertain=await f.start();
+  assert.equal(uncertain.attemptId,started.attemptId);assert.equal(uncertain.state,'unknown');
+  assert.equal(f.calls.length,1);
+  assert.equal(await stripePresentation(f.pool,f.customer,started.attemptId,f.adapter),null);
+  await enqueueStripeEvent(f.pool,f.adapter,f.event('payment_intent.created'));
+  const known=await f.start();
+  assert.equal(known.attemptId,started.attemptId);assert.equal(known.state,'pending');
+  assert.ok((await stripePresentation(f.pool,f.customer,known.attemptId,f.adapter))?.clientSecret);
+  assert.equal(f.calls.length,1);
+  f.succeed();await enqueueStripeEvent(f.pool,f.adapter,f.event());
+  assert.equal((await reconcileProviderPayment(f.pool,started.attemptId,f.adapter)).state,'fulfilled');
+ }finally{await f.cleanup();}
+});
+
 test('verified webhook recovers the original Stripe reference after a lost create response without creating another intent',{skip:!url},async()=>{
  const f=await fixture();try{
   f.loseResponse(true);const started=await f.start();assert.equal(started.state,'unknown');assert.equal(f.intents.size,1);
