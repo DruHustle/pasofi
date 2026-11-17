@@ -72,7 +72,26 @@ jobs:
         run: |
           test "$(sed -n 's/^distributionUrl=//p' gradle/wrapper/gradle-wrapper.properties)" = 'https\://services.gradle.org/distributions/gradle-8.14.3-all.zip'
           printf '%s\n' '7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172  gradle/wrapper/gradle-wrapper.jar' | sha256sum --check
-          bash ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug
+          # Only retry Maven Central HTTP 429 dependency-rate-limit failures.
+          # Genuine compilation/test failures fail immediately; never bypass tests.
+          for attempt in 1 2 3; do
+            log=$(mktemp)
+            set +e
+            bash ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug 2>&1 | tee "$log"
+            result=${PIPESTATUS[0]}
+            set -e
+            if [ "$result" -eq 0 ]; then
+              rm -f "$log"
+              break
+            fi
+            if [ "$attempt" -eq 3 ] || ! grep -Fq 'Received status code 429' "$log"; then
+              rm -f "$log"
+              exit "$result"
+            fi
+            rm -f "$log"
+            echo "::warning::Maven rate limit (HTTP 429), retrying the exact Gradle tasks after a bounded delay."
+            sleep "$((attempt * 20))"
+          done
       - name: Verify Android output and report its checksum
         run: |
           apk=android/app/build/outputs/apk/debug/app-debug.apk

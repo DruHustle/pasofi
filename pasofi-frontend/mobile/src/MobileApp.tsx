@@ -4,6 +4,7 @@ import { pendingNativeDestination } from './native-oidc';
 import { mobileApiConfigured } from './api';
 import Icon, { type IconName } from './Icon';
 import type { CustomerTab } from './CustomerAccess';
+import RegistrationLink, {watchRegistrationReturn} from './RegistrationLink';
 import MobileCustomer from './MobileCustomer';
 import { PolicyNotice } from './Policies';
 import { policyHelpArticles } from './PolicyHelp';
@@ -47,6 +48,14 @@ export default function MobileApp() {
   const [pending] = useState(() => Capacitor.isNativePlatform() ? pendingNativeDestination(sessionStorage) : null);
   const [accountOpen, setAccountOpen] = useState(Boolean(pending)), [accountTab, setAccountTab] = useState<CustomerTab>(pending ?? 'access');
   const [selected, setSelected] = useState<string | null>(null), [category, setCategory] = useState<Category>('all');
+  const [registrationTab,setRegistrationTab]=useState<CustomerTab|null>(null);
+  useEffect(()=>{
+    let active=true;
+    const watching=watchRegistrationReturn(destination=>{
+      if(active){setAccountTab(destination);setRegistrationTab(destination);setHandoffReturn(0);setAccountOpen(true);}
+    }).catch(()=>()=>{});
+    return ()=>{active=false;void watching.then(stop=>stop());};
+  },[]);
   const [handoffReturn, setHandoffReturn] = useState(0);
   useEffect(() => onAccountHandoffReturn(() => {
     // The OS return must open a safe account surface even in an unconfigured
@@ -68,7 +77,7 @@ export default function MobileApp() {
   const shownExamples = examples.filter(bundle => categories.find(item => item.id === category)!.matches(bundle.days));
   const shownQuestions = questions.filter(item => helpQuery.trim().toLowerCase().split(/\s+/).every(word => `${item.q} ${item.a}`.toLowerCase().includes(word)));
 
-  if (accountOpen) return <div className="mobile-app mobile-live-shell"><MobileCustomer initialTab={accountTab} handoffReturn={handoffReturn} close={() => { setHandoffReturn(0); setAccountOpen(false); }} /></div>;
+  if (accountOpen) return <div className="mobile-app mobile-live-shell"><MobileCustomer initialTab={accountTab} registrationTab={registrationTab} usedRegistration={()=>setRegistrationTab(null)} handoffReturn={handoffReturn} close={() => { setHandoffReturn(0); setRegistrationTab(null); setAccountOpen(false); }} /></div>;
 
   return <div className="mobile-app">
     <a className="mobile-skip" href="#mobile-content">Skip to content</a>
@@ -125,7 +134,7 @@ export default function MobileApp() {
         <div className="mobile-page-heading"><p className="mobile-eyebrow">YOUR SPACE</p><h1 tabIndex={-1} id="mobile-account">My PasoFi.</h1><p>A simple home for your connection.</p></div>
         <div className="mobile-profile-card"><span className="mobile-profile-avatar"><Icon name="account" /></span><div><h2>Welcome to PasoFi</h2><p>{mobileApiConfigured ? 'Check your configured account service.' : 'You’re exploring the offline preview.'}</p></div><span className="mobile-label">Preview</span></div>
         {mobileApiConfigured ? <button className="mobile-primary mobile-primary-wide" onClick={() => openAccount()}>Open My PasoFi <Icon name="arrow" /></button> : <p className="mobile-account-explainer">Accounts, vouchers and devices become available when the service is ready. No account is created while you explore.</p>}
-        {mobileApiConfigured ? <p className="mobile-account-explainer">Open My PasoFi to sign in or create an Onesa account.</p> : <p className="mobile-account-explainer"><a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">PasoFi account on the web</a> · <a href="https://auth.onesa.eu/register" target="_blank" rel="noopener noreferrer">Register an Onesa account</a></p>}
+        {mobileApiConfigured ? <p className="mobile-account-explainer">Open My PasoFi to sign in or create an Onesa account.</p> : <p className="mobile-account-explainer"><a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">PasoFi account on the web</a> · <RegistrationLink tab="access"/></p>}
         <div className="mobile-settings-list">
           <button onClick={() => mobileApiConfigured ? openAccount('wifi') : choose('help')}><span className="mobile-setting-icon"><Icon name="devices" /></span><span><strong>My WiFi & devices</strong><small>{mobileApiConfigured ? 'Check account availability' : 'Learn how connecting will work'}</small></span><Icon name="chevron" /></button>
           <button onClick={() => mobileApiConfigured ? openAccount('recovery') : choose('help')}><span className="mobile-setting-icon"><Icon name="shield" /></span><span><strong>Account & security</strong><small>{mobileApiConfigured ? 'Recovery and device access' : 'Account access is not available yet'}</small></span><Icon name="chevron" /></button>
