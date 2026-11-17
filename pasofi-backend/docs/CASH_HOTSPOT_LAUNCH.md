@@ -1,5 +1,13 @@
 # Commission the Pasofi hotspot for cash customers
 
+## Current owner hardware target (17 November 2026)
+
+The original first-site hAP lite is now intended as **K1**, a downstream guest AP, behind **K0 (new MikroTik hEX)** at Kuwadzana. The hEX alone will be that site's captive portal and RADIUS NAS. At Goromonzi **G0 (hAP lite)** is the HotSpot/RADIUS gateway, **G1** is the protected home AP, and **G2/G3 are Mercusys guest AP routers** behind Tenda 5 GHz CPE receivers. G2's receiver is not qualified/installed, and the existing CPE1–CPE2→G3 link must not be disrupted. Review [the new serial-unverified topology](../pasofi-routeros/commissioning/K0_G0_MERCUSYS_PLAN.md) before gathering private gateway baselines. Historical `site-01` hAP lite scripts must **never** be imported to configure the new K0 hEX.
+
+Cash sales remain an agent-verifiable, exact-price, stock/shift-controlled payment method; they do not depend on EcoCash or Stripe. **Merchant mobile-money SMS is not cash** and cannot be processed through the physical-cash attestation endpoint. The controlled but not-yet-activated [EcoCash SMS pilot](ECOCASH_SMS_MANUAL_PILOT.md) requires separate provider merchant-statement verification and distinct audited tender handling. Native Apple Pay/Google Pay remains on the separate Stripe wallet/settlement gate.
+
+
+
 This is the ordered handoff from the prepared Mac/backend/router software to an observed customer service. Complete it for each actual site. A deployed website, running RADIUS process, sales-location record or passing laboratory test does not establish that a customer can buy, connect, use the purchased allowance, disconnect and reconnect.
 
 **Live acceptance remains pending until the evidence below is collected.** This document does not record an Oracle deployment, router import, cash transaction or physical test. Earlier records of Kuwadzana's isolated pilot, Lawfield's bootstrap, HotSpot device-mode restrictions and a hAP lite memory/kernel failure must be rechecked on the actual equipment. Do not infer their present state from a source file.
