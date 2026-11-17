@@ -11,16 +11,22 @@ async function tx<T>(pool:Pool, fn:(client:PoolClient)=>Promise<T>):Promise<T> {
 }
 function normalized(value:string):string { return value.toUpperCase().replace(/[-\s]/g,''); }
 function digest(value:string):Buffer { return createHash('sha256').update(value).digest(); }
-function decrypt(row:{id:string;sale_id:string;key_id:string;code_iv:Buffer;code_cipher:Buffer;code_tag:Buffer},keys:DeliveryKeys):string {
- return unseal({keyId:row.key_id,iv:row.code_iv,cipher:row.code_cipher,tag:row.code_tag},keys,`${row.sale_id}:${row.id}`);
+function decrypt(row:{id:string;sale_id:string|null;ecocash_credit_id:string|null;key_id:string;code_iv:Buffer;code_cipher:Buffer;code_tag:Buffer},keys:DeliveryKeys):string {
+ const source=row.sale_id ?? `ecocash:${row.ecocash_credit_id}`;
+ return unseal({keyId:row.key_id,iv:row.code_iv,cipher:row.code_cipher,tag:row.code_tag},keys,`${source}:${row.id}`);
 }
 function newCode(){return Array.from({length:16},()=>alphabet[randomInt(alphabet.length)]).join('');}
 function format(code:string){return code.match(/.{4}/g)!.join('-');}
-async function makeVoucher(client:PoolClient,saleId:string,parentId:string|null,key:DeliveryKeys){
-  const code=newCode(), id=randomUUID(), encrypted=seal(code,key,`${saleId}:${id}`);
-  await client.query(`INSERT INTO issued_vouchers (id,sale_id,parent_id,code_hash,code_cipher,code_iv,code_tag,key_id,state)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'valid')`,[id,saleId,parentId,digest(code),encrypted.cipher,encrypted.iv,encrypted.tag,encrypted.keyId]);
+async function makeVoucher(client:PoolClient,source:{saleId:string}|{creditId:string},parentId:string|null,key:DeliveryKeys){
+  const saleId='saleId' in source?source.saleId:null, creditId='creditId' in source?source.creditId:null;
+  const code=newCode(), id=randomUUID(), encrypted=seal(code,key,`${saleId ?? `ecocash:${creditId}`}:${id}`);
+  await client.query(`INSERT INTO issued_vouchers (id,sale_id,parent_id,code_hash,code_cipher,code_iv,code_tag,key_id,state,ecocash_credit_id)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'valid',$9)`,[id,saleId,parentId,digest(code),encrypted.cipher,encrypted.iv,encrypted.tag,encrypted.keyId,creditId]);
   return {id,code:format(code)};
+}
+// The credit writer holds the credit lock and writes its delivery event in the same transaction.
+export async function createEcoCashVoucher(client:PoolClient,creditId:string,keys:DeliveryKeys):Promise<string>{
+ return (await makeVoucher(client,{creditId},null,keys)).id;
 }
 // These domain functions are called only after the commerce boundary resolves
 // the current MFA-verified staff role and enforces its approved site scope.
@@ -94,21 +100,31 @@ export async function sellVoucher(pool:Pool, agentId:string, siteId:string, bund
    await client.query('INSERT INTO agent_sale_deliveries(sale_id,channel,key_id,payload_cipher,payload_iv,payload_tag,paired_customer_id) VALUES($1,$2,$3,$4,$5,$6,$7)',[saleId,delivery,details.keyId,details.cipher,details.iv,details.tag,pairedCustomer]);
    if(pairingId)await client.query('UPDATE receipt_pairings SET sale_id=$2 WHERE id=$1',[pairingId,saleId]);
   }
-  const voucher=await makeVoucher(client,saleId,null,deliveryKey);
+  const voucher=await makeVoucher(client,{saleId},null,deliveryKey);
   if(options.siteInventory)await issueCashInvoice(client,saleId,invoiceDelivery,deliveryKey);
   await client.query("INSERT INTO event_outbox (id,event_type,event_version,aggregate_id,aggregate_version,correlation_id,payload) VALUES ($1,'agent.sale.created',1,$2,1,$3,$4)",[randomUUID(),saleId,randomUUID(),JSON.stringify({deliveryReference:saleId})]);
   return {saleId,voucherId:voucher.id,code:voucher.code,replayed:false};
  });
 }
-export async function redeemVoucher(pool:Pool, customerId:string, raw:string) {
+export async function redeemVoucher(pool:Pool, customerId:string, raw:string, demo=false) {
  const code=normalized(raw);
  if(code.length!==16 || [...code].some(c=>!alphabet.includes(c))) throw new VoucherError('invalid_or_used');
  return tx(pool,async client=>{
+  const codeHash=digest(code);
   const result=await client.query(`SELECT v.*,s.bundle_id,s.byte_limit::text AS allowance,s.validity_seconds,s.sold_at,s.start_by,s.start_by>=now() AS usable,d.paired_customer_id
-    FROM issued_vouchers v JOIN agent_sales s ON s.id=v.sale_id LEFT JOIN agent_sale_deliveries d ON d.sale_id=s.id WHERE v.code_hash=$1 FOR UPDATE OF v`,[digest(code)]);
-  if(!result.rowCount) throw new VoucherError('invalid_or_used');
-  const v=result.rows[0];
-  if((await client.query("SELECT id FROM cash_refunds WHERE sale_id=$1 AND state IN ('approved','paying','paid')",[v.sale_id])).rowCount)throw new VoucherError('voucher_refunded');
+    FROM issued_vouchers v JOIN agent_sales s ON s.id=v.sale_id LEFT JOIN agent_sale_deliveries d ON d.sale_id=s.id WHERE v.code_hash=$1 FOR UPDATE OF v`,[codeHash]);
+  let v=result.rows[0];
+  if(!v && demo) {
+    // Reversal also locks the credit before the voucher. Once acquired, its state and
+    // the voucher state must remain eligible until the entitlement write commits.
+    const credit=(await client.query(`SELECT c.id FROM ecocash_credits c JOIN issued_vouchers v ON v.ecocash_credit_id=c.id
+      WHERE v.code_hash=$1 AND c.environment='simulation' AND c.state='issued' FOR UPDATE OF c`,[codeHash])).rows[0];
+    if(credit) v=(await client.query(`SELECT v.*,c.bundle_id,c.byte_limit::text AS allowance,c.validity_seconds,
+      c.paid_at AS sold_at,c.start_by,c.start_by>=clock_timestamp() AS usable
+      FROM issued_vouchers v JOIN ecocash_credits c ON c.id=v.ecocash_credit_id WHERE c.id=$1 AND v.code_hash=$2 FOR UPDATE OF v`,[credit.id,codeHash])).rows[0];
+  }
+  if(!v)throw new VoucherError('invalid_or_used');
+  if(v.sale_id && (await client.query("SELECT id FROM cash_refunds WHERE sale_id=$1 AND state IN ('approved','paying','paid')",[v.sale_id])).rowCount)throw new VoucherError('voucher_refunded');
   if(v.paired_customer_id&&v.paired_customer_id!==customerId)throw new VoucherError('invalid_or_used');
   if(v.state==='redeemed' && v.redeemed_by===customerId){
     const prior=await client.query('SELECT id FROM purchase_entitlements WHERE source_voucher_id=$1',[v.id]);
@@ -130,7 +146,7 @@ export async function replaceVoucher(pool:Pool, saleId:string, key:DeliveryKeys)
   const current=await client.query("SELECT id,state FROM issued_vouchers WHERE sale_id=$1 AND state IN ('valid','redeemed') FOR UPDATE",[saleId]);
   if(!current.rowCount || current.rows[0].state!=='valid') throw new VoucherError('replacement_unavailable');
   await client.query("UPDATE issued_vouchers SET state='revoked' WHERE id=$1",[current.rows[0].id]);
-  return makeVoucher(client,saleId,current.rows[0].id,key);
+  return makeVoucher(client,{saleId},current.rows[0].id,key);
  });
 }
 
@@ -140,4 +156,20 @@ export async function readVoucher(pool:Pool,saleId:string,keys:DeliveryKeys){
  if(['approved','paying','paid'].includes(row.refund_state))return {id:row.id,code:'',state:row.refund_state==='paid'?'refunded':'voided_refund_due'};
  if(row.state==='revoked')throw new VoucherError('delivery_unavailable');
  return {id:row.id,code:format(decrypt(row,keys)),state:row.state};
+}
+
+// Only the authenticated notification worker can use this lookup. Delivery retries
+// read the already-issued code and always target the payer recorded with the credit.
+export async function readEcoCashDelivery(pool:Pool,creditId:string,keys:DeliveryKeys,demo:boolean){
+ if(!demo)return null;
+ const row=(await pool.query(`SELECT v.*,c.bundle_id,c.phone_key_id,c.phone_iv,c.phone_cipher,c.phone_tag,
+     c.state AS credit_state,c.start_by>clock_timestamp() AS usable
+   FROM ecocash_credits c LEFT JOIN issued_vouchers v ON v.ecocash_credit_id=c.id
+   WHERE c.id=$1 AND c.environment='simulation'`,[creditId])).rows[0];
+ if(!row)return null;
+ if(row.credit_state!=='issued'||!row.usable||row.state!=='valid')throw new VoucherError('ecocash_delivery_closed');
+ const to=unseal({keyId:row.phone_key_id,iv:row.phone_iv,cipher:row.phone_cipher,tag:row.phone_tag},keys,`ecocash:phone:${row.ecocash_credit_id}`);
+ const code=format(decrypt(row,keys));
+ return {deliveryReference:creditId,creditId,channel:'sms',to,from:process.env.SMS_SENDER??'PasoFi',
+   message:`PasoFi demo ${row.bundle_id} voucher: ${code}. Redeem on PasoFi Wi-Fi. Keep this code private.`,simulation:true};
 }

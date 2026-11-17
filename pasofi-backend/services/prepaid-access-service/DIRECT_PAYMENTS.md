@@ -1,6 +1,6 @@
 # Direct payment preparation
 
-Provider contract rechecked on 2026-11-04; earlier comparison was reviewed on 2026-11-02. Cash sales remain the application purchase path. External digital checkout is unavailable; environment flags cannot activate Pesepay, EcoCash or a bank. Local demo simulation remains available independently.
+EcoCash sources were rechecked on 2026-11-17. Direct mobile money is pending. Cash sales and the separately gated [Stripe checkout](../../../STRIPE_PAYMENTS.md) have their own fulfillment paths.
 
 ## Bank and Zimswitch selection
 
@@ -11,6 +11,43 @@ Zimswitch is a payment network and online-gateway route onboarded through an acq
 `paymentConfiguration` enables only explicit demo-mode simulation: `PAMOFI_PAYMENTS_ENABLED=true`, `PAMOFI_PAYMENT_MODE=mock`, and the application's demo/development environment checks. `PAMOFI_PAYMENT_PROVIDER` may be absent for existing demo configurations or exactly `mock`. Any other explicit value, including an empty or misspelled value, disables checkout; naming an unsupported bank/provider must not silently select a mock payment. Production remains disabled even with an explicit mock selector.
 
 The gate regression checks cover Pesepay, EcoCash, InnBucks, Stanbic, CBZ, ZB, CABS and Zimswitch across unsupported sandbox/production modes and attempted mock fallback. They assert disabled public capabilities, unavailable checkout/callback routes, and no outbound HTTP calls. These are local boundary tests; they do not certify a bank integration or enable a digital payment method.
+
+## Incoming EcoCash transfers for Wi-Fi vouchers
+
+A customer should be able to pay the PasoFi merchant from their EcoCash app or USSD menu and receive a voucher by SMS without first opening PasoFi. For this flow, choose one exact USD price for each offer advertised on the merchant account. A customer sending for somebody else receives the code on the paying phone and can pass it on. The code can be redeemed once.
+
+### What EcoCash needs to provide
+
+EcoCash describes handset confirmations for ordinary Send Money. The recipient's documented confirmation includes the amount, sender name and approval code. The merchant channel separately describes a confirmation with the paying number. As of 2026-11-17 the public API catalogue lists BillPay (EPG Push) as coming soon. A merchant SMS by itself does not establish a server integration. [Send Money](https://ecocash.co.zw/ecocash-send-money/) · [Merchant terms, section 3.4](https://partnerapplications.ecocash.co.zw/terms-and-conditions) · [API catalogue](https://developers.ecocash.co.zw/)
+
+When applying for the merchant code, ask EcoCash specifically for incoming **customer-initiated** payments from USSD and the app. Request authenticated notifications or an authoritative merchant transaction feed, the reconciliation and reversal procedures, and test credentials. Ask for examples identifying the destination merchant, original transaction ID, payer's SMS-capable number, settled amount, currency, status and original payment time. Obtain their retry, authentication and replay contract and confirm how to recover missed events. [Merchant application](https://ecocash.co.zw/merchants/) · [Contact EcoCash](https://ecocash.co.zw/contact-us/)
+
+The documented Online Payments charge below offers a separate journey. A PasoFi checkout would select the bundle, request a charge, and the customer would approve on their phone. Its lookup takes the customer number and the correlator generated for that charge. It cannot enumerate transfers made independently to the merchant. [Online Payments](https://developers.ecocash.co.zw/docs/online-payments)
+
+### Implemented behavior
+
+The prepaid service records each simulated incoming credit under the receiving merchant and original transaction ID. It checks the price and currency against an explicitly configured offer active at the payment time, verifies that the published bundle still matches its quoted allowance and validity, and uses the payer number on the credit for delivery. The credit, encrypted voucher and delivery event commit together. Notification resolves the phone and voucher privately from prepaid and sends through the mock SMS worker. The existing voucher redemption screen accepts the code in demo. One successful redemption creates one entitlement.
+
+| Observation | Outcome |
+| --- | --- |
+| Same credit delivered twice, including concurrently | One voucher and one initial delivery job |
+| Amount has no matching offer, or two bundles match | Credit retained for review, with the reason |
+| Missing payer number, unsupported currency, changed catalogue terms or expired start window | Credit retained for review |
+| Payment addressed to another merchant | Ignored by this merchant configuration |
+| Same reference with conflicting payment details | Original details preserved, voucher held and any redeemed access fenced |
+| Reversal before the credit, before redemption or after redemption | Original reference remains closed. An unused code stops working. A redeemed entitlement is revoked. Evidence of use is flagged for review. |
+
+### Run the simulated journey
+
+Run the existing five-database integration gate from the repository root, following the disposable setup in [Testing PasoFi](../../docs/TESTING.md). It exercises a synthetic transfer, a repeated notification, private SMS resolution, delivery to the mock SMS sink, a customer session, repeat redemption and the account's resulting allowance.
+
+```sh
+node pasofi-backend/local-tools/verify.mjs --integration --browser
+```
+
+The input fixture lives at `test/fixtures/ecocash-credit.mjs` in the prepaid service and reads a JSON object with `config` and `observation` from standard input. The executable example is in `test/ecocash-workflow.integration.test.mjs`. The fixture uses demo/development, a disposable loopback prepaid database, an explicit isolation acknowledgement and demo delivery keys. Its output contains the credit ID and outcome. It accepts no network callbacks. Its record shape is local to PasoFi and is not an EcoCash payload specification.
+
+Production activation requires an adapter for the contract EcoCash supplies, provider-certified samples including reversals, a qualified SMS sender and a supervised payment through voucher redemption and hotspot access. The simulation cannot send real SMS or grant a router session. No production receiving number or merchant credentials are configured by this feature.
 
 ## Official EcoCash contract reviewed
 

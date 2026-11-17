@@ -5,7 +5,7 @@ import { jwtVerify } from 'jose';
 import {registerDelivery} from './worker.js';
 import {registerInvoiceDelivery} from './invoice-worker.js';
 const { Pool } = pg;
-type SaleEvent={id:string;version:1;producer:'prepaid-access';aggregateId:string;aggregateVersion:number;occurredAt:string;correlationId:string}&({type:'agent.sale.created';payload:{deliveryReference:string}}|{type:'invoice.issued';payload:{invoiceId:string}});
+type SaleEvent={id:string;version:1;producer:'prepaid-access';aggregateId:string;aggregateVersion:number;occurredAt:string;correlationId:string}&({type:'agent.sale.created'|'ecocash.voucher.issued';payload:{deliveryReference:string}}|{type:'invoice.issued';payload:{invoiceId:string}});
 const uuidPattern='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
 export function buildApp() {
  const app=Fastify({logger:false,bodyLimit:16384,ajv:{customOptions:{removeAdditional:false}}});
@@ -21,7 +21,7 @@ export function buildApp() {
  app.get('/health/live',async()=>({status:'ok',service:'notification'}));
  app.get('/health/ready',async(_request,reply)=>{if(!pool)return reply.code(503).send({status:'not_ready'});try{await pool.query('SELECT 1');return {status:'ready'};}catch{return reply.code(503).send({status:'not_ready'});}});
  app.post<{Body:SaleEvent}>('/internal/v1/events',{schema:{body:{type:'object',additionalProperties:false,required:['id','type','version','producer','aggregateId','aggregateVersion','occurredAt','correlationId','payload'],properties:{
-  id:{type:'string',pattern:uuidPattern},type:{enum:['agent.sale.created','invoice.issued']},version:{const:1},producer:{const:'prepaid-access'},aggregateId:{type:'string',pattern:uuidPattern},aggregateVersion:{const:1},occurredAt:{type:'string',minLength:20,maxLength:40},correlationId:{type:'string',pattern:uuidPattern},payload:{oneOf:[{type:'object',additionalProperties:false,required:['deliveryReference'],properties:{deliveryReference:{type:'string',pattern:uuidPattern}}},{type:'object',additionalProperties:false,required:['invoiceId'],properties:{invoiceId:{type:'string',pattern:uuidPattern}}}]}
+  id:{type:'string',pattern:uuidPattern},type:{enum:['agent.sale.created','ecocash.voucher.issued','invoice.issued']},version:{const:1},producer:{const:'prepaid-access'},aggregateId:{type:'string',pattern:uuidPattern},aggregateVersion:{const:1},occurredAt:{type:'string',minLength:20,maxLength:40},correlationId:{type:'string',pattern:uuidPattern},payload:{oneOf:[{type:'object',additionalProperties:false,required:['deliveryReference'],properties:{deliveryReference:{type:'string',pattern:uuidPattern}}},{type:'object',additionalProperties:false,required:['invoiceId'],properties:{invoiceId:{type:'string',pattern:uuidPattern}}}]}
  }}}},async(request,reply)=>{
   const secret=process.env.INTERNAL_EVENTS_SECRET;
   if(!pool || !secret || Buffer.byteLength(secret)<32 || (!demo && secret.startsWith('DEMO_ONLY_'))) return reply.code(503).send({error:'unavailable'});
@@ -31,6 +31,7 @@ export function buildApp() {
    if(payload.scope!=='event:deliver')return reply.code(403).send({error:'forbidden'});
   } catch {return reply.code(401).send({error:'unauthorized'});}
   const e=request.body;
+  if(e.type==='ecocash.voucher.issued'&&!demo)return reply.code(403).send({error:'ecocash_demo_only'});
   const reference=e.type==='invoice.issued'?e.payload.invoiceId:e.payload.deliveryReference;
   if(reference!==e.aggregateId || !Number.isFinite(Date.parse(e.occurredAt))) return reply.code(400).send({error:'invalid_event'});
   const canonical=JSON.stringify({id:e.id,type:e.type,version:e.version,producer:e.producer,aggregateId:e.aggregateId,aggregateVersion:e.aggregateVersion,occurredAt:e.occurredAt,correlationId:e.correlationId,payload:e.type==='invoice.issued'?{invoiceId:reference}:{deliveryReference:reference}});
@@ -42,7 +43,10 @@ export function buildApp() {
     const inserted=await client.query('INSERT INTO event_inbox(id,producer,event_type,aggregate_id,aggregate_version,payload_hash) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id',[e.id,e.producer,e.type,e.aggregateId,e.aggregateVersion,hash]);
     if(inserted.rowCount){
       if(e.type==='invoice.issued') await client.query("INSERT INTO invoice_jobs(id,event_id,invoice_id) VALUES ($1,$2,$3)",[randomUUID(),e.id,reference]);
-      else await client.query("INSERT INTO delivery_jobs(id,event_id,delivery_reference,state) VALUES ($1,$2,$3,'awaiting_delivery_details')",[randomUUID(),e.id,reference]);
+      else {
+       const sourceKind=e.type==='ecocash.voucher.issued'?'ecocash_demo_credit':'agent_sale';
+       await client.query("INSERT INTO delivery_jobs(id,event_id,delivery_reference,state,source_kind) VALUES ($1,$2,$3,'awaiting_delivery_details',$4)",[randomUUID(),e.id,reference,sourceKind]);
+      }
     } else {
       const previous=await client.query('SELECT id,payload_hash FROM event_inbox WHERE id=$1 OR (producer=$2 AND event_type=$3 AND aggregate_id=$4 AND aggregate_version=$5)',[e.id,e.producer,e.type,e.aggregateId,e.aggregateVersion]);
       if(previous.rowCount!==1 || previous.rows[0].id!==e.id || !timingSafeEqual(previous.rows[0].payload_hash,hash)){await client.query('ROLLBACK');return reply.code(409).send({error:'event_conflict'});}

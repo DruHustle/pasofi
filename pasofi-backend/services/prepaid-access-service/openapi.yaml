@@ -526,7 +526,7 @@ paths:
     post:
       security: [{CustomerSession: []}]
       summary: Redeem one voucher into the current customer account
-      description: Exact origin required; 10 requests per minute. Paired vouchers belong only to the paired customer. Redemption does not activate validity or connect a device.
+      description: Exact origin required, with 10 requests per minute. Paired vouchers belong only to the paired customer. Redemption queues the entitlement. Simulated inbound EcoCash codes can be redeemed only in demo mode and their entitlements cannot authorize a network session.
       requestBody:
         required: true
         content:
@@ -548,8 +548,9 @@ paths:
       summary: Resolve a delivery reference for the notification service
       description: Private route. Requires notification issuer/subject, prepaid-access audience and delivery:read scope using INTERNAL_DELIVERY_SECRET. Never expose through a public gateway.
       responses:
-        '200': {description: 'deliveryReference, saleId, simulation and channel none or sms; sms includes transient to/from/message with the same voucher'}
-        '410': {description: Voucher start-by deadline passed}
+        '200': {description: 'Returns deliveryReference, simulation and channel. Agent deliveries include saleId. Simulated EcoCash SMS deliveries include creditId. Channel sms includes transient to, from and message fields.'}
+        '404': {description: Unknown reference or simulated EcoCash reference queried outside demo mode}
+        '410': {description: Delivery closed because the voucher expired or was withdrawn. EcoCash delivery also closes after redemption or a payment review.}
   /v1/network/sites:
     get:
       security: [{CustomerSession: []}]
