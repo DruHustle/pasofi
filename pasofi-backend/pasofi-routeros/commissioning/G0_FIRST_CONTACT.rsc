@@ -1,5 +1,5 @@
-# PasoFi G0 owner-reported separate chain: G0 LAN1 -> G2, G2 LAN1 -> G3
-# READ ONLY. G0 WAN UNKNOWN. K0 LAN4 EMPTY. Private output: do not publish.
+# PasoFi G0 owner-reported separate chain: CURRENT G0 LAN1 -> G2, G2 LAN1 -> G3; future G1/CPE1/CPE2 NOT commissioned
+# READ ONLY. G0 current upstream is owner-reported Starlink (verify live WAN). K0 LAN4 EMPTY. Private output: do not publish.
 :put "PASOFI G0 READ-ONLY FIRST CONTACT - NO WRITES"
 :do { /system identity print } on-error={ :put "identity unavailable" }
 :do { /system routerboard print } on-error={ :put "routerboard unavailable" }
