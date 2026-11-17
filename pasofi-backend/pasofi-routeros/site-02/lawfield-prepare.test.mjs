@@ -6,9 +6,12 @@ test('Lawfield bootstrap retains its own key and does not enable customer servic
   const plan=await readFile(new URL('./lawfield-prepare.rsc',import.meta.url),'utf8');
   const create=plan.indexOf('/interface wireguard add');
   for(const guard of ['Lawfield preparation requires RouterOS 7','A legacy or PasoFi service interface already exists',
-    'UDP port 51821 is already used','Install the matching official HotSpot package']){
+    'UDP port 51821 is already used']){
     assert.ok(plan.indexOf(guard)>=0 && plan.indexOf(guard)<create,guard);
   }
+  assert.match(plan,/HotSpot package and device-mode qualification is a later, device-specific launch gate/);
+  assert.doesNotMatch(plan,/\/system package find where name="hotspot"|Install the matching official HotSpot package|\/ip hotspot find/);
+  assert.match(plan,/HotSpot inventory is deferred to device-specific launch inspection/);
   assert.match(plan,/name="pamofi-service" or name="pasofi-service"/);
   assert.match(plan,/wireguard add name="pasofi-service" listen-port=51821 disabled=yes/);
   assert.match(plan,/get \[find where name="pasofi-service"\] public-key/);
@@ -16,12 +19,12 @@ test('Lawfield bootstrap retains its own key and does not enable customer servic
 });
 
 
-test('Lawfield login draft is offline and sends hotspot credentials over HTTPS',async()=>{
+test('Lawfield offline draft cannot submit router credentials to a different site',async()=>{
   const page=await readFile(new URL('./lawfield-pilot-login.html',import.meta.url),'utf8');
-  assert.match(page,/Lawfield Farm &bull; Pilot/);
-  assert.match(page,/<form action="https:\/\/hotspot\.pasofi\.onesa\.eu\/login" method="post">/);
-  assert.match(page,/name="username"/);
-  assert.match(page,/name="password" type="password"/);
-  assert.match(page,/Pilot testing is in progress/);
-  assert.doesNotMatch(page,/<(?:script|link|img|iframe)\b/i);
+  assert.match(page,/Lawfield Farm/);
+  assert.match(page,/Customer hotspot not yet activated/);
+  assert.match(page,/site-aware welcome installer/);
+  assert.doesNotMatch(page, /<(?:form|input|button|script|link|img|iframe)(?:\s|>)/i);
+  assert.equal(page.includes('https://hotspot.pasofi.onesa.eu/login'), false);
+  assert.doesNotMatch(page,/name="(?:username|password)"/);
 });

@@ -159,7 +159,7 @@ paths:
                   demo: {type: boolean}
                   paymentMode: {type: string, enum: [disabled, mock]}
                   paymentCheckout: {type: boolean}
-                  vouchers: {type: boolean}
+                  vouchers: {type: boolean, description: Voucher redemption can remain enabled during a new-sales pause only with the explicit PAMOFI_VOUCHER_REDEMPTION_WHILE_SALES_PAUSED recovery flag, database and keys. Never implies payment or RADIUS access.}
                   receiptPairing: {type: boolean}
                   cashReceiptRecovery: {type: boolean, description: Existing paid receipts and exact agent sale retries can be recovered.}
                   staffSales: {type: boolean}
@@ -526,7 +526,7 @@ paths:
     post:
       security: [{CustomerSession: []}]
       summary: Redeem one voucher into the current customer account
-      description: Exact origin required, with 10 requests per minute. Paired vouchers belong only to the paired customer. Redemption queues the entitlement. Simulated inbound EcoCash codes can be redeemed only in demo mode and their entitlements cannot authorize a network session.
+      description: Exact origin required, with 10 requests per minute. Paired vouchers belong only to the paired customer. Redemption queues the entitlement. With global sales disabled, pre-existing vouchers can be redeemed only when the independent voucher-recovery flag is explicitly enabled; no new payment/sale is allowed. Simulated inbound EcoCash codes can be redeemed only in demo mode and their entitlements cannot authorize a network session.
       requestBody:
         required: true
         content:

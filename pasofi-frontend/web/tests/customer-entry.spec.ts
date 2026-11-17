@@ -31,7 +31,7 @@ for (const width of [320, 390, 1280]) test(`Onesa customer entry is discoverable
   await page.screenshot({ path: info.outputPath(`customer-entry-${width}.png`), fullPage: true });
 });
 
-test('configured signup starts the PasoFi interaction and retains the requested account screen', async ({ page }) => {
+test('central signup stays separate from the PasoFi interaction that returns to the account screen', async ({ page }) => {
   let starts = 0;
   let releaseAvailability!: () => void;
   const waiting = new Promise<void>(resolve => {releaseAvailability = resolve;});
@@ -53,14 +53,24 @@ test('configured signup starts the PasoFi interaction and retains the requested 
   await expect(page.getByText('Checking Onesa sign-in…')).toBeVisible();
   await expect(page.getByRole('link', {name:'Create an Onesa account'})).toHaveCount(0);
   releaseAvailability();
-  const signup = page.getByRole('button', {name:'Create an Onesa account',exact:true});
+  const signup = page.getByRole('link', {name:'Create an Onesa account',exact:true});
+  await expect(signup).toHaveAttribute('href','https://auth.onesa.eu/register?audience=user&product=pasofi&platform=web');
+  expect(await signup.getAttribute('target')).toBeNull();
+  const origin=new URL(page.url()).origin;
+  await page.route('https://auth.onesa.eu/**', route=>route.fulfill({contentType:'text/html',body:'<a href="'+origin+'/?registration=complete">Back to PasoFi</a>'}));
   await signup.click();
-  await page.getByRole('button', {name:'Cancel',exact:true}).click();
-  await expect(signup).toBeFocused();
-  await signup.click();
-  await page.getByRole('button', {name:'Continue with Onesa',exact:true}).click();
+  await page.getByRole('link',{name:'Back to PasoFi'}).click();
   await expect(page).toHaveURL('https://portal-signup.example.invalid/authorize');
   expect(starts).toBe(1);
+  await page.goto('/#account');
+  const signIn = page.getByRole('button', {name:'Sign in with Onesa',exact:true});
+  await signIn.click();
+  await page.getByRole('button', {name:'Cancel',exact:true}).click();
+  await expect(signIn).toBeFocused();
+  await signIn.click();
+  await page.getByRole('button', {name:'Continue with Onesa',exact:true}).click();
+  await expect(page).toHaveURL('https://portal-signup.example.invalid/authorize');
+  expect(starts).toBe(2);
 });
 
 test('unverified availability cannot enable a published bundle and an explicit refresh recovers', async ({ page }) => {
@@ -82,7 +92,8 @@ test('unverified availability cannot enable a published bundle and an explicit r
   await expect(page.getByText('Purchase availability is not confirmed', { exact: true })).toHaveCount(0);
 });
 
-for (const label of ['Sign in with Onesa', 'Create an Onesa account']) test(`staff ${label} clears the purpose of an abandoned customer flow before starting`, async ({ page, baseURL }) => {
+test('staff sign-in clears an abandoned customer flow and signup has its own administrator entry', async ({ page, baseURL }) => {
+  const label = 'Sign in with Onesa';
   // Preserve production's HTTPS requirement while serving this test's local UI.
   // No request reaches the reserved example hostname.
   await page.route('https://pasofi-entry.example.invalid/**', async route => {
@@ -107,6 +118,7 @@ for (const label of ['Sign in with Onesa', 'Create an Onesa account']) test(`sta
     return route.fulfill({ status: url.pathname === '/api/staff/session' ? 401 : 200, json: body });
   });
   await page.goto('https://pasofi-entry.example.invalid/#staff');
+  await expect(page.getByRole('link', {name:'Request administrator access'})).toHaveAttribute('href','https://auth.onesa.eu/register?audience=admin&product=pasofi&platform=web');
   await page.getByRole('button', { name: label, exact: true }).click();
   await expect.poll(() => starts).toBe(1);
   await expect(page.getByRole('button', { name: label, exact: true })).toBeEnabled();
@@ -123,7 +135,7 @@ test('production account and staff entry use Portal when federation is unavailab
   for (const hash of ['#account', '#staff?apply=1']) {
     await page.goto('/' + hash);
     const scope = hash.startsWith('#staff') ? page.getByRole('region', { name: 'Staff workspace' }) : page;
-    await expect(scope.getByRole('link',{name:'Create an Onesa account'})).toHaveAttribute('href','https://portal.onesa.eu/admin?entry=register');
+    await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Create an Onesa account'})).toHaveAttribute('href','https://auth.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
     await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveAttribute('href','https://portal.onesa.eu/admin');
     await expect(scope.getByRole('button',{name:'Start a new customer account'})).toHaveCount(0);
     await expect(scope.locator('input[type="password"]')).toHaveCount(0);
@@ -141,7 +153,7 @@ test('a gateway outage still offers Company Portal sign-in and signup on the acc
     await page.goto('/'+hash);
     const scope = hash.startsWith('#staff') ? page.getByRole('region',{name:'Staff workspace'}) : page.getByRole('main');
     await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/admin');
-    await expect(scope.getByRole('link',{name:'Create an Onesa account',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/admin?entry=register');
+    await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Create an Onesa account',exact:true})).toHaveAttribute('href','https://auth.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
     await expect(scope.locator('input[type="password"]')).toHaveCount(0);
   }
   expect(writes).toBe(0);
@@ -163,7 +175,7 @@ test('a customer signing in at the hotspot welcome returns to the welcome screen
     return route.fulfill({ json: body });
   });
   await page.route('https://portal.example.invalid/authorize', route =>
-    route.fulfill({ status: 302, headers: { Location: new URL('/onesa-callback.html?code=test&state=test', baseURL).href } }));
+    route.fulfill({contentType:'text/html',body:'<script>location.replace('+JSON.stringify(new URL('/onesa-callback.html?code=test&state=test',baseURL).href)+')</script>'}));
   await page.goto('/connect');
   await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
   await page.getByRole('button', { name: 'Continue with Onesa', exact: true }).click();

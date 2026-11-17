@@ -26,6 +26,10 @@ const destinations = new Set<CustomerTab>([
   'recovery',
 ]);
 
+export function isCustomerDestination(value:unknown): value is CustomerTab {
+  return typeof value==='string' && destinations.has(value as CustomerTab);
+}
+
 async function publicClient(registration: NativeRegistration, platform: Platform, transport?: oidc.CustomFetch) {
   const id = registration[platform],
     issuer = new URL(registration.issuer);

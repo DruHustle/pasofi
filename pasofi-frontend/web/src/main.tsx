@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { resumeRegistration } from './registration';
 import { createRoot } from 'react-dom/client';
 import { InvoiceLink } from './InvoiceActions';
 import type { Capabilities, Product } from './business';
@@ -203,4 +204,5 @@ function App() {
     </main>
   </div>;
 }
+resumeRegistration();
 createRoot(document.getElementById('root')!).render(<React.StrictMode><InvoiceLink/><App/></React.StrictMode>);

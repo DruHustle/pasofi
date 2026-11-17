@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+const registrationComponent = readFileSync(new URL('../src/RegistrationLink.tsx',import.meta.url),'utf8');
 const apiSource = readFileSync(new URL('../src/api.ts', import.meta.url), 'utf8');
 
 const signInComponent = readFileSync(new URL('../src/OnesaSignIn.tsx', import.meta.url), 'utf8');
@@ -15,7 +16,7 @@ const component = readFileSync(
 test('unconfigured native customers are not sent to Portal administration', () => {
   assert.doesNotMatch(component, /portal\.onesa\.eu\/admin/);
   assert.match(component, /https:\/\/pasofi\.mobile\.onesa\.eu\/#account/);
-  assert.match(component, /https:\/\/auth\.onesa\.eu\/register/);
+  assert.match(component, /<RegistrationLink tab=\{activeTab\}/);
   assert.doesNotMatch(component, /Continue with Company Portal on the PasoFi website/);
 });
 
@@ -40,13 +41,22 @@ test('invalid API origin does not advertise configured customer account access',
 test('offline home account tab never links customers to Portal administration', () => {
   assert.doesNotMatch(homeComponent, /portal\.onesa\.eu\/admin/);
   assert.match(homeComponent, /https:\/\/pasofi\.mobile\.onesa\.eu\/#account/);
-  assert.match(homeComponent, /https:\/\/auth\.onesa\.eu\/register/);
+  assert.match(homeComponent, /<RegistrationLink tab="access"/);
   assert.doesNotMatch(homeComponent, /create an account with Company Portal/);
 });
 
 test('native Onesa sign-in fallback uses customer destinations, not admin UI', () => {
   assert.doesNotMatch(signInComponent, /portal\.onesa\.eu\/admin/);
   assert.match(signInComponent, /https:\/\/pasofi\.mobile\.onesa\.eu\/#account/);
-  assert.match(signInComponent, /https:\/\/auth\.onesa\.eu\/register/);
+  assert.match(component, /<OnesaSignIn /);
+  assert.match(component, /<RegistrationLink tab=\{activeTab\}/);
   assert.match(signInComponent, /register through Onesa Identity/);
+});
+
+test('both native registration choices reach Identity with the originating PasoFi platform',()=>{
+  assert.match(registrationComponent,/https:\/\/auth\.onesa\.eu\/register\?audience=/);
+  assert.match(registrationComponent,/&product=pasofi&platform=/);
+  assert.match(registrationComponent,/audience="user"/);
+  assert.match(registrationComponent,/audience="admin"/);
+  assert.doesNotMatch(registrationComponent,/portal\.onesa\.eu\/admin/);
 });

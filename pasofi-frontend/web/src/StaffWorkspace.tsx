@@ -1,3 +1,4 @@
+import { registrationUrl, rememberRegistration, startProductSignIn } from './registration';
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, ApiError } from './api';
@@ -65,10 +66,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     if (location.origin !== onesaOrigin) { location.assign(onesaOrigin + '/#staff'); return; }
     setBusy(true); setMessage('');
     try {
-      // The shared callback must not inherit an abandoned customer flow's purpose.
-      sessionStorage.removeItem('pasofi-onesa-customer');
-      const flow = await api<{ authorizationUrl: string }>('/api/staff/onesa/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      location.assign(flow.authorizationUrl);
+      await startProductSignIn(true,'/#staff');
     } catch (error) { setBusy(false); setMessage(messageFor(error)); }
   }
   async function authenticate(event: React.FormEvent) {
@@ -156,8 +154,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
       <p>Use your Company Portal account. Staff access requires an approved role and authenticator.</p>
       {onesaOrigin === undefined && <p role="status">Checking Company Portal sign-in…</p>}
       {onesaOrigin === null && <p><a href="https://portal.onesa.eu/admin">Sign in to Company Portal</a>. Staff access is awaiting the PasoFi connection.</p>}
-      {onesaOrigin ? <button className="secondary" disabled={busy} onClick={startOnesa}>Create an Onesa account</button>
-        : onesaOrigin === null && <a href="https://portal.onesa.eu/admin?entry=register">Create an Onesa account</a>}
+      <a href={registrationUrl('admin')} onClick={()=>rememberRegistration(true)}>Request administrator access</a>
     </div>}
     {capabilities?.demo && (step === 'login' || step === 'register') && <div className="workspace-auth"><div><h3>{step === 'register' ? 'Apply for staff access' : 'Welcome back'}</h3><p>{step === 'register' ? 'Every staff account needs an authenticator and administrator approval before it can sell vouchers or manage a site.' : 'Sign in with your email, password, and authenticator code.'}</p></div><form className="form-grid" onSubmit={authenticate}>
       {step === 'register' && <label>Your name<input required maxLength={80} autoComplete="name" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>}
@@ -174,7 +171,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
       <form className="form-grid" onSubmit={verifyMfa}><label>Authenticator code<input inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label><button className="primary" disabled={busy || (step === 'mfa_setup' && !secret)}>Verify authenticator</button></form><button className="text-button" disabled={busy} onClick={logout}>Cancel sign-in</button>
     </div>}
     {step === 'workspace' && staff && <><div className="workspace-account"><div><strong>{staff.displayName}</strong><span>{staff.email}</span></div><span className={`status-pill status-${staff.status}`}>{staff.status} {staff.role ? `· ${staff.role}` : ''}</span><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={load}>Refresh staff access</button><button className="secondary" disabled={busy} onClick={logout}>Sign out of staff</button></div></div>
-      {staff.status === 'pending' && <div className="empty"><h3>Waiting for administrator approval</h3><p>Your authenticator is ready. An administrator must review your application and assign a role and sites before you can work with customer sales.</p></div>}
+      {staff.status === 'pending' && <div className="empty"><h3>{staff.role==='admin'?'Administrator account signed in':'Waiting for administrator approval'}</h3><p>Your authenticator is ready. An administrator must review your application and assign a role and sites before you can work with customer sales.</p></div>}
       {(staff.status === 'disabled' || staff.status === 'rejected') && <div className="empty"><h3>Staff access is {staff.status}</h3><p>This account cannot perform staff actions. Contact your PasoFi administrator to resolve access.</p></div>}
       {staff.status === 'approved' && staff.role === 'agent' && <AgentWorkspace key={`${staff.staffId}:${staff.version}`} staff={staff} capabilities={capabilities} />}
       {staff.status === 'approved' && staff.role === 'admin' && <AdminWorkspace key={`${staff.staffId}:${staff.version}`} staff={staff} capabilities={capabilities} />}

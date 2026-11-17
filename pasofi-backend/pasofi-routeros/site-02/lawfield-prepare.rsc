@@ -11,8 +11,8 @@
 :put ("Device mode allows HotSpot: " . [/system device-mode get hotspot])
 :put "Lawfield installed packages:"
 /system package print
-:if ([:len [/system package find where name="hotspot"]] != 1) do={ :error "Install the matching official HotSpot package before continuing" }
-:put ("Existing hotspot servers: " . [:len [/ip hotspot find]])
+:put "HotSpot package and device-mode qualification is a later, device-specific launch gate; this bootstrap does not start HotSpot."
+:put "HotSpot inventory is deferred to device-specific launch inspection (the HotSpot menu may not be installed)."
 :put ("Existing RADIUS entries: " . [:len [/radius find]])
 :put "Lawfield interfaces:"
 /interface print terse

@@ -15,9 +15,8 @@ After taking an off-router password-protected backup, review the script and
 use RouterOS Safe Mode. It reports non-secret network inventory and creates one
 disabled WireGuard interface, with a unique private key generated and retained
 by the router. Its printed public key is safe to share for generating the
-site-specific Oracle peer. It refuses a missing HotSpot package, an existing
-interface name or a WireGuard listen-port collision and makes no HotSpot, firewall, address, peer,
-route, RADIUS or customer-access changes.
+site-specific Oracle peer. It refuses an existing interface name or a WireGuard listen-port collision, and makes no HotSpot, firewall, address, peer,
+route, RADIUS or customer-access changes. Its bootstrap does not require a HotSpot package or query an unavailable HotSpot menu: package/device-mode qualification belongs to the later, inspected physical HotSpot setup.
 
 Before site 2 can operate, prepare and test an independent server peer and
 firewall scope, NAS identity and secret, TLS certificate, non-overlapping guest
@@ -57,10 +56,11 @@ preflights refuse ambiguous state containing `pamofi-service` and
 `pasofi-service` together. The RADIUS client remains disabled, and neither
 generator prepares the customer bridge, DHCP, HotSpot or paid-service policy.
 
-`lawfield-pilot-login.html` is the offline, Lawfield-branded draft login page.
-It is not installed: the hostname, certificate, local network and login flow
-must first be verified on the actual Lawfield router. It does not create a
-HotSpot, permit internet access or enable sales. Preserve the existing RouterOS
+`lawfield-pilot-login.html` is an **offline, non-interactive preparation notice**.
+It must not collect credentials or post to the first site's HotSpot hostname.
+The Lawfield hostname, certificate, local network and login flow must be verified
+on its actual router, then generated using the site-aware installer. The offline
+notice is not installed and does not create a HotSpot, permit internet access or enable sales. Preserve the existing RouterOS
 HotSpot directory and DHCP captive-discovery assets when preparing installation.
 
 For the current blue/lime welcome flow, use the [site-aware welcome installer](../portal/welcome/README.md#select-the-site-and-verified-portal-origins)

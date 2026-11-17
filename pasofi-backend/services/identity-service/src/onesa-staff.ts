@@ -187,6 +187,8 @@ export class OnesaStaff {
         // Customer access requires its own product grant. Legacy global roles
         // are outside the managed resource-token contract.
         if (roles.includes('customer')) return identity;
+        if (roles.length===1 && roles[0]==='admin' && freshMfa)
+          return {...identity,authenticated:mfa as number,expires:Math.min(identity.expires,(mfa as number)+300)};
         throw denied();
       }
       // Every managed staff role, including administrator, needs its matching
@@ -231,7 +233,15 @@ export class OnesaStaff {
       const inserted = await db.query(`INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at,binding_id,staff_version)
         SELECT $1,$2,$3,$4,to_timestamp($5),b.id,u.version FROM staff_onesa_bindings b JOIN staff_users u ON u.id=b.staff_id
         WHERE b.issuer=$2 AND b.subject=$3::uuid AND u.status='approved' AND (($6::text IS NULL AND u.role IN ('agent','support')) OR u.role=$6)`, [...values, staff.localRole ?? null]);
-      if (!inserted.rowCount) throw denied();
+      if (!inserted.rowCount) {
+        if (!this.config.managed || staff.localRole!=='admin') throw denied();
+        // A central administrator can enter PasoFi without a site grant. Never
+        // replace an existing, conflicting or disabled local staff binding.
+        const pending=await db.query(`INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at)
+          SELECT $1,$2,$3::uuid,$4,to_timestamp($5) WHERE NOT EXISTS
+          (SELECT 1 FROM staff_onesa_bindings WHERE issuer=$2 AND subject=$3::uuid)`,values);
+        if(!pending.rowCount)throw denied();
+      }
     } else {
       await db.query('INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at) VALUES($1,$2,$3,$4,to_timestamp($5))', values);
     }
@@ -251,7 +261,17 @@ export class OnesaStaff {
       if (error instanceof OnesaError && error.status === 401) throw new RejectedStaffSession(hash);
       throw error;
     }
-    if (row.subject !== assertion.subject || Boolean(row.binding_id) !== Boolean(assertion.siteOperator)) throw new RejectedStaffSession(hash);
+    if (row.subject !== assertion.subject) throw new RejectedStaffSession(hash);
+    const pendingAdmin=!row.binding_id && this.config.managed && assertion.siteOperator && assertion.localRole==='admin';
+    if(pendingAdmin){
+      const current=await db.query(`SELECT 1 FROM staff_onesa_sessions s WHERE token_hash=$1 AND expires_at>now()
+        AND binding_id IS NULL AND NOT EXISTS (SELECT 1 FROM staff_onesa_bindings b WHERE b.issuer=s.issuer AND b.subject=s.subject)
+        ${lock?'FOR UPDATE OF s':''}`,[hash]);
+      if(!current.rowCount)throw new RejectedStaffSession(hash);
+      return {id:assertion.subject,email:assertion.email,display_name:assertion.name,status:'pending',role:'admin',site_ids:[],
+        version:1,mfa_enrolled_at:new Date(assertion.authenticated*1000),created_at:row.created_at};
+    }
+    if (Boolean(row.binding_id) !== Boolean(assertion.siteOperator)) throw new RejectedStaffSession(hash);
     if (assertion.siteOperator) {
       const operator = await db.query(`SELECT u.id,u.email,u.display_name,u.status,u.role,u.site_ids,u.version,u.created_at
         FROM staff_onesa_sessions s JOIN staff_onesa_bindings b ON b.id=s.binding_id AND b.issuer=s.issuer AND b.subject=s.subject
