@@ -225,7 +225,7 @@ for (const platform of ['ios', 'android'] as const) {
   });
 }
 
-for (const platform of ['ios', 'android'] as const) for (const entry of ['Sign in with Onesa', 'Create an Onesa account']) test(`${platform} ${entry} opens only the native browser command and explicitly accepts a one-use code`, async ({ page, configuredBaseURL }) => {
+for (const platform of ['ios', 'android'] as const) for (const returnMethod of ['deep link', 'manual'] as const) test(`${platform} native sign-in receives its one-use code by ${returnMethod} and registration opens Identity separately`, async ({ page, configuredBaseURL }) => {
   let recovered = false;
   const handoffCode = 'N'.repeat(43);
   const calls = await nativeBridge(page, request => {
@@ -240,13 +240,14 @@ for (const platform of ['ios', 'android'] as const) for (const entry of ['Sign i
   }, { platform });
   await page.goto(configuredBaseURL);
   await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
-  await page.getByRole('button', { name: entry, exact: true }).click();
+  await expect(page.getByRole('link', {name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://auth.onesa.eu/register?audience=user');
+  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
   await page.getByRole('button', { name: 'Open Onesa sign-in in browser', exact: true }).click();
   await expect(page.getByText('Browser opened.', { exact: false })).toBeVisible();
   const opened = calls.filter(call => call.method === 'openSignIn');
   expect(opened).toHaveLength(1); expect(Object.keys(opened[0].options)).toEqual(['requestId']);
   expect(recovered).toBe(false);
-  if (entry === 'Sign in with Onesa') await page.evaluate(() => (window as any).__returnToHandoff());
+  if (returnMethod === 'deep link') await page.evaluate(() => (window as any).__returnToHandoff());
   else await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click();
   await expect(page.getByRole('heading', {name: 'Accept an account handoff'})).toBeVisible();
   await page.getByLabel('One-time handoff code').fill(handoffCode);
@@ -297,7 +298,7 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
     await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
     await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible();
     await expect(page.getByRole('link',{name:'Continue to PasoFi account on the web',exact:true})).toHaveAttribute('href','https://pasofi.mobile.onesa.eu/#account');
-    await expect(page.getByRole('link',{name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://auth.onesa.eu/register');
+    await expect(page.getByRole('link',{name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://auth.onesa.eu/register?audience=user');
     await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
     expect(requests.length).toBeGreaterThan(0); expect(new Set(requests.map(request => request.path))).toEqual(new Set(['/api/capabilities']));
     expect(await page.evaluate(() => (window as any).browserApiFetches)).toBe(0);
