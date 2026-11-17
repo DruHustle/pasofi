@@ -54,7 +54,7 @@ test('native Onesa sign-in fallback uses customer destinations, not admin UI', (
 });
 
 test('both native registration choices reach Identity with the originating PasoFi platform',()=>{
-  assert.match(registrationComponent,/https:\/\/auth\.onesa\.eu\/register\?audience=/);
+  assert.match(registrationComponent,/https:\/\/account\.onesa\.eu\/register\?audience=/);
   assert.match(registrationComponent,/&product=pasofi&platform=/);
   assert.match(registrationComponent,/audience="user"/);
   assert.match(registrationComponent,/audience="admin"/);
