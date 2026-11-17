@@ -10,9 +10,9 @@ flowchart TB
   Captive portal + RADIUS gateway"]
   K0 -->|"LAN1 · Ethernet"| K1["K1 · MikroTik hAP lite
   2.4 GHz guest AP"]
-  K0 -->|"LAN2 · Ethernet (to verify)"| K2["K2 · Tenda O1-5G
+  K0 -->|"LAN2 · Ethernet (to verify)"| K2["K2 · Tenda OS3 (target)
   5 GHz directional phone-facing AP"]
-  K0 -->|"LAN3 · Ethernet (to verify)"| K3["K3 · Tenda O1-5G
+  K0 -->|"LAN3 · Ethernet (to verify)"| K3["K3 · Tenda OS3 (target)
   5 GHz directional phone-facing AP"]
   K0 -.->|LAN4 reserved, no cable| KLAN4["LAN4 reserved
   No K4 cable"]
@@ -27,7 +27,7 @@ flowchart TB
   K5 -.-> PH5["Different-room phones"]
 ```
 
-**Important:** K2/K3 are 5 GHz **directional CPEs**, not omnidirectional outdoor sector/mesh APs. Tenda advertises a roughly **30° beam** on both O1-5G and OS3. The advertising claim of 1+ km (O1-5G) or 5+ km (OS3) describes a *CPE-to-CPE link* under suitable conditions, not the distance that a normal phone can reliably transmit back to a CPE. Test customer signal in both directions and actual HotSpot visibility across the planned 30° sectors.
+**Important:** K2/K3 will use Tenda OS3 12 dBi **directional CPEs** after the physical exchange, not omnidirectional outdoor sector/mesh APs. Tenda specifies a roughly **30° beam** on both O1-5G and OS3. The advertised 1 km+ (O1-5G) or 5 km (OS3) describes a *CPE-to-CPE link* under suitable conditions, not the distance that a normal phone can reliably transmit back to a CPE. Test customer signal in both directions and actual HotSpot visibility across the planned 30° sectors.
 
 **K4 and K5 have no Ethernet link to K0 LAN4.** They are owner-described wireless repeaters; their actual upstream AP, repeater/WDS firmware mode, transparent MAC/IPv4 forwarding and radio channel have not been verified. MW301R is 2.4 GHz only; TG789vac v2 may not offer compatible wireless repeater mode on every firmware. Do not enable an independent DHCP/NAT or uncontrolled bridge that bypasses the K0 HotSpot.
 
@@ -38,9 +38,9 @@ flowchart TB
   GS["Starlink"] --> G0["G0 · MikroTik hAP lite
   Captive portal + RADIUS gateway"]
   G0 -->|"LAN1 · home isolated"| G1["G1 · Home AP"]
-  G0 -->|"LAN2 · wired guest backhaul"| C1["CPE1 · Tenda OS3 5 GHz AP
+  G0 -->|"LAN2 · wired guest backhaul"| C1["CPE1 · Tenda O1-5G AP (target)
   Hardware revision to inspect"]
-  C1 -->|"Existing 5 GHz radio link · preserve"| C2["CPE2 · Tenda OS3 client"]
+  C1 -->|"Existing 5 GHz radio link · preserve"| C2["CPE2 · Tenda O1-5G station (target)"]
   C2 -->|"Ethernet"| G3["G3 · Mercusys MR20 AC750
   Guest AP mode"]
   C1 -.->|Planned second 5 GHz client| RX["G2-RX · compatible client CPE
@@ -55,20 +55,22 @@ The MR20 supports **AP** and **Range Extender** modes; the latter does not prove
 
 ## Should we swap the Tenda radios?
 
-| Attribute | Tenda O1-5G (K2/K3) | Tenda OS3 (CPE1/CPE2 Goromonzi) |
+| Attribute | Tenda O1-5G (target Goromonzi bridge) | Tenda OS3 (target Kuwadzana K2/K3) |
 | --- | --- | --- |
 | Use case | Directional outdoor PtP/PtMP bridge; short directed phone-facing use *only after field tests* | Directional outdoor PtP/PtMP bridge |
 | Advertised link reach | 1+ km **between compatible CPEs** | 5+ km **between compatible CPEs** |
 | Antenna / horizontal width | 9 dBi / 30° | 12 dBi / 30° |
 | Wired interface | 1 × 10/100 Mbps | 4 × 10/100 Mbps |
 | Practical phone coverage | Narrow sector; phone transmit power usually limits far-end return path | Same narrow sector; 12 dBi does not make it omnidirectional |
-| Current role | K2/K3 reported phone-facing access points | Existing CPE1–CPE2 live Goromonzi bridge; preserve |
+| Current role | Owner-reported currently K2/K3; to become Goromonzi CPE1/CPE2 **after qualification** | Existing Goromonzi CPE1–CPE2 bridge; to become Kuwadzana K2/K3 **after a replacement link works** |
 
-**Recommendation:** Do **not** exchange OS3 and O1-5G solely on advertised 1 km versus 5 km range. Current Goromonzi OS3 pair is carrying the known CPE1→CPE2→G3 path and should remain until a replacement is staged. If actual Goromonzi backhaul is short, line-of-sight, and an O1-5G PtMP pair/trio passes *both G2 and G3* under simultaneous load, a controlled swap may later be justified. But the stronger OS3 is not automatically better for **general cellphone coverage** at Kuwadzana: both have narrow beams and 100 Mbps wired uplinks. For wider phone coverage, use omnidirectional or true sector access points instead of treating a long-range CPE as a full-circle hotspot.
+**Owner-selected assignment:** Put the two OS3 CPEs at **Kuwadzana K2/K3** and use the two O1-5G CPEs for the **Goromonzi CPE1/CPE2 bridge**. This is the **target, not a completed hardware migration**. Keep the live Goromonzi OS3 bridge online until an O1-5G replacement is proven at the actual distance, clear line of sight, capacity and encrypted configuration; if the link exceeds the O1-5G's viable range, retain OS3 for Goromonzi pending an alternative backhaul rather than creating an outage. G2 requires a third compatible client/receiver, or a separately verified equivalent; two O1-5G units alone provide only CPE1 and CPE2. OS3 gives K2/K3 a more directional 12 dBi link budget, **not 360° phone coverage**. For wider handset coverage, use true outdoor sector/omni APs.
 
 **Operator checks before any swap:** measured CPE endpoints' separation, 5 GHz channel and spectrum, Fresnel clearance, receiver signal/dBm, throughput under simultaneous clients, local EIRP rules, MR20 firmware/mode, and baseline/restore of the existing OS3 pair. Compare line of sight and number of AP clients rather than headline range.
 
 **Manufacturer sources:** [Tenda O1-5G technical page](https://www.tenda.cz/article/tenda-o1-5g-wireless-outdoor-cpe-5-ghz-9-dbi), [Tenda OS3 official specification](https://www.tendacn.com/cn/product/support/OS3), [Mercusys MR20 official modes](https://www.mercusys.com/en/product/wifi-router/mr20/v1/), [Mercusys MW301R V2 specification](https://www.mercusys.com/en/product/wifi-router/mw301r/v2/).
+
+**Cutover dependency:** The Goromonzi OS3 CPE1–CPE2 bridge is still the reported existing link; do not move either unit to Kuwadzana until the O1-5G bridge is simultaneously proven and rollback is prepared. The two available O1-5G units are not enough to add a *third* G2 receiving radio.
 
 ## Customer acceptance (unchanged)
 
