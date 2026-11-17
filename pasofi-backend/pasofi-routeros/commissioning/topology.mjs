@@ -71,9 +71,12 @@ export function validateTargetTopology(data){
    assertNodePresent(site,'K1','guest-access-point',true);
    for(const label of ['K2','K3']){
     const radio=assertNodePresent(site,label,'guest-access-point',true);
-    requireCondition(radio.device==='Tenda O1-5G 11AC outdoor CPE'&&radio.wirelessBandsGHz?.length===1&&
-      radio.wirelessBandsGHz[0]===5&&radio.antenna?.horizontalBeamwidthDegrees===30&&radio.physicalVerified===false,
-      'o1_5g_directional_coverage_unverified');
+    requireCondition(radio.device==='Tenda O1-5G 11AC outdoor CPE' &&
+      radio.currentDevice===radio.device && radio.targetDevice==='Tenda OS3 5GHz 12dBi outdoor CPE' &&
+      radio.migrationStatus==='pending-physical-swap' &&
+      radio.wirelessBandsGHz?.length===1 && radio.wirelessBandsGHz[0]===5 &&
+      radio.antenna?.gainDbi===12 && radio.antenna?.horizontalBeamwidthDegrees===30 &&
+      radio.physicalVerified===false,'k2_k3_os3_target_not_yet_installed');
    }
    for(const [label,model] of [['K4','Technicolor TG789vac v2'],['K5','Mercusys MW301R']]){
     const repeater=assertNodePresent(site,label,'wireless-repeater',true);
@@ -92,8 +95,13 @@ export function validateTargetTopology(data){
     site.ports[1].target==='CPE1'&&site.ports[1].purpose==='guest-backhaul'&&
     site.ports[2].purpose==='reserved','g0_ports_must_preserve_home_and_backhaul');
    assertNodePresent(site,'G1','home-access-point',true);
-   assertNodePresent(site,'CPE1','backhaul-ap',true);
-   assertNodePresent(site,'CPE2','backhaul-client',true);
+   for(const [label,role] of [['CPE1','backhaul-ap'],['CPE2','backhaul-client']]){
+    const cpe=assertNodePresent(site,label,role,true);
+    requireCondition(cpe.device==='Tenda OS3 5GHz directional CPE'&&cpe.currentDevice===cpe.device &&
+      cpe.targetDevice==='Tenda O1-5G 11AC outdoor CPE' &&
+      cpe.migrationStatus==='existing-OS3-link-must-be-preserved-until-O1-qualified' &&
+      cpe.physicalVerified===false,'goromonzi_existing_os3_must_be_preserved');
+   }
    assertNodePresent(site,'G2-RX','backhaul-client',false);
    for(const label of ['G2','G3']){
     const node=assertNodePresent(site,label,'guest-access-point',true);
@@ -107,6 +115,13 @@ export function validateTargetTopology(data){
     site.wiredLinks.some(l=>l.from==='G2-RX'&&l.to==='G2'&&l.present===false),'guest_access_points_need_bridged_receiver');
   }
  }
+ requireCondition(data.radioReassignment?.status==='proposed-not-installed' &&
+   data.radioReassignment.sourceSite==='goromonzi' &&
+   data.radioReassignment.destinationSite==='kuwadzana' &&
+   data.radioReassignment.moveToKuwadzana?.length===2 &&
+   data.radioReassignment.moveToGoromonzi?.length===2 &&
+   data.radioReassignment.prerequisites?.some(x=>x.includes('Do not disconnect existing CPE1-CPE2 link')),
+   'radio_swap_requires_preserved_live_bridge_and_survey');
  return {status:'design-unverified',sites:expectedSites,physicalAcceptance:false,routersChanged:false,commerceEnabled:false};
 }
 
