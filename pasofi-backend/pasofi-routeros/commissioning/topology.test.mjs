@@ -11,20 +11,39 @@ test('K0 and G0 plan is a non-activation draft with separate captive NAS owners'
  assert.deepEqual(result,{status:'design-unverified',sites:['kuwadzana','goromonzi'],physicalAcceptance:false,routersChanged:false,commerceEnabled:false});
  assert.equal(at('kuwadzana').gateway.label,'K0');
  assert.equal(at('goromonzi').gateway.label,'G0');
- assert.equal(at('kuwadzana').ports.filter(x=>x.present).length,1);
+ assert.equal(at('kuwadzana').ports.filter(x=>x.present).length,3);
+ assert.equal(at('kuwadzana').ports[3].purpose,'reserved');
+ assert.equal(at('kuwadzana').ports[3].target,null);
  assert.equal(at('goromonzi').ports[0].purpose,'home');
 });
 test('G2 and G3 are Mercusys bridged guest APs, never NAS or 5 GHz receivers by assumption',()=>{
  const g=at('goromonzi');
  for(const label of ['G2','G3']){
   const n=g.nodes.find(x=>x.label===label);
-  assert.match(n.device,/^Mercusys router /);
+  assert.equal(n.device,'Mercusys MR20 AC750');
   assert.equal(n.nat,false);assert.equal(n.hotspot,false);
   assert.equal(n.dhcp,false);assert.equal(n.radius,false);
   assert.equal(n.wirelessClientQualified,false);
  }
  assert.equal(g.radioLinks.find(x=>x.to==='CPE2').state,'existing-preserve');
  assert.equal(g.radioLinks.find(x=>x.to==='G2-RX').state,'planned-needs-receiver');
+});
+test('K2/K3 directional Tenda O1-5G radios are wired; K4/K5 repeat wirelessly, not LAN4',()=>{
+ const k=at('kuwadzana');
+ for(const label of ['K2','K3']){
+  const n=k.nodes.find(x=>x.label===label);
+  assert.equal(n.device,'Tenda O1-5G 11AC outdoor CPE');
+  assert.deepEqual(n.wirelessBandsGHz,[5]);
+  assert.equal(n.antenna.horizontalBeamwidthDegrees,30);
+  assert.equal(n.physicalVerified,false);
+  assert.equal(n.hotspot,false);
+ }
+ assert.deepEqual(k.ports.slice(0,3).map(x=>x.target),['K1','K2','K3']);
+ assert.equal(k.ports[3].target,null);
+ assert.equal(k.nodes.find(x=>x.label==='K4').device,'Technicolor TG789vac v2');
+ assert.equal(k.nodes.find(x=>x.label==='K5').device,'Mercusys MW301R');
+ assert.deepEqual(k.repeaterLinks.map(x=>x.from),[null,null]);
+ assert.ok(k.repeaterLinks.every(x=>x.physicalVerified===false));
 });
 test('unsafe changes cannot silently bypass physical and payment acceptance',()=>{
  for(const [name,mutation] of Object.entries({
@@ -37,7 +56,14 @@ test('unsafe changes cannot silently bypass physical and payment acceptance',()=
   replaceMercusysG3:x=>{x.sites[1].nodes.find(n=>n.label==='G3').device='other brand';},
   replaceG0WithG1:x=>{x.sites[1].gateway.label='G1';},
   moveK1ToLAN4:x=>{x.sites[0].ports[0].target='K4';},
-  enableUninstalledAP:x=>{x.sites[0].ports[2].present=true;},
+  enableReservedLAN4:x=>{x.sites[0].ports[3].present=true;},
+  wireK4ToLAN4:x=>{x.sites[0].ports[3]={name:'LAN4',interface:'ether5',target:'K4',purpose:'guest',present:true};},
+  k2NAT:x=>{x.sites[0].nodes.find(n=>n.label==='K2').nat=true;},
+  k3WrongBand:x=>{x.sites[0].nodes.find(n=>n.label==='K3').wirelessBandsGHz=[2.4];},
+  k4UnverifiedUpstream:x=>{x.sites[0].nodes.find(n=>n.label==='K4').upstream='K1';},
+  k5BypassHotSpot:x=>{x.sites[0].nodes.find(n=>n.label==='K5').hotspot=true;},
+  k4ClaimBridgeVerified:x=>{x.sites[0].repeaterLinks[0].physicalVerified=true;},
+  removeK5Repeater:x=>{x.sites[0].repeaterLinks.pop();},
   markExistingRadioLive:x=>{x.sites[1].radioLinks[0].physicalVerified=true;},
   putG2OnSameCPE2:x=>{x.sites[1].wiredLinks[1].from='CPE2';},
   removeG2Link:x=>{x.sites[1].radioLinks.pop();},
