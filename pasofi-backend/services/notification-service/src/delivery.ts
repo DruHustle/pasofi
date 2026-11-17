@@ -32,12 +32,12 @@ export async function sendOnce(pool:Pool,jobId:string,adapter:Adapter,message:Me
   return {attemptId,state:attempt.rowCount?result.state:'unknown'};
  }catch(error){await writer.query('ROLLBACK');throw error;}finally{writer.release();}
 }
-export async function markStaleSubmissionsUnknown(pool:Pool,minimumAgeSeconds:number,jobId?:string) {
+export async function markStaleSubmissionsUnknown(pool:Pool,minimumAgeSeconds:number,jobId?:string,includeDemoCredits=false) {
  if(!Number.isInteger(minimumAgeSeconds)||minimumAgeSeconds<60) throw new DeliveryError('invalid_stale_age');
  const client=await pool.connect();
  try{
   await client.query('BEGIN');
-  const rows=await client.query("UPDATE delivery_attempts SET state='unknown',updated_at=now() WHERE state='submitting' AND updated_at < now()-make_interval(secs=>$1) AND ($2::uuid IS NULL OR job_id=$2) RETURNING job_id",[minimumAgeSeconds,jobId??null]);
+  const rows=await client.query("UPDATE delivery_attempts SET state='unknown',updated_at=now() WHERE state='submitting' AND updated_at < now()-make_interval(secs=>$1) AND ($2::uuid IS NULL OR job_id=$2) AND ($3 OR EXISTS (SELECT 1 FROM delivery_jobs j WHERE j.id=delivery_attempts.job_id AND j.source_kind='agent_sale')) RETURNING job_id",[minimumAgeSeconds,jobId??null,includeDemoCredits]);
   if(rows.rowCount) await client.query("UPDATE delivery_jobs SET state='unknown' WHERE id=ANY($1::uuid[]) AND state='submitting'",[rows.rows.map(r=>r.job_id)]);
   await client.query('COMMIT');return rows.rowCount??0;
  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}

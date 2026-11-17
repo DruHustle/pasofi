@@ -25,6 +25,7 @@
     "purchase_entitlements": ["SELECT", "INSERT", "UPDATE"],
     "mock_payment_records": [],
     "mock_provider_payments": [],
+    "ecocash_credits": [],
     "agent_inventory": [],
     "cash_refunds": ["SELECT", "INSERT", "UPDATE"],
     "cash_refund_events": ["SELECT", "INSERT"],
