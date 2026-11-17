@@ -24,7 +24,7 @@ test('Lawfield offline draft cannot submit router credentials to a different sit
   assert.match(page,/Lawfield Farm/);
   assert.match(page,/Customer hotspot not yet activated/);
   assert.match(page,/site-aware welcome installer/);
-  assert.doesNotMatch(page,/<(?:form|input|button|script|link|img|iframe)\\b/i);
-  assert.doesNotMatch(page,/https:\\/\\/hotspot\\.pasofi\\.onesa\\.eu\\/login/);
+  assert.doesNotMatch(page, /<(?:form|input|button|script|link|img|iframe)(?:\s|>)/i);
+  assert.equal(page.includes('https://hotspot.pasofi.onesa.eu/login'), false);
   assert.doesNotMatch(page,/name="(?:username|password)"/);
 });
