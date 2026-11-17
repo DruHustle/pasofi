@@ -42,7 +42,7 @@ test('demo cash workflow remains independently testable without false production
 });
 
 test('cash site acceptance allowlist is exact, canonical, unique and fail closed',()=>{
- const good='11111111-1111-4111-8111-111111111111';
+ const good='a1111111-1111-4111-8111-111111111111';
  assert.deepEqual([...approvedCashSiteIds(JSON.stringify([good]))],[good]);
  for(const invalid of [undefined,'', 'null', '[]', '{}','[1]','["*" ]',JSON.stringify([good,good]),JSON.stringify([good.toUpperCase()]),'not json'])assert.equal(approvedCashSiteIds(invalid).size,0);
 });
