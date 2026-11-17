@@ -174,14 +174,15 @@
         },
         {
           "label": "G3",
-          "device": "AP router (model unverified)",
+          "device": "Mercusys router (model/firmware unverified)",
           "role": "guest-access-point",
           "present": true,
-          "targetMode": "bridge-ap behind CPE2",
+          "targetMode": "bridge-AP behind CPE2",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
-          "radius": false
+          "radius": false,
+          "wirelessClientQualified": false
         },
         {
           "label": "G2-RX",
@@ -198,14 +199,15 @@
         },
         {
           "label": "G2",
-          "device": "AP router (model/5 GHz capability unverified)",
+          "device": "Mercusys router (model/firmware unverified)",
           "role": "guest-access-point",
           "present": true,
-          "targetMode": "bridge-ap behind G2-RX",
+          "targetMode": "bridge-AP behind dedicated 5 GHz receiver",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
-          "radius": false
+          "radius": false,
+          "wirelessClientQualified": false
         }
       ],
       "wiredLinks": [
