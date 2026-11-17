@@ -203,7 +203,7 @@ for (const platform of ['ios', 'android'] as const) {
       if(req.path==='/api/bundles')return reply({products:[]});
       return reply({error:'unavailable'},503);
     },{platform,authenticate:async value=>{
-      if(value==='https://auth.onesa.eu/register?audience=user&product=pasofi&platform='+platform){
+      if(value==='https://auth.onesa.eu/register?audience='+(platform==='ios'?'user':'admin')+'&product=pasofi&platform='+platform){
         return 'com.onesa.pasofi.identity://login/registered';
       }
       const url=new URL(value);expect(url.origin+'/').toBe(issuer);authorization=url.searchParams;
@@ -214,7 +214,7 @@ for (const platform of ['ios', 'android'] as const) {
     await page.goto(configuredBaseURL);
     await page.getByRole('button',{name:'My PasoFi',exact:true}).click();
     await page.getByRole('button',{name:'History',exact:true}).first().click();
-    await page.getByRole('link',{name:'Register an Onesa account',exact:true}).click();
+    await page.getByRole('link',{name:platform==='ios'?'Register an Onesa account':'Request administrator access',exact:true}).click();
     // The Android system-browser deep link is asynchronous. Wait for the
     // server-side session exchange and protected history read, not a fixed delay.
     await expect.poll(() => established && readHistory, { timeout: 15000 }).toBe(true);
