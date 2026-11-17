@@ -175,7 +175,7 @@ test('a customer signing in at the hotspot welcome returns to the welcome screen
     return route.fulfill({ json: body });
   });
   await page.route('https://portal.example.invalid/authorize', route =>
-    route.fulfill({ status: 302, headers: { Location: new URL('/onesa-callback.html?code=test&state=test', baseURL).href } }));
+    route.fulfill({contentType:'text/html',body:'<script>location.replace('+JSON.stringify(new URL('/onesa-callback.html?code=test&state=test',baseURL).href)+')</script>'}));
   await page.goto('/connect');
   await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
   await page.getByRole('button', { name: 'Continue with Onesa', exact: true }).click();
