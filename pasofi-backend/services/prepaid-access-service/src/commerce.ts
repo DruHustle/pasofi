@@ -32,6 +32,17 @@ function configuredCashCurrencies(raw:string|undefined):string[] {
   return value as string[];
  } catch { return []; }
 }
+// Production cash acceptance is per physical site, not a global router flag.
+// Malformed, duplicated or empty configuration fails closed, never broadens access.
+export function approvedCashSiteIds(raw:string|undefined):Set<string> {
+ try {
+  const value:unknown=JSON.parse(raw??'null');
+  if(!Array.isArray(value)||value.length<1||value.length>100||
+     value.some(id=>typeof id!=='string'||!uuid.test(id)||id!==id.toLowerCase())||
+     new Set(value).size!==value.length)return new Set<string>();
+  return new Set<string>(value as string[]);
+ }catch{return new Set<string>();}
+}
 function saleDto(row:Record<string,any>){const cash=row.payment_method==='cash';return {id:row.id,shiftId:row.shift_id,agentId:row.agent_id,siteId:row.site_id,siteName:row.site_name,bundleId:row.bundle_id,priceMinor:row.price_minor,commissionMinor:row.commission_minor,commissionBps:row.commission_bps,currency:row.currency,byteLimit:String(row.byte_limit),validitySeconds:row.validity_seconds,soldAt:row.sold_at,startBy:row.start_by,delivery:row.delivery,simulation:row.simulation,payment:{method:cash?'cash':'unrecorded',evidence:cash?'agent_attestation':'unrecorded',receivedMinor:cash?row.cash_received_minor:null,currency:cash?row.currency:null,confirmedAt:cash?row.cash_confirmed_at:null,confirmedBy:cash?row.agent_id:null}};}
 async function boundedJson(response:Response){if(!response.body)throw Error('unavailable');const chunks:Buffer[]=[];let size=0;for await(const part of response.body as unknown as AsyncIterable<Uint8Array>){size+=part.length;if(size>16384)throw Error('unavailable');chunks.push(Buffer.from(part));}return record(JSON.parse(Buffer.concat(chunks).toString('utf8')));}
 export async function identityStaff(request:FastifyRequest,demo:boolean,path='/internal/v1/staff/session',scope='staff:resolve') {
@@ -48,7 +59,8 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
  // Only an explicit, site-accepted production launch may issue NEW cash sales.
  // Demo fixtures can still exercise the full workflow. Recovery of an existing
  // committed sale remains separate from the new-sale gate.
- const liveCashReady=demo||(process.env.PAMOFI_CASH_CUSTOMER_GO==='true'&&customerNetworkEnabled(demo));
+ const acceptedCashSites=demo?new Set<string>():approvedCashSiteIds(process.env.PAMOFI_CASH_APPROVED_SITE_IDS_JSON);
+ const liveCashReady=demo||(process.env.PAMOFI_CASH_CUSTOMER_GO==='true'&&customerNetworkEnabled(demo)&&acceptedCashSites.size>0);
  const newCashSalesEnabled=enabled&&liveCashReady;
  // Existing paid vouchers may be redeemed during a sales outage only via an
  // independently approved recovery switch. No new sale or pairing is unlocked.
@@ -137,6 +149,7 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
   if(!key||typeof b.siteId!=='string'||!uuid.test(b.siteId)||typeof b.bundleId!=='string'||!['receipt','sms','both'].includes(String(b.delivery))||(b.delivery!=='receipt'&&!destination)||(b.delivery!=='sms'&&(!pairing||!/^[A-Z2-9]{10}$/.test(pairing))))return reply.code(400).send({error:'invalid_sale'});
   if(!allowedSite(s,b.siteId))return reply.code(403).send({error:'site_forbidden'});
   try{const prior=(await pool!.query('SELECT site_name FROM agent_sales WHERE agent_id=$1 AND idempotency_key=$2',[s.staffId,key])).rows[0];
+   if(!prior&&!demo&&!acceptedCashSites.has(b.siteId.toLowerCase()))return reply.code(409).send({error:'cash_site_not_accepted'});
    if(newCashSalesEnabled&&!prior&&b.delivery!=='receipt'){if(!deliverySms)return reply.code(409).send({error:'sms_delivery_disabled'});const capability=await notification(request,'/internal/v1/delivery/capabilities');if(capability.status!==200||capability.data.enabled!==true||capability.data.simulation!==demo)return reply.code(503).send({error:'sms_delivery_unavailable'});}
    const invoiceDelivery=normalizeInvoiceDelivery(b.invoiceDelivery);
    // Location availability is checked under the sale transaction's lock after
@@ -153,6 +166,7 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
   const id=await account(request,reply);if(!id)return;const key=requestKey(request),b=record(request.body);
   if(!key)return reply.code(400).send({error:'invalid_idempotency_key'});
   if(typeof b.bundleId!=='string'||!/^[a-z][a-z0-9-]{0,39}$/.test(b.bundleId)||typeof b.siteId!=='string'||!uuid.test(b.siteId)||Object.keys(b).some(k=>!['bundleId','siteId'].includes(k)))return reply.code(400).send({error:'cash_selection_required'});
+  if(!demo&&!acceptedCashSites.has(b.siteId.toLowerCase()))return reply.code(409).send({error:'cash_site_not_accepted'});
   try{const result=await createCashReference(pool!,id,key,b.bundleId,b.siteId.toLowerCase(),keys!);return reply.code(result.replayed?200:201).send(result);}catch(error){return errors(reply,error);}
  });
  app.post('/v1/staff/cash-references/lookup',{config:{rateLimit:{max:20,timeWindow:'1 minute'}}},async(request,reply)=>{
