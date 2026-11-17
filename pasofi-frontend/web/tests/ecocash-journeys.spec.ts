@@ -42,7 +42,7 @@ for (const mode of ['paused', 'card_available'] as const) {
     expect(mutations).toEqual([]);
     if (mode === 'card_available') {
       await expect(page.getByLabel('Payment method')).toBeVisible();
-      await expect(page.getByLabel('Payment method').locator('option')).not.toContainText('EcoCash');
+      await expect(page.getByLabel('Payment method')).not.toContainText('EcoCash');
     }
   });
 }
