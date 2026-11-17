@@ -39,13 +39,21 @@ export function validateTargetTopology(d){
   must(n?.device===model&&n.role==='wireless-repeater'&&n.upstream===null&&n.upstreamVerified===false&&n.physicalVerified===false,'repeaters_not_verified');
  }
  must(k.repeaterLinks?.length===2&&k.repeaterLinks.every(l=>l.from===null&&l.physicalVerified===false),'repeaters_unqualified');
- must(g.gateway.label==='G0'&&g.gateway.device==='MikroTik hAP lite'&&g.gateway.wan===null&&g.gateway.upstream===null&&g.gateway.upstreamVerified===false&&g.internet==='G0 upstream unknown; NOT connected to K0 LAN4','no_k0_g0_uplink');
+ must(g.gateway.label==='G0'&&g.gateway.device==='MikroTik hAP lite'&&g.gateway.wan==='ether1'&&g.gateway.upstream==='Starlink'&&g.gateway.upstreamVerified===false&&g.internet==='Starlink','g0_independent_starlink');
  must(g.ports.length===3&&g.nodes.length===2,'g0_device_graph_wrong');
  must(port(g,0,'G2','guest',true).physicalVerified===false,'g0_link_unverified');
  for(const i of [1,2])port(g,i,null,'unreported',null);
  for(const name of ['G2','G3']){const n=get(g,name);must(n?.device==='Mercusys MR20 AC750'&&n.role==='guest-access-point'&&n.uplinkPort===null&&n.physicalVerified===false,'mr20_must_be_unverified_ap');}
  must(g.wiredLinks?.length===1&&g.wiredLinks[0].from==='G2'&&g.wiredLinks[0].fromPort==='LAN1'&&g.wiredLinks[0].to==='G3'&&g.wiredLinks[0].toPort===null&&g.wiredLinks[0].reportedConnected===true&&g.wiredLinks[0].physicalVerified===false,'g2_lan1_must_feed_g3');
- must(d.radioReassignment?.status==='OS3-K2-K3-owner-reported; G0 backhaul-unverified','radio_swap_not_current');
+ const p=g.plannedTopology;
+ must(p?.status==='proposed-not-installed'&&p.internet==='Starlink'&&p.gateway==='G0','g0_future_unqualified');
+ must(p.ports?.length===2&&p.ports[0].target==='G1'&&p.ports[0].present===null&&p.ports[0].interface==='ether2'&&p.ports[1].target==='CPE1'&&p.ports[1].present===false&&p.ports[1].interface==='ether3','planned_g0_ports_not_live');
+ must(p.nodes?.length===5&&p.nodes.some(n=>n.label==='G1'&&n.present===null&&n.device===null)&&p.nodes.some(n=>n.label==='CPE1'&&n.present===false&&n.device==='Tenda O1-5G 11AC outdoor CPE')&&p.nodes.some(n=>n.label==='CPE2'&&n.present===false&&n.device==='Tenda O1-5G 11AC outdoor CPE'),'future_hardware_not_installed');
+ must(p.branchToG2?.from==='CPE1'&&p.branchToG2.to==='G2'&&p.branchToG2.medium===null&&p.branchToG2.receiver===null&&p.branchToG2.qualified===false&&p.branchToG2.requiresReceiverOrVerifiedEquivalent===true,'g2_receiving_link_unknown');
+ must(p.radioLinks?.length===1&&p.radioLinks[0].from==='CPE1'&&p.radioLinks[0].to==='CPE2'&&p.radioLinks[0].bandGHz===5&&p.radioLinks[0].qualified===false,'future_rf_not_qualified');
+ must(p.wiredLinks?.length===1&&p.wiredLinks[0].from==='CPE2'&&p.wiredLinks[0].to==='G3'&&p.wiredLinks[0].qualified===false,'future_g3_not_qualified');
+ must(p.cutover==='Keep current wired G0-G2-G3 path operational until replacement is verified','must_preserve_current_g2_g3');
+ must(d.radioReassignment?.status==='Kuwadzana-OS3-owner-reported; Goromonzi-O1-5G-proposed-not-installed','goromonzi_radio_migration_not_live');
  return {status:'design-unverified',sites:['kuwadzana','goromonzi'],physicalAcceptance:false,routersChanged:false,commerceEnabled:false};
 }
 const self=process.argv[1]&&fileURLToPath(import.meta.url)===process.argv[1];
