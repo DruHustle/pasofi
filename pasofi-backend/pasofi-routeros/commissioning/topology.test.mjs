@@ -25,15 +25,25 @@ test('G2 and G3 are Mercusys bridged guest APs, never NAS or 5 GHz receivers by 
   assert.equal(n.dhcp,false);assert.equal(n.radius,false);
   assert.equal(n.wirelessClientQualified,false);
  }
+ for(const label of ['CPE1','CPE2']){
+  const n=g.nodes.find(x=>x.label===label);
+  assert.equal(n.device,'Tenda OS3 5GHz directional CPE');
+  assert.equal(n.targetDevice,'Tenda O1-5G 11AC outdoor CPE');
+  assert.equal(n.migrationStatus,'existing-OS3-link-must-be-preserved-until-O1-qualified');
+ }
+ assert.equal(original.radioReassignment.status,'proposed-not-installed');
  assert.equal(g.radioLinks.find(x=>x.to==='CPE2').state,'existing-preserve');
  assert.equal(g.radioLinks.find(x=>x.to==='G2-RX').state,'planned-needs-receiver');
 });
-test('K2/K3 directional Tenda O1-5G radios are wired; K4/K5 repeat wirelessly, not LAN4',()=>{
+test('K2/K3 target OS3 radios and K4/K5 wireless repeaters are not falsely commissioned',()=>{
  const k=at('kuwadzana');
  for(const label of ['K2','K3']){
   const n=k.nodes.find(x=>x.label===label);
   assert.equal(n.device,'Tenda O1-5G 11AC outdoor CPE');
+  assert.equal(n.targetDevice,'Tenda OS3 5GHz 12dBi outdoor CPE');
+  assert.equal(n.migrationStatus,'pending-physical-swap');
   assert.deepEqual(n.wirelessBandsGHz,[5]);
+  assert.equal(n.antenna.gainDbi,12);
   assert.equal(n.antenna.horizontalBeamwidthDegrees,30);
   assert.equal(n.physicalVerified,false);
   assert.equal(n.hotspot,false);
@@ -52,6 +62,9 @@ test('unsafe changes cannot silently bypass physical and payment acceptance',()=
   convertG3ToNAT:x=>{x.sites[1].nodes.find(n=>n.label==='G3').nat=true;},
   mixHomeAndGuest:x=>{x.sites[1].nodes.find(n=>n.label==='G1').guestNetwork=true;},
   removeExistingCPE2:x=>{x.sites[1].radioLinks.splice(0,1);},
+  prematurelyClaimOS3AtK2:x=>{x.sites[0].nodes.find(n=>n.label==='K2').migrationStatus='completed';},
+  prematurelyClaimO1AtCPE1:x=>{x.sites[1].nodes.find(n=>n.label==='CPE1').device='Tenda O1-5G 11AC outdoor CPE';},
+  deleteRadioSwapSafeguard:x=>{x.radioReassignment.prerequisites=[];},
   markNewReceiverInstalled:x=>{x.sites[1].nodes.find(n=>n.label==='G2-RX').present=true;x.sites[1].nodes.find(n=>n.label==='G2-RX').device='unqualified';},
   replaceMercusysG3:x=>{x.sites[1].nodes.find(n=>n.label==='G3').device='other brand';},
   replaceG0WithG1:x=>{x.sites[1].gateway.label='G1';},
