@@ -5,11 +5,13 @@ final class ConfiguredAccessTests: XCTestCase {
         let app = XCUIApplication(bundleIdentifier: "com.onesa.pasofi")
         if app.state != .runningForeground { app.activate() }
         print("PASOFI_RELEASE_FOREGROUND")
-        let openAccount = app.descendants(matching: .any).matching(NSPredicate(format: "label ==[c] %@", "My PasoFi")).firstMatch
+        let openAccount = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "My PasoFi")).firstMatch
         guard openAccount.waitForExistence(timeout: 40) else {
             XCTFail("The configured home did not offer My PasoFi")
             return
         }
+        // Target the actual actionable button, not a similarly labelled static text
+        // descendant of the WebView. An apparent tap must not count as account entry.
         openAccount.tap()
         print("PASOFI_OPENED_ACCOUNT")
         // A configured service may offer the real Onesa sign-in entry, or an
