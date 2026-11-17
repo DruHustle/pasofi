@@ -18,8 +18,8 @@ paths:
   /internal/v1/events:
     post:
       security: [{ServiceBearer: []}]
-      summary: Atomically receive one prepaid sale or requested invoice delivery event
-      description: Requires prepaid-access issuer/subject, notification audience, event:deliver scope and INTERNAL_EVENTS_SECRET. Matching duplicates succeed; changed immutable content conflicts. agent.sale.created requires deliveryReference; invoice.issued requires invoiceId. Either reference must equal aggregateId. No recipient, PDF, voucher or download token belongs in the event.
+      summary: Queue one prepaid sale, EcoCash demo voucher or requested invoice delivery
+      description: Requires prepaid-access issuer/subject, notification audience, event:deliver scope and INTERNAL_EVENTS_SECRET. Matching duplicates succeed; changed immutable content conflicts. agent.sale.created and ecocash.voucher.issued require deliveryReference. For EcoCash it is the credit UUID and is accepted only in demo/development. invoice.issued requires invoiceId. Either reference must equal aggregateId. No recipient, PDF, voucher or download token belongs in the event.
       requestBody:
         required: true
         content:
@@ -30,7 +30,7 @@ paths:
               required: [id, type, version, producer, aggregateId, aggregateVersion, occurredAt, correlationId, payload]
               properties:
                 id: {type: string, format: uuid}
-                type: {type: string, enum: [agent.sale.created, invoice.issued]}
+                type: {type: string, enum: [agent.sale.created, ecocash.voucher.issued, invoice.issued]}
                 version: {const: 1}
                 producer: {const: prepaid-access}
                 aggregateId: {type: string, format: uuid}
@@ -52,7 +52,7 @@ paths:
       responses:
         '200': {description: accepted true after durable commit or verified duplicate}
         '401': {description: Missing or invalid service authority}
-        '403': {description: Incorrect scope}
+        '403': {description: Incorrect scope or EcoCash demo event sent outside demo/development}
         '409': {description: Event content conflicts}
   /internal/v1/invoice-delivery/capabilities:
     get:
@@ -122,7 +122,7 @@ paths:
       - {$ref: '#/components/parameters/Id'}
     get:
       security: [{ServiceBearer: []}]
-      summary: Read sanitized latest delivery state for a sale reference
+      summary: Read sanitized latest delivery state for a sale or EcoCash demo credit reference
       description: Requires INTERNAL_DELIVERY_SECRET and delivery:status scope. No phone, message, voucher or provider credential is returned. Queued means no durable inbox job has arrived yet; provider acceptance is not delivery evidence.
       responses:
         '200':

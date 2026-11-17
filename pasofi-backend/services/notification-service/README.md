@@ -8,6 +8,21 @@ Apply owned migrations as a separate release step with `DATABASE_URL=... npm run
 
 The private `POST /internal/v1/events` validates a short-lived service JWT and records an inbox row and delivery-reference job atomically. Duplicate events return success only if their immutable content matches. The reference contains no phone or voucher. Notification resolves details through prepaid's authenticated `GET /internal/v1/deliveries/:id`, using a separate `INTERNAL_DELIVERY_SECRET` and JWT issuer/subject `notification`, audience `prepaid-access`, scope `delivery:read`. Response identity, size, simulation mode and destination are validated. HTTPS is required outside demo/development; redirects are refused. Receipt-only jobs are canceled without an SMS attempt.
 
+### EcoCash demo voucher SMS
+
+The demo feed uses `ecocash.voucher.issued` version 1. Its payload contains only
+`deliveryReference`, the credit UUID, which must equal the event aggregate ID.
+The inbox accepts it only in demo/development. The voucher and recipient are
+retrieved from the same private delivery endpoint as a sale. Its EcoCash response
+identifies the credit by `creditId` and `deliveryReference`, and carries
+`simulation: true`. The worker requires the mock SMS adapter to claim this
+kind of delivery. Queued jobs and audited resends retain their source through
+restarts. A delivered mock job records a message hash and the final four
+recipient digits. An EcoCash demo voucher stays in the mock channel even if an
+operator later configures live SMS for other kinds of deliveries. If prepaid
+returns HTTP 410 because the credit or voucher has closed, the worker cancels
+the queued copy and blocks further resends for that credit.
+
 ## Explicit delivery modes
 
 The worker and providers are disabled by default. Enable a worker only with `DELIVERY_WORKER_ENABLED=true`, valid `PREPAID_URL` and an `INTERNAL_DELIVERY_SECRET` of at least 32 bytes. Missing lookup configuration keeps delivery disabled.
