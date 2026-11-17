@@ -1,3 +1,5 @@
+**Launch safeguard (17 November 2026):** The prepaid service now requires `PAMOFI_CASH_CUSTOMER_GO=true` in **production** as an additional authorization for creating new cash sales or pairing requests; it also requires the existing customer-network-qualified flags. This is **not** an automated field-acceptance detector. Only enable after the recorded site-specific RouterOS/RADIUS/cash acceptance test, and leave every other sales location paused. Existing paid receipts and exact retries remain recoverable if the switch is off. Do not enable live payments or sales just because CI is green.
+
 # Commission the Pasofi hotspot for cash customers
 
 ## Current owner hardware target (17 November 2026)
@@ -34,6 +36,7 @@ The gates have separate purposes:
 
 | Existing source/configuration | Meaning |
 | --- | --- |
+| `PAMOFI_CASH_CUSTOMER_GO` in prepaid | **New production cash sales and receipt pairing safety gate (default false).** Requires this operator-controlled flag AND qualified `PAMOFI_CUSTOMER_NETWORK_ENABLED`, `PAMOFI_RADIUS_QUALIFIED` and network service credentials. Configure only **after** observed real-phone voucher-to-HTTPS, Start/Interim/Stop, quota disconnect/reconnect and no-bypass tests for the enabled location. It does not alter existing receipt recovery, committed idempotent sale retries or reconciliation; demo tests remain independent. Keep other unqualified `sales_locations` disabled. |
 | `PAMOFI_COMMERCE_ENABLED` in prepaid | Controls new receipt pairings and new agent sales across locations; voucher redemption remains enabled during normal commerce. After a pause, private paid receipts and matching already-committed sale retries remain recoverable. |\n| `PAMOFI_VOUCHER_REDEMPTION_WHILE_SALES_PAUSED` in prepaid | Defaults to `false`. Explicit `true` allows **only** redemption of already-issued, valid, customer-authorized vouchers during a global new-sales pause when the database and voucher encryption keys are present. It does not enable agent sales, new cash pairings, payment initiation, RADIUS/NAS access or router configuration. Use only after verifying that the pause was for sales operations, not suspected fraud or voucher compromise; disable it to stop redemption during an incident. |
 | `sales_locations.enabled` and `status_version` | New sales availability at one location. The approved-admin action below changes these only; it does not qualify Wi-Fi. |
 | `PAMOFI_RADIUS_QUALIFIED`, `radius-qualified` profile | Prepared/qualified private RADIUS transport and authority. Customer credential issuance remains separate. |
