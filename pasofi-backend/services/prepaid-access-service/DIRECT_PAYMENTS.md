@@ -12,6 +12,21 @@ Zimswitch is a payment network and online-gateway route onboarded through an acq
 
 The gate regression checks cover Pesepay, EcoCash, InnBucks, Stanbic, CBZ, ZB, CABS and Zimswitch across unsupported sandbox/production modes and attempted mock fallback. They assert disabled public capabilities, unavailable checkout/callback routes, and no outbound HTTP calls. These are local boundary tests; they do not certify a bank integration or enable a digital payment method.
 
+## Two independent EcoCash customer journeys
+
+PasoFi supports the product design for **both** journeys and must enable them independently.
+
+| Customer journey | Start | Provider data needed | Fulfillment | Launch state |
+| --- | --- | --- | --- | --- |
+| EcoCash checkout inside PasoFi | Customer selects site and bundle in Web, iOS or Android; provides own EcoCash number and approves a merchant-initiated charge | Official Online Payments initiation, immutable correlation, read-only status, independently proven amount/currency/destination merchant, authentication and reversal contract | Fulfill the paid order once after verified settlement; expose an existing redeemable voucher or queued entitlement as appropriate | Sandbox adapter only; **not enabled** for production |
+| EcoCash Pay Merchant, app or USSD | Customer independently pays the **published exact price** to a registered PasoFi merchant code, without starting PasoFi checkout | Authoritative incoming merchant credit feed or authenticated webhook, receiving merchant ID, original transaction ID, amount, currency, payer's SMS-capable number, settlement and reversals | One credit -> one voucher -> SMS to the payer -> optional redemption by purchaser or recipient | Local synthetic-credit path only; **not enabled** for production |
+
+**No double billing or invented funds:** These are distinct funding sources. An unsolicited Pay Merchant receipt never completes an unrelated checkout order. A checkout callback never manufactures a Pay Merchant credit. Use provider transaction identities and immutable ledger records for both; persist before side effects. Customer-visible success requires separately verified payment and any physical network authorization. A received payment must not be deemed settled solely from an SMS or customer-entered reference.
+
+**UX contract:** Show both choices on the bundle purchase screen, but label each one pending unless that *specific* provider path is qualified. Do not display a payable merchant number, enable a send-money button, collect customer wallet PINs, or issue a production voucher from simulation. Card/Stripe and agent cash methods remain independent options. Keep the advertised bundle price, allowance and duration consistent across both EcoCash journeys and all participating PasoFi sites. Let customers check recorded status and contact support if a paid credit cannot be matched.
+
+**Launch gates, per journey:** approved merchant agreement, supported USD (or explicitly approved currency) price catalogue, qualified provider response authenticity and reconciliation, successful and declined transactions, duplicate/out-of-order callbacks, reversal/refund and lost-notification recovery, live SMS delivery, voucher use across sites, network authorization/accounting and supervised operator acceptance. Only unlock the corresponding backend capability after all its gates pass. The two paths must not share an activation flag.
+
 ## Incoming EcoCash transfers for Wi-Fi vouchers
 
 A customer should be able to pay the PasoFi merchant from their EcoCash app or USSD menu and receive a voucher by SMS without first opening PasoFi. For this flow, choose one exact USD price for each offer advertised on the merchant account. A customer sending for somebody else receives the code on the paying phone and can pass it on. The code can be redeemed once.
