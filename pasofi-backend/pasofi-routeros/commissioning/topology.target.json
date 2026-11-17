@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 1,
+  "source": "operator target topology 2026-11-17",
+  "status": "design-unverified",
+  "releaseGate": "physical-acceptance-required",
+  "notes": "Labels are human-facing inventory labels. Do not rename an existing NAS ID, WireGuard tunnel, sales_location.id, or router identity from these labels.",
+  "sites": [
+    {
+      "slug": "kuwadzana",
+      "label": "Kuwadzana",
+      "internet": "Starlink",
+      "gateway": {
+        "label": "K0",
+        "device": "MikroTik hEX",
+        "model": null,
+        "present": "awaiting-live-inventory",
+        "role": "captive-portal-nas",
+        "wan": "ether1",
+        "hotspotOwner": true,
+        "radiusClient": true
+      },
+      "ports": [
+        {
+          "name": "LAN1",
+          "interface": "ether2",
+          "target": "K1",
+          "purpose": "guest",
+          "present": true
+        },
+        {
+          "name": "LAN2",
+          "interface": "ether3",
+          "target": "K2",
+          "purpose": "guest",
+          "present": false
+        },
+        {
+          "name": "LAN3",
+          "interface": "ether4",
+          "target": "K3",
+          "purpose": "guest",
+          "present": false
+        },
+        {
+          "name": "LAN4",
+          "interface": "ether5",
+          "target": "K4",
+          "purpose": "guest",
+          "present": false
+        }
+      ],
+      "nodes": [
+        {
+          "label": "K1",
+          "device": "MikroTik hAP lite",
+          "role": "guest-access-point",
+          "present": true,
+          "wirelessBandsGHz": [
+            2.4
+          ],
+          "targetMode": "bridge-ap",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false
+        },
+        {
+          "label": "K2",
+          "device": null,
+          "role": "guest-access-point",
+          "present": false,
+          "targetMode": "bridge-ap",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false
+        },
+        {
+          "label": "K3",
+          "device": null,
+          "role": "guest-access-point",
+          "present": false,
+          "targetMode": "bridge-ap",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false
+        },
+        {
+          "label": "K4",
+          "device": null,
+          "role": "guest-access-point",
+          "present": false,
+          "targetMode": "bridge-ap",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false
+        }
+      ],
+      "radioLinks": []
+    },
+    {
+      "slug": "goromonzi",
+      "label": "Goromonzi",
+      "internet": "Starlink",
+      "gateway": {
+        "label": "G0",
+        "device": "MikroTik hAP lite",
+        "model": "RB941-2nD (confirm device)",
+        "present": "awaiting-live-inventory",
+        "role": "captive-portal-nas",
+        "wan": "ether1",
+        "hotspotOwner": true,
+        "radiusClient": true
+      },
+      "ports": [
+        {
+          "name": "LAN1",
+          "interface": "ether2",
+          "target": "G1",
+          "purpose": "home",
+          "present": true
+        },
+        {
+          "name": "LAN2",
+          "interface": "ether3",
+          "target": "CPE1",
+          "purpose": "guest-backhaul",
+          "present": true
+        },
+        {
+          "name": "LAN3",
+          "interface": "ether4",
+          "target": null,
+          "purpose": "reserved",
+          "present": false
+        }
+      ],
+      "nodes": [
+        {
+          "label": "G1",
+          "device": "home AP router (model unverified)",
+          "role": "home-access-point",
+          "present": true,
+          "targetMode": "preserve-existing-home",
+          "guestNetwork": false
+        },
+        {
+          "label": "CPE1",
+          "device": "Tenda 5 GHz outdoor CPE (model/firmware to confirm)",
+          "role": "backhaul-ap",
+          "present": true,
+          "targetMode": "AP or P2MP (confirm capabilities)",
+          "wirelessBandsGHz": [
+            5
+          ],
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false
+        },
+        {
+          "label": "CPE2",
+          "device": "Tenda 5 GHz outdoor CPE (model/firmware to confirm)",
+          "role": "backhaul-client",
+          "present": true,
+          "targetMode": "client/bridge",
+          "wirelessBandsGHz": [
+            5
+          ],
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false
+        },
+        {
+          "label": "G3",
+          "device": "AP router (model unverified)",
+          "role": "guest-access-point",
+          "present": true,
+          "targetMode": "bridge-ap behind CPE2",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false
+        },
+        {
+          "label": "G2-RX",
+          "device": null,
+          "role": "backhaul-client",
+          "present": false,
+          "targetMode": "compatible 5 GHz client CPE for CPE1",
+          "wirelessBandsGHz": [
+            5
+          ],
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false
+        },
+        {
+          "label": "G2",
+          "device": "AP router (model/5 GHz capability unverified)",
+          "role": "guest-access-point",
+          "present": true,
+          "targetMode": "bridge-ap behind G2-RX",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false
+        }
+      ],
+      "wiredLinks": [
+        {
+          "from": "CPE2",
+          "to": "G3",
+          "port": "LAN1",
+          "purpose": "guest"
+        },
+        {
+          "from": "G2-RX",
+          "to": "G2",
+          "port": "LAN",
+          "purpose": "guest",
+          "present": false
+        }
+      ],
+      "radioLinks": [
+        {
+          "from": "CPE1",
+          "to": "CPE2",
+          "bandGHz": 5,
+          "mode": "AP-to-client",
+          "state": "existing-preserve",
+          "physicalVerified": false
+        },
+        {
+          "from": "CPE1",
+          "to": "G2-RX",
+          "bandGHz": 5,
+          "mode": "AP/P2MP-to-client",
+          "state": "planned-needs-receiver",
+          "physicalVerified": false
+        }
+      ]
+    }
+  ]
+}
