@@ -2,7 +2,7 @@
 
 ## Current K0/G0 design intake
 
-The owner-designated site labels and downstream hardware are tracked separately in [K0/G0 Mercusys target](K0_G0_MERCUSYS_PLAN.md), validated by `node pasofi-backend/pasofi-routeros/commissioning/topology.mjs`. **This new target is not a router baseline** and does not supersede serial-pinned inspection requirements. Do not use old `site-01` hAP lite pilot script identities for the new **K0 hEX**. For Goromonzi, **G0** is the hAP lite NAS; **G2/G3 are Mercusys APs** behind Tenda CPE receiving radios. Do not declare G2 ready before a separate 5 GHz receiver is installed/qualified and the active CPE1–CPE2 link survives both clients.
+The owner-designated site labels and downstream hardware are tracked separately in [K0/G0 Mercusys target](K0_G0_MERCUSYS_PLAN.md), validated by `node pasofi-backend/pasofi-routeros/commissioning/topology.mjs`. **This new target is not a router baseline** and does not supersede serial-pinned inspection requirements. Do not use old `site-01` hAP lite pilot script identities for the new **K0 hEX**. Kuwadzana's **K2/K3 target Tenda OS3** 12 dBi phone-facing radios; the **O1-5G pair is intended to replace Goromonzi's currently active OS3 CPE1/CPE2 pair** only after actual site link testing. For Goromonzi, **G0** is the hAP lite NAS; **G2/G3 are Mercusys APs** behind Tenda CPE receiving radios. Do not declare G2 ready before a separate 5 GHz receiver is installed/qualified and the active CPE1–CPE2 link survives both clients.
 
 
 This package uses a **private inspected router baseline** to prepare a
