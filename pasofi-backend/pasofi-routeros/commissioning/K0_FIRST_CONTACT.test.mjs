@@ -32,7 +32,7 @@ test('K0 first contact only reads public RouterOS state and emits private output
   assert.ok(!script.includes('/system backup') && !script.includes('/export'));
 });
 
-test('K0 user-selected OS3 pair is target only; no physical acceptance inferred', () => {
+test('K0 OS3 is owner-reported connected but not yet accepted', () => {
   const result = validateTargetTopology(target);
   assert.equal(result.physicalAcceptance, false);
   assert.equal(result.routersChanged, false);
@@ -43,8 +43,10 @@ test('K0 user-selected OS3 pair is target only; no physical acceptance inferred'
   for (const label of ['K2', 'K3']) {
     const node = site.nodes.find(node => node.label === label);
     assert.equal(node.targetDevice, 'Tenda OS3 5GHz 12dBi outdoor CPE');
-    assert.equal(node.migrationStatus, 'pending-physical-swap');
+    assert.equal(node.migrationStatus, 'owner-reported-connected-config-unverified');
     assert.equal(node.physicalVerified, false);
   }
-  assert.equal(target.radioReassignment.status, 'proposed-not-installed');
+  assert.equal(target.radioReassignment.status, 'Kuwadzana-OS3-owner-reported; Goromonzi-O1-5G-proposed-not-installed');
+  assert.equal(site.ports[3].present,false);
+  assert.equal(site.ports[3].target,null);
 });
