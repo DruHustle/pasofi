@@ -31,10 +31,14 @@ export function validateTargetTopology(data){
    labels.add(n.label);local.add(n.label);
    requireCondition(typeof n.present==='boolean','node_presence_required');
    if(!n.present)requireCondition(n.device===null,'uninstalled_hardware_must_be_unspecified');
-   if(['guest-access-point','backhaul-ap','backhaul-client'].includes(n.role)){
+   if(['guest-access-point','wireless-repeater','backhaul-ap','backhaul-client'].includes(n.role)){
     requireCondition(n.dhcp===false&&n.nat===false&&n.hotspot===false&&n.radius!==true,'secondary_guest_gateway_forbidden');
    }
    if(n.role==='home-access-point')requireCondition(n.guestNetwork===false,'home_must_remain_separate');
+   if(n.role==='wireless-repeater'){
+    requireCondition(n.upstream===null&&n.upstreamVerified===false&&n.physicalVerified===false,'wireless_repeater_upstream_cannot_be_assumed');
+    requireCondition(n.targetMode.includes('verif'),'unqualified_repeater_link_required');
+   }
   }
   for(const port of site.ports){
    requireCondition(/^LAN[1-4]$/.test(port.name)&&/^ether[2-5]$/.test(port.interface),'invalid_gateway_lan');
@@ -59,10 +63,29 @@ export function validateTargetTopology(data){
   if(site.slug==='kuwadzana'){
    requireCondition(gw.label==='K0'&&gw.device==='MikroTik hEX','k0_must_be_hex_gateway');
    requireCondition(site.ports.length===4 && site.ports.every((p,i)=>p.name==='LAN'+(i+1)&&
-    p.interface==='ether'+(i+2)&&p.target==='K'+(i+1)&&p.purpose==='guest'&&p.present===(i===0)),'k0_lan1_through_lan4_mismatch');
+    p.interface==='ether'+(i+2)),'k0_lan_port_mapping_mismatch');
+   requireCondition(site.ports.slice(0,3).every((p,i)=>p.target==='K'+(i+1)&&p.purpose==='guest'&&p.present===true),
+    'k1_k2_k3_must_be_direct_lan_guest_access_points');
+   requireCondition(site.ports[3].target===null&&site.ports[3].purpose==='reserved'&&site.ports[3].present===false,
+    'k0_lan4_must_be_reserved_not_repeater');
    assertNodePresent(site,'K1','guest-access-point',true);
-   for(const label of ['K2','K3','K4'])assertNodePresent(site,label,'guest-access-point',false);
-   requireCondition(site.radioLinks.length===0,'k0_no_radio_backhaul');
+   for(const label of ['K2','K3']){
+    const radio=assertNodePresent(site,label,'guest-access-point',true);
+    requireCondition(radio.device==='Tenda O1-5G 11AC outdoor CPE'&&radio.wirelessBandsGHz?.length===1&&
+      radio.wirelessBandsGHz[0]===5&&radio.antenna?.horizontalBeamwidthDegrees===30&&radio.physicalVerified===false,
+      'o1_5g_directional_coverage_unverified');
+   }
+   for(const [label,model] of [['K4','Technicolor TG789vac v2'],['K5','Mercusys MW301R']]){
+    const repeater=assertNodePresent(site,label,'wireless-repeater',true);
+    requireCondition(repeater.device===model&&repeater.upstream===null&&!repeater.upstreamVerified&&
+      repeater.hotspot===false&&repeater.dhcp===false&&repeater.nat===false,
+      'repeaters_must_remain_transparent_and_unverified');
+   }
+   requireCondition(site.repeaterLinks?.length===2 && site.repeaterLinks.every(link=>
+     link.from===null&&link.mode==='repeater-unverified'&&link.physicalVerified===false&&
+     ['K4','K5'].includes(link.to)) && new Set(site.repeaterLinks.map(x=>x.to)).size===2,
+     'repeater_backhauls_must_be_wireless_and_unqualified');
+   requireCondition(site.radioLinks.length===0,'k0_no_cpe_backhaul');
   }else{
    requireCondition(gw.label==='G0'&&gw.device==='MikroTik hAP lite','g0_must_be_hap_lite_gateway');
    requireCondition(site.ports.length===3&&site.ports[0].target==='G1'&&site.ports[0].purpose==='home'&&
@@ -74,7 +97,7 @@ export function validateTargetTopology(data){
    assertNodePresent(site,'G2-RX','backhaul-client',false);
    for(const label of ['G2','G3']){
     const node=assertNodePresent(site,label,'guest-access-point',true);
-    requireCondition(node.device.startsWith('Mercusys router')&&node.wirelessClientQualified===false,'mercusys_client_mode_not_qualified');
+    requireCondition(node.device==='Mercusys MR20 AC750'&&node.wirelessClientQualified===false,'mr20_must_be_ethernet_ap_unless_bridge_verified');
    }
    requireCondition(site.radioLinks.length===2 &&
     site.radioLinks.some(l=>l.from==='CPE1'&&l.to==='CPE2'&&l.state==='existing-preserve') &&
