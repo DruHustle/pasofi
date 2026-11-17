@@ -1,5 +1,10 @@
 # HotSpot commissioning preparation
 
+## Current K0/G0 design intake
+
+The owner-designated site labels and downstream hardware are tracked separately in [K0/G0 Mercusys target](K0_G0_MERCUSYS_PLAN.md), validated by `node pasofi-backend/pasofi-routeros/commissioning/topology.mjs`. **This new target is not a router baseline** and does not supersede serial-pinned inspection requirements. Do not use old `site-01` hAP lite pilot script identities for the new **K0 hEX**. For Goromonzi, **G0** is the hAP lite NAS; **G2/G3 are Mercusys APs** behind Tenda CPE receiving radios. Do not declare G2 ready before a separate 5 GHz receiver is installed/qualified and the active CPE1–CPE2 link survives both clients.
+
+
 This package uses a **private inspected router baseline** to prepare a
 serial-pinned read-only collector, explicit missing-input report, disabled-NAS SQL for owner
 review, inputs for the existing service-link/welcome generators, a read-only
