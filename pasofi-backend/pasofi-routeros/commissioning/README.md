@@ -1,4 +1,4 @@
-**LATEST OWNER CABLING (17 November 2026):** K0 LAN4 empty; K0 LAN1 K1, LAN2 K2 OS3, LAN3 K3 OS3. G0→G2→G3 is a separate chain with G0 upstream unknown, NOT via K0. Supersedes outdated topology wording elsewhere in this README. See [current field map](ARCHITECTURE_2026-11-17.md).
+**LATEST CURRENT/FINAL DISTINCTION (17 November 2026):** K0 LAN1 K1, LAN2 K2 OS3, LAN3 K3 OS3, LAN4 EMPTY. Goromonzi *currently* Starlink → G0 → G2 → G3 by wired Ethernet. G1 and O1-5G CPE1/CPE2 are a future, uninstalled plan. Older diagram paragraphs below are historical. See [current vs final](ARCHITECTURE_2026-11-17.md).
 
 # HotSpot commissioning preparation
 
