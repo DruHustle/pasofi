@@ -37,6 +37,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="com.onesa.pasofi.identity" android:host="login" android:path="/callback" />
+                <data android:scheme="com.onesa.pasofi.identity" android:host="login" android:path="/registered" />
             </intent-filter>
         </activity>
 

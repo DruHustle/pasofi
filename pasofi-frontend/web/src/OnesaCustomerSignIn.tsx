@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { registrationUrl, rememberRegistration, startProductSignIn } from './registration';
 import { api } from './api';
 
 export default function OnesaCustomerSignIn({ prominent = false }: { prominent?: boolean }) {
@@ -18,16 +19,10 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     setBusy(true); setError('');
     try {
       const returnTo = location.pathname === '/connect' && !location.hash ? '/#connect' : '/' + location.hash;
-      const result = await api<{authorizationUrl:string}>('/api/onesa/start', {
-        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ returnTo }),
-      });
-      const target = new URL(result.authorizationUrl);
-      if (target.protocol !== 'https:' || target.username || target.password) throw Error();
-      sessionStorage.setItem('pasofi-onesa-customer','1');
-      location.assign(target.href);
+      await startProductSignIn(false,returnTo);
     } catch { setError('Onesa sign-in is temporarily unavailable. Please try again.'); setBusy(false); }
   }
-  const signup = <a href="https://portal.onesa.eu/access/register?audience=user">Create an Onesa account</a>;
+  const signup = <a href={registrationUrl('user')} onClick={()=>rememberRegistration()}>Create an Onesa account</a>;
   function openAccount(trigger: HTMLButtonElement) {
     opener.current = trigger;
     setConfirm(true);
@@ -36,7 +31,7 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
   if (!available && prominent) return <nav className="pf-portal-links" aria-label="Company Portal account">
     <span>Company Portal</span>
     <a href="https://portal.onesa.eu/admin" aria-label="Sign in to Company Portal">Sign in</a>
-    <a href="https://portal.onesa.eu/access/register?audience=user" aria-label="Create an Onesa account">Sign up</a>
+    <a href={registrationUrl('user')} onClick={()=>rememberRegistration()} aria-label="Create an Onesa account">Sign up</a>
   </nav>;
   if (!available) return <div className="pf-onesa-sign-in">
     <a href="https://portal.onesa.eu/admin">Sign in to Company Portal</a>
@@ -46,7 +41,7 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
   return <div className={`pf-onesa-sign-in${prominent ? ' pf-onesa-sign-in-prominent' : ''}`}>
     {prominent && <div className="pf-onesa-sign-in-intro"><strong>Your Onesa account, here in PasoFi</strong><p>Sign in to open your customer account. Browsing bundles needs no account.</p></div>}
     <button className={prominent ? 'pf-button pf-button-secondary' : undefined} disabled={busy} aria-expanded={confirm} onClick={event => openAccount(event.currentTarget)}>Sign in with Onesa</button>
-    <a className="text-button" href="https://auth.onesa.eu/register?audience=user" target="_blank" rel="noopener noreferrer">Create an Onesa account</a>
+    <a className="text-button" href={registrationUrl('user')} onClick={()=>rememberRegistration()}>Create an Onesa account</a>
     {confirm && <div className="pf-onesa-confirmation" role="region" aria-label="Onesa customer sign-in" aria-busy={busy}>
       <h2 ref={confirmation} tabIndex={-1}>Continue to your Onesa account</h2>
       <p>Open your Onesa account and return to this screen. Guest purchases stay with your guest account; save its recovery details before continuing.</p>

@@ -5,13 +5,14 @@ import { messageFor } from './business';
 import CustomerAccess, { type CustomerTab } from './CustomerAccess';
 import Recovery from './Recovery';
 import Handoff from './Handoff';
+import RegistrationLink from './RegistrationLink';
 import OnesaSignIn from './OnesaSignIn';
 import { watchNativeReturn } from './native-oidc-ui';
 import { onSessionChange } from './session';
 import Icon from './Icon';
 import './customer.css';
 
-export default function MobileCustomer({ close, initialTab = 'access', handoffReturn }: { close: () => void; initialTab?: CustomerTab; handoffReturn: number }) {
+export default function MobileCustomer({ close, initialTab = 'access', handoffReturn, registrationTab, usedRegistration }: { close: () => void; initialTab?: CustomerTab; handoffReturn: number; registrationTab:CustomerTab|null; usedRegistration:()=>void }) {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null), [message, setMessage] = useState(''), [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<'account' | 'recover' | 'handoff' | 'onesa'>('account'), [attempt, setAttempt] = useState(0);
   const [activeTab, setActiveTab] = useState<CustomerTab>(initialTab);
@@ -26,6 +27,7 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
       .catch(()=>{if(mounted){setNativeReturnFailed(true);setNativeReturnReady(true);setMessage('Secure browser return is unavailable. Use the one-time account handoff instead.');}return ()=>{};});
     return ()=>{mounted=false;void listener.then(stop=>stop()).catch(()=>{});};
   },[]);
+  useEffect(()=>{if(registrationTab){setActiveTab(registrationTab);setScreen('onesa');}},[registrationTab]);
   useEffect(() => { if (handoffReturn) setScreen('handoff'); }, [handoffReturn]);
   useEffect(() => {
     const controller = new AbortController();
@@ -51,7 +53,7 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
   return <div className="mobile-customer"><div className="mobile-account-links">
     <p className="mobile-account-brand"><strong>PasoFi</strong> An Onesa Mobile product</p>
     <button onClick={close}>← Offline preview</button>
-    {!loading && <a href="https://auth.onesa.eu/register?audience=user" target="_blank" rel="noopener noreferrer">Register an Onesa account</a>}
+    {!loading && <RegistrationLink tab={activeTab}/>}
     {!loading && (!capabilities || !usesNativeCustomerApi) && <a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">Continue to PasoFi account on the web</a>}
     {capabilities && <>
       {usesNativeCustomerApi && <button onClick={() => setScreen('onesa')}>Sign in with Onesa</button>}
@@ -63,7 +65,7 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
     {loading && <p className="mobile-notice" role="status">Checking the configured PasoFi service…</p>}
     {message && <div className="mobile-notice"><div><p role="status">{message}</p><button className="mobile-primary" onClick={() => setAttempt(value => value + 1)}>Retry service connection</button></div></div>}
     {capabilities && (screen === 'onesa' ? nativeReturnReady
-      ? <OnesaSignIn destination={activeTab} close={() => setScreen('account')} enterCode={() => setScreen('handoff')} managedReturnReady={!nativeReturnFailed} />
+      ? <OnesaSignIn resumeRegistration={Boolean(registrationTab)} usedRegistration={usedRegistration} destination={activeTab} close={() => setScreen('account')} enterCode={() => setScreen('handoff')} managedReturnReady={!nativeReturnFailed} />
       : <p role="status">Preparing the secure sign-in return…</p>
       : screen === 'account' ? <CustomerAccess key={`account-${attempt}`} capabilities={capabilities} initialTab={activeTab} onNavigate={setActiveTab} close={close} recovered={() => setScreen('recover')} /> : screen === 'recover' ? <Recovery close={() => setScreen('account')} recovered={() => setScreen('account')} /> : <Handoff close={() => setScreen('account')} recovered={() => setScreen('account')} />)}
     {capabilities && <nav className="mobile-nav" aria-label="Account navigation">

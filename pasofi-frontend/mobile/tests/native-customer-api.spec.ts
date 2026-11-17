@@ -116,7 +116,7 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
         });
       },
     };
-    if (managed && platform === 'android') {
+    if (managed) {
       runtime.Capacitor.PluginHeaders.push(
         {name:'App',methods:[{name:'addListener',rtype:'callback'},{name:'removeListener',rtype:'promise'},{name:'getLaunchUrl',rtype:'promise'}]},
         {name:'Browser',methods:[{name:'open',rtype:'promise'},{name:'close',rtype:'promise'}]});
@@ -203,6 +203,9 @@ for (const platform of ['ios', 'android'] as const) {
       if(req.path==='/api/bundles')return reply({products:[]});
       return reply({error:'unavailable'},503);
     },{platform,authenticate:async value=>{
+      if(value==='https://auth.onesa.eu/register?audience=user&product=pasofi&platform='+platform){
+        return 'com.onesa.pasofi.identity://login/registered';
+      }
       const url=new URL(value);expect(url.origin+'/').toBe(issuer);authorization=url.searchParams;
       expect(authorization.get('code_challenge_method')).toBe('S256');expect(authorization.get('redirect_uri')).toBe(callback);
       expect(authorization.get('prompt')).toBeNull();
@@ -211,9 +214,7 @@ for (const platform of ['ios', 'android'] as const) {
     await page.goto(configuredBaseURL);
     await page.getByRole('button',{name:'My PasoFi',exact:true}).click();
     await page.getByRole('button',{name:'History',exact:true}).first().click();
-    await page.getByRole('button',{name:'Sign in with Onesa',exact:true}).click();
-    await expect(page.getByRole('button',{name:'Enter sign-in code',exact:true})).toHaveCount(0);
-    await page.getByRole('button',{name:'Open Onesa sign-in in browser'}).click();
+    await page.getByRole('link',{name:'Register an Onesa account',exact:true}).click();
     // The Android system-browser deep link is asynchronous. Wait for the
     // server-side session exchange and protected history read, not a fixed delay.
     await expect.poll(() => established && readHistory, { timeout: 15000 }).toBe(true);
@@ -240,7 +241,7 @@ for (const platform of ['ios', 'android'] as const) for (const returnMethod of [
   }, { platform });
   await page.goto(configuredBaseURL);
   await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
-  await expect(page.getByRole('link', {name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://auth.onesa.eu/register?audience=user');
+  await expect(page.getByRole('link', {name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://auth.onesa.eu/register?audience=user&product=pasofi&platform='+platform);
   await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
   await page.getByRole('button', { name: 'Open Onesa sign-in in browser', exact: true }).click();
   await expect(page.getByText('Browser opened.', { exact: false })).toBeVisible();
@@ -298,7 +299,7 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
     await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
     await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible();
     await expect(page.getByRole('link',{name:'Continue to PasoFi account on the web',exact:true})).toHaveAttribute('href','https://pasofi.mobile.onesa.eu/#account');
-    await expect(page.getByRole('link',{name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://auth.onesa.eu/register?audience=user');
+    await expect(page.getByRole('link',{name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://auth.onesa.eu/register?audience=user&product=pasofi&platform=ios');
     await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
     expect(requests.length).toBeGreaterThan(0); expect(new Set(requests.map(request => request.path))).toEqual(new Set(['/api/capabilities']));
     expect(await page.evaluate(() => (window as any).browserApiFetches)).toBe(0);

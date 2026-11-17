@@ -1,3 +1,4 @@
+import { registrationUrl, rememberRegistration, startProductSignIn } from './registration';
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, ApiError } from './api';
@@ -65,10 +66,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     if (location.origin !== onesaOrigin) { location.assign(onesaOrigin + '/#staff'); return; }
     setBusy(true); setMessage('');
     try {
-      // The shared callback must not inherit an abandoned customer flow's purpose.
-      sessionStorage.removeItem('pasofi-onesa-customer');
-      const flow = await api<{ authorizationUrl: string }>('/api/staff/onesa/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      location.assign(flow.authorizationUrl);
+      await startProductSignIn(true,'/#staff');
     } catch (error) { setBusy(false); setMessage(messageFor(error)); }
   }
   async function authenticate(event: React.FormEvent) {
@@ -156,7 +154,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
       <p>Use your Company Portal account. Staff access requires an approved role and authenticator.</p>
       {onesaOrigin === undefined && <p role="status">Checking Company Portal sign-in…</p>}
       {onesaOrigin === null && <p><a href="https://portal.onesa.eu/admin">Sign in to Company Portal</a>. Staff access is awaiting the PasoFi connection.</p>}
-      <a href={onesaOrigin ? "https://auth.onesa.eu/register?audience=admin" : "https://portal.onesa.eu/access/register?audience=admin"} target="_blank" rel="noopener noreferrer">Request administrator access</a>
+      <a href={registrationUrl('admin')} onClick={()=>rememberRegistration(true)}>Request administrator access</a>
     </div>}
     {capabilities?.demo && (step === 'login' || step === 'register') && <div className="workspace-auth"><div><h3>{step === 'register' ? 'Apply for staff access' : 'Welcome back'}</h3><p>{step === 'register' ? 'Every staff account needs an authenticator and administrator approval before it can sell vouchers or manage a site.' : 'Sign in with your email, password, and authenticator code.'}</p></div><form className="form-grid" onSubmit={authenticate}>
       {step === 'register' && <label>Your name<input required maxLength={80} autoComplete="name" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>}
