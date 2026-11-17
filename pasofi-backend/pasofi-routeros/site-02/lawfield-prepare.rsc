@@ -12,7 +12,7 @@
 :put "Lawfield installed packages:"
 /system package print
 :put "HotSpot package and device-mode qualification is a later, device-specific launch gate; this bootstrap does not start HotSpot."
-:put ("Existing hotspot servers: " . [:len [/ip hotspot find]])
+:put "HotSpot inventory is deferred to device-specific launch inspection (the HotSpot menu may not be installed)."
 :put ("Existing RADIUS entries: " . [:len [/radius find]])
 :put "Lawfield interfaces:"
 /interface print terse
