@@ -10,7 +10,8 @@ test('Lawfield bootstrap retains its own key and does not enable customer servic
     assert.ok(plan.indexOf(guard)>=0 && plan.indexOf(guard)<create,guard);
   }
   assert.match(plan,/HotSpot package and device-mode qualification is a later, device-specific launch gate/);
-  assert.doesNotMatch(plan,/\/system package find where name="hotspot"|Install the matching official HotSpot package/);
+  assert.doesNotMatch(plan,/\/system package find where name="hotspot"|Install the matching official HotSpot package|\/ip hotspot find/);
+  assert.match(plan,/HotSpot inventory is deferred to device-specific launch inspection/);
   assert.match(plan,/name="pamofi-service" or name="pasofi-service"/);
   assert.match(plan,/wireguard add name="pasofi-service" listen-port=51821 disabled=yes/);
   assert.match(plan,/get \[find where name="pasofi-service"\] public-key/);
