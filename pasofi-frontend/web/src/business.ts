@@ -8,7 +8,7 @@ export type Capabilities = {
   routerFleet?: boolean; routerFleetWrite?: boolean;
 };
 export type Product = { id: string; price_minor: number; currency: string; byte_limit: string; validity_seconds: number };
-export type Site = { id: string; name: string; enabled?: boolean; version?: string };
+export type Site = { id: string; name: string; enabled?: boolean; version?: string; cashSalesApproved?: boolean };
 export type CashEvidence = { method: 'cash' | 'unrecorded'; evidence: 'agent_attestation' | 'unrecorded'; receivedMinor: number | null; currency: string | null; confirmedAt: string | null; confirmedBy: string | null };
 export function cashDescription(payment: CashEvidence | undefined, simulation: boolean) {
   return payment?.method === 'cash' && payment.evidence === 'agent_attestation' && payment.receivedMinor !== null && payment.currency
@@ -35,6 +35,8 @@ export function messageFor(error: unknown, fallback = 'This request could not be
     version_conflict: 'This record changed while you were reviewing it. Refresh and review the current details.',
     sale_not_recorded: 'No sale was found for this request. New sales are paused. Check sales history before returning any cash.',
     cash_sale_site_unavailable: 'Sales are paused at this location. Return any cash received for this sale to the customer.',
+    cash_site_not_accepted: 'This site has not passed live customer-access acceptance. Do not collect cash here until it is approved.',
+    cash_sales_not_ready: 'Cash sales are not launched yet. Check the network acceptance and site status before collecting money.',
     site_unavailable: 'New sales are paused or unavailable at this sales location. Paid receipts and existing allowances remain available.',
     staff_changed: 'This staff record changed. Refresh and review the latest details.',
     insufficient_inventory: 'There is not enough stock for this sale. Refresh inventory or ask an administrator to allocate stock.',
