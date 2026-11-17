@@ -32,20 +32,20 @@
           "interface": "ether3",
           "target": "K2",
           "purpose": "guest",
-          "present": false
+          "present": true
         },
         {
           "name": "LAN3",
           "interface": "ether4",
           "target": "K3",
           "purpose": "guest",
-          "present": false
+          "present": true
         },
         {
           "name": "LAN4",
           "interface": "ether5",
-          "target": "K4",
-          "purpose": "guest",
+          "target": null,
+          "purpose": "reserved",
           "present": false
         }
       ],
@@ -66,39 +66,94 @@
         },
         {
           "label": "K2",
-          "device": null,
+          "device": "Tenda O1-5G 11AC outdoor CPE",
           "role": "guest-access-point",
-          "present": false,
-          "targetMode": "bridge-ap",
+          "present": true,
+          "targetMode": "directional-5GHz-phone-coverage (field-test only)",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
-          "radius": false
+          "radius": false,
+          "wirelessBandsGHz": [
+            5
+          ],
+          "antenna": {
+            "gainDbi": 9,
+            "horizontalBeamwidthDegrees": 30
+          },
+          "ethernetPorts": "1x10/100",
+          "physicalVerified": false
         },
         {
           "label": "K3",
-          "device": null,
+          "device": "Tenda O1-5G 11AC outdoor CPE",
           "role": "guest-access-point",
-          "present": false,
-          "targetMode": "bridge-ap",
+          "present": true,
+          "targetMode": "directional-5GHz-phone-coverage (field-test only)",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
-          "radius": false
+          "radius": false,
+          "wirelessBandsGHz": [
+            5
+          ],
+          "antenna": {
+            "gainDbi": 9,
+            "horizontalBeamwidthDegrees": 30
+          },
+          "ethernetPorts": "1x10/100",
+          "physicalVerified": false
         },
         {
           "label": "K4",
-          "device": null,
-          "role": "guest-access-point",
-          "present": false,
-          "targetMode": "bridge-ap",
+          "device": "Technicolor TG789vac v2",
+          "role": "wireless-repeater",
+          "present": true,
+          "upstream": null,
+          "upstreamVerified": false,
+          "targetMode": "repeater-requires-firmware-and-transparent-forwarding-verification",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
-          "radius": false
+          "radius": false,
+          "physicalVerified": false
+        },
+        {
+          "label": "K5",
+          "device": "Mercusys MW301R",
+          "role": "wireless-repeater",
+          "present": true,
+          "upstream": null,
+          "wirelessBandsGHz": [
+            2.4
+          ],
+          "upstreamVerified": false,
+          "targetMode": "2.4GHz-WDS-bridge-or-compatible-extender-mode-to-be-verified",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false,
+          "physicalVerified": false
         }
       ],
-      "radioLinks": []
+      "radioLinks": [],
+      "repeaterLinks": [
+        {
+          "from": null,
+          "to": "K4",
+          "bandGHz": null,
+          "mode": "repeater-unverified",
+          "physicalVerified": false
+        },
+        {
+          "from": null,
+          "to": "K5",
+          "bandGHz": 2.4,
+          "mode": "repeater-unverified",
+          "physicalVerified": false
+        }
+      ],
+      "notes": "K2/K3 are owner-reported Tenda O1-5G phone-facing 5 GHz directional CPEs; LAN2/LAN3 planned attachment, not live-port verified. K4 and K5 are wireless repeaters, NOT Ethernet-connected to K0 LAN4. The upstream AP for each repeater and client MAC transparency have not been qualified. K0 LAN4 remains reserved."
     },
     {
       "slug": "goromonzi",
@@ -148,7 +203,7 @@
         },
         {
           "label": "CPE1",
-          "device": "Tenda 5 GHz outdoor CPE (model/firmware to confirm)",
+          "device": "Tenda OS3 5GHz directional CPE (owner-reported, hardware revision unverified)",
           "role": "backhaul-ap",
           "present": true,
           "targetMode": "AP or P2MP (confirm capabilities)",
@@ -161,7 +216,7 @@
         },
         {
           "label": "CPE2",
-          "device": "Tenda 5 GHz outdoor CPE (model/firmware to confirm)",
+          "device": "Tenda OS3 5GHz directional CPE (owner-reported, hardware revision unverified)",
           "role": "backhaul-client",
           "present": true,
           "targetMode": "client/bridge",
@@ -174,7 +229,7 @@
         },
         {
           "label": "G3",
-          "device": "Mercusys router (model/firmware unverified)",
+          "device": "Mercusys MR20 AC750",
           "role": "guest-access-point",
           "present": true,
           "targetMode": "bridge-AP behind CPE2",
@@ -199,7 +254,7 @@
         },
         {
           "label": "G2",
-          "device": "Mercusys router (model/firmware unverified)",
+          "device": "Mercusys MR20 AC750",
           "role": "guest-access-point",
           "present": true,
           "targetMode": "bridge-AP behind dedicated 5 GHz receiver",
@@ -242,7 +297,8 @@
           "state": "planned-needs-receiver",
           "physicalVerified": false
         }
-      ]
+      ],
+      "notes": "Do not move OS3 pair to Kuwadzana before verifying a replacement Goromonzi link; CPE1-CPE2 to G3 must remain live. MR20 supports AP/range-extender modes, but range extender may fail transparent MAC/accounting and P2MP interoperability; dedicated tested client CPE preferred for G2."
     }
   ]
 }
