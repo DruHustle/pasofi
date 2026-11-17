@@ -31,7 +31,7 @@ async function setup(options={}){
   res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(result));
  }catch{res.writeHead(401);res.end('{}');}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
- const env={DATABASE_URL:url,APP_ENV:'demo',NODE_ENV:'development',IDENTITY_URL:`http://127.0.0.1:${server.address().port}`,INTERNAL_IDENTITY_SECRET:identitySecret,INTERNAL_DELIVERY_SECRET:deliverySecret,PUBLIC_ORIGIN:origin,PAMOFI_COMMERCE_ENABLED:'true',VOUCHER_DELIVERY_ACTIVE_KEY_ID:'v1',VOUCHER_DELIVERY_KEYS_JSON:JSON.stringify({v1:randomBytes(32).toString('base64')}),PAMOFI_AGENT_COMMISSION_BPS:'1000',PAMOFI_PAYMENTS_ENABLED:'true',PAMOFI_PAYMENT_MODE:'mock',PAYMENT_RECONCILIATION_WORKER_ENABLED:'false',PAMOFI_SMS_DELIVERY_ENABLED:'false',...(options.env??{})};
+ const env={DATABASE_URL:url,APP_ENV:'demo',NODE_ENV:'development',IDENTITY_URL:`http://127.0.0.1:${server.address().port}`,INTERNAL_IDENTITY_SECRET:identitySecret,INTERNAL_DELIVERY_SECRET:deliverySecret,PUBLIC_ORIGIN:origin,PAMOFI_COMMERCE_ENABLED:'true',PAMOFI_VOUCHER_REDEMPTION_WHILE_SALES_PAUSED:'false',VOUCHER_DELIVERY_ACTIVE_KEY_ID:'v1',VOUCHER_DELIVERY_KEYS_JSON:JSON.stringify({v1:randomBytes(32).toString('base64')}),PAMOFI_AGENT_COMMISSION_BPS:'1000',PAMOFI_PAYMENTS_ENABLED:'true',PAMOFI_PAYMENT_MODE:'mock',PAYMENT_RECONCILIATION_WORKER_ENABLED:'false',PAMOFI_SMS_DELIVERY_ENABLED:'false',...(options.env??{})};
  const saved=Object.fromEntries(Object.keys(env).map(k=>[k,process.env[k]]));Object.assign(process.env,env);const app=buildApp();
  const call=(method,path,body,who='admin',key=randomUUID())=>app.inject({method,url:path,headers:{origin,cookie:who.startsWith('customer')?`customer=${who==='customer2'?'other':'main'}`:`staff=${who}`,'idempotency-key':key},...(body===undefined?{}:{payload:body})});
  async function cleanup(){await app.close();await new Promise(resolve=>server.close(resolve));await pool.query('DELETE FROM commerce_audit WHERE actor_id=ANY($1::uuid[])',[[admin,agent,otherAgent,support]]);await pool.query('DELETE FROM receipt_pairings WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM access_grants WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM payment_reviews WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM verified_charges WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_entitlements WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM provider_payment_attempts WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await cleanupInvoiceEvidence(pool,{customerIds:[customer,otherCustomer]});await pool.query('DELETE FROM mock_payment_records WHERE order_id IN (SELECT id FROM purchase_orders WHERE customer_id=ANY($1::uuid[]))',[[customer,otherCustomer]]);await pool.query('DELETE FROM purchase_orders WHERE customer_id=ANY($1::uuid[])',[[customer,otherCustomer]]);await pool.query('DELETE FROM event_outbox WHERE aggregate_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM agent_sale_deliveries WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM cash_refund_events WHERE refund_id IN (SELECT r.id FROM cash_refunds r JOIN agent_sales s ON s.id=r.sale_id WHERE s.agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM cash_refunds WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await pool.query('DELETE FROM issued_vouchers WHERE sale_id IN (SELECT id FROM agent_sales WHERE agent_id=ANY($1::uuid[]))',[[agent,otherAgent]]);await cleanupInvoiceEvidence(pool,{agentIds:[agent,otherAgent]});await pool.query('DELETE FROM agent_sales WHERE agent_id=ANY($1::uuid[])',[[agent,otherAgent]]);await pool.query('DELETE FROM inventory_allocations WHERE actor_id=$1',[admin]);await pool.query('DELETE FROM agent_site_inventory WHERE site_id=ANY($1::uuid[])',[[site,otherSite]]);await pool.query('DELETE FROM cash_shifts WHERE agent_id=ANY($1::uuid[])',[[agent,otherAgent]]);await pool.query('DELETE FROM sales_locations WHERE id=ANY($1::uuid[])',[[site,otherSite]]);await pool.end();for(const [k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
@@ -66,6 +66,27 @@ test('a global sales pause preserves exact retries and private paid receipts wit
   assert.equal((await retry(randomUUID())).json().error,'sale_not_recorded');
   assert.equal((await f.pool.query('SELECT quantity FROM agent_site_inventory WHERE agent_id=$1 AND site_id=$2',[f.agent,f.site])).rows[0].quantity,1);
   assert.equal((await paused.inject({method:'POST',url:'/v1/vouchers/redeem',headers:{origin,cookie:'customer=main'},payload:{code:receipt.voucher.code}})).statusCode,404);
+
+  // A separately approved voucher recovery gate does not reopen sales, stock,
+  // payment collection or receipt pairing while global commerce remains paused.
+  process.env.PAMOFI_VOUCHER_REDEMPTION_WHILE_SALES_PAUSED='true';
+  const recovery=buildApp();
+  try{
+    const recoveredCaps=(await recovery.inject({url:'/v1/capabilities'})).json();
+    assert.equal(recoveredCaps.staffSales,false);
+    assert.equal(recoveredCaps.receiptPairing,false);
+    assert.equal(recoveredCaps.vouchers,true);
+    const redeemed=await recovery.inject({method:'POST',url:'/v1/vouchers/redeem',headers:{origin,cookie:'customer=main'},payload:{code:receipt.voucher.code}});
+    assert.equal(redeemed.statusCode,200);
+    assert.equal(redeemed.json().replayed,false);
+    const replay=await recovery.inject({method:'POST',url:'/v1/vouchers/redeem',headers:{origin,cookie:'customer=main'},payload:{code:receipt.voucher.code}});
+    assert.deepEqual(replay.json(),{entitlementId:redeemed.json().entitlementId,replayed:true});
+    assert.equal((await recovery.inject({method:'POST',url:'/v1/vouchers/redeem',headers:{origin,cookie:'customer=other'},payload:{code:receipt.voucher.code}})).statusCode,409);
+    assert.equal((await recovery.inject({method:'POST',url:'/v1/staff/sales',headers:{origin,cookie:'staff=agent','idempotency-key':randomUUID()},payload})).statusCode,409);
+    assert.equal((await recovery.inject({method:'POST',url:'/v1/receipt-pairings',headers:{origin,cookie:'customer=main','idempotency-key':randomUUID()},payload:{siteId:f.site,bundleId:'mini'}})).statusCode,404);
+    assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM purchase_entitlements WHERE customer_id=$1',[f.customer])).rows[0].n,1);
+  } finally {await recovery.close();}
+
  }finally{if(paused)await paused.close();await f.cleanup();}
 });
 test('configured migration origin reaches the authenticated guard and foreign origins remain blocked',{skip:!url},async()=>{
