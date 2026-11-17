@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { pendingNativeDestination } from './native-oidc';
 import { mobileApiConfigured } from './api';
@@ -43,6 +43,26 @@ const navigation: { id: Exclude<Tab, 'help'>; label: string; icon: IconName }[] 
   { id: 'account', label: 'Account', icon: 'account' },
 ];
 
+// A WebView must always offer a safe way back if a native account component
+// throws during render, hydration or a provider/session error. Never fall back
+// to an unqualified checkout, demo account, or network grant.
+class AccountRenderBoundary extends Component<{ close: () => void; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return <section className="mobile-customer mobile-account-unavailable" role="status">
+      <div className="mobile-account-links">
+        <p className="mobile-account-brand"><strong>PasoFi</strong> An Onesa Mobile product</p>
+        <button type="button" onClick={this.props.close}>← Offline preview</button>
+      </div>
+      <div className="mobile-notice">
+        <p>Mobile account access is not enabled by this deployment yet. Your offline preview is still available.</p>
+      </div>
+    </section>;
+  }
+}
+
 export default function MobileApp() {
   const [tab, setTab] = useState<Tab>('home');
   const [pending] = useState(() => Capacitor.isNativePlatform() ? pendingNativeDestination(sessionStorage) : null);
@@ -77,7 +97,7 @@ export default function MobileApp() {
   const shownExamples = examples.filter(bundle => categories.find(item => item.id === category)!.matches(bundle.days));
   const shownQuestions = questions.filter(item => helpQuery.trim().toLowerCase().split(/\s+/).every(word => `${item.q} ${item.a}`.toLowerCase().includes(word)));
 
-  if (accountOpen) return <div className="mobile-app mobile-live-shell"><MobileCustomer initialTab={accountTab} registrationTab={registrationTab} usedRegistration={()=>setRegistrationTab(null)} handoffReturn={handoffReturn} close={() => { setHandoffReturn(0); setRegistrationTab(null); setAccountOpen(false); }} /></div>;
+  if (accountOpen) return <div className="mobile-app mobile-live-shell"><AccountRenderBoundary close={() => { setHandoffReturn(0); setRegistrationTab(null); setAccountOpen(false); }}><MobileCustomer initialTab={accountTab} registrationTab={registrationTab} usedRegistration={()=>setRegistrationTab(null)} handoffReturn={handoffReturn} close={() => { setHandoffReturn(0); setRegistrationTab(null); setAccountOpen(false); }} /></AccountRenderBoundary></div>;
 
   return <div className="mobile-app">
     <a className="mobile-skip" href="#mobile-content">Skip to content</a>
