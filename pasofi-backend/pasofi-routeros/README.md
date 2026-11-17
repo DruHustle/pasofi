@@ -1,5 +1,13 @@
 # RouterOS
 
+## Current target gateway topology (17 November 2026)
+
+Use the owner-reviewed [K0/G0 + Mercusys G2/G3 plan](commissioning/K0_G0_MERCUSYS_PLAN.md) and its [machine-readable target](commissioning/topology.target.json) before commissioning any router. Check the proposed design with `node pasofi-backend/pasofi-routeros/commissioning/topology.mjs`. The result intentionally says `design-unverified` and never performs router writes.
+
+**Kuwadzana K0 is the new hEX HotSpot gateway, not the earlier inspected hAP lite.** The existing `site-01` scripts and their recorded tunnel/certificate hashes are historical, device-specific artifacts; do **not** import them on the new K0 or reuse them to configure K1 in downstream AP mode. **Goromonzi G0** is the hAP lite gateway; **G2 and G3 are Mercusys downstream AP routers**, with G2 requiring a separately qualified 5 GHz client CPE to join CPE1 while the existing CPE1–CPE2→G3 link remains active. These display-label changes do not reassign historical NAS IDs, secrets, accounting records, or sales locations.
+
+
+
 For the ready-to-load preparation files and WinBox upload, checksum, dry-run,
 Safe Mode and rollback steps, see [How to load the router scripts](HOW_TO_LOAD_SCRIPTS.md).
 The scripts prepare the devices; physical acceptance and service activation
