@@ -69,7 +69,7 @@
           "device": "Tenda O1-5G 11AC outdoor CPE",
           "role": "guest-access-point",
           "present": true,
-          "targetMode": "directional-5GHz-phone-coverage (field-test only)",
+          "targetMode": "OS3 directional 5GHz phone-facing AP (uninstalled, field-test required)",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
@@ -78,18 +78,21 @@
             5
           ],
           "antenna": {
-            "gainDbi": 9,
+            "gainDbi": 12,
             "horizontalBeamwidthDegrees": 30
           },
           "ethernetPorts": "1x10/100",
-          "physicalVerified": false
+          "physicalVerified": false,
+          "currentDevice": "Tenda O1-5G 11AC outdoor CPE",
+          "targetDevice": "Tenda OS3 5GHz 12dBi outdoor CPE",
+          "migrationStatus": "pending-physical-swap"
         },
         {
           "label": "K3",
           "device": "Tenda O1-5G 11AC outdoor CPE",
           "role": "guest-access-point",
           "present": true,
-          "targetMode": "directional-5GHz-phone-coverage (field-test only)",
+          "targetMode": "OS3 directional 5GHz phone-facing AP (uninstalled, field-test required)",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
@@ -98,11 +101,14 @@
             5
           ],
           "antenna": {
-            "gainDbi": 9,
+            "gainDbi": 12,
             "horizontalBeamwidthDegrees": 30
           },
           "ethernetPorts": "1x10/100",
-          "physicalVerified": false
+          "physicalVerified": false,
+          "currentDevice": "Tenda O1-5G 11AC outdoor CPE",
+          "targetDevice": "Tenda OS3 5GHz 12dBi outdoor CPE",
+          "migrationStatus": "pending-physical-swap"
         },
         {
           "label": "K4",
@@ -153,7 +159,7 @@
           "physicalVerified": false
         }
       ],
-      "notes": "K2/K3 are owner-reported Tenda O1-5G phone-facing 5 GHz directional CPEs; LAN2/LAN3 planned attachment, not live-port verified. K4 and K5 are wireless repeaters, NOT Ethernet-connected to K0 LAN4. The upstream AP for each repeater and client MAC transparency have not been qualified. K0 LAN4 remains reserved."
+      "notes": "Target: K2 and K3 use Tenda OS3 12dBi 5GHz directional phone-facing CPEs from Goromonzi after a controlled swap. Present hardware is owner-reported O1-5G until physical readback. OS3 remains narrow 30-degree sector, not 360-degree cellphone coverage. K4 TG789vac v2 and K5 MW301R are wireless repeaters and not on K0 LAN4. WAN/LAN and client coverage need field tests."
     },
     {
       "slug": "goromonzi",
@@ -203,29 +209,37 @@
         },
         {
           "label": "CPE1",
-          "device": "Tenda OS3 5GHz directional CPE (owner-reported, hardware revision unverified)",
+          "device": "Tenda OS3 5GHz directional CPE",
           "role": "backhaul-ap",
           "present": true,
-          "targetMode": "AP or P2MP (confirm capabilities)",
+          "targetMode": "O1-5G 5GHz bridge AP (after tested swap)",
           "wirelessBandsGHz": [
             5
           ],
           "dhcp": false,
           "nat": false,
-          "hotspot": false
+          "hotspot": false,
+          "currentDevice": "Tenda OS3 5GHz directional CPE",
+          "targetDevice": "Tenda O1-5G 11AC outdoor CPE",
+          "migrationStatus": "existing-OS3-link-must-be-preserved-until-O1-qualified",
+          "physicalVerified": false
         },
         {
           "label": "CPE2",
-          "device": "Tenda OS3 5GHz directional CPE (owner-reported, hardware revision unverified)",
+          "device": "Tenda OS3 5GHz directional CPE",
           "role": "backhaul-client",
           "present": true,
-          "targetMode": "client/bridge",
+          "targetMode": "O1-5G 5GHz station bridge (after tested swap)",
           "wirelessBandsGHz": [
             5
           ],
           "dhcp": false,
           "nat": false,
-          "hotspot": false
+          "hotspot": false,
+          "currentDevice": "Tenda OS3 5GHz directional CPE",
+          "targetDevice": "Tenda O1-5G 11AC outdoor CPE",
+          "migrationStatus": "existing-OS3-link-must-be-preserved-until-O1-qualified",
+          "physicalVerified": false
         },
         {
           "label": "G3",
@@ -298,7 +312,27 @@
           "physicalVerified": false
         }
       ],
-      "notes": "Do not move OS3 pair to Kuwadzana before verifying a replacement Goromonzi link; CPE1-CPE2 to G3 must remain live. MR20 supports AP/range-extender modes, but range extender may fail transparent MAC/accounting and P2MP interoperability; dedicated tested client CPE preferred for G2."
+      "notes": "Target: swap current CPE1-CPE2 Tenda OS3 pair for O1-5G 9dBi bridge pair only after verifying distance, LOS, link budget, and G3 continuity. Keep OS3 link online and revertible until O1 qualification; G2 MR20 needs separate client receiver or independently proven compatible range extender, in addition to existing CPE2. No physical swap completed."
     }
-  ]
+  ],
+  "radioReassignment": {
+    "status": "proposed-not-installed",
+    "sourceSite": "goromonzi",
+    "destinationSite": "kuwadzana",
+    "moveToKuwadzana": [
+      "OS3 CPE1",
+      "OS3 CPE2"
+    ],
+    "moveToGoromonzi": [
+      "O1-5G K2",
+      "O1-5G K3"
+    ],
+    "prerequisites": [
+      "Measure Goromonzi CPE link distance and line of sight",
+      "Staged O1-5G PtP link succeeds with G3/actual users",
+      "Back up OS3 configuration and retain independent router access",
+      "Do not disconnect existing CPE1-CPE2 link before replacement is qualified",
+      "G2 additional client/CPE remains uninstalled"
+    ]
+  }
 }
