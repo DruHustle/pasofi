@@ -60,3 +60,12 @@ test('both native registration choices reach Identity with the originating PasoF
   assert.match(registrationComponent,/audience="admin"/);
   assert.doesNotMatch(registrationComponent,/portal\.onesa\.eu\/admin/);
 });
+
+test('native account rendering failures preserve an explicit unavailable gate and offline return', () => {
+  assert.match(homeComponent, /class AccountRenderBoundary extends Component/);
+  assert.match(homeComponent, /static getDerivedStateFromError\(\)/);
+  assert.match(homeComponent, /Mobile account access is not enabled by this deployment yet/);
+  assert.match(homeComponent, /← Offline preview/);
+  assert.match(homeComponent, /<AccountRenderBoundary close=/);
+  assert.doesNotMatch(homeComponent, /class AccountRenderBoundary[\s\S]*?getDerivedStateFromError[\s\S]*?checkout\(/);
+});
