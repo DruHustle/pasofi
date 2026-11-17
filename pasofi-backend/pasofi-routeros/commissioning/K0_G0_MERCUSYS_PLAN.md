@@ -30,6 +30,12 @@ G2 and G3 are **Mercusys MR20 AC750 routers**, with exact hardware revisions and
 - Separate G1 home users from the business guest bridge. Never put G1 home and CPE1 business backhaul in one unfiltered L2 customer network; ensure home traffic doesn't see/pay for HotSpot or bypass its guest firewall.
 - Preserve trusted HTTPS HotSpot PAP, RADIUS `Message-Authenticator`, private tunnel, one entitlement per customer policy, IPv4 and IPv6 guest isolation, byte accounting (up/down), interim, Stop, disconnection, replay and cross-site quota sync.
 
+## Connected K0: safe first-contact inventory before any import
+
+The owner reports K0 is plugged into the network. **Connection alone is not verified independent remote management, a RouterOS baseline, or customer readiness.** On a trusted locally logged-in K0 hEX WinBox terminal, run the [read-only K0 first-contact collector](K0_FIRST_CONTACT.rsc). This script prints only device/board/package/device-mode, observed Ethernet/bridge, WAN/DHCP/address/service and HotSpot-availability metadata; its output is **private** and may include serial numbers, IPs and MAC addresses. Do not put that output in GitHub, public CI logs or screenshots. It makes no writes and deliberately never dumps RADIUS secrets, WireGuard keys, full exports or customer sessions. The included [safety regression test](K0_FIRST_CONTACT.test.mjs) statically restricts the allowed RouterOS query menus.
+
+Match the device's actual serial, model, package version and active management/WAN paths against the physical cabling before creating the private baseline and serial-pinned generator input. Do not assume that the proposed ether1–ether5 map is what is running. Keep a recoverable local login and backup. The existing hAP-lite site-01 files are **not** a K0 commissioning package. A completed inventory is not authorization to activate the HotSpot, register a NAS or process live payments.
+
 ## Safe commissioning sequence
 
 1. **Read-only device inventory:** Record actual K0, K1, K2, K3, K4, K5, G0, G1, both OS3 CPEs, G2 and G3 hardware ID, model/revision, RouterOS/firmware, existing configuration, management IP, physical port, DHCP/NAT/bridge and live link state. Do not mix old **site-01 hAP lite** scripts with the new **K0 hEX** gateway.
