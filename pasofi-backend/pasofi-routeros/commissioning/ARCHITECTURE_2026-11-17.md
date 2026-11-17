@@ -1,32 +1,48 @@
-# PasoFi current reported cable topology — 17 November 2026
+# PasoFi — current physical topology versus final radio design (17 November 2026)
 
-**Owner reports physical cabling, not validated RouterOS settings. This page supersedes earlier network maps. No live router writes or customer internet acceptance are implied.**
+**Current wiring is owner-reported, not verified RouterOS configuration.** Two independent Starlink sites. No device was reconfigured by this change.
 
-## Kuwadzana
+## Kuwadzana: CURRENT
 
-    Starlink
-       |
-       v
-    K0 MikroTik hEX
-       +-- LAN1 (ether2) --> K1 hAP lite
-       +-- LAN2 (ether3) --> K2 Tenda OS3, 5 GHz directional
-       +-- LAN3 (ether4) --> K3 Tenda OS3, 5 GHz directional
-       +-- LAN4 (ether5) --> EMPTY
+```text
+Starlink -> K0 (MikroTik hEX)
+            LAN1 / ether2 -> K1 (MikroTik hAP lite)
+            LAN2 / ether3 -> K2 (Tenda OS3, 5 GHz directional)
+            LAN3 / ether4 -> K3 (Tenda OS3, 5 GHz directional)
+            LAN4 / ether5 -> EMPTY
+```
 
-K0 HotSpot/RADIUS is the intended sole NAS for K1/K2/K3 customers, pending live inspection. OS3 units at K2/K3 are now **owner-reported connected**, not a future transfer; 5 GHz phone association, throughput, individual MAC visibility, DHCP and traffic isolation still require tests. K4 Technicolor and K5 Mercusys wireless repeaters are outside K0 LAN4; their radio uplinks remain unverified.
+K0 is the intended HotSpot/RADIUS gateway for K1–K3. OS3 radio modes, smartphone reception, bridge membership, router identity, WAN and customer accounting are still to be inspected. K4 Technicolor TG789vac v2 and K5 Mercusys MW301R have not been reported on any K0 Ethernet port; wireless upstreams remain unverified.
 
-## Separate G0 chain — upstream unknown
+## Goromonzi: CURRENT (preserve)
 
-    G0 MikroTik hAP lite (WAN/Internet not confirmed)
-       +-- LAN1 (ether2) --> G2 Mercusys MR20
-                                 +-- LAN1 --> G3 Mercusys MR20
+```text
+Starlink -> G0 (MikroTik hAP lite, WAN port to verify)
+            LAN1 / ether2 -> G2 (Mercusys MR20)
+                              G2 LAN1 -> G3 (Mercusys MR20)
+```
 
-G0 is **not connected to K0 LAN4**. The receiving ports on G2 and G3 are unknown. Actual MR20 AP mode, transparent forwarding and absence of NAT/DHCP are not remotely verified. Previous CPE1/CPE2/G1 records are historical, not a verified current link. Preserve existing site IDs and NAS identities.
+Currently G0–G2–G3 is **wired Ethernet**. The actual receiving MR20 ports, operating mode, client-MAC transparency, DHCP/NAT state and internet access must be tested. G0 LAN2/LAN3 have not been inventoried; the description does not reserve or disable them.
 
-## Required checks before device changes
+## Goromonzi: FINAL TARGET (not currently installed)
 
-1. Read actual K0 and G0 RouterOS model, bridge, port membership, WAN and management safely with read-only inventory scripts.
-2. Keep K0 ether1 WAN and local WinBox access; do not bridge or assign ether5 to customers. Do not import old hAP lite site-01 scripts onto hEX.
-3. Verify K1/K2/K3 transparent guest AP operation and client MAC/IP visibility, and then G2/G3 after G0 actual upstream is known. No second DHCP, HotSpot or NAT at downstream APs.
-4. Only then prepare device-specific RouterOS changes with backups, Safe Mode and rollback.
-5. Test a real paid-cash voucher, customer browsing, RADIUS Start/Interim/Stop accounting, quota disconnect and reconnect per physical access path. Until proven: **NO GO**.
+```text
+Starlink -> G0 (MikroTik hAP lite)
+            LAN1 -> G1 (home AP, model TBD)
+            LAN2 -> CPE1 (Tenda O1-5G, 5 GHz AP)
+                    +-> G2 (MR20, receiving link TBD)
+                    +-> wireless -> CPE2 (Tenda O1-5G) -> G3 (MR20)
+```
+
+CPE1 has only one Ethernet uplink, so the connection to G2 must be separately designed: a compatible 5 GHz receiving CPE or independently validated alternative is required. **Do not assume that G2 can join the bridge with a normal Wi-Fi router or that the O1-5G pair alone supplies a third receiving device.** Existing wired G0→G2→G3 must stay operational until the alternative is proved and rollback is prepared.
+
+## Invariants for RouterOS configuration
+
+- Never connect G0 to K0 LAN4. Each site uses its own Starlink and its own registered RADIUS NAS.
+- Keep K0 WAN outside the guest bridge and K0 LAN4 empty and outside the bridge.
+- K1/K2/K3 and G2/G3 are downstream transparent APs, not independent HotSpot/NAT/DHCP/RADIUS gateways.
+- Do not blindly import the historical `site-01` hAP-lite script onto the new hEX; verify device serial, RouterOS architecture, HotSpot capability and protected management paths first.
+- No current-to-planned G0 cutover before real CPE signal, bridge transparency, client IP/MAC and full quota-accounting evidence.
+- Physical payment-service GO requires an actual cash voucher, authenticated RADIUS session, HTTPS use, Start/Interim/Stop, quota cutoff, and reconnect on each customer path.
+
+Read the machine-readable [topology](topology.target.json), [acceptance record](ACCEPTANCE.md) and [commissioning sequence](K0_G0_MERCUSYS_PLAN.md).
