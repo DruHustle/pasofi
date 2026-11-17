@@ -14,14 +14,14 @@ flowchart TB
   5 GHz directional phone-facing AP"]
   K0 -->|"LAN3 · Ethernet (to verify)"| K3["K3 · Tenda O1-5G
   5 GHz directional phone-facing AP"]
-  K0 -.- KLAN4["LAN4 reserved
+  K0 -.->|LAN4 reserved, no cable| KLAN4["LAN4 reserved
   No K4 cable"]
   K1 --> PH1["Phones · 2.4 GHz"]
   K2 --> PH2["Phones · narrow 5 GHz sector"]
   K3 --> PH3["Phones · narrow 5 GHz sector"]
-  UK4["Wireless upstream TBD"] -. "Repeater link · unverified" .-> K4["K4 · Technicolor TG789vac v2
+  UK4["Wireless upstream TBD"] -.->|Repeater link, unverified| K4["K4 · Technicolor TG789vac v2
   Wireless repeater"]
-  UK5["Wireless upstream TBD"] -. "2.4 GHz/WDS · unverified" .-> K5["K5 · Mercusys MW301R
+  UK5["Wireless upstream TBD"] -.->|2.4 GHz WDS, unverified| K5["K5 · Mercusys MW301R
   2.4 GHz repeater"]
   K4 -.-> PH4["Indoor phones"]
   K5 -.-> PH5["Different-room phones"]
@@ -43,9 +43,9 @@ flowchart TB
   C1 -->|"Existing 5 GHz radio link · preserve"| C2["CPE2 · Tenda OS3 client"]
   C2 -->|"Ethernet"| G3["G3 · Mercusys MR20 AC750
   Guest AP mode"]
-  C1 -. "Planned second 5 GHz client" .-> RX["G2-RX · compatible client CPE
+  C1 -.->|Planned second 5 GHz client| RX["G2-RX · compatible client CPE
   Not installed/qualified"]
-  RX -. "Ethernet after qualification" .-> G2["G2 · Mercusys MR20 AC750
+  RX -.->|Ethernet after qualification| G2["G2 · Mercusys MR20 AC750
   Guest AP mode"]
   G3 --> P3["Customer phones"]
   G2 --> P2["Customer phones · pending"]
