@@ -1,9 +1,9 @@
 {
-  "schemaVersion": 1,
-  "source": "operator target topology 2026-11-17",
+  "schemaVersion": 2,
+  "source": "Owner-reported physical cabling on 2026-11-17; NOT RouterOS readback",
   "status": "design-unverified",
   "releaseGate": "physical-acceptance-required",
-  "notes": "Labels are human-facing inventory labels. Do not rename an existing NAS ID, WireGuard tunnel, sales_location.id, or router identity from these labels.",
+  "notes": "K0 LAN4 is explicitly EMPTY. G0 does NOT connect to K0. G0-G2-G3 is a separately reported chain, upstream unknown. Existing NAS/site UUIDs and payment identities are never reassigned based on labels.",
   "sites": [
     {
       "slug": "kuwadzana",
@@ -66,10 +66,10 @@
         },
         {
           "label": "K2",
-          "device": "Tenda O1-5G 11AC outdoor CPE",
+          "device": "Tenda OS3 5GHz 12dBi outdoor CPE",
           "role": "guest-access-point",
           "present": true,
-          "targetMode": "OS3 directional 5GHz phone-facing AP (uninstalled, field-test required)",
+          "targetMode": "5GHz directional AP, phone coverage to be tested",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
@@ -81,18 +81,18 @@
             "gainDbi": 12,
             "horizontalBeamwidthDegrees": 30
           },
-          "ethernetPorts": "1x10/100",
+          "ethernetPorts": "4x10/100",
           "physicalVerified": false,
-          "currentDevice": "Tenda O1-5G 11AC outdoor CPE",
+          "currentDevice": "Tenda OS3 5GHz 12dBi outdoor CPE",
           "targetDevice": "Tenda OS3 5GHz 12dBi outdoor CPE",
-          "migrationStatus": "pending-physical-swap"
+          "migrationStatus": "owner-reported-connected-config-unverified"
         },
         {
           "label": "K3",
-          "device": "Tenda O1-5G 11AC outdoor CPE",
+          "device": "Tenda OS3 5GHz 12dBi outdoor CPE",
           "role": "guest-access-point",
           "present": true,
-          "targetMode": "OS3 directional 5GHz phone-facing AP (uninstalled, field-test required)",
+          "targetMode": "5GHz directional AP, phone coverage to be tested",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
@@ -104,11 +104,11 @@
             "gainDbi": 12,
             "horizontalBeamwidthDegrees": 30
           },
-          "ethernetPorts": "1x10/100",
+          "ethernetPorts": "4x10/100",
           "physicalVerified": false,
-          "currentDevice": "Tenda O1-5G 11AC outdoor CPE",
+          "currentDevice": "Tenda OS3 5GHz 12dBi outdoor CPE",
           "targetDevice": "Tenda OS3 5GHz 12dBi outdoor CPE",
-          "migrationStatus": "pending-physical-swap"
+          "migrationStatus": "owner-reported-connected-config-unverified"
         },
         {
           "label": "K4",
@@ -159,180 +159,137 @@
           "physicalVerified": false
         }
       ],
-      "notes": "Target: K2 and K3 use Tenda OS3 12dBi 5GHz directional phone-facing CPEs from Goromonzi after a controlled swap. Present hardware is owner-reported O1-5G until physical readback. OS3 remains narrow 30-degree sector, not 360-degree cellphone coverage. K4 TG789vac v2 and K5 MW301R are wireless repeaters and not on K0 LAN4. WAN/LAN and client coverage need field tests."
+      "notes": "Starlink -> K0 WAN. Owner-reported: LAN1/ether2 -> K1 hAP lite; LAN2/ether3 -> K2 Tenda OS3; LAN3/ether4 -> K3 Tenda OS3; LAN4/ether5 EMPTY. K4/K5 repeater links not verified. RouterOS bridge, RADIUS, DHCP, management and RF require readback."
     },
     {
       "slug": "goromonzi",
       "label": "Goromonzi",
-      "internet": "Starlink",
+      "internet": "G0 upstream unknown; NOT connected to K0 LAN4",
       "gateway": {
         "label": "G0",
         "device": "MikroTik hAP lite",
         "model": "RB941-2nD (confirm device)",
         "present": "awaiting-live-inventory",
         "role": "captive-portal-nas",
-        "wan": "ether1",
+        "wan": null,
         "hotspotOwner": true,
-        "radiusClient": true
+        "radiusClient": true,
+        "upstream": null,
+        "upstreamVerified": false
       },
       "ports": [
         {
           "name": "LAN1",
           "interface": "ether2",
-          "target": "G1",
-          "purpose": "home",
-          "present": true
+          "target": "G2",
+          "purpose": "guest",
+          "present": true,
+          "physicalVerified": false
         },
         {
           "name": "LAN2",
           "interface": "ether3",
-          "target": "CPE1",
-          "purpose": "guest-backhaul",
-          "present": true
+          "target": null,
+          "purpose": "unreported",
+          "present": null
         },
         {
           "name": "LAN3",
           "interface": "ether4",
           "target": null,
-          "purpose": "reserved",
-          "present": false
+          "purpose": "unreported",
+          "present": null
         }
       ],
       "nodes": [
-        {
-          "label": "G1",
-          "device": "home AP router (model unverified)",
-          "role": "home-access-point",
-          "present": true,
-          "targetMode": "preserve-existing-home",
-          "guestNetwork": false
-        },
-        {
-          "label": "CPE1",
-          "device": "Tenda OS3 5GHz directional CPE",
-          "role": "backhaul-ap",
-          "present": true,
-          "targetMode": "O1-5G 5GHz bridge AP (after tested swap)",
-          "wirelessBandsGHz": [
-            5
-          ],
-          "dhcp": false,
-          "nat": false,
-          "hotspot": false,
-          "currentDevice": "Tenda OS3 5GHz directional CPE",
-          "targetDevice": "Tenda O1-5G 11AC outdoor CPE",
-          "migrationStatus": "existing-OS3-link-must-be-preserved-until-O1-qualified",
-          "physicalVerified": false
-        },
-        {
-          "label": "CPE2",
-          "device": "Tenda OS3 5GHz directional CPE",
-          "role": "backhaul-client",
-          "present": true,
-          "targetMode": "O1-5G 5GHz station bridge (after tested swap)",
-          "wirelessBandsGHz": [
-            5
-          ],
-          "dhcp": false,
-          "nat": false,
-          "hotspot": false,
-          "currentDevice": "Tenda OS3 5GHz directional CPE",
-          "targetDevice": "Tenda O1-5G 11AC outdoor CPE",
-          "migrationStatus": "existing-OS3-link-must-be-preserved-until-O1-qualified",
-          "physicalVerified": false
-        },
         {
           "label": "G3",
           "device": "Mercusys MR20 AC750",
           "role": "guest-access-point",
           "present": true,
-          "targetMode": "bridge-AP behind CPE2",
+          "targetMode": "transparent AP pending device readback",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
           "radius": false,
-          "wirelessClientQualified": false
-        },
-        {
-          "label": "G2-RX",
-          "device": null,
-          "role": "backhaul-client",
-          "present": false,
-          "targetMode": "compatible 5 GHz client CPE for CPE1",
-          "wirelessBandsGHz": [
-            5
-          ],
-          "dhcp": false,
-          "nat": false,
-          "hotspot": false
+          "wirelessClientQualified": false,
+          "uplinkPort": null,
+          "physicalVerified": false
         },
         {
           "label": "G2",
           "device": "Mercusys MR20 AC750",
           "role": "guest-access-point",
           "present": true,
-          "targetMode": "bridge-AP behind dedicated 5 GHz receiver",
+          "targetMode": "transparent AP pending device readback",
           "dhcp": false,
           "nat": false,
           "hotspot": false,
           "radius": false,
-          "wirelessClientQualified": false
+          "wirelessClientQualified": false,
+          "uplinkPort": null,
+          "physicalVerified": false
         }
       ],
       "wiredLinks": [
         {
-          "from": "CPE2",
+          "from": "G2",
+          "fromPort": "LAN1",
           "to": "G3",
-          "port": "LAN1",
-          "purpose": "guest"
-        },
-        {
-          "from": "G2-RX",
-          "to": "G2",
-          "port": "LAN",
+          "toPort": null,
           "purpose": "guest",
-          "present": false
+          "reportedConnected": true,
+          "physicalVerified": false
         }
       ],
-      "radioLinks": [
+      "radioLinks": [],
+      "notes": "G0 LAN1 -> G2 MR20 and G2 LAN1 -> G3 MR20, owner-reported. G0 WAN and MR20 receiving Ethernet ports unverified. Prior CPE/G1 graph must not be considered live. K0 LAN4 empty.",
+      "historicalNodesNotInReportedChain": [
         {
-          "from": "CPE1",
-          "to": "CPE2",
-          "bandGHz": 5,
-          "mode": "AP-to-client",
-          "state": "existing-preserve",
-          "physicalVerified": false
+          "label": "G1",
+          "previousRole": "home-access-point",
+          "device": "home AP router (model unverified)",
+          "status": "not-claimed-in-current-chain"
         },
         {
-          "from": "CPE1",
-          "to": "G2-RX",
-          "bandGHz": 5,
-          "mode": "AP/P2MP-to-client",
-          "state": "planned-needs-receiver",
-          "physicalVerified": false
+          "label": "CPE1",
+          "previousRole": "backhaul-ap",
+          "device": "Tenda OS3 5GHz directional CPE",
+          "status": "not-claimed-in-current-chain"
+        },
+        {
+          "label": "CPE2",
+          "previousRole": "backhaul-client",
+          "device": "Tenda OS3 5GHz directional CPE",
+          "status": "not-claimed-in-current-chain"
+        },
+        {
+          "label": "G2-RX",
+          "previousRole": "backhaul-client",
+          "device": null,
+          "status": "not-claimed-in-current-chain"
         }
-      ],
-      "notes": "Target: swap current CPE1-CPE2 Tenda OS3 pair for O1-5G 9dBi bridge pair only after verifying distance, LOS, link budget, and G3 continuity. Keep OS3 link online and revertible until O1 qualification; G2 MR20 needs separate client receiver or independently proven compatible range extender, in addition to existing CPE2. No physical swap completed."
+      ]
     }
   ],
   "radioReassignment": {
-    "status": "proposed-not-installed",
-    "sourceSite": "goromonzi",
-    "destinationSite": "kuwadzana",
+    "status": "OS3-K2-K3-owner-reported; G0 backhaul-unverified",
     "moveToKuwadzana": [
-      "OS3 CPE1",
-      "OS3 CPE2"
-    ],
-    "moveToGoromonzi": [
-      "O1-5G K2",
-      "O1-5G K3"
+      "OS3 K2",
+      "OS3 K3"
     ],
     "prerequisites": [
-      "Measure Goromonzi CPE link distance and line of sight",
-      "Staged O1-5G PtP link succeeds with G3/actual users",
-      "Back up OS3 configuration and retain independent router access",
-      "Do not disconnect existing CPE1-CPE2 link before replacement is qualified",
-      "G2 additional client/CPE remains uninstalled"
+      "Verify serials, AP mode and phone link for both OS3",
+      "Do not connect G0 via K0 LAN4",
+      "Do not assume old Goromonzi CPE1-CPE2 link or O1-5G migration",
+      "Preserve NAS identities, RADIUS credentials and sales records"
     ]
+  },
+  "wiringEvidence": {
+    "kind": "owner-reported",
+    "routerConfigReadback": false,
+    "radioQualified": false,
+    "hotspotQualified": false,
+    "customerGo": false
   }
 }

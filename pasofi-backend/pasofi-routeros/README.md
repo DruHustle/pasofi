@@ -1,3 +1,5 @@
+**LATEST OWNER CABLING (17 November 2026):** K0 LAN1 K1, LAN2 K2 OS3, LAN3 K3 OS3, LAN4 EMPTY; G0 is NOT linked to K0. G0→G2→G3 is separate, with upstream unknown. See [current field map](commissioning/ARCHITECTURE_2026-11-17.md). No live changes or acceptance implied.
+
 # RouterOS
 
 ## Current target gateway topology (17 November 2026)
