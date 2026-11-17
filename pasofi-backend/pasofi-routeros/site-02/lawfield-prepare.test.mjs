@@ -19,12 +19,12 @@ test('Lawfield bootstrap retains its own key and does not enable customer servic
 });
 
 
-test('Lawfield login draft is offline and sends hotspot credentials over HTTPS',async()=>{
+test('Lawfield offline draft cannot submit router credentials to a different site',async()=>{
   const page=await readFile(new URL('./lawfield-pilot-login.html',import.meta.url),'utf8');
-  assert.match(page,/Lawfield Farm &bull; Pilot/);
-  assert.match(page,/<form action="https:\/\/hotspot\.pasofi\.onesa\.eu\/login" method="post">/);
-  assert.match(page,/name="username"/);
-  assert.match(page,/name="password" type="password"/);
-  assert.match(page,/Pilot testing is in progress/);
-  assert.doesNotMatch(page,/<(?:script|link|img|iframe)\b/i);
+  assert.match(page,/Lawfield Farm/);
+  assert.match(page,/Customer hotspot not yet activated/);
+  assert.match(page,/site-aware welcome installer/);
+  assert.doesNotMatch(page,/<(?:form|input|button|script|link|img|iframe)\\b/i);
+  assert.doesNotMatch(page,/https:\\/\\/hotspot\\.pasofi\\.onesa\\.eu\\/login/);
+  assert.doesNotMatch(page,/name="(?:username|password)"/);
 });
