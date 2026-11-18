@@ -12,6 +12,21 @@
   min-height: 44px;
   min-width: 44px;
 }
+.pf-portal-links button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #087d69;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .pf-onesa-sign-in-prominent,
 .pf-purchase-availability {
   display: flex;
