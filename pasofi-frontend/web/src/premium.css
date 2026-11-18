@@ -222,7 +222,7 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
 @media(min-width:700px){.pf-bundle-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}:is(.pf-home,.pf-captive) .pf-quick-actions>button{flex-direction:row;justify-content:center;min-height:48px;gap:8px}:is(.pf-home,.pf-captive) .pf-quick-actions>button strong{font-size:13px}}
 @media(min-width:1000px){:is(.pf-home,.pf-captive) .pf-page-intro{margin-top:8px}:is(.pf-home,.pf-captive) .pf-page-intro h1{font-size:30px}:is(.pf-home,.pf-captive) .pf-quick-actions{margin:14px 0 20px}.pf-bundle-card{padding:14px}:is(.pf-home,.pf-captive) .pf-service-status{margin-bottom:14px}}
 @media(min-width:1400px){.pf-bundle-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:359px){.pf-bundle-card{column-gap:8px;padding:10px;grid-template-columns:minmax(0,1fr) 68px 62px}.pf-bundle-price strong{font-size:20px}.pf-sort{flex-basis:152px}:is(.pf-home,.pf-captive) .pf-quick-actions>button strong{font-size:10px}:is(.pf-home,.pf-captive) .pf-page-intro h1{font-size:24px}}
+@media(max-width:359px){.pf-bundle-card{column-gap:8px;padding:9px 10px;grid-template-columns:minmax(0,1fr) 68px 62px}.pf-bundle-price strong{font-size:20px}.pf-sort{flex-basis:152px}:is(.pf-home,.pf-captive) .pf-quick-actions>button strong{font-size:10px}:is(.pf-home,.pf-captive) .pf-page-intro h1{font-size:24px}}
 
 /* Use primary blue, deep teal and soft mint across the customer surfaces. */
 .pf-bundle-card:nth-child(n){background:#fff;border-color:#dae3da;border-left-color:#0070f2}
