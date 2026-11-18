@@ -30,11 +30,11 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     setConfirm(true);
   }
   if (available === null) return <p role="status">Checking Onesa sign-in…</p>;
-  if (!available) return <div className="pf-onesa-sign-in pf-onesa-sign-in-unavailable">
-    <p role="status">Onesa Identity sign-in is temporarily unavailable. PasoFi customer accounts require Onesa Identity.</p>
+  if (!available) return <nav className="pf-portal-links pf-onesa-sign-in-unavailable" aria-label="Onesa customer account">
+    <span role="status">Onesa Identity unavailable</span>
     <button type="button" disabled={busy} onClick={() => setAvailabilityAttempt(attempt => attempt + 1)}>Retry Onesa sign-in</button>
     {signup}
-  </div>;
+  </nav>;
   return <div className={`pf-onesa-sign-in${prominent ? ' pf-onesa-sign-in-prominent' : ''}`}>
     {prominent && <div className="pf-onesa-sign-in-intro"><strong>Your Onesa account, here in PasoFi</strong><p>Sign in to open your customer account. Browsing bundles needs no account.</p></div>}
     <button className={prominent ? 'pf-button pf-button-secondary' : undefined} disabled={busy} aria-expanded={confirm} onClick={event => openAccount(event.currentTarget)}>Sign in with Onesa</button>
