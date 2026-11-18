@@ -320,6 +320,9 @@ test('published cash-only bundles open private pairing and require the exact age
   await mock(page, async (route, path, method) => {
     if (path === '/api/capabilities') { await json(route, { ...capabilities, demo: false, paymentMode: 'disabled', paymentCheckout: false, deliverySms: false }); return true; }
     if (path === '/api/bundles') { await json(route, { products: [product], candidate: false }); return true; }
+    // A live cash sale is allowed only at a site that has passed commissioning.
+    // Other tests keep the default site unapproved to exercise the fail-closed path.
+    if (path === '/api/staff/sites') { await json(route, { sites: [{ ...site, cashSalesApproved: true }] }); return true; }
     if (path === '/api/staff/session') { await json(route, staff()); return true; }
     if (path === '/api/staff/inventory') { await json(route, { inventory: [{ agentId: staffId, siteId, siteName: site.name, bundleId: 'flex', quantity: 1 }] }); return true; }
     if (path === '/api/staff/sales') { if (method === 'POST') { received = route.request().postDataJSON(); await json(route, { sale: { ...sale(), simulation: false, payment: { method: 'cash', evidence: 'agent_attestation', receivedMinor: 100, currency: 'USD', confirmedAt: new Date().toISOString(), confirmedBy: staffId } }, replayed: false }); } else await json(route, { sales: [], hasMore: false, nextOffset: null }); return true; }
