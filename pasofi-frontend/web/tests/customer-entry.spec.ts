@@ -124,7 +124,7 @@ test('staff sign-in clears an abandoned customer flow and signup has its own adm
   await expect(page.getByRole('button', { name: label, exact: true })).toBeEnabled();
 });
 
-test('production account and staff entry use Portal when federation is unavailable', async ({ page }) => {
+test('customer entry fails closed when Identity is unavailable while staff retains its Portal access', async ({ page }) => {
   let credentialWrites = 0;
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
@@ -136,14 +136,20 @@ test('production account and staff entry use Portal when federation is unavailab
     await page.goto('/' + hash);
     const scope = hash.startsWith('#staff') ? page.getByRole('region', { name: 'Staff workspace' }) : page;
     await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Create an Onesa account'})).toHaveAttribute('href','https://account.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
-    await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveAttribute('href','https://portal.onesa.eu/admin');
+    if (hash.startsWith('#staff')) {
+      await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveAttribute('href','https://portal.onesa.eu/admin');
+    } else {
+      await expect(scope.getByRole('button',{name:'Retry Onesa sign-in'})).toBeVisible();
+      await expect(scope.getByText(/Onesa Identity unavailable/)).toBeVisible();
+      await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveCount(0);
+    }
     await expect(scope.getByRole('button',{name:'Start a new customer account'})).toHaveCount(0);
     await expect(scope.locator('input[type="password"]')).toHaveCount(0);
   }
   expect(credentialWrites).toBe(0);
 });
 
-test('a gateway outage still offers Company Portal sign-in and signup on the account and staff screens', async ({page}) => {
+test('a gateway outage keeps customer Identity fail-closed and retains staff access', async ({page}) => {
   let writes = 0;
   await page.route('**/api/**', route => {
     if (route.request().method() !== 'GET') writes++;
@@ -152,7 +158,12 @@ test('a gateway outage still offers Company Portal sign-in and signup on the acc
   for (const hash of ['#account','#staff?apply=1']) {
     await page.goto('/'+hash);
     const scope = hash.startsWith('#staff') ? page.getByRole('region',{name:'Staff workspace'}) : page.getByRole('main');
-    await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/admin');
+    if (hash.startsWith('#staff')) {
+      await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/admin');
+    } else {
+      await expect(scope.getByRole('button',{name:'Retry Onesa sign-in',exact:true})).toBeVisible();
+      await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveCount(0);
+    }
     await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Create an Onesa account',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
     await expect(scope.locator('input[type="password"]')).toHaveCount(0);
   }
