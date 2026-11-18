@@ -31,7 +31,10 @@ test('an expired administrator return falls back to a clean customer account scr
 
 test('a current administrator return uses the approved staff OIDC entry exactly once', async ({page}) => {
   let started=0;
-  await page.addInitScript(() => sessionStorage.setItem('pasofi.registration',JSON.stringify({
+  // Seed the receipt in PasoFi's own origin. An init script would also run
+  // on the provider origin and introduce a false storage failure.
+  await page.goto('/#account');
+  await page.evaluate(() => sessionStorage.setItem('pasofi.registration',JSON.stringify({
     path:'/#staff',expires:Date.now()+60_000,
   })));
   await page.route('**/api/staff/onesa/availability', route =>
@@ -46,5 +49,8 @@ test('a current administrator return uses the approved staff OIDC entry exactly 
   await page.goto('/?registration=complete');
   await page.waitForURL('https://auth.onesa.eu/authorize?account=synthetic');
   expect(started).toBe(1);
+  // After the provider handoff, verify the original product origin, not the
+  // provider's unrelated sessionStorage.
+  await page.goto('/#staff');
   expect(await page.evaluate(() => sessionStorage.getItem('pasofi.registration'))).toBeNull();
 });
