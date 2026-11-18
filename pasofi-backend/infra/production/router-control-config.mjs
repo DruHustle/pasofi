@@ -10,7 +10,7 @@ const fields = ['nasId', 'url', 'username', 'password', 'caFile'];
 const dns = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 export function validateRouterControlRows(rows) {
   if (!Array.isArray(rows) || rows.length < 1 || rows.length > 100) throw Error('Provide 1–100 explicit RouterOS entries.');
-  const ids = new Set();
+  const ids = new Set(), urls = new Set();
   for (const row of rows) {
     if (!row || typeof row !== 'object' || Array.isArray(row) || Object.keys(row).some(name => !fields.includes(name)) ||
         typeof row.nasId !== 'string' || !uuid.test(row.nasId) || ids.has(row.nasId)) throw Error('Each router requires its own canonical registered NAS identifier.');
@@ -22,12 +22,13 @@ export function validateRouterControlRows(rows) {
         (isIP(host) ? !privateIpv4(host) : !dns.test(host) || host.endsWith('.local') || host.endsWith('.localhost'))) {
       throw Error('Use the reviewed HTTPS router host on TCP443 with the exact /rest/ path.');
     }
+    if (urls.has(row.url)) throw Error('Each registered NAS requires its own RouterOS management endpoint.');
     if (typeof row.username !== 'string' || row.username.length < 1 || row.username.length > 128 || /[:\x00-\x20\x7f]/.test(row.username) ||
         typeof row.password !== 'string' || row.password.length < 1 || row.password.length > 4096 || /[\x00\r\n]/.test(row.password)) {
       throw Error('Supply the existing restricted per-device RouterOS credentials privately.');
     }
     if (row.caFile !== '/run/pamofi/routeros-ca/' + row.nasId + '.pem') throw Error('Each router requires its named public trust file inside the read-only CA mount.');
-    ids.add(row.nasId);
+    ids.add(row.nasId); urls.add(row.url);
   }
   return rows;
 }
