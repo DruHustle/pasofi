@@ -124,7 +124,7 @@ test('staff sign-in clears an abandoned customer flow and signup has its own adm
   await expect(page.getByRole('button', { name: label, exact: true })).toBeEnabled();
 });
 
-test('customer entry fails closed when Identity is unavailable while staff retains its Portal access', async ({ page }) => {
+test('customer entry and staff access remain fail-closed when Identity is unavailable', async ({ page }) => {
   let credentialWrites = 0;
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
@@ -137,7 +137,8 @@ test('customer entry fails closed when Identity is unavailable while staff retai
     const scope = hash.startsWith('#staff') ? page.getByRole('region', { name: 'Staff workspace' }) : page;
     await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Create an Onesa account'})).toHaveAttribute('href','https://account.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
     if (hash.startsWith('#staff')) {
-      await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveAttribute('href','https://portal.onesa.eu/admin');
+      await expect(scope.getByText('Onesa Identity sign-in is not connected to this PasoFi service yet. PasoFi access remains disabled until the connection is configured.')).toBeVisible();
+      await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveCount(0);
     } else {
       await expect(scope.getByRole('button',{name:'Retry Onesa sign-in'})).toBeVisible();
       await expect(scope.getByText(/Onesa Identity unavailable/)).toBeVisible();
@@ -149,7 +150,7 @@ test('customer entry fails closed when Identity is unavailable while staff retai
   expect(credentialWrites).toBe(0);
 });
 
-test('a gateway outage keeps customer Identity fail-closed and retains staff access', async ({page}) => {
+test('a gateway outage keeps customer and staff Identity access fail-closed', async ({page}) => {
   let writes = 0;
   await page.route('**/api/**', route => {
     if (route.request().method() !== 'GET') writes++;
@@ -159,7 +160,8 @@ test('a gateway outage keeps customer Identity fail-closed and retains staff acc
     await page.goto('/'+hash);
     const scope = hash.startsWith('#staff') ? page.getByRole('region',{name:'Staff workspace'}) : page.getByRole('main');
     if (hash.startsWith('#staff')) {
-      await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveAttribute('href','https://portal.onesa.eu/admin');
+      await expect(scope.getByText('Onesa Identity sign-in is not connected to this PasoFi service yet. PasoFi access remains disabled until the connection is configured.')).toBeVisible();
+      await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveCount(0);
     } else {
       await expect(scope.getByRole('button',{name:'Retry Onesa sign-in',exact:true})).toBeVisible();
       await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveCount(0);

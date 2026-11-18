@@ -28,7 +28,7 @@ test('customer assertions require an approved PasoFi grant without elevating it 
 test('customer login binds browser and persistent subject; revocation, expiry and sign-out fence access', { skip: !process.env.PAMOFI_TEST_DATABASE_URL }, async (t) => {
   Object.assign(process.env, { DATABASE_URL: process.env.PAMOFI_TEST_DATABASE_URL, PUBLIC_ORIGIN: origin,
     APP_ENV: 'demo', NODE_ENV: 'development', STAFF_MFA_ENCRYPTION_KEY: 'cd'.repeat(32), PASOFI_ONESA_CLIENT_ID: clientId,
-    PASOFI_ONESA_CLIENT_SECRET: clientSecret, PASOFI_ONESA_ISSUER: issuer, PASOFI_ONESA_REDIRECT_URI: origin + '/onesa-callback.html' });
+    PASOFI_ONESA_CLIENT_SECRET: clientSecret, PASOFI_ONESA_MODE: 'portal', PASOFI_ONESA_ISSUER: issuer, PASOFI_ONESA_REDIRECT_URI: origin + '/onesa-callback.html' });
   const app = buildApp();
   t.after(() => app.close());
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });

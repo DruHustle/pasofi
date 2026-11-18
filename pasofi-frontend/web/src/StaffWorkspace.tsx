@@ -151,9 +151,9 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     {step === 'unavailable' && <button className="secondary" onClick={load} disabled={busy}>Retry staff connection</button>}
     {(step === 'login' || step === 'unavailable') && onesaOrigin && <button className="secondary" disabled={busy} onClick={startOnesa}>Sign in with Onesa</button>}
     {!capabilities?.demo && (step === 'login' || step === 'register' || step === 'unavailable') && <div className="workspace-auth">
-      <p>Use your Company Portal account. Staff access requires an approved role and authenticator.</p>
-      {onesaOrigin === undefined && <p role="status">Checking Company Portal sign-in…</p>}
-      {onesaOrigin === null && <p><a href="https://portal.onesa.eu/admin">Sign in to Company Portal</a>. Staff access is awaiting the PasoFi connection.</p>}
+      <p>Use your Onesa Identity account. PasoFi staff actions require an approved PasoFi role and recent multifactor authentication.</p>
+      {onesaOrigin === undefined && <p role="status">Checking Onesa Identity sign-in…</p>}
+      {onesaOrigin === null && <p>Onesa Identity sign-in is not connected to this PasoFi service yet. PasoFi access remains disabled until the connection is configured.</p>}
       <a href={registrationUrl('admin')} onClick={()=>rememberRegistration(true)}>Request administrator access</a>
     </div>}
     {capabilities?.demo && (step === 'login' || step === 'register') && <div className="workspace-auth"><div><h3>{step === 'register' ? 'Apply for staff access' : 'Welcome back'}</h3><p>{step === 'register' ? 'Every staff account needs an authenticator and administrator approval before it can sell vouchers or manage a site.' : 'Sign in with your email, password, and authenticator code.'}</p></div><form className="form-grid" onSubmit={authenticate}>
