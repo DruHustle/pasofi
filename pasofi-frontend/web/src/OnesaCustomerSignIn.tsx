@@ -5,15 +5,17 @@ import { api } from './api';
 export default function OnesaCustomerSignIn({ prominent = false }: { prominent?: boolean }) {
   const [available, setAvailable] = useState<boolean | null>(null), [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
   const opener = useRef<HTMLButtonElement>(null), confirmation = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (confirm) confirmation.current?.focus(); }, [confirm]);
   useEffect(() => {
     const controller = new AbortController();
+    setAvailable(null);
     api<{origin:string|null}>('/api/onesa/availability', {signal:controller.signal})
       .then(value => { if (!controller.signal.aborted) setAvailable(value.origin === location.origin); })
       .catch(() => { if (!controller.signal.aborted) setAvailable(false); });
     return () => controller.abort();
-  }, []);
+  }, [availabilityAttempt]);
   async function signIn() {
     if (busy) return;
     setBusy(true); setError('');
@@ -28,15 +30,10 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     setConfirm(true);
   }
   if (available === null) return <p role="status">Checking Onesa sign-in…</p>;
-  if (!available && prominent) return <nav className="pf-portal-links" aria-label="Company Portal account">
-    <span>Company Portal</span>
-    <a href="https://portal.onesa.eu/admin" aria-label="Sign in to Company Portal">Sign in</a>
-    <a href={registrationUrl('user')} onClick={()=>rememberRegistration()} aria-label="Create an Onesa account">Sign up</a>
-  </nav>;
-  if (!available) return <div className="pf-onesa-sign-in">
-    <a href="https://portal.onesa.eu/admin">Sign in to Company Portal</a>
+  if (!available) return <div className="pf-onesa-sign-in pf-onesa-sign-in-unavailable" role="status">
+    <p>Onesa Identity sign-in is temporarily unavailable. PasoFi customer accounts require Onesa Identity.</p>
+    <button type="button" disabled={busy} onClick={() => setAvailabilityAttempt(attempt => attempt + 1)}>Retry Onesa sign-in</button>
     {signup}
-    <p>PasoFi account access requires a connection to Company Portal.</p>
   </div>;
   return <div className={`pf-onesa-sign-in${prominent ? ' pf-onesa-sign-in-prominent' : ''}`}>
     {prominent && <div className="pf-onesa-sign-in-intro"><strong>Your Onesa account, here in PasoFi</strong><p>Sign in to open your customer account. Browsing bundles needs no account.</p></div>}
