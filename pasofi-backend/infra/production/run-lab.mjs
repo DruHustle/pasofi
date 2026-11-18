@@ -125,7 +125,9 @@ gosu postgres pgbackrest version
     // Exercise the registered-client overlay on an isolated TLS network with
     // a disposable issuer. The genuine gateway and identity image remain in use.
     config.networks.onesa_identity_egress.internal = true;
-    Object.assign(config.services.identity.environment, { PASOFI_ONESA_ISSUER:issuer, PASOFI_ONESA_REDIRECT_URI:callback });
+    // This disposable lab deliberately uses its synthetic legacy Portal-style issuer.
+    // Production overlay defaults to managed Onesa Identity; do not inherit it here.
+    Object.assign(config.services.identity.environment, { PASOFI_ONESA_MODE:'portal', PASOFI_ONESA_ISSUER:issuer, PASOFI_ONESA_REDIRECT_URI:callback });
     config.secrets.lab_portal_selection = {file:join(secrets,'lab_portal_selection')};
     config.services['lab-portal'] = {
       image:env.PAMOFI_IDENTITY_IMAGE, read_only:true, cap_drop:['ALL'], security_opt:['no-new-privileges:true'],
