@@ -115,9 +115,9 @@ already signed-in target. Credentials remain outside URLs and the JavaScript bri
 The private native cookie transport verifies the resulting account before success.
 Physical-device and signed-distribution acceptance remain separate release gates.
 
-### Company Portal staff access
+### Managed Onesa Identity staff access
 
-Production staff authenticate through Company Portal with MFA. Platform administrators require the global administrator and PasoFi administrator grants. A site operator requires an active PasoFi customer grant, a verified Portal subject, and an explicit link to their approved local agent or support record. The operator keeps the existing staff ID, role and assigned sites. Production rejects local staff registration, password sign-in and recovery. The local credential fixtures run in the isolated development demo.
+Production PasoFi staff authenticate through Onesa Identity at `https://auth.onesa.eu/` using the registered confidential PasoFi OIDC client, Code + PKCE, and recent MFA. Onesa Identity issues a signed PasoFi role; PasoFi checks the token against its pinned signing keys and independently enforces the matching approved staff binding for site operators. Company Portal is not a PasoFi authentication provider or fallback. Keep `PASOFI_ONESA_RECORD_ISSUER` set to the legacy Portal issuer while existing customer associations and staff bindings still use that issuer; reconcile those records before changing it. Enable the production overlay only after the confidential PasoFi client, exact `https://pasofi.mobile.onesa.eu/onesa-callback.html` redirect, approved PasoFi roles, client secret, and verified JWKS are present. Production rejects local staff registration, password sign-in and recovery. The local credential fixtures run only in the isolated development demo.
 
 Apply migration 013 and the identity runtime grants before rollout. The identity database owner verifies the Portal issuer and subject and the existing staff ID against the operator assignment, then inserts those three fields into `staff_onesa_bindings`. The application has read-only access to bindings. Removing a binding invalidates its sessions. Changing the local record version also requires a fresh sign-in. No email match creates a binding.
 
