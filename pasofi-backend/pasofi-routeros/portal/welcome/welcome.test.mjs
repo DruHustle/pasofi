@@ -28,6 +28,10 @@ test('welcome auto-connects only when trial is eligible, with manual fallback an
   const source = await read('login.html');
   const eligible = render(source, { trial: 'yes', mac: 'AA:BB:CC:DD:EE:FF' });
   assert.match(eligible, /name="username" value="T-AA:BB:CC:DD:EE:FF"/);
+  assert.match(eligible, /Your first<br>5 minutes are on us/);
+  assert.match(eligible, /Start my free 5 minutes/);
+  assert.match(eligible, /5 minutes per device every 24 hours/);
+  assert.doesNotMatch(render(source, { trial: 'no' }), /Start my free 5 minutes/);
   assert.match(eligible, /id="welcome" action="https:\/\/hotspot\.pasofi\.onesa\.eu\/login" method="post"/);
   assert.match(eligible, /getElementById\('welcome'\).submit/);
   for (const vars of [{ trial: 'no' }, { trial: 'yes', error: 'failed' }]) {
@@ -38,12 +42,12 @@ test('welcome auto-connects only when trial is eligible, with manual fallback an
   assert.doesNotMatch(source, /\$\((?:link-orig|error|username)\)/);
 });
 test('countdown uses router time and returns to login at expiry even after a background pause', async () => {
-  const source = render(await read('status.html'), { 'login-by': 'trial', 'session-time-left-secs': '120' });
+  const source = render(await read('status.html'), { 'login-by': 'trial', 'session-time-left-secs': '300' });
   const script = /<script>([\s\S]*?)<\/script>/.exec(source)[1];
   let now = 0, tick, redirect; const node = {};
   vm.runInNewContext(script, { Number, Math, String, Date: { now: () => now }, document: { getElementById: () => node }, setInterval: fn => { tick = fn; }, location: { replace: url => { redirect = url; } } });
-  assert.equal(node.textContent, '2:00'); now = 65_000; tick(); assert.equal(node.textContent, '0:55');
-  now = 180_000; tick(); assert.equal(redirect, 'https://hotspot.pasofi.onesa.eu/login');
+  assert.equal(node.textContent, '5:00'); now = 65_000; tick(); assert.equal(node.textContent, '3:55');
+  now = 330_000; tick(); assert.equal(redirect, 'https://hotspot.pasofi.onesa.eu/login');
   assert.doesNotMatch(render(await read('status.html'), { 'login-by': 'https' }), /<script>/);
 });
 test('installer escapes templates, preserves the original folder, and changes no access controls', async () => {
