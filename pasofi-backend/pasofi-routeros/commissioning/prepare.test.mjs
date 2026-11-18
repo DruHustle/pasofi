@@ -119,7 +119,7 @@ test('commissioning requires the separate package from SMIPS 7.20 without imposi
     inspected.packages = ['routeros', 'wireless'];
     await assert.rejects(buildPackage(inspected, fixture()), /requires the installed hotspot package in baseline\.packages/);
   }
-  for (const [architecture, version] of [['smips', '7.9'], ['smips', '7.19.5'], ['mipsbe', '7.25.1'], ['arm', '7.25.1']]) {
+  for (const [architecture, version] of [['smips', '7.9'], ['smips', '7.19.5'], ['mipsbe', '7.25.1'], ['mmips', '7.25.1'], ['arm', '7.25.1']]) {
     const inspected = baseline();
     Object.assign(inspected.router, { architecture, version });
     inspected.packages = ['routeros', 'wireless'];
