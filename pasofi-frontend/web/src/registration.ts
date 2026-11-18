@@ -2,7 +2,7 @@ import { api } from './api';
 
 const storageKey = 'pasofi.registration';
 export const registrationUrl = (audience:'user'|'admin') =>
-  'https://auth.onesa.eu/register?audience='+audience+'&product=pasofi&platform=web';
+  'https://account.onesa.eu/register?audience='+audience+'&product=pasofi&platform=web';
 
 function destination(value:string) {
   if(value==='/#staff' || value==='/#connect')return value;

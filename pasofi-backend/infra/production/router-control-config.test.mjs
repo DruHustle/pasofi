@@ -23,6 +23,8 @@ test('router-control contract requires scoped HTTPS443, existing credential fiel
     { username: 'user:other' }, { username: '' }, { password: {} }, { password: 'line\nbreak' },
     { caFile: '/etc/ssl/cert.pem' }, { caFile: '/run/pamofi/routeros-ca/../key' },
   ]) assert.throws(() => validateRouterControlRows([{ ...value, ...patch }]));
+  const second = router(); second.url = value.url;
+  assert.throws(() => validateRouterControlRows([value, second]), /own RouterOS management endpoint/);
   for (const rows of [[], {}, [value, value], [null]]) assert.throws(() => validateRouterControlRows(rows));
 });
 test('offline router-control qualification validates private files and real public trust material without leaking credentials', async () => {

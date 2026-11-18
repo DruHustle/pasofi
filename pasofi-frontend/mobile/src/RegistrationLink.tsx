@@ -35,7 +35,7 @@ export async function watchRegistrationReturn(onReturn:(tab:CustomerTab)=>void) 
 function RegistrationChoice({tab,audience}:{tab:CustomerTab;audience:'user'|'admin'}) {
   const platform=nativePlatform();
   const [failed,setFailed]=useState(false);
-  const href='https://auth.onesa.eu/register?audience='+audience+'&product=pasofi&platform='+(platform??'web');
+  const href='https://account.onesa.eu/register?audience='+audience+'&product=pasofi&platform='+(platform??'web');
   return <><a href={href} onClick={event=>{
     if(!platform)return;
     event.preventDefault();

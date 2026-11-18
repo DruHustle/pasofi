@@ -26,7 +26,7 @@ export PAMOFI_ROUTER_CONTROL_QUALIFIED=false
 node pasofi-backend/infra/production/preflight-router-control.mjs
 ```
 
-The output remains `prepared-only` and prints no credential values. It checks the exact existing runtime schema, unique NAS identifiers, HTTPS scope, private parent, readable individual files, absence of private keys/unreferenced files in the CA mount, and current public certificates. Source/example files contain no deployment credentials.
+The output remains `prepared-only` and prints no credential values. It checks the exact existing runtime schema, unique NAS identifiers and RouterOS endpoint URLs, HTTPS scope, private parent, readable individual files, absence of private keys/unreferenced files in the CA mount, and current public certificates. Source/example files contain no deployment credentials.
 
 ## Explicit deployment input
 
