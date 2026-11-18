@@ -30,8 +30,8 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     setConfirm(true);
   }
   if (available === null) return <p role="status">Checking Onesa sign-in…</p>;
-  if (!available) return <div className="pf-onesa-sign-in pf-onesa-sign-in-unavailable" role="status">
-    <p>Onesa Identity sign-in is temporarily unavailable. PasoFi customer accounts require Onesa Identity.</p>
+  if (!available) return <div className="pf-onesa-sign-in pf-onesa-sign-in-unavailable">
+    <p role="status">Onesa Identity sign-in is temporarily unavailable. PasoFi customer accounts require Onesa Identity.</p>
     <button type="button" disabled={busy} onClick={() => setAvailabilityAttempt(attempt => attempt + 1)}>Retry Onesa sign-in</button>
     {signup}
   </div>;
