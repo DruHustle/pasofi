@@ -74,7 +74,7 @@ export function configuredOnesaStaff(key: Buffer | null, allowed: (origin: strin
   if (!key || !issuer || !clientId || !clientSecret || !uri) return null;
   try {
     const endpoint = new URL(issuer), callback = new URL(uri);
-    const mode = process.env.PASOFI_ONESA_MODE || 'managed';
+    const mode = process.env.PASOFI_ONESA_MODE || 'portal';
     if (mode !== 'portal' && mode !== 'managed') return null;
     const managed = mode === 'managed';
     if (endpoint.protocol !== 'https:' || issuer !== endpoint.origin + (managed ? '/' : '/api/v1/identity') ||
