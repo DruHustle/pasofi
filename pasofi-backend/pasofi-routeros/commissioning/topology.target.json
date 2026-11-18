@@ -1,0 +1,380 @@
+{
+  "schemaVersion": 2,
+  "source": "Owner-reported current cabling plus future Goromonzi design (2026-11-17); not RouterOS readback",
+  "status": "design-unverified",
+  "releaseGate": "physical-acceptance-required",
+  "notes": "Two independent Starlink gateways. Current K0 LAN4 empty, K0 K1/K2 OS3/K3 OS3. Current Starlink->G0->G2->G3 wired. Final Goromonzi target G0 LAN1->G1 TBD, LAN2->O1-5G CPE1->G2 and CPE2->G3, not yet commissioned.",
+  "sites": [
+    {
+      "slug": "kuwadzana",
+      "label": "Kuwadzana",
+      "internet": "Starlink",
+      "gateway": {
+        "label": "K0",
+        "device": "MikroTik hEX",
+        "model": null,
+        "present": "awaiting-live-inventory",
+        "role": "captive-portal-nas",
+        "wan": "ether1",
+        "hotspotOwner": true,
+        "radiusClient": true
+      },
+      "ports": [
+        {
+          "name": "LAN1",
+          "interface": "ether2",
+          "target": "K1",
+          "purpose": "guest",
+          "present": true
+        },
+        {
+          "name": "LAN2",
+          "interface": "ether3",
+          "target": "K2",
+          "purpose": "guest",
+          "present": true
+        },
+        {
+          "name": "LAN3",
+          "interface": "ether4",
+          "target": "K3",
+          "purpose": "guest",
+          "present": true
+        },
+        {
+          "name": "LAN4",
+          "interface": "ether5",
+          "target": null,
+          "purpose": "reserved",
+          "present": false
+        }
+      ],
+      "nodes": [
+        {
+          "label": "K1",
+          "device": "MikroTik hAP lite",
+          "role": "guest-access-point",
+          "present": true,
+          "wirelessBandsGHz": [
+            2.4
+          ],
+          "targetMode": "bridge-ap",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false
+        },
+        {
+          "label": "K2",
+          "device": "Tenda OS3 5GHz 12dBi outdoor CPE",
+          "role": "guest-access-point",
+          "present": true,
+          "targetMode": "5GHz directional AP, phone coverage to be tested",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false,
+          "wirelessBandsGHz": [
+            5
+          ],
+          "antenna": {
+            "gainDbi": 12,
+            "horizontalBeamwidthDegrees": 30
+          },
+          "ethernetPorts": "4x10/100",
+          "physicalVerified": false,
+          "currentDevice": "Tenda OS3 5GHz 12dBi outdoor CPE",
+          "targetDevice": "Tenda OS3 5GHz 12dBi outdoor CPE",
+          "migrationStatus": "owner-reported-connected-config-unverified"
+        },
+        {
+          "label": "K3",
+          "device": "Tenda OS3 5GHz 12dBi outdoor CPE",
+          "role": "guest-access-point",
+          "present": true,
+          "targetMode": "5GHz directional AP, phone coverage to be tested",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false,
+          "wirelessBandsGHz": [
+            5
+          ],
+          "antenna": {
+            "gainDbi": 12,
+            "horizontalBeamwidthDegrees": 30
+          },
+          "ethernetPorts": "4x10/100",
+          "physicalVerified": false,
+          "currentDevice": "Tenda OS3 5GHz 12dBi outdoor CPE",
+          "targetDevice": "Tenda OS3 5GHz 12dBi outdoor CPE",
+          "migrationStatus": "owner-reported-connected-config-unverified"
+        },
+        {
+          "label": "K4",
+          "device": "Technicolor TG789vac v2",
+          "role": "wireless-repeater",
+          "present": true,
+          "upstream": null,
+          "upstreamVerified": false,
+          "targetMode": "repeater-requires-firmware-and-transparent-forwarding-verification",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false,
+          "physicalVerified": false
+        },
+        {
+          "label": "K5",
+          "device": "Mercusys MW301R",
+          "role": "wireless-repeater",
+          "present": true,
+          "upstream": null,
+          "wirelessBandsGHz": [
+            2.4
+          ],
+          "upstreamVerified": false,
+          "targetMode": "2.4GHz-WDS-bridge-or-compatible-extender-mode-to-be-verified",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false,
+          "physicalVerified": false
+        }
+      ],
+      "radioLinks": [],
+      "repeaterLinks": [
+        {
+          "from": null,
+          "to": "K4",
+          "bandGHz": null,
+          "mode": "repeater-unverified",
+          "physicalVerified": false
+        },
+        {
+          "from": null,
+          "to": "K5",
+          "bandGHz": 2.4,
+          "mode": "repeater-unverified",
+          "physicalVerified": false
+        }
+      ],
+      "notes": "Starlink -> K0 WAN. Owner-reported: LAN1/ether2 -> K1 hAP lite; LAN2/ether3 -> K2 Tenda OS3; LAN3/ether4 -> K3 Tenda OS3; LAN4/ether5 EMPTY. K4/K5 repeater links not verified. RouterOS bridge, RADIUS, DHCP, management and RF require readback."
+    },
+    {
+      "slug": "goromonzi",
+      "label": "Goromonzi",
+      "internet": "Starlink",
+      "gateway": {
+        "label": "G0",
+        "device": "MikroTik hAP lite",
+        "model": "RB941-2nD (confirm device)",
+        "present": "awaiting-live-inventory",
+        "role": "captive-portal-nas",
+        "wan": "ether1",
+        "hotspotOwner": true,
+        "radiusClient": true,
+        "upstream": "Starlink",
+        "upstreamVerified": false
+      },
+      "ports": [
+        {
+          "name": "LAN1",
+          "interface": "ether2",
+          "target": "G2",
+          "purpose": "guest",
+          "present": true,
+          "physicalVerified": false
+        },
+        {
+          "name": "LAN2",
+          "interface": "ether3",
+          "target": null,
+          "purpose": "unreported",
+          "present": null
+        },
+        {
+          "name": "LAN3",
+          "interface": "ether4",
+          "target": null,
+          "purpose": "unreported",
+          "present": null
+        }
+      ],
+      "nodes": [
+        {
+          "label": "G3",
+          "device": "Mercusys MR20 AC750",
+          "role": "guest-access-point",
+          "present": true,
+          "targetMode": "transparent AP pending device readback",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false,
+          "wirelessClientQualified": false,
+          "uplinkPort": null,
+          "physicalVerified": false
+        },
+        {
+          "label": "G2",
+          "device": "Mercusys MR20 AC750",
+          "role": "guest-access-point",
+          "present": true,
+          "targetMode": "transparent AP pending device readback",
+          "dhcp": false,
+          "nat": false,
+          "hotspot": false,
+          "radius": false,
+          "wirelessClientQualified": false,
+          "uplinkPort": null,
+          "physicalVerified": false
+        }
+      ],
+      "wiredLinks": [
+        {
+          "from": "G2",
+          "fromPort": "LAN1",
+          "to": "G3",
+          "toPort": null,
+          "purpose": "guest",
+          "reportedConnected": true,
+          "physicalVerified": false
+        }
+      ],
+      "radioLinks": [],
+      "notes": "CURRENT: Starlink into G0 hAP lite (WAN ether1 expected), G0 LAN1/ether2->G2 Mercusys MR20 and G2 LAN1->G3 Mercusys MR20 by Ethernet. Actual router configuration not yet read. FUTURE target is separately represented and must not replace the existing Ethernet link until physical testing.",
+      "historicalNodesNotInReportedChain": [
+        {
+          "label": "G1",
+          "previousRole": "home-access-point",
+          "device": "home AP router (model unverified)",
+          "status": "not-claimed-in-current-chain"
+        },
+        {
+          "label": "CPE1",
+          "previousRole": "backhaul-ap",
+          "device": "Tenda OS3 5GHz directional CPE",
+          "status": "not-claimed-in-current-chain"
+        },
+        {
+          "label": "CPE2",
+          "previousRole": "backhaul-client",
+          "device": "Tenda OS3 5GHz directional CPE",
+          "status": "not-claimed-in-current-chain"
+        },
+        {
+          "label": "G2-RX",
+          "previousRole": "backhaul-client",
+          "device": null,
+          "status": "not-claimed-in-current-chain"
+        }
+      ],
+      "plannedTopology": {
+        "status": "proposed-not-installed",
+        "internet": "Starlink",
+        "gateway": "G0",
+        "ports": [
+          {
+            "name": "LAN1",
+            "interface": "ether2",
+            "target": "G1",
+            "device": null,
+            "purpose": "home",
+            "present": null
+          },
+          {
+            "name": "LAN2",
+            "interface": "ether3",
+            "target": "CPE1",
+            "device": "Tenda O1-5G 11AC outdoor CPE",
+            "purpose": "guest-backhaul",
+            "present": false
+          }
+        ],
+        "nodes": [
+          {
+            "label": "G1",
+            "device": null,
+            "role": "home-access-point",
+            "present": null
+          },
+          {
+            "label": "CPE1",
+            "device": "Tenda O1-5G 11AC outdoor CPE",
+            "role": "backhaul-ap",
+            "present": false
+          },
+          {
+            "label": "G2",
+            "device": "Mercusys MR20 AC750",
+            "role": "guest-access-point",
+            "present": true
+          },
+          {
+            "label": "CPE2",
+            "device": "Tenda O1-5G 11AC outdoor CPE",
+            "role": "backhaul-client",
+            "present": false
+          },
+          {
+            "label": "G3",
+            "device": "Mercusys MR20 AC750",
+            "role": "guest-access-point",
+            "present": true
+          }
+        ],
+        "branchToG2": {
+          "from": "CPE1",
+          "to": "G2",
+          "medium": null,
+          "receiver": null,
+          "qualified": false,
+          "requiresReceiverOrVerifiedEquivalent": true
+        },
+        "radioLinks": [
+          {
+            "from": "CPE1",
+            "to": "CPE2",
+            "bandGHz": 5,
+            "mode": "unverified-bridge",
+            "qualified": false
+          }
+        ],
+        "wiredLinks": [
+          {
+            "from": "CPE2",
+            "to": "G3",
+            "qualified": false
+          }
+        ],
+        "cutover": "Keep current wired G0-G2-G3 path operational until replacement is verified"
+      }
+    }
+  ],
+  "radioReassignment": {
+    "status": "Kuwadzana-OS3-owner-reported; Goromonzi-O1-5G-proposed-not-installed",
+    "currentKuwadzana": [
+      "K2 Tenda OS3",
+      "K3 Tenda OS3"
+    ],
+    "plannedGoromonzi": [
+      "CPE1 Tenda O1-5G",
+      "CPE2 Tenda O1-5G"
+    ],
+    "prerequisites": [
+      "K0 LAN4 empty, never used for G0",
+      "G1 TBD is not installed",
+      "Keep G0-G2-G3 wired path until replacement tested",
+      "CPE1-G2 branch medium and receiver not qualified",
+      "Preserve NAS/site IDs and recoverable management access"
+    ]
+  },
+  "wiringEvidence": {
+    "kind": "owner-reported",
+    "routerConfigReadback": false,
+    "radioQualified": false,
+    "hotspotQualified": false,
+    "customerGo": false
+  }
+}
