@@ -28,7 +28,7 @@ test('an active, verified, MFA-authenticated PasoFi platform administrator is re
 test('staff entry, callback and administrative route require the same browser and live Portal grant', { skip: !process.env.PAMOFI_TEST_DATABASE_URL }, async (t) => {
   Object.assign(process.env, { DATABASE_URL: process.env.PAMOFI_TEST_DATABASE_URL, PUBLIC_ORIGIN: origin,
     APP_ENV: 'production', NODE_ENV: 'production', STAFF_MFA_ENCRYPTION_KEY: randomBytes(32).toString('hex'), PASOFI_ONESA_CLIENT_ID: clientId,
-    PASOFI_ONESA_CLIENT_SECRET: clientSecret, PASOFI_ONESA_ISSUER: issuer, PASOFI_ONESA_REDIRECT_URI: origin + '/onesa-callback.html' });
+    PASOFI_ONESA_CLIENT_SECRET: clientSecret, PASOFI_ONESA_MODE: 'portal', PASOFI_ONESA_ISSUER: issuer, PASOFI_ONESA_REDIRECT_URI: origin + '/onesa-callback.html' });
   const app = buildApp();
   t.after(() => app.close());
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
