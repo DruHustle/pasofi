@@ -24,18 +24,26 @@ export async function startProductSignIn(staff:boolean,returnTo:string) {
 }
 export function resumeRegistration() {
   if(location.pathname!=='/' || location.search!=='?registration=complete')return;
-  let path='/#account';
+  let path='/#account', valid=false;
   try {
     const raw=sessionStorage.getItem(storageKey);
     sessionStorage.removeItem(storageKey);
-    if(!raw)return;
-    const pending=JSON.parse(raw);
-    if(!Number.isFinite(pending.expires) || pending.expires<Date.now() || typeof pending.path!=='string')return;
-    path=destination(pending.path);
-    history.replaceState(null,'',path);
-    const staff=path==='/#staff';
-    void api<{origin:string|null}>(staff?'/api/staff/onesa/availability':'/api/onesa/availability')
-      .then(value=>{if(value.origin===location.origin)return startProductSignIn(staff,path);})
-      .catch(()=>{}); // The restored screen retains its ordinary sign-in and retry controls.
-  } catch { history.replaceState(null,'',path); }
+    if(raw){
+      const pending=JSON.parse(raw);
+      const now=Date.now();
+      if(typeof pending?.path==='string' && Number.isFinite(pending.expires) &&
+          pending.expires>=now && pending.expires<=now+30*60*1000){
+        path=destination(pending.path);
+        valid=true;
+      }
+    }
+  } catch { /* Blocked browser storage cannot authorize a registration return. */ }
+  // A registration-complete query is not proof of account access. Always remove
+  // it, even when the browser has no pending receipt or its receipt expired.
+  history.replaceState(null,'',path);
+  if(!valid)return;
+  const staff=path==='/#staff';
+  void api<{origin:string|null}>(staff?'/api/staff/onesa/availability':'/api/onesa/availability')
+    .then(value=>{if(value.origin===location.origin)return startProductSignIn(staff,path);})
+    .catch(()=>{}); // The restored screen retains its ordinary sign-in and retry controls.
 }
