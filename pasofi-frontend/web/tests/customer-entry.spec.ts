@@ -140,7 +140,7 @@ test('customer entry fails closed when Identity is unavailable while staff retai
       await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveAttribute('href','https://portal.onesa.eu/admin');
     } else {
       await expect(scope.getByRole('button',{name:'Retry Onesa sign-in'})).toBeVisible();
-      await expect(scope.getByText(/Onesa Identity sign-in is temporarily unavailable/)).toBeVisible();
+      await expect(scope.getByText(/Onesa Identity unavailable/)).toBeVisible();
       await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveCount(0);
     }
     await expect(scope.getByRole('button',{name:'Start a new customer account'})).toHaveCount(0);
