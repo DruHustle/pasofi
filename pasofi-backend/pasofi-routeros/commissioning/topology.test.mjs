@@ -4,13 +4,19 @@ import {readFileSync} from 'node:fs';
 import {validateTargetTopology} from './topology.mjs';
 const value=JSON.parse(readFileSync(new URL('./topology.target.json',import.meta.url),'utf8'));
 const copy=()=>structuredClone(value);
-test('wiring is K0 K1/K2/K3 and LAN4 empty, G0 upstream Starlink',()=>{
+test('wiring is K0 K1/K2/K3 and LAN4 empty, G0 connected upstream is accurately recorded',()=>{
  assert.deepEqual(validateTargetTopology(copy()),{status:'design-unverified',sites:['kuwadzana','goromonzi'],physicalAcceptance:false,routersChanged:false,commerceEnabled:false});
  const [k,g]=value.sites;
  assert.deepEqual(k.ports.map(p=>p.target),['K1','K2','K3',null]);
  assert.equal(k.ports[3].present,false);
  assert.equal(g.gateway.wan,'ether1');
- assert.equal(g.gateway.upstream,'Starlink');
+ assert.equal(g.gateway.upstream,'Main Router');
+ assert.equal(g.gateway.upstreamAddress,'192.168.0.1');
+ assert.equal(g.gateway.upstreamVerified,true);
+ assert.equal(g.gateway.plannedUpstream,'Starlink Router');
+ assert.equal(g.gateway.plannedUpstreamVerified,false);
+ assert.equal(g.internet,'Starlink');
+ assert.deepEqual(g.radioLinks,[{from:'CPE1',to:'CPE2',medium:'wireless-bridge',reportedConnected:true,physicalVerified:false,internetAvailableAtCPE2:true,internetEvidence:'owner-confirmed',customerForwardingQualified:false}]);
  assert.deepEqual(g.ports.map(p=>p.target),['CPE1',null,null]);
  assert.equal(g.ports[0].purpose,'cpe-transit');
  assert.equal(g.ports[0].customerForwardingQualified,false);
@@ -27,13 +33,17 @@ test('wiring is K0 K1/K2/K3 and LAN4 empty, G0 upstream Starlink',()=>{
 });
 test('reject obsolete diagrams and premature HotSpot/customer go',()=>{
  const failures={
+  g0InventoryDowngrade:d=>{d.sites[1].gateway.present='awaiting-live-inventory';},
+  k0InventoryOverclaim:d=>{d.sites[0].gateway.present=true;},
   k0Lan4ToG0:d=>{const p=d.sites[0].ports[3];p.present=true;p.target='G0';p.purpose='guest';},
   k0Lan4Busy:d=>{d.sites[0].ports[3].present=true;},
   wrongK2Radio:d=>{d.sites[0].nodes.find(n=>n.label==='K2').device='Tenda O1-5G';},
   claimRadioPass:d=>{d.sites[0].nodes.find(n=>n.label==='K3').physicalVerified=true;},
   g0AssumedK0:d=>{d.sites[1].gateway.upstream='K0:LAN4';},
   g0WrongWAN:d=>{d.sites[1].gateway.wan=null;},
-  g0OldCPE:d=>{d.sites[1].radioLinks.push({from:'CPE1',to:'CPE2'});},
+  cpeBridgeEvidenceMissing:d=>{delete d.sites[1].radioLinks[0].internetEvidence;},
+  cpeBridgeInternetOwnerReportReversed:d=>{d.sites[1].radioLinks[0].internetAvailableAtCPE2=false;},
+  cpeBridgePrematureQualification:d=>{d.sites[1].radioLinks[0].customerForwardingQualified=true;},
   g0WrongLAN1:d=>{d.sites[1].ports[0].target='G2';},
   g0TransitAsGuest:d=>{d.sites[1].ports[0].purpose='guest';},
   g0TransitPrematurelyQualified:d=>{d.sites[1].ports[0].customerForwardingQualified=true;},

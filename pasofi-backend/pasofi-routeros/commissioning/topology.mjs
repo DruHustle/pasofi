@@ -16,8 +16,8 @@ export function validateTargetTopology(d){
  must(k&&g&&d.sites.every(s=>['kuwadzana','goromonzi'].includes(s.slug)),'unexpected_site');
  const allLabels=new Set();
  for(const s of [k,g]){
-  must(s.gateway?.role==='captive-portal-nas'&&s.gateway.hotspotOwner===true&&s.gateway.radiusClient===true&&s.gateway.present==='awaiting-live-inventory','unverified_gateway_required');
-  must(Array.isArray(s.ports)&&Array.isArray(s.nodes)&&Array.isArray(s.radioLinks)&&s.radioLinks.length===0,'unreported_radio_link');
+  must(s.gateway?.role==='captive-portal-nas'&&s.gateway.hotspotOwner===true&&s.gateway.radiusClient===true&&['awaiting-live-inventory',true].includes(s.gateway.present),'unverified_gateway_required');
+  must(Array.isArray(s.ports)&&Array.isArray(s.nodes)&&Array.isArray(s.radioLinks),'unreported_radio_link');
   for(const p of s.ports)must(/^LAN[1-4]$/.test(p.name)&&/^ether[2-5]$/.test(p.interface),'invalid_ether_port');
   for(const n of s.nodes){
    must(!allLabels.has(n.label)&&n.present===true,'duplicate_or_unverified_node');
@@ -26,6 +26,7 @@ export function validateTargetTopology(d){
   }
  }
  must(k.gateway.label==='K0'&&k.gateway.device==='MikroTik hEX'&&k.gateway.wan==='ether1'&&k.internet==='Starlink','k0_gateway_wrong');
+ must(k.gateway.present==='awaiting-live-inventory'&&g.gateway.present===true&&g.gateway.model==='RB941-2nD (verified)','gateway_inventory_evidence_must_be_site_scoped');
  must(k.ports.length===4&&k.nodes.length===5,'k0_inventory_wrong');
  for(const [i,name] of ['K1','K2','K3'].entries()){port(k,i,name,'guest',true);must(get(k,name)?.role==='guest-access-point','guest_ap_missing');}
  port(k,3,null,'reserved',false);
@@ -39,7 +40,8 @@ export function validateTargetTopology(d){
   must(n?.device===model&&n.role==='wireless-repeater'&&n.upstream===null&&n.upstreamVerified===false&&n.physicalVerified===false,'repeaters_not_verified');
  }
  must(k.repeaterLinks?.length===2&&k.repeaterLinks.every(l=>l.from===null&&l.physicalVerified===false),'repeaters_unqualified');
- must(g.gateway.label==='G0'&&g.gateway.device==='MikroTik hAP lite'&&g.gateway.wan==='ether1'&&g.gateway.upstream==='Starlink'&&g.gateway.upstreamVerified===false&&g.internet==='Starlink','g0_independent_starlink');
+ must(g.gateway.label==='G0'&&g.gateway.device==='MikroTik hAP lite'&&g.gateway.wan==='ether1'&&g.gateway.upstream==='Main Router'&&g.gateway.upstreamAddress==='192.168.0.1'&&g.gateway.upstreamVerified===true&&g.gateway.plannedUpstream==='Starlink Router'&&g.gateway.plannedUpstreamVerified===false&&g.internet==='Starlink','g0_current_and_planned_upstream_must_remain_distinct');
+ must(k.radioLinks.length===0&&g.radioLinks.length===1&&g.radioLinks[0].from==='CPE1'&&g.radioLinks[0].to==='CPE2'&&g.radioLinks[0].medium==='wireless-bridge'&&g.radioLinks[0].reportedConnected===true&&g.radioLinks[0].physicalVerified===false&&g.radioLinks[0].internetAvailableAtCPE2===true&&g.radioLinks[0].internetEvidence==='owner-confirmed'&&g.radioLinks[0].customerForwardingQualified===false,'g0_cpe_bridge_internet_owner_confirmed_customer_path_unqualified');
  must(g.ports.length===3&&g.nodes.length===2,'g0_device_graph_wrong');
  const g0Transit=port(g,0,'CPE1','cpe-transit',true);
  must(g0Transit.physicalVerified===false&&g0Transit.ethernetLinkObserved===true&&g0Transit.customerForwardingQualified===false,'g0_cpe1_ether2_not_guest_qualified');

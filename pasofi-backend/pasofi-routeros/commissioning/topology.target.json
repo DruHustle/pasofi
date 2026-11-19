@@ -3,7 +3,7 @@
   "source": "Owner-reported topology plus partial G0 RouterOS live readback (2026-11-19), remaining guest/NAS links not verified",
   "status": "design-unverified",
   "releaseGate": "physical-acceptance-required",
-  "notes": "Separate Starlink sites. K0 as previously planned. G0 WAN ether1 DHCP from upstream main router 192.168.0.1, G0 LAN bridge 192.168.88.5, ether2 now linked to CPE1, ether4 linked to unknown device; CPE1 to G2/G3 customer path not proven. Future Goromonzi O1-5G design still proposed.",
+  "notes": "Separate sites. Current G0 WAN ether1 receives DHCP from upstream main router 192.168.0.1. After setup and testing are complete, G0 is intended to connect upstream to the Starlink router. G0 LAN bridge 192.168.88.5, ether2 linked to CPE1, ether4 linked to unknown device. Owner confirms the CPE1-CPE2 wireless bridge now has Internet; customer admission and G2/G3 access are not qualified. Future Goromonzi O1-5G design still proposed.",
   "sites": [
     {
       "slug": "kuwadzana",
@@ -168,14 +168,17 @@
       "gateway": {
         "label": "G0",
         "device": "MikroTik hAP lite",
-        "model": "RB941-2nD (confirm device)",
-        "present": "awaiting-live-inventory",
+        "model": "RB941-2nD (verified)",
+        "present": true,
         "role": "captive-portal-nas",
         "wan": "ether1",
         "hotspotOwner": true,
         "radiusClient": true,
-        "upstream": "Starlink",
-        "upstreamVerified": false
+        "upstream": "Main Router",
+        "upstreamAddress": "192.168.0.1",
+        "upstreamVerified": true,
+        "plannedUpstream": "Starlink Router",
+        "plannedUpstreamVerified": false
       },
       "ports": [
         {
@@ -246,8 +249,19 @@
           "physicalVerified": false
         }
       ],
-      "radioLinks": [],
-      "notes": "Observed 19 Nov: upstream main router 192.168.0.1 -> G0 ether1 (192.168.0.219 DHCP, tested Internet/DNS), G0 bridge 192.168.88.5, ether2 LAN1 physically connected CPE1 (100Mbps full-duplex) and ether4 linked but far end unidentified. Enabled pilot HotSpot is on different pfi-pilot-br (its pilot Wi-Fi member is inactive), not the bridge with CPE1. CPE1 model/receiving path and G2/G3 client coverage unverified. Prior G2 LAN1-G3 wired link owner-reported, preserve if operational. Future O1-5G cutover separately uncommissioned.",
+      "radioLinks": [
+        {
+          "from": "CPE1",
+          "to": "CPE2",
+          "medium": "wireless-bridge",
+          "reportedConnected": true,
+          "physicalVerified": false,
+          "internetAvailableAtCPE2": true,
+          "internetEvidence": "owner-confirmed",
+          "customerForwardingQualified": false
+        }
+      ],
+      "notes": "Observed 19 Nov: upstream main router 192.168.0.1 -> G0 ether1 (192.168.0.219 DHCP, tested Internet/DNS), G0 bridge 192.168.88.5, ether2 LAN1 connected to CPE1 (100Mbps full-duplex), and ether4 linked but far end unidentified. Owner confirms the CPE1-CPE2 wireless bridge now has Internet; customer admission from G2/G3 and captive-portal enforcement remain unverified. Enabled pilot HotSpot is on different pfi-pilot-br (its pilot Wi-Fi member was inactive at last readback), not the bridge with CPE1. Prior G2 LAN1-G3 wired link was owner-reported; preserve if operational. Future O1-5G cutover separately uncommissioned.",
       "historicalNodesNotInReportedChain": [
         {
           "label": "G1",
@@ -259,13 +273,13 @@
           "label": "CPE1",
           "previousRole": "backhaul-ap",
           "device": "Tenda OS3 5GHz directional CPE",
-          "status": "observed-ether2-link-only-identity-mode-unverified"
+          "status": "ether2-link-and-cpe1-cpe2-bridge-owner-confirmed-internet-customer-path-unqualified"
         },
         {
           "label": "CPE2",
           "previousRole": "backhaul-client",
           "device": "Tenda OS3 5GHz directional CPE",
-          "status": "not-claimed-in-current-chain"
+          "status": "cpe1-bridge-owner-confirmed-internet-customer-path-unqualified"
         },
         {
           "label": "G2-RX",

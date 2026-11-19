@@ -1,7 +1,7 @@
 # G0 Goromonzi read-only first-contact snapshot (observations 19 November 2026).
 # Live: ether1 WAN DHCP 192.168.0.219/24 via main router 192.168.0.1; G0 LAN bridge 192.168.88.5/24.
-# LAN1 ether2 now connected to CPE1, 100Mbps full-duplex. ether4 also active, far-end UNKNOWN.
-# Earlier G0->G2->G3 wired path may have changed. Do not assume CPE1 connects to G2 without device-side verification.
+# LAN1 ether2 connects to CPE1 at 100Mbps full-duplex. Owner confirms the CPE1-CPE2 wireless bridge now has Internet; G2/G3 customer admission is not verified.
+# ether4 remains active, far-end UNKNOWN. The owner confirms G0 bridge Internet; this does not prove captive-portal enforcement or accounting.
 # pfi-pilot-hotspot enabled on pfi-pilot-br, but pilot Wi-Fi is inactive and ether2 belongs to different bridge.
 # Oracle and owner WireGuard peers handshake; the RADIUS comment says site01. Verify distinct NAS/site mapping before activation.
 # READ ONLY. No writes, no raw exports, no passwords or keys. Keep this private topology output off public GitHub.
