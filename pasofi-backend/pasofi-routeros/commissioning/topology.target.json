@@ -247,7 +247,7 @@
         }
       ],
       "radioLinks": [],
-      "notes": "Observed 19 Nov: upstream main router 192.168.0.1 -> G0 ether1 (192.168.0.219 DHCP, tested Internet/DNS), G0 bridge 192.168.88.5, ether2 LAN1 physically connected CPE1 (100Mbps full-duplex) and ether4 linked but far end unidentified. Enabled pilot HotSpot is on different, inactive pfi-pilot-br, not the bridge with CPE1. CPE1 model/receiving path and G2/G3 client coverage unverified. Prior G2 LAN1-G3 wired link owner-reported, preserve if operational. Future O1-5G cutover separately uncommissioned.",
+      "notes": "Observed 19 Nov: upstream main router 192.168.0.1 -> G0 ether1 (192.168.0.219 DHCP, tested Internet/DNS), G0 bridge 192.168.88.5, ether2 LAN1 physically connected CPE1 (100Mbps full-duplex) and ether4 linked but far end unidentified. Enabled pilot HotSpot is on different pfi-pilot-br (its pilot Wi-Fi member is inactive), not the bridge with CPE1. CPE1 model/receiving path and G2/G3 client coverage unverified. Prior G2 LAN1-G3 wired link owner-reported, preserve if operational. Future O1-5G cutover separately uncommissioned.",
       "historicalNodesNotInReportedChain": [
         {
           "label": "G1",
