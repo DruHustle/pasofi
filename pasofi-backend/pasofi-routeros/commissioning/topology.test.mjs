@@ -11,7 +11,11 @@ test('wiring is K0 K1/K2/K3 and LAN4 empty, G0 upstream Starlink',()=>{
  assert.equal(k.ports[3].present,false);
  assert.equal(g.gateway.wan,'ether1');
  assert.equal(g.gateway.upstream,'Starlink');
- assert.deepEqual(g.ports.map(p=>p.target),['G2',null,null]);
+ assert.deepEqual(g.ports.map(p=>p.target),['CPE1',null,null]);
+ assert.equal(g.ports[0].purpose,'cpe-transit');
+ assert.equal(g.ports[0].customerForwardingQualified,false);
+ assert.equal(g.ports[0].ethernetLinkObserved,true);
+ assert.equal(g.ports[2].remoteDeviceVerified,false);
  assert.equal(g.wiredLinks[0].from,'G2');
  assert.equal(g.wiredLinks[0].fromPort,'LAN1');
  assert.equal(g.wiredLinks[0].to,'G3');
@@ -30,7 +34,10 @@ test('reject obsolete diagrams and premature HotSpot/customer go',()=>{
   g0AssumedK0:d=>{d.sites[1].gateway.upstream='K0:LAN4';},
   g0WrongWAN:d=>{d.sites[1].gateway.wan=null;},
   g0OldCPE:d=>{d.sites[1].radioLinks.push({from:'CPE1',to:'CPE2'});},
-  g0WrongLAN1:d=>{d.sites[1].ports[0].target='CPE1';},
+  g0WrongLAN1:d=>{d.sites[1].ports[0].target='G2';},
+  g0TransitAsGuest:d=>{d.sites[1].ports[0].purpose='guest';},
+  g0TransitPrematurelyQualified:d=>{d.sites[1].ports[0].customerForwardingQualified=true;},
+  g0UnknownEther4Trusted:d=>{d.sites[1].ports[2].remoteDeviceVerified=true;},
   g2NAT:d=>{d.sites[1].nodes.find(n=>n.label==='G2').nat=true;},
   g3DHCP:d=>{d.sites[1].nodes.find(n=>n.label==='G3').dhcp=true;},
   chainBroken:d=>{d.sites[1].wiredLinks=[];},
