@@ -9,11 +9,11 @@ type NetworkPoint = { nasId: string; siteId: string; siteName: string; name: str
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const formOrigins = (() => {
   try {
-    const values: unknown = JSON.parse(import.meta.env.VITE_PAMOFI_ROUTER_FORM_ORIGINS || '["https://hotspot.pasofi.onesa.eu","https://hotspot.pamofi.onesa.eu"]');
+    const values: unknown = JSON.parse(import.meta.env.VITE_PAMOFI_ROUTER_FORM_ORIGINS || '["https://hotspot.pasofi.onesa.eu"]');
     if (!Array.isArray(values) || values.length > 20 || !values.every(value => {
       if (typeof value !== 'string') return false;
       const url = new URL(value);
-      return url.protocol === 'https:' && url.origin === value && !url.username && !url.password;
+      return url.protocol === 'https:' && url.origin === value && url.hostname !== 'hotspot.pamofi.onesa.eu' && !url.username && !url.password;
     })) return [] as string[];
     return values as string[];
   } catch { return [] as string[]; }
