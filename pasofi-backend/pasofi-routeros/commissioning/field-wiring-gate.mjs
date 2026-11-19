@@ -14,7 +14,7 @@ export function validateCurrentSiteWiring(siteLabel,topology,baselineInput,commi
  if(!selected)throw Error('site_not_in_topology');
  const baseline=validateBaseline(baselineInput);
  // G0 ether2 currently carries a CPE through the management bridge, while the
- // only enabled HotSpot is on a separate inactive pilot bridge. Neither the
+ // only enabled HotSpot is on a separate pilot bridge whose Wi-Fi port is inactive. Neither the
  // remote endpoint of CPE1 nor the second live ether4 device has been proven.
  // An interface-name match must NEVER approve this path as a customer bridge.
  // Commission a separately inspected VLAN/guest bridge with management
