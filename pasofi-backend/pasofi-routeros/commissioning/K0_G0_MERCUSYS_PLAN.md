@@ -11,6 +11,40 @@
 
 G2 LAN1 -> G3 MR20, presently **wired**. Do not replace this wiring during preliminary configuration.
 
+## Owner-assigned management addresses (19 November 2026; intended, not live-verified)
+
+| Device | Intended management address | Notes |
+|---|---|---|
+| K0 — main MikroTik hEX | `192.168.88.1` | Upstream gateway when G0 is **temporarily** connected to K0 at the same site |
+| K1 — Kuwadzana hAP lite AP | `192.168.88.2` | Downstream AP management on the K0 LAN |
+| G0 — Goromonzi hAP lite | `192.168.88.5` | Required management reachability; determine whether address is on G0's **WAN** or **bridge** before making changes |
+
+These are the owner's **desired** addresses, not evidence of active routing, DHCP bindings or a permanent intersite link. G0 is normally an independent HotSpot/RADIUS NAS. K0 and G0 must not be assumed to share an uplink in their final deployments.
+
+**G0 Internet-loss diagnosis when connected to a main router using `192.168.88.1/24`:**
+
+- **If G0 remains a separate HotSpot gateway:** connect the main router's approved **trusted** upstream port to G0's reviewed WAN (normally `ether1`); if `192.168.88.5/24` is G0's WAN management IP, route via `192.168.88.1`. Its **downstream guest bridge must use a different, nonoverlapping subnet**, verified against all existing routes. Keep WAN out of the guest bridge; check the actual K0 HotSpot guest policy is **not** intercepting G0's uplink. Preserve the G0 captive portal, RADIUS, source NAT/forward policy and its independent rollback. Do not repurpose K0's reserved `ether5` without a reviewed port plan.
+- **If G0 is explicitly repurposed as an AP only:** `192.168.88.5/24` belongs on its management bridge with gateway `192.168.88.1`. Removing G0's routed HotSpot, DHCP and NAT role would change the approved product architecture and requires separate owner review; **do not perform it just to obtain Internet**.
+- **Never use `192.168.88.0/24` for both G0 WAN and G0 guest LAN.** An address being distinct (`.5` versus `.1`) does not make overlapping connected subnets routable.
+
+First collect read-only G0 evidence from an authenticated local RouterOS terminal (sensitive output stays private):
+
+```routeros
+/system identity print
+/interface ethernet monitor ether1 once
+/interface bridge port print
+/ip address print detail
+/ip dhcp-client print detail
+/ip route print detail where dst-address="0.0.0.0/0"
+/ip dns print
+/ip firewall nat print
+/ping 192.168.88.1 count=3
+/ping 1.1.1.1 count=3
+:do { :put [:resolve example.com] } on-error={ :put "DNS_RESOLUTION_FAILED" }
+```
+
+If ether1 has no link, fix the upstream port/cable; if DHCP is unbound, inspect DHCP source and bridge mode; if K0 pings but 1.1.1.1 does not, inspect WAN/LAN overlap, active default route, K0 guest interception and NAT; if public ping succeeds but DNS fails, inspect resolver settings; if router pings but downstream phones fail, inspect G0 guest DHCP, masquerade, HotSpot/walled garden and firewall. Use off-device backup, physical recovery access and RouterOS Safe Mode before any approved change. **Do not claim G0 Internet restored or enable paid HotSpot from these intended addresses.**
+
 ## Future Goromonzi (not commissioned)
 
 G0 LAN1 -> G1 (device TBD); G0 LAN2 -> CPE1 Tenda O1-5G; CPE1 -> G2 via an **unverified receiving path**; CPE1 5 GHz -> CPE2 Tenda O1-5G -> G3. Keep G1 and CPE1/CPE2 out of the *current* commissioning plan. Determine G2 receiver and PTMP limits before cutover.
