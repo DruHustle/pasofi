@@ -1,6 +1,6 @@
 # PasoFi — current physical topology versus final radio design (17 November 2026)
 
-**Current wiring is owner-reported, not verified RouterOS configuration.** Two independent Starlink sites. No device was reconfigured by this change.
+**Historical snapshot only (17 November 2026).** Do **not** treat the Goromonzi direct G0 → G2 path below as current wiring. On 19 November, the operator reported attaching CPE1 to G0 LAN1/`ether2`, and RouterOS confirmed that Ethernet link at 100 Mbps. `ether4` also has a live but unidentified device. The receiving route to G2/G3 and any existing CPE2 radio connection still require verification. Use the [19 November current-port plan](K0_G0_MERCUSYS_PLAN.md), not the historical layout below, for field changes.
 
 ## Kuwadzana: CURRENT
 

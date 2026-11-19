@@ -14,9 +14,11 @@ test('K0 current guest links pass a review-only guard, with ether5 explicitly ex
  assert.throws(()=>verify('K0',['ether2','ether3','ether5']),/guest_interfaces/);
  assert.throws(()=>verify('K0',['ether1','ether2','ether3']),/guest_interfaces/);
 });
-test('G0 current has ether2 only; future CPE1/LAN2 not commissioned',()=>{
- assert.equal(verify('G0',['ether2']).siteLabel,'G0');
- assert.throws(()=>verify('G0',['ether2','ether3']),/guest_interfaces/);
+test('G0 CPE1 transit on management bridge cannot be approved as a guest interface',()=>{
+ assert.throws(()=>verify('G0',['ether2']),/g0_current_cpe1_transit_on_management_bridge_not_qualified/);
+ assert.throws(()=>verify('G0',['ether2','ether3']),/g0_current_cpe1_transit_on_management_bridge_not_qualified/);
+ const inspected=baseline();inspected.router.cpeTransitPort='ether2';
+ assert.throws(()=>verify('G0',['ether2'],inspected),/g0_current_cpe1_transit_on_management_bridge_not_qualified/);
  const swapped=structuredClone(topology);swapped.sites[1].plannedTopology.status='installed';
  assert.throws(()=>verify('G0',['ether2'],baseline(),swapped),/future|unqualified|planned/i);
 });

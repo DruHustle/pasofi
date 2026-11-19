@@ -1,4 +1,4 @@
-**LATEST CURRENT/FINAL DISTINCTION (17 November 2026):** K0 LAN1 K1, LAN2 K2 OS3, LAN3 K3 OS3, LAN4 EMPTY. Goromonzi *currently* Starlink → G0 → G2 → G3 by wired Ethernet. G1 and O1-5G CPE1/CPE2 are a future, uninstalled plan. Older diagram paragraphs below are historical. See [current vs final](ARCHITECTURE_2026-11-17.md).
+**LATEST PARTIAL G0 READBACK (19 November 2026):** K0's owner-reported mapping remains LAN1 K1, LAN2 K2 OS3, LAN3 K3 OS3, LAN4 EMPTY. At Goromonzi, the upstream main router `192.168.0.1` serves G0 `ether1`, with G0 LAN bridge `192.168.88.5`. **G0 LAN1/`ether2` is now connected to CPE1**, with a live 100 Mbps Ethernet link; **`ether4` is also linked but its remote device is unknown**. The older owner-reported wired G0 → G2 → G3 chain has not been reverified after the CPE1 connection. Keep any still-working G2 → G3 Ethernet path and do not assume CPE1 → G2 wireless forwarding. The final O1-5G design and G1 are still uncommissioned. The [17 November diagram](ARCHITECTURE_2026-11-17.md) is historical; use [current G0 evidence and safeguards](K0_G0_MERCUSYS_PLAN.md).
 
 # HotSpot commissioning preparation
 
@@ -150,6 +150,9 @@ uninspected existing network. Re-inspect changed topology before preparing a
 replacement plan; do not remove an observed route merely to satisfy validation.
 
 ## Keep customer and management paths separate
+
+**G0 live safety interlock (19 November):** `field-wiring-gate.mjs` now rejects G0 guest-bridge plans unconditionally while `ether2` carries CPE1 on the existing management `bridge`, `ether4` remains unidentified and the only enabled HotSpot is on a separate pilot bridge whose Wi-Fi member is inactive. This prevents an operator from treating the current CPE Ethernet link as a verified customer HotSpot. Do not bypass the gate or relocate the pilot HotSpot to the management bridge. First design/verify an independently recoverable management path and isolated customer bridge/VLAN, confirm the CPE receiving path and G0's unique Oracle NAS identity, then update the gate with accepted on-site evidence. The **G0_FIRST_CONTACT.rsc** collector is read-only and prints explicitly limited RADIUS/WireGuard metadata, never secrets; its output contains private network information and must not be posted publicly.
+
 
 The validator preserves the baseline's management bridge, WAN, recovery and
 CPE transit interfaces, plus both reserved service-interface names. It will
