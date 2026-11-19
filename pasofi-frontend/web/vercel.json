@@ -44,5 +44,40 @@
       "source": "/connect",
       "destination": "/index.html"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "pasofi.onesa.eu"
+        }
+      ],
+      "destination": "https://pasofi.mobile.onesa.eu/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "pamofi.onesa.eu"
+        }
+      ],
+      "destination": "https://pasofi.mobile.onesa.eu/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "pamofi.vercel.app"
+        }
+      ],
+      "destination": "https://pasofi.mobile.onesa.eu/:path*",
+      "permanent": true
+    }
   ]
 }
