@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "source": "Owner-reported current cabling plus future Goromonzi design (2026-11-17); not RouterOS readback",
+  "source": "Owner-reported topology plus partial G0 RouterOS live readback (2026-11-19), remaining guest/NAS links not verified",
   "status": "design-unverified",
   "releaseGate": "physical-acceptance-required",
-  "notes": "Two independent Starlink gateways. Current K0 LAN4 empty, K0 K1/K2 OS3/K3 OS3. Current Starlink->G0->G2->G3 wired. Final Goromonzi target G0 LAN1->G1 TBD, LAN2->O1-5G CPE1->G2 and CPE2->G3, not yet commissioned.",
+  "notes": "Separate Starlink sites. K0 as previously planned. G0 WAN ether1 DHCP from upstream main router 192.168.0.1, G0 LAN bridge 192.168.88.5, ether2 now linked to CPE1, ether4 linked to unknown device; CPE1 to G2/G3 customer path not proven. Future Goromonzi O1-5G design still proposed.",
   "sites": [
     {
       "slug": "kuwadzana",
@@ -181,10 +181,12 @@
         {
           "name": "LAN1",
           "interface": "ether2",
-          "target": "G2",
-          "purpose": "guest",
+          "target": "CPE1",
+          "purpose": "cpe-transit",
           "present": true,
-          "physicalVerified": false
+          "physicalVerified": false,
+          "ethernetLinkObserved": true,
+          "customerForwardingQualified": false
         },
         {
           "name": "LAN2",
@@ -198,7 +200,9 @@
           "interface": "ether4",
           "target": null,
           "purpose": "unreported",
-          "present": null
+          "present": null,
+          "ethernetLinkObserved": true,
+          "remoteDeviceVerified": false
         }
       ],
       "nodes": [
@@ -243,7 +247,7 @@
         }
       ],
       "radioLinks": [],
-      "notes": "CURRENT: Starlink into G0 hAP lite (WAN ether1 expected), G0 LAN1/ether2->G2 Mercusys MR20 and G2 LAN1->G3 Mercusys MR20 by Ethernet. Actual router configuration not yet read. FUTURE target is separately represented and must not replace the existing Ethernet link until physical testing.",
+      "notes": "Observed 19 Nov: upstream main router 192.168.0.1 -> G0 ether1 (192.168.0.219 DHCP, tested Internet/DNS), G0 bridge 192.168.88.5, ether2 LAN1 physically connected CPE1 (100Mbps full-duplex) and ether4 linked but far end unidentified. Enabled pilot HotSpot is on different, inactive pfi-pilot-br, not the bridge with CPE1. CPE1 model/receiving path and G2/G3 client coverage unverified. Prior G2 LAN1-G3 wired link owner-reported, preserve if operational. Future O1-5G cutover separately uncommissioned.",
       "historicalNodesNotInReportedChain": [
         {
           "label": "G1",
@@ -255,7 +259,7 @@
           "label": "CPE1",
           "previousRole": "backhaul-ap",
           "device": "Tenda OS3 5GHz directional CPE",
-          "status": "not-claimed-in-current-chain"
+          "status": "observed-ether2-link-only-identity-mode-unverified"
         },
         {
           "label": "CPE2",
@@ -348,7 +352,7 @@
             "qualified": false
           }
         ],
-        "cutover": "Keep current wired G0-G2-G3 path operational until replacement is verified"
+        "cutover": "Preserve observed G0-ether2-CPE1 and any functioning G2-G3 Ethernet until alternate isolated guest path and recovery are verified"
       }
     }
   ],
@@ -375,6 +379,7 @@
     "routerConfigReadback": false,
     "radioQualified": false,
     "hotspotQualified": false,
-    "customerGo": false
+    "customerGo": false,
+    "observedG0RouterReadback": "partial-wan-lan-dhcp-bridges-hotspot-radius-wg-2026-11-19; complete serial and Oracle NAS comparison pending"
   }
 }
