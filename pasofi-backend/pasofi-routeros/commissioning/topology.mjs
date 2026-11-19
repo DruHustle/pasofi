@@ -41,8 +41,10 @@ export function validateTargetTopology(d){
  must(k.repeaterLinks?.length===2&&k.repeaterLinks.every(l=>l.from===null&&l.physicalVerified===false),'repeaters_unqualified');
  must(g.gateway.label==='G0'&&g.gateway.device==='MikroTik hAP lite'&&g.gateway.wan==='ether1'&&g.gateway.upstream==='Starlink'&&g.gateway.upstreamVerified===false&&g.internet==='Starlink','g0_independent_starlink');
  must(g.ports.length===3&&g.nodes.length===2,'g0_device_graph_wrong');
- must(port(g,0,'G2','guest',true).physicalVerified===false,'g0_link_unverified');
+ const g0Transit=port(g,0,'CPE1','cpe-transit',true);
+ must(g0Transit.physicalVerified===false&&g0Transit.ethernetLinkObserved===true&&g0Transit.customerForwardingQualified===false,'g0_cpe1_ether2_not_guest_qualified');
  for(const i of [1,2])port(g,i,null,'unreported',null);
+ must(g.ports[2].ethernetLinkObserved===true&&g.ports[2].remoteDeviceVerified===false,'g0_ether4_fare_end_unidentified');
  for(const name of ['G2','G3']){const n=get(g,name);must(n?.device==='Mercusys MR20 AC750'&&n.role==='guest-access-point'&&n.uplinkPort===null&&n.physicalVerified===false,'mr20_must_be_unverified_ap');}
  must(g.wiredLinks?.length===1&&g.wiredLinks[0].from==='G2'&&g.wiredLinks[0].fromPort==='LAN1'&&g.wiredLinks[0].to==='G3'&&g.wiredLinks[0].toPort===null&&g.wiredLinks[0].reportedConnected===true&&g.wiredLinks[0].physicalVerified===false,'g2_lan1_must_feed_g3');
  const p=g.plannedTopology;
@@ -52,7 +54,7 @@ export function validateTargetTopology(d){
  must(p.branchToG2?.from==='CPE1'&&p.branchToG2.to==='G2'&&p.branchToG2.medium===null&&p.branchToG2.receiver===null&&p.branchToG2.qualified===false&&p.branchToG2.requiresReceiverOrVerifiedEquivalent===true,'g2_receiving_link_unknown');
  must(p.radioLinks?.length===1&&p.radioLinks[0].from==='CPE1'&&p.radioLinks[0].to==='CPE2'&&p.radioLinks[0].bandGHz===5&&p.radioLinks[0].qualified===false,'future_rf_not_qualified');
  must(p.wiredLinks?.length===1&&p.wiredLinks[0].from==='CPE2'&&p.wiredLinks[0].to==='G3'&&p.wiredLinks[0].qualified===false,'future_g3_not_qualified');
- must(p.cutover==='Keep current wired G0-G2-G3 path operational until replacement is verified','must_preserve_current_g2_g3');
+ must(p.cutover==='Preserve observed G0-ether2-CPE1 and any functioning G2-G3 Ethernet until alternate isolated guest path and recovery are verified','must_preserve_g0_current_uplink');
  must(d.radioReassignment?.status==='Kuwadzana-OS3-owner-reported; Goromonzi-O1-5G-proposed-not-installed','goromonzi_radio_migration_not_live');
  return {status:'design-unverified',sites:['kuwadzana','goromonzi'],physicalAcceptance:false,routersChanged:false,commerceEnabled:false};
 }
