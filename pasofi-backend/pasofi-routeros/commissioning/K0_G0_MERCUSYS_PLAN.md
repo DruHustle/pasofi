@@ -1,6 +1,6 @@
 # PasoFi router commissioning — current and target kept separate
 
-**G0 live RouterOS readback on 19 November 2026:** WAN `ether1` obtained `192.168.0.219/24` from upstream main router `192.168.0.1`, with working Internet/DNS. G0 LAN bridge is `192.168.88.5/24`; the operator corrected its DHCP gateway/DNS to `.5`. `ether2` (LAN1) has a 100 Mbps link to newly attached **CPE1**, while `ether4` has a live link to an **unidentified** device. CPE1's receiving path, G2/G3 access, and any paid HotSpot session are not yet verified. Kuwadzana entries remain owner-reported and require independent readback.
+**G0 live RouterOS readback and owner follow-up on 19 November 2026:** WAN `ether1` obtained `192.168.0.219/24` from upstream main router `192.168.0.1`, with working Internet/DNS. This is the current upstream during setup. After setup and testing are complete, G0 is intended to connect upstream to the Starlink router; that change has not been performed or verified. G0 LAN bridge is `192.168.88.5/24`; the operator corrected its DHCP gateway/DNS to `.5`. `ether2` (LAN1) has a 100 Mbps link to **CPE1**; the owner now confirms the **CPE1-CPE2 wireless bridge has Internet**. This confirms bridge connectivity only; G2/G3 client admission, captive-portal enforcement, isolation, RADIUS accounting, and any paid HotSpot session remain unverified. `ether4` has a live link to an **unidentified** device. Kuwadzana entries remain owner-reported and require independent readback.
 
 ## Current port contract
 
@@ -43,7 +43,7 @@ First collect read-only G0 evidence from an authenticated local RouterOS termina
 :do { :put [:resolve example.com] } on-error={ :put "DNS_RESOLUTION_FAILED" }
 ```
 
-The router's upstream connectivity and DNS now test successfully. **Customer Internet through CPE1/G2, captive-portal enforcement, isolation and RADIUS accounting are still untested.** The currently enabled `pfi-pilot-hotspot` is bound to `pfi-pilot-br`, while CPE1 enters via `ether2` on the separate `bridge`; the pilot Wi-Fi port was inactive. Its profile advertises `https,trial` and `use-radius=yes`, but that is not evidence of prepaid customer access. The enabled RADIUS client is labelled `site01` at source `10.77.254.2`; both Oracle and owner tunnels have recently handshaken. Verify G0's NAS identity/Oracle registration and the site's trial/paid contract independently, **without removing or resetting any functioning WireGuard tunnel**.
+The router's upstream connectivity and DNS test successfully, and the owner now confirms Internet across the CPE1-CPE2 bridge. **Customer admission through G2/G3, captive-portal enforcement, isolation and RADIUS accounting are still untested.** The currently enabled `pfi-pilot-hotspot` is bound to `pfi-pilot-br`, while CPE1 enters via `ether2` on the separate `bridge`; the pilot Wi-Fi port was inactive at the last readback. Its profile advertises `https,trial` and `use-radius=yes`, but that is not evidence of prepaid customer access. The enabled RADIUS client is labelled `site01` at source `10.77.254.2`; both Oracle and owner tunnels recently handshook. Verify G0's NAS identity/Oracle registration and the site's trial/paid contract independently, **without removing or resetting any functioning WireGuard tunnel**.
 
 ## Future Goromonzi (not commissioned)
 

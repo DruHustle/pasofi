@@ -30,8 +30,9 @@ const commands=[
  '/ip service print'
 ];
 test('G0 inventory is exact-command allowlisted, read-only, and excludes credentials',()=>{
- assert.match(script,/LAN1 ether2 now connected to CPE1/);
- assert.match(script,/ether4 also active, far-end UNKNOWN/);
+ assert.match(script,/LAN1 ether2 connects to CPE1/);
+ assert.match(script,/Owner confirms the CPE1-CPE2 wireless bridge now has Internet/);
+ assert.match(script,/ether4 remains active, far-end UNKNOWN/);
  assert.match(script,/pfi-pilot-hotspot enabled on pfi-pilot-br/);
  assert.match(script,/RADIUS comment says site01/);
  const expected=new Set(commands);
