@@ -14,8 +14,8 @@ period, the normal screen offers Pasofi; technical login is a collapsed
 fallback. `alogin.html` uses a fixed status destination, avoiding arbitrary
 incoming redirect destinations. The same styling covers logout.
 
-The intended owner-requested policy is 2 minutes per device every 24 hours,
-with 1 Mbps upload and 3 Mbps download. RouterOS trial eligibility is based on
+The intended owner-requested policy is 5 minutes per device every 24 hours,
+with 1 Mbps upload and 3 Mbps download. Verify each K0/G0 profile uses exactly `trial-uptime-limit=5m` and `trial-uptime-reset=1d` before publishing this copy. RouterOS trial eligibility is based on
 MAC address, not a verified person; it is a small welcome allowance, not paid
 entitlement or a tamper-proof identity quota. It must not create a cash sale
 or paid ledger entry. Paid RADIUS accounting needs its own commissioning.
