@@ -13,7 +13,14 @@ export function validateCurrentSiteWiring(siteLabel,topology,baselineInput,commi
  const selected=topology.sites.find(s=>s.gateway.label===siteLabel);
  if(!selected)throw Error('site_not_in_topology');
  const baseline=validateBaseline(baselineInput);
- const expected=siteLabel==='K0'?['ether2','ether3','ether4']:['ether2'];
+ // G0 ether2 currently carries a CPE through the management bridge, while the
+ // only enabled HotSpot is on a separate inactive pilot bridge. Neither the
+ // remote endpoint of CPE1 nor the second live ether4 device has been proven.
+ // An interface-name match must NEVER approve this path as a customer bridge.
+ // Commission a separately inspected VLAN/guest bridge with management
+ // recovery, then update this gate from verified live acceptance evidence.
+ if(siteLabel==='G0')throw Error('g0_current_cpe1_transit_on_management_bridge_not_qualified_for_guest_hotspot');
+ const expected=['ether2','ether3','ether4'];
  if(baseline.router.wanPort!=='ether1')throw Error('actual_WAN_must_be_reconciled_before_using_port_contract');
  const interfaces=commissioningPlan?.customer?.interfaces;
  if(!Array.isArray(interfaces)||interfaces.length!==expected.length||new Set(interfaces).size!==expected.length||
