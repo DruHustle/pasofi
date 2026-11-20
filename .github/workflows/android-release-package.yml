@@ -8,12 +8,6 @@ on:
       - ".github/workflows/android-release-package.yml"
       - "pasofi-frontend/mobile/**"
   pull_request:
-    paths:
-      - ".github/workflows/android-release-package.yml"
-      - "pasofi-frontend/mobile/scripts/sign-release-apk.sh"
-      - "pasofi-frontend/mobile/scripts/test-release-apk.py"
-      - "pasofi-frontend/mobile/scripts/release-bundle.py"
-      - "pasofi-frontend/mobile/scripts/installed-checkout-status.py"
 
 permissions:
   contents: read

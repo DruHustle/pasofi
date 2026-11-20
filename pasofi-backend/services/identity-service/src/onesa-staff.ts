@@ -26,7 +26,7 @@ export function adminAssertion(input: unknown, config: Configuration, now: numbe
       typeof value.email !== 'string' || !value.email.includes('@') || value.email.length > 254 ||
       typeof value.name !== 'string' || !value.name.trim() || value.name.length > 200 ||
       !Array.isArray(value.onesa_applications) || !value.onesa_applications.includes('pasofi') ||
-      !Array.isArray(value.onesa_roles) || !value.onesa_roles.includes('global_admin') || roles?.pasofi !== 'admin' ||
+      !Array.isArray(value.onesa_roles) || !value.onesa_roles.includes('global_admin') || !['admin', 'administrator'].includes(String(roles?.pasofi)) ||
       !Array.isArray(value.amr) || !value.amr.some(method => method === 'otp' || method === 'mfa') ||
       typeof value.exp !== 'number' || !Number.isSafeInteger(value.exp) || value.exp <= now ||
       typeof value.auth_time !== 'number' || !Number.isSafeInteger(value.auth_time) ||
@@ -38,7 +38,7 @@ export function customerAssertion(input: unknown, config: Configuration, now: nu
   if (!input || typeof input !== 'object') throw denied();
   const value = input as Record<string, unknown>;
   const roles = value.onesa_product_roles as Record<string, unknown> | undefined;
-  if (roles?.pasofi === 'admin') return adminAssertion(input, config, now);
+  if (roles?.pasofi === 'admin' || roles?.pasofi === 'administrator') return adminAssertion(input, config, now);
   if (value.active !== true || value.iss !== config.issuer || value.aud !== config.clientId ||
       typeof value.sub !== 'string' || !uuid.test(value.sub) || value.email_verified !== true ||
       typeof value.email !== 'string' || !value.email.includes('@') || value.email.length > 254 ||
@@ -51,7 +51,7 @@ export function customerAssertion(input: unknown, config: Configuration, now: nu
 function staffAssertion(input: unknown, config: Configuration, now: number): Admin {
   const identity = customerAssertion(input, config, now);
   const claims = input as { onesa_product_roles: { pasofi: string }; amr?: unknown };
-  if (claims.onesa_product_roles.pasofi === 'admin') return identity;
+  if (claims.onesa_product_roles.pasofi === 'admin' || claims.onesa_product_roles.pasofi === 'administrator') return identity;
   if (!Array.isArray(claims.amr) || !claims.amr.some(method => method === 'mfa' || method === 'otp')) throw denied();
   return { ...identity, siteOperator: true };
 }
@@ -187,16 +187,16 @@ export class OnesaStaff {
         // Customer access requires its own product grant. Legacy global roles
         // are outside the managed resource-token contract.
         if (roles.includes('customer')) return identity;
-        if (roles.length===1 && roles[0]==='admin' && freshMfa)
+        if (roles.length===1 && (roles[0]==='admin' || roles[0]==='administrator') && freshMfa)
           return {...identity,authenticated:mfa as number,expires:Math.min(identity.expires,(mfa as number)+300)};
         throw denied();
       }
       // Every managed staff role, including administrator, needs its matching
       // approved local binding. Multiple staff roles cannot select a weaker
       // binding based on claim order or bypass product-owned approval.
-      const localRoles = roles.filter(role => role === 'admin' || role === 'agent' || role === 'support');
+      const localRoles = roles.filter(role => role === 'admin' || role === 'administrator' || role === 'agent' || role === 'support');
       if (localRoles.length !== 1 || !freshMfa) throw denied();
-      return { ...identity, localRole: localRoles[0] as 'admin' | 'agent' | 'support', siteOperator: true as const,
+      return { ...identity, localRole: (localRoles[0] === 'administrator' ? 'admin' : localRoles[0]) as 'admin' | 'agent' | 'support', siteOperator: true as const,
         authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
     }
     const { clientId, clientSecret, issuer } = this.config;
