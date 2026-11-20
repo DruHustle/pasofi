@@ -19,8 +19,7 @@ cat > "$tmp/pamofi-cert-renew" <<'EOF'
 set -euo pipefail
 umask 077
 root=/home/ubuntu/pamofi/production
-release=/home/ubuntu/pamofi/releases/f202fabde8275ad7887c1f30d1426f8d5b1b4733-arm64/source/pamofi-backend/infra/production
-host=api.pamofi.onesa.eu
+hosts=(api.pasofi.onesa.eu hotspot.pasofi.mobile.onesa.eu)
 cert_name=pamofi-api-onesaeu
 image=pamofi-certbot:5.9.0-arm64
 dry=false
@@ -39,7 +38,7 @@ docker run --label eu.onesa.product=pasofi --rm --network host --memory 256m --p
 if [ "$dry" = true ]; then echo 'Certificate renewal dry run passed.'; exit 0; fi
 cert="$root/acme/config/live/$cert_name/fullchain.pem"
 key="$root/acme/config/live/$cert_name/privkey.pem"
-openssl x509 -in "$cert" -noout -checkhost "$host" -checkend 1814400 >/dev/null
+for host in "${hosts[@]}"; do openssl x509 -in "$cert" -noout -checkhost "$host" -checkend 1814400 >/dev/null; done
 certpub=$(openssl x509 -in "$cert" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}')
 keypub=$(openssl pkey -in "$key" -pubout -outform DER | sha256sum | awk '{print $1}')
 [ "$certpub" = "$keypub" ] || { echo 'Renewed certificate and key do not match.' >&2; exit 1; }
@@ -48,8 +47,39 @@ if ! cmp -s "$cert" "$root/secrets/public_tls_cert" || ! cmp -s "$key" "$root/se
  install -o ubuntu -g ubuntu -m 0444 "$key" "$root/secrets/public_tls_key.next"
  mv -f "$root/secrets/public_tls_cert.next" "$root/secrets/public_tls_cert"
  mv -f "$root/secrets/public_tls_key.next" "$root/secrets/public_tls_key"
- cd "$release"
- docker compose --env-file "$root/compose.env" -f compose.yaml -f vercel.compose.yaml -f ../backup-production/compose.yaml -f "$root/networks.compose.yaml" -f "$root/public.compose.yaml" up -d --no-deps --force-recreate --wait --wait-timeout 120 gateway
+ mapfile -t gateways < <(docker ps --filter label=com.docker.compose.project=pamofi-production --filter label=com.docker.compose.service=gateway --format '{{.ID}}')
+ [ "${#gateways[@]}" -eq 1 ] || { echo 'Expected exactly one running PasoFi gateway; refusing recreation.' >&2; exit 1; }
+ gateway=${gateways[0]}
+ label() { docker inspect --format "{{ index .Config.Labels \"com.docker.compose.$1\" }}" "$gateway"; }
+ project=$(label project)
+ workdir=$(label project.working_dir)
+ config_list=$(label project.config_files)
+ env_list=$(label project.environment_file)
+ [ "$project" = pamofi-production ] && [ -n "$workdir" ] && [ -n "$config_list" ] && [ -n "$env_list" ] || { echo 'The gateway Compose provenance is incomplete; refusing recreation.' >&2; exit 1; }
+ case "$workdir" in /var/lib/onesa/pasofi-release-*|/home/ubuntu/pamofi/releases/*|/home/ubuntu/pamofi/production) ;; *) echo 'Unexpected gateway Compose working directory; refusing recreation.' >&2; exit 1;; esac
+ [ -d "$workdir" ] && [ ! -L "$workdir" ] || { echo 'Gateway Compose working directory is unavailable or linked.' >&2; exit 1; }
+ lockfile="$workdir/.pasofi-release-$project.lock"
+ if [ ! -e "$lockfile" ]; then install -o ubuntu -g ubuntu -m 0600 /dev/null "$lockfile"; fi
+ [ -f "$lockfile" ] && [ ! -L "$lockfile" ] || { echo 'Gateway deployment lock is unavailable or linked.' >&2; exit 1; }
+ exec 9<>"$lockfile"
+ flock -n 9 || { echo 'A PasoFi release is in progress; certificate sync will retry next time.' >&2; exit 1; }
+ IFS=, read -r -a compose_files <<< "$config_list"
+ IFS=, read -r -a env_files <<< "$env_list"
+ compose=(docker compose --project-name "$project" --project-directory "$workdir" --profile '*')
+ for path in "${env_files[@]}"; do
+   case "$path" in /dev/null|/var/lib/onesa/pasofi-release-*|/home/ubuntu/pamofi/releases/*|/home/ubuntu/pamofi/production/*) ;; *) echo 'Unexpected gateway Compose environment path; refusing recreation.' >&2; exit 1;; esac
+   [ -f "$path" ] && [ ! -L "$path" ] || { echo 'Gateway Compose environment file is unavailable or linked.' >&2; exit 1; }
+   compose+=(--env-file "$path")
+ done
+ for path in "${compose_files[@]}"; do
+   case "$path" in /var/lib/onesa/pasofi-release-*|/home/ubuntu/pamofi/releases/*|/home/ubuntu/pamofi/production/*) ;; *) echo 'Unexpected gateway Compose file path; refusing recreation.' >&2; exit 1;; esac
+   [ -f "$path" ] && [ ! -L "$path" ] || { echo 'Gateway Compose file is unavailable or linked.' >&2; exit 1; }
+   compose+=(-f "$path")
+ done
+ expected_hash=$(label config-hash)
+ actual_hash=$("${compose[@]}" config --hash gateway | awk '$1 == "gateway" { print $2 }')
+ [ -n "$expected_hash" ] && [ "$actual_hash" = "$expected_hash" ] || { echo 'Current gateway Compose configuration differs from the running container; refusing recreation.' >&2; exit 1; }
+ "${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 120 gateway
 fi
 echo 'PamoFi certificate is valid and up to date.'
 EOF

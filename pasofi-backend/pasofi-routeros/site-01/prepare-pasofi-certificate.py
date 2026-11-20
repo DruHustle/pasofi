@@ -13,7 +13,8 @@ import sys
 import tempfile
 
 EXPECTED = '0B82C568EC209746A1BE140B9D84124AF8C46E1450257144230B68B62364E564'
-HOST = 'hotspot.pasofi.onesa.eu'
+HOST = 'login.pasofi.mobile.onesa.eu'
+CONTROLLER_HOST = 'hotspot.pasofi.mobile.onesa.eu'
 CERT_DIR = '/home/ubuntu/pamofi/production/acme/config/live/pasofi-hotspot-transition'
 
 
@@ -44,13 +45,14 @@ def make_bundle(password, expected=EXPECTED, parent='/private/tmp'):
                      '-passin', 'stdin'], password_bytes).stdout
         if chain.count(b'-----BEGIN CERTIFICATE-----') < 2:
             raise ValueError('The bundle does not contain the certificate chain.')
+        for hostname in (HOST, CONTROLLER_HOST):
+            checked = run(['openssl', 'x509', '-noout', '-checkhost', hostname], chain).stdout
+            if b'does match certificate' not in checked:
+                raise ValueError(f'The certificate does not cover required PasoFi hostname {hostname}.')
         leaf = run(['openssl', 'x509', '-noout', '-fingerprint', '-sha256'], chain).stdout
         fingerprint = leaf.decode('ascii').strip().split('=', 1)[-1].replace(':', '').upper()
         if fingerprint != expected:
-            raise ValueError('The certificate fingerprint differs from the reviewed certificate.')
-        checked = run(['openssl', 'x509', '-noout', '-checkhost', HOST], chain).stdout
-        if b'does match certificate' not in checked:
-            raise ValueError('The certificate does not cover the PasoFi hostname.')
+            raise ValueError('The certificate fingerprint differs from the reviewed certificate. Review the newly issued portal certificate and pin its fingerprint before import.')
         run(['openssl', 'x509', '-noout', '-checkend', '604800'], chain)
         info = run(['openssl', 'pkcs12', '-in', str(target), '-noout', '-info',
                     '-passin', 'stdin'], password_bytes)

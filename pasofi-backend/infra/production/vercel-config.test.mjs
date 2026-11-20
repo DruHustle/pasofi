@@ -80,12 +80,13 @@ test('offline preflight checks token, certificate hostname/key and reports prepa
   const assets = join(directory, 'hotspot-web'); await mkdir(assets);
   await writeFile(join(assets, 'index.html'), '<script type="module" src="/assets/index.js"></script>');
   await writeFile(join(assets, 'hotspot-build.json'), '{"apiPrefix":"/portal-api"}\n');
-  const portalEnv = { ...env, PASOFI_HOTSPOT_PORTAL: 'true', PASOFI_HOTSPOT_PUBLIC_ORIGIN: 'https://api.pamofi.test', PASOFI_PUBLIC_ORIGIN_ALIASES: '["https://api.pamofi.test"]', PASOFI_HOTSPOT_WEB_DIR: assets };
+  const portalEnv = { ...env, PASOFI_HOTSPOT_PORTAL: 'true', PASOFI_HOTSPOT_PUBLIC_HOST: 'api.pamofi.test', PASOFI_HOTSPOT_PUBLIC_ORIGIN: 'https://api.pamofi.test', PASOFI_PUBLIC_ORIGIN_ALIASES: '["https://api.pamofi.test"]', PASOFI_HOTSPOT_WEB_DIR: assets };
   assert.equal((await inspectVercelConfiguration(portalEnv)).hotspotPortal.origin, 'https://api.pamofi.test');
   for (const change of [
     { PASOFI_HOTSPOT_PORTAL: 'yes' }, { PASOFI_PUBLIC_ORIGIN_ALIASES: '[]' },
     { PASOFI_PUBLIC_ORIGIN_ALIASES: '["https://api.pamofi.test","http://insecure.test"]' },
     { PASOFI_HOTSPOT_PUBLIC_ORIGIN: 'https://wrong.pamofi.test', PASOFI_PUBLIC_ORIGIN_ALIASES: '["https://wrong.pamofi.test"]' },
+    { PASOFI_HOTSPOT_PUBLIC_HOST: 'wrong.pamofi.test' },
     { PASOFI_HOTSPOT_PUBLIC_ORIGIN: 'https://api.pamofi.test/' }, { PASOFI_HOTSPOT_WEB_DIR: './relative' },
   ]) await assert.rejects(inspectVercelConfiguration({ ...portalEnv, ...change }));
   await writeFile(join(assets, 'hotspot-build.json'), '{"apiPrefix":"/api"}\n');

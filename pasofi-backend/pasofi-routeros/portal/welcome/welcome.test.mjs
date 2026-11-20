@@ -32,7 +32,7 @@ test('welcome auto-connects only when trial is eligible, with manual fallback an
   assert.match(eligible, /Start my free 5 minutes/);
   assert.match(eligible, /5 minutes per device every 24 hours/);
   assert.doesNotMatch(render(source, { trial: 'no' }), /Start my free 5 minutes/);
-  assert.match(eligible, /id="welcome" action="https:\/\/hotspot\.pasofi\.onesa\.eu\/login" method="post"/);
+  assert.match(eligible, /id="welcome" action="https:\/\/login\.pasofi\.mobile\.onesa\.eu\/login" method="post"/);
   assert.match(eligible, /getElementById\('welcome'\).submit/);
   for (const vars of [{ trial: 'no' }, { trial: 'yes', error: 'failed' }]) {
     assert.doesNotMatch(render(source, vars), /<script>/);
@@ -47,7 +47,7 @@ test('countdown uses router time and returns to login at expiry even after a bac
   let now = 0, tick, redirect; const node = {};
   vm.runInNewContext(script, { Number, Math, String, Date: { now: () => now }, document: { getElementById: () => node }, setInterval: fn => { tick = fn; }, location: { replace: url => { redirect = url; } } });
   assert.equal(node.textContent, '5:00'); now = 65_000; tick(); assert.equal(node.textContent, '3:55');
-  now = 330_000; tick(); assert.equal(redirect, 'https://hotspot.pasofi.onesa.eu/login');
+  now = 330_000; tick(); assert.equal(redirect, 'https://login.pasofi.mobile.onesa.eu/login');
   assert.doesNotMatch(render(await read('status.html'), { 'login-by': 'https' }), /<script>/);
 });
 test('installer escapes templates, preserves the original folder, and changes no access controls', async () => {
@@ -91,9 +91,9 @@ test('site-specific pages keep every login, countdown and app link on its select
   assert.match(installer, /dns-name\] != "hotspot-lawfield\.example\.com"/);
   assert.doesNotMatch(installer, /login-by=|\/ip firewall|walled-garden|\/radius|disabled=no|password=/);
   // Swapping the two default names must not replace an inserted origin twice.
-  const swapped = await buildPages({ hotspotOrigin: 'https://pasofi.onesa.eu', appOrigin: 'https://hotspot.pasofi.onesa.eu' });
+  const swapped = await buildPages({ hotspotOrigin: 'https://pasofi.onesa.eu', appOrigin: 'https://hotspot.pasofi.mobile.onesa.eu' });
   assert.match(swapped['login.html'], /action="https:\/\/pasofi\.onesa\.eu\/login"/);
-  assert.match(swapped['login.html'], /href="https:\/\/hotspot\.pasofi\.onesa\.eu\/connect"/);
+  assert.match(swapped['login.html'], /href="https:\/\/hotspot\.pasofi\.mobile\.onesa\.eu\/connect"/);
 });
 
 test('site inputs reject unsafe origins and escape HTML and RouterOS portal tokens', async () => {

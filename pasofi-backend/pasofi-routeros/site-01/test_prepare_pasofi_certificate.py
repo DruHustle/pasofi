@@ -19,11 +19,12 @@ class BundleTest(unittest.TestCase):
             key, cert = root / 'key.pem', root / 'cert.pem'
             subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
                             '-keyout', str(key), '-out', str(cert), '-days', '30',
-                            '-subj', '/CN=hotspot.pasofi.onesa.eu',
-                            '-addext', 'subjectAltName=DNS:hotspot.pasofi.onesa.eu'],
+                            '-subj', '/CN=login.pasofi.mobile.onesa.eu',
+                            '-addext', 'subjectAltName=DNS:login.pasofi.mobile.onesa.eu,DNS:hotspot.pasofi.mobile.onesa.eu'],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
             pem = cert.read_bytes()
             fingerprint = module.run(['openssl', 'x509', '-noout', '-fingerprint', '-sha256'], pem).stdout.decode().strip().split('=')[-1].replace(':', '')
+            self.assertEqual(module.CONTROLLER_HOST, 'hotspot.pasofi.mobile.onesa.eu')
             password = 'temporary-test-passphrase-only'
             payload = module.run(['openssl', 'pkcs12', '-export', '-in', str(cert), '-inkey', str(key),
                                   '-certfile', str(cert), '-passout', 'stdin'], (password + '\n').encode()).stdout

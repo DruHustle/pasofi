@@ -10,6 +10,12 @@ services:
     environment:
       NETWORK_RECONCILER_ENABLED: ${PAMOFI_ROUTER_CONTROL_QUALIFIED:?Set explicit router-control qualification to true or false}
       ROUTEROS_ROUTERS_FILE: /run/secrets/routeros_routers
+    # Split-horizon only inside the controller. Public clients must continue
+    # resolving the captive-portal name to the Oracle gateway. RouterOS serves
+    # this same SAN on K0's private owner tunnel; the resolver validates the
+    # hostname and pins the HTTPS request to this RFC1918 endpoint.
+    extra_hosts:
+      - "hotspot.pasofi.onesa.eu:10.78.254.4"
     secrets:
       - routeros_routers
     volumes:
