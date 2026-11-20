@@ -6,7 +6,7 @@ Build from the release commit in this mobile directory with the supported Node a
 
 ```sh
 npm ci
-export VITE_PAMOFI_API_BASE_URL=https://api.pasofi.onesa.eu
+export VITE_PAMOFI_API_BASE_URL=https://pasofi.mobile.onesa.eu
 npm run build
 npx --no-install cap sync android
 (cd android && bash gradlew :app:assembleRelease :app:bundleRelease)
@@ -58,7 +58,7 @@ On a Mac with the supported Xcode and a signed-in owner account, set `APPLE_TEAM
 
 ```sh
 npm ci
-export VITE_PAMOFI_API_BASE_URL=https://api.pasofi.onesa.eu
+export VITE_PAMOFI_API_BASE_URL=https://pasofi.mobile.onesa.eu
 npm run build
 npx --no-install cap sync ios
 xcodebuild -project ios/App/App.xcodeproj -scheme App \
