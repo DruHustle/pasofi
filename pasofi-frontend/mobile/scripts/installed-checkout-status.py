@@ -141,6 +141,13 @@ if __name__ == "__main__":
             if locate("Account access is paused for this app", nodes=nodes):
                 print("Installed configured app reports account access paused before checkout. No payment was attempted.", flush=True)
                 raise SystemExit(0)
+            for gate in (
+                "The configured PasoFi service could not be reached. Your offline preview is still available.",
+                "The configured PasoFi service did not respond in time. Your offline preview is still available.",
+            ):
+                if locate(gate, nodes=nodes):
+                    print("Installed configured app reports the service unavailable and keeps account access and checkout closed. No payment was attempted.", flush=True)
+                    raise SystemExit(0)
             if locate("No account is active in this app", nodes=nodes):
                 break
             time.sleep(1)
