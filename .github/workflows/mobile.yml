@@ -242,7 +242,7 @@ jobs:
       - name: Archive unsigned iPhoneOS Release with production web assets
         if: steps.device_archive.outputs.required == 'true'
         env:
-          VITE_PAMOFI_API_BASE_URL: https://api.pasofi.onesa.eu
+          VITE_PAMOFI_API_BASE_URL: https://pasofi.mobile.onesa.eu
         run: |
           npm run build
           npx --no-install cap copy ios
@@ -290,7 +290,7 @@ jobs:
             \( -iname '*.mobileprovision' -o -iname '*.provisionprofile' -o -iname '*.p12' -o -iname '*.pfx' \
             -o -iname '*.p8' -o -iname '*.key' -o -iname '*.keychain*' \) -print -quit)
           test -z "$forbidden"
-          node -e 'const config = require(process.argv[1]); if (config.appId !== "com.onesa.pasofi" || config.plugins?.PasoFiCustomerApi?.origin !== "https://api.pasofi.onesa.eu") process.exit(1)' "$app/capacitor.config.json"
+          node -e 'const config = require(process.argv[1]); if (config.appId !== "com.onesa.pasofi" || config.plugins?.PasoFiCustomerApi?.origin !== "https://pasofi.mobile.onesa.eu") process.exit(1)' "$app/capacitor.config.json"
           git rev-parse HEAD > "$output/SOURCE_COMMIT.txt"
           xcodebuild -version > "$output/XCODE_VERSION.txt"
           printf '%s\n' 'Generic iPhoneOS Release, arm64, no distribution signature. For operator inspection.' > "$output/BUILD_CONFIGURATION.txt"
@@ -338,7 +338,7 @@ jobs:
       - name: Compile and retain the HTTPS-configured iPhone simulator Release
         id: configured
         env:
-          VITE_PAMOFI_API_BASE_URL: https://api.pasofi.onesa.eu
+          VITE_PAMOFI_API_BASE_URL: https://pasofi.mobile.onesa.eu
         run: |
           npm run build
           npx --no-install cap copy ios
@@ -354,8 +354,8 @@ jobs:
           # Reject a build that merely carries an after-the-fact signature.
           xcrun otool -arch arm64 -l "$app/App" | grep -E 'sectname __entitlements' > "$RUNNER_TEMP/pasofi-entitlement-section.txt"
           codesign --verify --strict "$app"
-          node -e 'const c=require("./"+process.argv[1]+"/capacitor.config.json"); if(c.appId!=="com.onesa.pasofi" || c.plugins?.PasoFiCustomerApi?.origin!=="https://api.pasofi.onesa.eu")process.exit(1)' "$app"
-          grep -Fql 'https://api.pasofi.onesa.eu' "$app"/public/assets/*.js
+          node -e 'const c=require("./"+process.argv[1]+"/capacitor.config.json"); if(c.appId!=="com.onesa.pasofi" || c.plugins?.PasoFiCustomerApi?.origin!=="https://pasofi.mobile.onesa.eu")process.exit(1)' "$app"
+          grep -Fql 'https://pasofi.mobile.onesa.eu' "$app"/public/assets/*.js
           mkdir -p "$RUNNER_TEMP/pasofi-configured"
           tar -czf "$RUNNER_TEMP/pasofi-configured/PasoFi-configured-simulator.tar.gz" -C "$(dirname "$app")" App.app
           echo "sha256=$(shasum -a 256 "$RUNNER_TEMP/pasofi-configured/PasoFi-configured-simulator.tar.gz" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
