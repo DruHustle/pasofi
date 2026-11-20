@@ -51,7 +51,7 @@ def inspect(bundle, unsigned):
         if unsigned and any(re.fullmatch(r"META-INF/(?:[^/]+\.(?:SF|RSA|DSA|EC)|SIG-[^/]+)", n, re.I) for n in names):
             raise ValueError("Signing requires an unsigned release bundle")
         config = json.loads(archive.read("base/assets/capacitor.config.json"))
-        if config["appId"] != package or config["plugins"]["PasoFiCustomerApi"]["origin"] != "https://pasofi.mobile.onesa.eu":
+        if config["appId"] != package or config["plugins"]["PasoFiCustomerApi"]["origin"] != "https://api.pasofi.onesa.eu":
             raise ValueError("Embedded customer API configuration differs from production")
         if not archive.read("base/assets/public/index.html") or not any(
             n.startswith("base/assets/public/assets/") and n.endswith(".js") for n in names
