@@ -58,6 +58,11 @@ if ! cmp -s "$cert" "$root/secrets/public_tls_cert" || ! cmp -s "$key" "$root/se
  [ "$project" = pamofi-production ] && [ -n "$workdir" ] && [ -n "$config_list" ] && [ -n "$env_list" ] || { echo 'The gateway Compose provenance is incomplete; refusing recreation.' >&2; exit 1; }
  case "$workdir" in /var/lib/onesa/pasofi-release-*|/home/ubuntu/pamofi/releases/*|/home/ubuntu/pamofi/production) ;; *) echo 'Unexpected gateway Compose working directory; refusing recreation.' >&2; exit 1;; esac
  [ -d "$workdir" ] && [ ! -L "$workdir" ] || { echo 'Gateway Compose working directory is unavailable or linked.' >&2; exit 1; }
+ lockfile="$workdir/.pasofi-release-$project.lock"
+ if [ ! -e "$lockfile" ]; then install -o ubuntu -g ubuntu -m 0600 /dev/null "$lockfile"; fi
+ [ -f "$lockfile" ] && [ ! -L "$lockfile" ] || { echo 'Gateway deployment lock is unavailable or linked.' >&2; exit 1; }
+ exec 9<>"$lockfile"
+ flock -n 9 || { echo 'A PasoFi release is in progress; certificate sync will retry next time.' >&2; exit 1; }
  IFS=, read -r -a compose_files <<< "$config_list"
  IFS=, read -r -a env_files <<< "$env_list"
  compose=(docker compose --project-name "$project" --project-directory "$workdir" --profile '*')
