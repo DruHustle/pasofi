@@ -24,3 +24,21 @@ test('alternate and retired PasoFi domains redirect to the sole accepted custome
   assert.ok(config.rewrites?.some(rule => rule.source === '/api/:path*'),
     'canonical API proxy remains configured');
 });
+
+test('retired hotspot names remain excluded from every router form origin allowlist', () => {
+  const login = 'https://login.pasofi.mobile.onesa.eu';
+  const deniedHosts = ['hotspot.pamofi.onesa.eu', 'hotspot.pasofi.onesa.eu'];
+  const web = readFileSync(new URL('../src/NetworkAccess.tsx', import.meta.url), 'utf8');
+  const mobile = readFileSync(new URL('../../mobile/src/NetworkAccess.tsx', import.meta.url), 'utf8');
+  const mobileBuild = readFileSync(new URL('../../mobile/vite.config.ts', import.meta.url), 'utf8');
+  for (const source of [web, mobile, mobileBuild]) {
+    assert.ok(source.includes(login), 'new RouterOS form host must be the default');
+    for (const host of deniedHosts) {
+      assert.ok(source.includes(host), host + ' must remain explicitly denied, including env overrides');
+    }
+  }
+  assert.equal(mobileBuild.includes("name: 'pasofi-mobile-build-policy'"), true);
+  const policy = config.headers?.flatMap(h => h.headers || []).find(h => h.key === 'Content-Security-Policy')?.value;
+  assert.ok(policy?.includes(login));
+  assert.ok(!deniedHosts.some(host => policy?.includes(host)));
+});

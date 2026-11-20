@@ -4,8 +4,8 @@ import { pathToFileURL } from 'node:url';
 
 const defaults = Object.freeze({
   siteLabel: 'Kuwadzana',
-  hotspotOrigin: 'https://hotspot.pasofi.onesa.eu',
-  appOrigin: 'https://pasofi.onesa.eu',
+  hotspotOrigin: 'https://login.pasofi.mobile.onesa.eu',
+  appOrigin: 'https://hotspot.pasofi.mobile.onesa.eu',
 });
 
 function httpsOrigin(value, field) {
@@ -48,8 +48,8 @@ async function renderPages(config) {
     const template = await readFile(new URL(name, import.meta.url), 'utf8');
     // One replacement pass prevents a selected origin that resembles a default
     // origin from being replaced a second time.
-    const contents = template.replace(/https:\/\/(?:hotspot\.)?pasofi\.onesa\.eu(?=\/)/g,
-      origin => origin === defaults.hotspotOrigin ? config.hotspotOrigin : config.appOrigin)
+    const contents = template.replaceAll(defaults.hotspotOrigin, config.hotspotOrigin)
+      .replaceAll(defaults.appOrigin, config.appOrigin)
       .replaceAll('<span class="place">Kuwadzana</span>', `<span class="place">${htmlText(config.siteLabel)}</span>`);
     if (Buffer.byteLength(contents) > 4000) throw Error(`${name} exceeds bounded RouterOS upload size`);
     pages[name] = contents;

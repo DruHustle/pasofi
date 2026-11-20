@@ -16,14 +16,20 @@ map "$http_x_pamofi_client_ip|$remote_addr" $pamofi_client_canonical {
   default 0;
   "~^([^|]+)\\|\\1$" 1;
 }
+map $host $pasofi_https_redirect_host {
+  default "";
+  __PAMOFI_PUBLIC_HOST__ __PAMOFI_PUBLIC_HOST__;
+__PASOFI_HOTSPOT_REDIRECT_MAP__
+}
 server {
   listen 80;
-  server_name __PAMOFI_PUBLIC_HOST__;
-  return 308 https://__PAMOFI_PUBLIC_HOST__$request_uri;
+  server_name __PAMOFI_PUBLIC_HOST__ __PASOFI_HOTSPOT_PUBLIC_HOST__;
+  if ($pasofi_https_redirect_host = "") { return 444; }
+  return 308 https://$pasofi_https_redirect_host$request_uri;
 }
 server {
   listen 443 ssl;
-  server_name __PAMOFI_PUBLIC_HOST__;
+  server_name __PAMOFI_PUBLIC_HOST__ __PASOFI_HOTSPOT_PUBLIC_HOST__;
   ssl_certificate /run/secrets/public_tls_cert;
   ssl_certificate_key /run/secrets/public_tls_key;
   ssl_protocols TLSv1.2 TLSv1.3;
@@ -43,7 +49,7 @@ server {
   add_header Referrer-Policy no-referrer always;
   add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
   add_header Cache-Control no-store always;
-  add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://js.stripe.com https://*.js.stripe.com; connect-src 'self' https://api.stripe.com; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://hotspot.pasofi.onesa.eu" always;
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://js.stripe.com https://*.js.stripe.com; connect-src 'self' https://api.stripe.com; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://login.pasofi.mobile.onesa.eu" always;
   default_type application/json;
   __PASOFI_HOTSPOT_PORTAL_INCLUDE__
   location = /health/live { return 200 '{"status":"ok","service":"gateway"}'; }

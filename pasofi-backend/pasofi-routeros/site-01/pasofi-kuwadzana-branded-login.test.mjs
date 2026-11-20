@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 
 test('offline captive page uses HTTPS for credentials and has no external assets', async () => {
   const html = await readFile(new URL('../portal/pilot-login.html', import.meta.url), 'utf8');
-  assert.match(html, /<form action="https:\/\/hotspot\.pasofi\.onesa\.eu\/login" method="post">/);
+  assert.match(html, /<form action="https:\/\/login\.pasofi\.mobile\.onesa\.eu\/login" method="post">/);
   assert.match(html, /name="username"/);
   assert.match(html, /name="password" type="password"/);
   assert.match(html, /Pilot testing is in progress/);

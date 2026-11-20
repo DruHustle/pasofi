@@ -18,7 +18,7 @@
 :if ([:len [/certificate find where name="pamofi-hotspot-onesaeu.p12_0" and trusted=yes]] != 1 || [/certificate get [find where name="pamofi-hotspot-onesaeu.p12_0"] fingerprint] != "985a06a8afa387bdad5b174bc88dbe592902f0b7fb01e1a1897a18fe46ef1551") do={ :error "Expected pilot certificate missing or changed" }
 # The PasoFi transition certificate must already be imported with its private key.
 :if ([:len [/certificate find where fingerprint="0b82c568ec209746a1be140b9d84124af8c46e1450257144230b68b62364e564" and trusted=yes]] != 1) do={ :error "Import the reviewed PasoFi certificate and its private key first" }
-:if ([:len [/ip dns static find where name="hotspot.pasofi.onesa.eu"]] != 0) do={ :error "Review existing PasoFi hotspot DNS entry" }
+:if ([:len [/ip dns static find where name="login.pasofi.mobile.onesa.eu"]] != 0) do={ :error "Review existing PasoFi hotspot DNS entry" }
 :local pasofiCert [/certificate get ([/certificate find where fingerprint="0b82c568ec209746a1be140b9d84124af8c46e1450257144230b68b62364e564"]->0) name]
 :if ([:len [/radius find where comment="PamoFi site: radius site01" and disabled=yes]] != 1) do={ :error "Expected disabled site RADIUS client" }
 :if ([/radius get [find where comment="PamoFi site: radius site01"] address] != 10.77.254.1 || [/radius get [find where comment="PamoFi site: radius site01"] src-address] != 10.77.254.2 || [/radius get [find where comment="PamoFi site: radius site01"] require-message-auth] != "yes-for-request-resp") do={ :error "RADIUS endpoints or protection differ" }
@@ -45,7 +45,7 @@
 /ip firewall filter add chain=output action=accept out-interface="pfi-pilot-br" protocol=udp src-port=67 dst-port=68 comment="PasoFi test: DHCP reply" place-before=([/ip firewall filter find where chain=output]->0)
 /ip firewall filter add chain=output action=accept out-interface="pfi-pilot-br" dst-address=10.77.10.0/24 connection-state=established,related comment="PasoFi test: local replies" place-before=([/ip firewall filter find where chain=output]->0)
 # Activate the isolated pilot last. Keep Safe Mode open while testing.
-/ip hotspot profile set [find where name="pfi-pilot-https"] ssl-certificate=$pasofiCert dns-name="hotspot.pasofi.onesa.eu"
+/ip hotspot profile set [find where name="pfi-pilot-https"] ssl-certificate=$pasofiCert dns-name="login.pasofi.mobile.onesa.eu"
 /interface wireless set [find where name="pfi-pilot-wifi"] ssid="PasoFi Pilot"
 /interface bridge enable [find where name="pfi-pilot-br"]
 /radius enable [find where comment="PamoFi site: radius site01"]

@@ -295,7 +295,7 @@ gosu postgres pgbackrest version
       await run(process.execPath, [join(repository, 'pasofi-frontend/web/node_modules/vite/bin/vite.js'), 'build', '--outDir', portalAssets], {
         cwd: join(repository, 'pasofi-frontend/web'), env: { ...process.env, VITE_PASOFI_HOTSPOT_PORTAL: '1' }, timeout: 120000,
       });
-      const portalEnv = { ...env, PASOFI_HOTSPOT_PORTAL: 'true', PASOFI_HOTSPOT_PUBLIC_ORIGIN: 'https://api.pamofi.test', PASOFI_PUBLIC_ORIGIN_ALIASES: '["https://api.pamofi.test"]', PASOFI_HOTSPOT_WEB_DIR: portalAssets };
+      const portalEnv = { ...env, PASOFI_HOTSPOT_PORTAL: 'true', PASOFI_HOTSPOT_PUBLIC_HOST: 'api.pamofi.test', PASOFI_HOTSPOT_PUBLIC_ORIGIN: 'https://api.pamofi.test', PASOFI_PUBLIC_ORIGIN_ALIASES: '["https://api.pamofi.test"]', PASOFI_HOTSPOT_WEB_DIR: portalAssets };
       await run(process.execPath, [join(here, 'preflight-vercel.mjs')], { env: portalEnv });
       const portalConfig = JSON.parse((await docker([...configArgs, '-f', join(here, 'hotspot-portal.compose.yaml'), 'config', '--format', 'json'], { env: portalEnv })).stdout);
       noUnexpectedPorts(portalConfig);

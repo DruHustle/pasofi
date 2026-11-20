@@ -28,7 +28,7 @@ function request(path, { method = 'GET', body, cookie, requestOrigin = origin, e
 }
 await assert.rejects(request('/connect', { trust: false })); checks++;
 const page = await request('/connect'); check(page.status, 200); assert.match(page.headers['content-type'], /text\/html/);
-assert.match(page.headers['content-security-policy'], /form-action 'self' https:\/\/hotspot\.pasofi\.onesa\.eu/);
+assert.match(page.headers['content-security-policy'], /form-action 'self' https:\/\/login\.pasofi\.mobile\.onesa\.eu/);
 for (const asset of page.text.matchAll(/(?:src|href)="(\/assets\/[^\"]+)"/g)) {
   const response = await request(asset[1]); check(response.status, 200, `portal asset ${asset[1]}`);
   if (asset[1].endsWith('.js')) { assert.ok(response.text.includes('/portal-api/'), 'frontend must use its matching public prefix'); checks++; }
