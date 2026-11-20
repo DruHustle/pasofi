@@ -14,7 +14,7 @@ import tempfile
 
 EXPECTED = '0B82C568EC209746A1BE140B9D84124AF8C46E1450257144230B68B62364E564'
 HOST = 'login.pasofi.mobile.onesa.eu'
-CONTROLLER_HOST = 'hotspot.pasofi.onesa.eu'
+CONTROLLER_HOST = 'hotspot.pasofi.mobile.onesa.eu'
 CERT_DIR = '/home/ubuntu/pamofi/production/acme/config/live/pasofi-hotspot-transition'
 
 
