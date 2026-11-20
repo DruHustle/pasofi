@@ -13,7 +13,7 @@ const formOrigins = (() => {
     if (!Array.isArray(values) || values.length > 20 || !values.every(value => {
       if (typeof value !== 'string') return false;
       const url = new URL(value);
-      return url.protocol === 'https:' && url.origin === value && !url.username && !url.password;
+      return url.protocol === 'https:' && url.origin === value && !['hotspot.pamofi.onesa.eu', 'hotspot.pasofi.onesa.eu'].includes(url.hostname) && !url.username && !url.password;
     })) return [] as string[];
     return values as string[];
   } catch { return [] as string[]; }
