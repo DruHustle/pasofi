@@ -33,6 +33,23 @@ done
 awk '
 BEGIN {
   host = ENVIRON["PAMOFI_PUBLIC_HOST"]
+  portalHost = ENVIRON["PASOFI_HOTSPOT_PUBLIC_HOST"]
+  portalAlias = ""
+  portalRedirectMap = ""
+  if (portalHost != "") {
+    if (length(portalHost) + 8 > 253 || portalHost !~ /^[a-z0-9.-]+$/ || portalHost !~ /\./) exit 1
+    pn = split(portalHost, portalLabels, /\./)
+    if (length(portalLabels[pn]) < 2 || portalLabels[pn] !~ /^[a-z]+$/ ||
+        portalLabels[pn] == "local" || portalLabels[pn] == "localhost") exit 1
+    for (i = 1; i <= pn; i++) {
+      if (length(portalLabels[i]) < 1 || length(portalLabels[i]) > 63 ||
+          portalLabels[i] !~ /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/) exit 1
+    }
+    if (portalHost != host) {
+      portalAlias = portalHost
+      portalRedirectMap = "  " portalHost " " portalHost ";"
+    }
+  }
   if (length(host) + 8 > 253 || host !~ /^[a-z0-9.-]+$/ || host !~ /\./) exit 1
   n = split(host, labels, /\./)
   if (length(labels[n]) < 2 || labels[n] !~ /^[a-z]+$/ ||
@@ -48,6 +65,8 @@ BEGIN {
 }
 {
   gsub(/__PAMOFI_PUBLIC_HOST__/, host)
+  gsub(/__PASOFI_HOTSPOT_PUBLIC_HOST__/, portalAlias)
+  gsub(/__PASOFI_HOTSPOT_REDIRECT_MAP__/, portalRedirectMap)
   gsub(/__PAMOFI_PROXY_TOKEN__/, token)
   portal = ENVIRON["PASOFI_HOTSPOT_PORTAL"] == "true" ? "include /opt/pasofi/hotspot-portal.conf;" : ""
   gsub(/__PASOFI_HOTSPOT_PORTAL_INCLUDE__/, portal)

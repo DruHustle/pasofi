@@ -4,7 +4,7 @@ import { usageSnapshot, usageCustomerId as customerId, usageEntitlementId as ent
 const siteId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const grantId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const product = { id: 'flex', price_minor: 100, currency: 'USD', byte_limit: '10000000000', validity_seconds: 604800 };
-const site = { id: siteId, name: 'Review hotspot', loginUrl: 'https://hotspot.pasofi.onesa.eu/login' };
+const site = { id: siteId, name: 'Review hotspot', loginUrl: 'https://login.pasofi.mobile.onesa.eu/login' };
 const accessPoint = { siteId, nasId: '11111111-1111-4111-8111-111111111111', siteName: site.name, name: 'Review router', loginUrl: site.loginUrl };
 const capabilities = { demo: false, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: true, staffSales: true, deliverySms: false, networkAccess: true, mobileCookies: false };
 const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });

@@ -13,11 +13,17 @@ build with `hotspot-portal.compose.yaml` after the existing Vercel overlay; set
 a missing marker, or an invalid activation flag. Ordinary Vercel builds and
 the default gateway remain unchanged when the overlay is absent.
 
-Before enabling the overlay, add the exact gateway HTTPS origin to
-`PASOFI_PUBLIC_ORIGIN_ALIASES` for identity and prepaid. Retain the existing
-canonical origin and aliases. Validate the certificate and dedicated-IP owner.
+Use `hotspot.pasofi.mobile.onesa.eu` for the hosted captive PasoFi page and point it at the gateway's dedicated public IP. Use `login.pasofi.mobile.onesa.eu` only for the RouterOS local login; K0's HotSpot DNS must answer that name with its guest interface address. Set `PASOFI_HOTSPOT_PUBLIC_HOST=hotspot.pasofi.mobile.onesa.eu`
+and `PASOFI_HOTSPOT_PUBLIC_ORIGIN=https://hotspot.pasofi.mobile.onesa.eu`. Add that
+exact HTTPS origin to `PASOFI_PUBLIC_ORIGIN_ALIASES` for identity and prepaid.
+Retain the existing canonical origin and aliases. The mounted public
+certificate must cover both the canonical Oracle API hostname and the hosted
+portal hostname. Nginx now renders both hostnames on its HTTP and HTTPS virtual host
+and redirects HTTP to HTTPS on the requested qualified hostname. Validate the served certificate
+chain and dedicated-IP ownership before enabling the overlay.
 Run `preflight-vercel.mjs` with `PASOFI_HOTSPOT_PORTAL=true`,
-`PASOFI_HOTSPOT_PUBLIC_ORIGIN=https://your-gateway-host`, and the same assets,
+`PASOFI_HOTSPOT_PUBLIC_ORIGIN=https://hotspot.pasofi.mobile.onesa.eu`,
+`PASOFI_HOTSPOT_PUBLIC_HOST=hotspot.pasofi.mobile.onesa.eu`, and the same assets,
 origins and secrets environment before starting Compose. It rejects a missing
 origin alias, mismatched certificate or ordinary non-portal build. This does
 not verify DNS ownership or replace the live TLS and browser acceptance tests.

@@ -5,6 +5,7 @@ services:
   gateway:
     environment:
       PASOFI_HOTSPOT_PORTAL: "true"
+      PASOFI_HOTSPOT_PUBLIC_HOST: ${PASOFI_HOTSPOT_PUBLIC_HOST:?Set the exact qualified hotspot hostname}
     volumes:
       - ./gateway/hotspot-portal.conf:/opt/pasofi/hotspot-portal.conf:ro
       - ${PASOFI_HOTSPOT_WEB_DIR:?Set the absolute qualified hotspot build directory}:/opt/pasofi/hotspot-web:ro

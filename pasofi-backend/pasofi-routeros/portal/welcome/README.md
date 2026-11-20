@@ -30,8 +30,9 @@ node --test welcome.test.mjs
 ### Select the site and verified portal origins
 
 The command above preserves the existing defaults: `Kuwadzana`,
-`https://hotspot.pasofi.onesa.eu` for the router's HTTPS HotSpot and
-`https://pasofi.onesa.eu` for the customer app. Those defaults are historical
+`https://login.pasofi.mobile.onesa.eu` for the router-local HTTPS HotSpot login,
+`https://hotspot.pasofi.mobile.onesa.eu` for the hosted captive PasoFi page, and
+`https://pasofi.mobile.onesa.eu` for the main PasoFi website. Those defaults are historical
 template values, not evidence that either site is ready or that the public app
 is reachable before authentication.
 

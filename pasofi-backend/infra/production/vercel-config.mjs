@@ -76,6 +76,7 @@ export async function inspectVercelConfiguration(environment = process.env) {
     const portal = new URL(value);
     const aliases = JSON.parse(environment.PASOFI_PUBLIC_ORIGIN_ALIASES || '[]');
     if (portal.protocol !== 'https:' || portal.origin !== value || portal.port || !allowedHostname(portal.hostname) ||
+        environment.PASOFI_HOTSPOT_PUBLIC_HOST !== portal.hostname ||
         !Array.isArray(aliases) || aliases.length > 3 || !aliases.includes(value) ||
         !certificate.checkHost(portal.hostname, { wildcards: false })) throw Error('Qualify the exact portal origin, aliases and certificate.');
     for (const alias of aliases) {
