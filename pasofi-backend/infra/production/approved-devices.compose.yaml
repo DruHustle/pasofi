@@ -1,0 +1,13 @@
+# Optional approved-device (captive-portal bypass) administration. Include it
+# after router-control.compose.yaml, which supplies the router registry, CA
+# mount and router_control network. Reads and writes are separate explicit
+# switches; neither enables commerce, customer access or the disconnect worker.
+services:
+  prepaid-access:
+    environment:
+      PAMOFI_APPROVED_DEVICES_ENABLED: ${PAMOFI_APPROVED_DEVICES_ENABLED:?Set approved device reads to true or false}
+      PAMOFI_APPROVED_DEVICES_WRITE_ENABLED: ${PAMOFI_APPROVED_DEVICES_WRITE_ENABLED:?Set approved device writes to true or false}
+  network:
+    environment:
+      DEVICE_ALLOWLIST_ENABLED: ${PAMOFI_APPROVED_DEVICES_ENABLED:?Set approved device reads to true or false}
+      DEVICE_ALLOWLIST_WRITES_ENABLED: ${PAMOFI_APPROVED_DEVICES_WRITE_ENABLED:?Set approved device writes to true or false}

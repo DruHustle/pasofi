@@ -9,13 +9,14 @@ import SalesLocationStatus from './SalesLocationStatus';
 import { type Capabilities, type Product, type Site, type Staff, finishMutation, localDate, messageFor, money, mutationIntent } from '../business';
 import { CatalogueUpgradeError, catalogueUpgradePreview, upgradeCatalogue } from './catalogue-upgrade';
 const RouterFleet = lazy(() => import('./RouterFleet'));
+const ApprovedDevices = lazy(() => import('./ApprovedDevices'));
 
 type Audit = { id: string; actorStaffId: string | null; targetStaffId: string; action: string; reason: string; createdAt: string; newVersion: number };
 type Stock = { agentId: string; siteId: string; siteName: string; bundleId: string; quantity: number };
 type SetupSection = 'people' | 'sites' | 'catalogue' | 'inventory';
 const sectionNames: Record<SetupSection, string> = { people: 'Staff records', sites: 'Sites', catalogue: 'Bundle catalogue', inventory: 'Inventory' };
-export default function AdminWorkspace({ staff, capabilities }: { staff: Staff; capabilities: Capabilities | null }) {
-  const [tab, setTab] = useState<'people' | 'inventory' | 'sites' | 'catalogue' | 'sales' | 'cash' | 'network' | 'routers' | 'audit'>('people');
+export default function AdminWorkspace({ staff, capabilities, initialTab }: { staff: Staff; capabilities: Capabilities | null; initialTab?: 'devices' }) {
+  const [tab, setTab] = useState<'people' | 'inventory' | 'sites' | 'catalogue' | 'sales' | 'cash' | 'network' | 'routers' | 'devices' | 'audit'>(initialTab ?? 'people');
   const [users, setUsers] = useState<Staff[]>([]), [cursor, setCursor] = useState<string | null>(null);
   const [sites, setSites] = useState<Site[]>([]), [products, setProducts] = useState<(Product & { published: boolean })[]>([]), [stock, setStock] = useState<Stock[]>([]);
   const [events, setEvents] = useState<Audit[]>([]), [auditCursor, setAuditCursor] = useState<string | null>(null);
@@ -177,7 +178,7 @@ export default function AdminWorkspace({ staff, capabilities }: { staff: Staff; 
     finally { if (live.current) setBusy(false); }
   }
   return <div className="admin-workspace"><div className="workspace-section-head"><div><h3>Administration</h3><p>Approve staff, assign site access, and manage voucher stock with recorded reasons.</p><a href="https://account.onesa.eu/admin?product=pasofi">Manage Onesa administrators</a></div><button className="secondary" disabled={busy} onClick={load}>Refresh administration</button></div>
-    <div className="workspace-tabs" aria-label="Administration sections">{(['people', 'inventory', 'sites', 'catalogue', 'sales', 'cash', 'network', 'routers', 'audit'] as const).map(value => <button key={value} disabled={pricingRunning} className={tab === value ? 'selected' : ''} aria-pressed={tab === value} onClick={() => { setTab(value); setMessage(''); if (value === 'audit') void audit(); }}>{value === 'people' ? 'Staff approvals' : value === 'inventory' ? 'Inventory' : value === 'sites' ? 'Sites' : value === 'catalogue' ? 'Bundle catalogue' : value === 'sales' ? 'Sales and delivery' : value === 'cash' ? 'Cash reconciliation' : value === 'network' ? 'Network reviews' : value === 'routers' ? 'Routers' : 'Audit history'}</button>)}</div>
+    <div className="workspace-tabs" aria-label="Administration sections">{(['people', 'inventory', 'sites', 'catalogue', 'sales', 'cash', 'network', 'routers', 'devices', 'audit'] as const).map(value => <button key={value} disabled={pricingRunning} className={tab === value ? 'selected' : ''} aria-pressed={tab === value} onClick={() => { setTab(value); setMessage(''); if (value === 'audit') void audit(); }}>{value === 'people' ? 'Staff approvals' : value === 'inventory' ? 'Inventory' : value === 'sites' ? 'Sites' : value === 'catalogue' ? 'Bundle catalogue' : value === 'sales' ? 'Sales and delivery' : value === 'cash' ? 'Cash reconciliation' : value === 'network' ? 'Network reviews' : value === 'routers' ? 'Routers' : value === 'devices' ? 'Approved devices' : 'Audit history'}</button>)}</div>
     {tab === 'cash' && <><CashShifts staff={staff} selling={!!capabilities?.staffSales} /><CashRefunds staff={staff} /></>}
     {message && <p className="feedback" role="status">{message}</p>}{!loaded && !message && <p role="status">Loading administration…</p>}
     {loaded && unavailableSections.length > 0 && <section className="notice" role="alert"><p>{unavailableSections.map(section => sectionNames[section]).join(', ')} could not be loaded. Other administration sections remain available.</p><button className="secondary" disabled={busy} onClick={load}>Retry unavailable sections</button></section>}
@@ -198,6 +199,7 @@ export default function AdminWorkspace({ staff, capabilities }: { staff: Staff; 
     {tab === 'sales' && <SalesHistory staff={staff} deliveryEnabled={!!capabilities?.deliverySms} invoicesEnabled={!!capabilities?.invoices} users={users} />}
     {tab === 'network' && <NetworkReviews staff={staff} />}
     {tab === 'routers' && <Suspense fallback={<p role="status">Loading router management…</p>}><RouterFleet staff={staff} capabilities={capabilities} /></Suspense>}
+    {tab === 'devices' && <Suspense fallback={<p role="status">Loading approved devices…</p>}><ApprovedDevices staff={staff} capabilities={capabilities} users={users} /></Suspense>}
     {tab === 'audit' && <section className="workspace-card"><div className="workspace-section-head"><h3>Staff access decisions</h3><button className="secondary" disabled={busy} onClick={() => audit()}>Refresh audit history</button></div>{events.length === 0 ? <p>No access decisions are shown.</p> : <ol className="audit-list">{events.map(event => <li key={event.id}><strong>{event.action.replace(/_/g, ' ')} · {localDate(event.createdAt)}</strong><p>{event.reason}</p><small>Account: {users.find(user => user.staffId === event.targetStaffId)?.email ?? event.targetStaffId} · Version {event.newVersion}</small></li>)}</ol>}{auditCursor && <button className="secondary" disabled={busy} onClick={() => audit(true)}>Load older audit entries</button>}</section>}
   </div>;
 }

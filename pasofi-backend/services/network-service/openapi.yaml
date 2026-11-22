@@ -218,6 +218,41 @@ paths:
         '204': {description: Accounting committed; no reply attributes}
         '401': {description: Invalid or mismatched accounting evidence}
         '503': {description: Ledger or database unavailable}
+  /internal/v1/device-allowlist:
+    get:
+      security: [{serviceToken: []}]
+      description: Requires device-allowlist:read plus signed actorId UUID and actorVersion decimal string. Gated by DEVICE_ALLOWLIST_ENABLED. Returns active approved devices with per-router state, router synchronization status from the router-control registry and the 30 most recent audit events. No router URLs, usernames, passwords or raw RouterOS replies.
+      responses:
+        '200': {description: '{devices, routers, events, maxDevices, writesEnabled, registryAvailable, syncing}'}
+        '401': {description: 'Missing, expired or malformed service token'}
+        '403': {description: 'Wrong scope'}
+        '404': {description: 'Approved devices disabled'}
+        '503': {description: 'Database or signing configuration unavailable'}
+  /internal/v1/device-allowlist/devices:
+    post:
+      security: [{serviceToken: []}]
+      description: Requires device-allowlist:write and DEVICE_ALLOWLIST_WRITES_ENABLED. Body {macAddress, label, reason, requestKey}. MAC normalized to upper-case colon form; broadcast, multicast and all-zero rejected; label 1-80 characters; reason 10-500; at most 200 active devices. Audited, idempotent per actor and requestKey, then reconciled to every configured router as a tagged bypassed ip-binding (waits up to 4 seconds).
+      responses:
+        '200': {description: 'Idempotent replay; {device, syncing}'}
+        '201': {description: 'Added; {device, syncing}'}
+        '400': {description: 'invalid_request, invalid_mac_address, broadcast_mac_address, multicast_mac_address, invalid_label or invalid_reason'}
+        '403': {description: 'Wrong scope or allowlist_writes_disabled'}
+        '409': {description: 'device_exists, allowlist_full or idempotency_conflict'}
+  /internal/v1/device-allowlist/devices/{id}/remove:
+    post:
+      security: [{serviceToken: []}]
+      description: Requires device-allowlist:write. Body {reason, requestKey}. Audited and idempotent; removes only the bindings tagged with this entry.
+      responses:
+        '200': {description: '{device (with removedAt), syncing}'}
+        '404': {description: 'Unknown device'}
+        '409': {description: 'device_not_active or idempotency_conflict'}
+  /internal/v1/device-allowlist/sync:
+    post:
+      security: [{serviceToken: []}]
+      description: Requires device-allowlist:write. Body {}. Re-reads and reconciles every configured router; untagged bindings are never created, changed or removed.
+      responses:
+        '200': {description: 'Finished; {syncing false}'}
+        '202': {description: 'Still running after the response budget; {syncing true}'}
 components:
   parameters:
     RouterId:

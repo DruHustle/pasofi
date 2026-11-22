@@ -19,7 +19,7 @@ function object(value: unknown): value is Record<string, unknown> {
 function exact(value: unknown, keys: string[]): value is Record<string, unknown> {
   return object(value) && Object.keys(value).every(key => keys.includes(key));
 }
-function configuration(demo: boolean) {
+export function networkConfiguration(demo: boolean) {
   const secret = process.env.INTERNAL_NETWORK_SECRET, base = process.env.NETWORK_URL;
   if (!secret || Buffer.byteLength(secret) < 32 || (!demo && secret.startsWith('DEMO_ONLY_')) || !base) return null;
   try {
@@ -30,10 +30,10 @@ function configuration(demo: boolean) {
   } catch { return null; }
 }
 export function routerFleetCapabilities(demo: boolean, available = true) {
-  const routerFleet = available && process.env.PAMOFI_ROUTER_FLEET_ENABLED === 'true' && !!configuration(demo);
+  const routerFleet = available && process.env.PAMOFI_ROUTER_FLEET_ENABLED === 'true' && !!networkConfiguration(demo);
   return {routerFleet, routerFleetWrite: routerFleet && process.env.PAMOFI_ROUTER_FLEET_WRITE_ENABLED === 'true'};
 }
-async function boundedJson(response: Response): Promise<Record<string, unknown>> {
+export async function boundedJson(response: Response): Promise<Record<string, unknown>> {
   if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '') || !response.body) throw Error('unavailable');
   const reader = response.body.getReader(), chunks: Uint8Array[] = []; let size = 0;
   try {
@@ -139,7 +139,7 @@ export function registerRouterFleet(app: FastifyInstance, demo: boolean, guard: 
           if (!exact(request.body, [])) return reply.code(400).send({error: 'invalid_request'});
           body = {};
         }
-        const configured = configuration(demo);
+        const configured = networkConfiguration(demo);
         if (!configured) return reply.code(503).send({error: 'router_fleet_unavailable'});
         const path = `/internal/v1/router-fleet/routers${id ? `/${id.toLowerCase()}` : ''}${['history','preview','status','apply','reconcile','rollback'].includes(action) ? '/changes' : ''}${changeId ? `/${changeId.toLowerCase()}` : ''}${['apply','reconcile','rollback'].includes(action) ? `/${action}` : ''}`;
         try {

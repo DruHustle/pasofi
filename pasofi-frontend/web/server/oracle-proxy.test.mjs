@@ -292,6 +292,8 @@ test('cash workflow, recovery, staff and network routes are available through or
     ['GET', `/api/admin/routers/${id}/changes`], ['POST', `/api/admin/routers/${id}/changes`],
     ['GET', `/api/admin/routers/${id}/changes/${id}`], ['POST', `/api/admin/routers/${id}/changes/${id}/apply`],
     ['POST', `/api/admin/routers/${id}/changes/${id}/reconcile`], ['POST', `/api/admin/routers/${id}/changes/${id}/rollback`],
+    ['GET', '/api/admin/approved-devices'], ['POST', '/api/admin/approved-devices'],
+    ['POST', '/api/admin/approved-devices/sync'], ['POST', `/api/admin/approved-devices/${id}/remove`],
   ];
   await withProxy({}, async call => {
     for (const [method, path] of paths) {
@@ -317,6 +319,15 @@ test('router management exposes only the explicit fleet contract', () => {
   }
   for (const [path, method] of [['/api/admin/routers', 'POST'], [`/api/admin/routers/${id}`, 'PATCH'], [`/api/admin/routers/${id}/changes/${id}/apply`, 'GET'], [`/api/admin/routers/${id}/changes/${id}`, 'DELETE']]) {
     assert.throws(() => publicRoute(path, method), error => error.status === 405);
+  }
+});
+
+test('approved devices expose only list, add, remove and sync', () => {
+  for (const path of [`/api/admin/approved-devices/${id}`, '/api/admin/approved-devices/not-a-uuid/remove', `/api/admin/approved-devices/${id}/bindings`, '/api/admin/approved-devices/bindings', '/api/internal/v1/device-allowlist', `/api/admin/approved-devices/${id}/remove/extra`]) {
+    assert.throws(() => publicRoute(path, 'POST'), error => error.status === 404, path);
+  }
+  for (const [path, method] of [['/api/admin/approved-devices', 'DELETE'], ['/api/admin/approved-devices', 'PUT'], ['/api/admin/approved-devices/sync', 'GET'], [`/api/admin/approved-devices/${id}/remove`, 'GET'], [`/api/admin/approved-devices/${id}/remove`, 'DELETE']]) {
+    assert.throws(() => publicRoute(path, method), error => error.status === 405, `${method} ${path}`);
   }
 });
 

@@ -58,7 +58,11 @@
     "radius_credentials": ["SELECT", "INSERT", "UPDATE"],
     "router_reconciliation_status": ["SELECT", "INSERT", "UPDATE"],
     "router_fleet_changes": ["SELECT", "INSERT", "UPDATE"],
-    "router_fleet_events": ["SELECT", "INSERT"]
+    "router_fleet_events": ["SELECT", "INSERT"],
+    "device_allowlist_entries": ["SELECT", "INSERT", "UPDATE"],
+    "device_allowlist_events": ["SELECT", "INSERT"],
+    "device_allowlist_router_status": ["SELECT", "INSERT", "UPDATE"],
+    "device_allowlist_router_devices": ["SELECT", "INSERT", "UPDATE"]
   },
   "notification": {
     "event_inbox": ["SELECT", "INSERT"],

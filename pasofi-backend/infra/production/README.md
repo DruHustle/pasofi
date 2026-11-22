@@ -8,6 +8,8 @@ The [optional private RouterOS overlay](ROUTER_CONTROL.md) supplies the existing
 
 The [central router administration overlay](ROUTER_FLEET.md) adds one administrator login for the registered router fleet, reviewed configuration changes, audit history and guarded rollback. It uses separate per-router accounts and managed-target allowlists; reads and writes default off and are independent of customer launch gates.
 
+The [approved devices overlay](APPROVED_DEVICES.md) lets administrators approve device MAC addresses that skip the captive portal at every router in the router-control registry. It writes only tagged HotSpot ip-bindings; reads and writes default off and are independent switches.
+
 ## Independent database roles
 
 Each of the five databases has three distinct roles. The database names remain `pamofi_identity`, `pamofi_prepaid_access`, `pamofi_network`, `pamofi_notification`, and `pamofi_assistant`.

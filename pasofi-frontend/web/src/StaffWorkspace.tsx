@@ -8,7 +8,7 @@ import AdminWorkspace from './staff/AdminWorkspace';
 import SalesHistory from './staff/SalesHistory';
 
 type Step = 'loading' | 'login' | 'register' | 'reset_request' | 'reset_confirm' | 'mfa_setup' | 'mfa_verify' | 'workspace' | 'unavailable';
-export default function StaffWorkspace({ close, capabilities }: { close: () => void; capabilities: Capabilities | null }) {
+export default function StaffWorkspace({ close, capabilities, adminSection }: { close: () => void; capabilities: Capabilities | null; adminSection?: 'devices' }) {
   const [step, setStep] = useState<Step>('loading'), [staff, setStaff] = useState<Staff | null>(null);
   const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [displayName, setDisplayName] = useState('');
   const [code, setCode] = useState(''), [secret, setSecret] = useState(''), [expiresAt, setExpiresAt] = useState(0);
@@ -174,7 +174,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
       {staff.status === 'pending' && <div className="empty"><h3>{staff.role==='admin'?'Administrator account signed in':'Waiting for administrator approval'}</h3><p>Your authenticator is ready. An administrator must review your application and assign a role and sites before you can work with customer sales.</p></div>}
       {(staff.status === 'disabled' || staff.status === 'rejected') && <div className="empty"><h3>Staff access is {staff.status}</h3><p>This account cannot perform staff actions. Contact your PasoFi administrator to resolve access.</p></div>}
       {staff.status === 'approved' && staff.role === 'agent' && <AgentWorkspace key={`${staff.staffId}:${staff.version}`} staff={staff} capabilities={capabilities} />}
-      {staff.status === 'approved' && staff.role === 'admin' && <AdminWorkspace key={`${staff.staffId}:${staff.version}`} staff={staff} capabilities={capabilities} />}
+      {staff.status === 'approved' && staff.role === 'admin' && <AdminWorkspace key={`${staff.staffId}:${staff.version}`} staff={staff} capabilities={capabilities} initialTab={adminSection} />}
       {staff.status === 'approved' && staff.role === 'support' && <SalesHistory staff={staff} deliveryEnabled={!!capabilities?.deliverySms} invoicesEnabled={!!capabilities?.invoices} />}
     </>}
   </section>;

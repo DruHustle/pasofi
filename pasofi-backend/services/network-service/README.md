@@ -112,6 +112,19 @@ supported. RouterOS models lacking the expected menu or explicit SSID field
 fail closed for that target. An MR20 or other non-RouterOS access point requires
 a separately qualified adapter.
 
+## Approved devices (captive-portal bypass)
+
+`/internal/v1/device-allowlist` stores administrator-approved MAC addresses and
+reconciles them to every router in the router-control registry
+(`ROUTEROS_ROUTERS_FILE`) as `/ip/hotspot/ip-binding` entries with
+`type=bypassed`, `server=all` and the comment `pasofi-allowlist:<entry-uuid> <label>`.
+It only ever creates or removes bindings carrying that exact tag; untagged bindings
+are reported as conflicts and left unchanged. `DEVICE_ALLOWLIST_ENABLED=true`
+enables the API and `DEVICE_ALLOWLIST_WRITES_ENABLED=true` additionally allows
+changes and router writes. Tokens use the `device-allowlist:read` or
+`device-allowlist:write` scope with the same actor claims as the fleet API.
+See [APPROVED_DEVICES.md](../../infra/production/APPROVED_DEVICES.md).
+
 The private contract lives under `/internal/v1/router-fleet/routers`:
 
 | Method and suffix | Result |

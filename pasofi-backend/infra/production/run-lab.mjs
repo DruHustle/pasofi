@@ -183,6 +183,23 @@ gosu postgres pgbackrest version
       assert.equal(caMount.source, join(fleetDirectory, 'ca')); assert.equal(caMount.read_only, true); assert.notEqual(caMount.bind?.create_host_path, true);
       for (const [service, value] of Object.entries(fleet.services)) if (service !== 'network') assert.equal((value.secrets || []).some(item => item.source === 'routeros_fleet'), false);
     }
+    // Approved devices reuse the router-control registry; the overlay only adds
+    // two explicit switches and never activates the disconnect reconciler.
+    for (const [read, write] of [['false', 'false'], ['true', 'false'], ['true', 'true']]) {
+      const allowEnv = { ...env, PAMOFI_APPROVED_DEVICES_ENABLED: read, PAMOFI_APPROVED_DEVICES_WRITE_ENABLED: write, PAMOFI_ROUTER_CONTROL_DIR: controlDirectory, PAMOFI_ROUTER_CONTROL_QUALIFIED: 'false' };
+      const allow = JSON.parse((await docker([...configArgs, '-f', join(here, 'router-control.compose.yaml'), '-f', join(here, 'approved-devices.compose.yaml'), 'config', '--format', 'json'], { env: allowEnv })).stdout);
+      noUnexpectedPorts(allow);
+      assert.equal(allow.services.network.environment.DEVICE_ALLOWLIST_ENABLED, read);
+      assert.equal(allow.services.network.environment.DEVICE_ALLOWLIST_WRITES_ENABLED, write);
+      assert.equal(allow.services['prepaid-access'].environment.PAMOFI_APPROVED_DEVICES_ENABLED, read);
+      assert.equal(allow.services['prepaid-access'].environment.PAMOFI_APPROVED_DEVICES_WRITE_ENABLED, write);
+      assert.equal(allow.services.network.environment.NETWORK_RECONCILER_ENABLED, 'false');
+      assert.equal(allow.services.network.environment.ROUTEROS_ROUTERS_FILE, '/run/secrets/routeros_routers');
+      for (const [service, value] of Object.entries(allow.services)) if (service !== 'network') assert.equal((value.secrets || []).some(item => item.source === 'routeros_routers'), false);
+    }
+    const unset = { ...env, PAMOFI_ROUTER_CONTROL_DIR: controlDirectory, PAMOFI_ROUTER_CONTROL_QUALIFIED: 'false' };
+    delete unset.PAMOFI_APPROVED_DEVICES_ENABLED; delete unset.PAMOFI_APPROVED_DEVICES_WRITE_ENABLED;
+    await assert.rejects(docker([...configArgs, '-f', join(here, 'router-control.compose.yaml'), '-f', join(here, 'approved-devices.compose.yaml'), 'config', '--quiet'], { env: unset }), 'the overlay requires explicit switches');
     if (vercel) {
       for (const service of serviceNames) assert.equal(config.services[service].environment.PUBLIC_ORIGIN, env.PAMOFI_PUBLIC_ORIGIN);
       assert.equal(config.services.gateway.environment.PAMOFI_PUBLIC_HOST, env.PAMOFI_PUBLIC_HOST);

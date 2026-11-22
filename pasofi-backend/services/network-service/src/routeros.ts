@@ -38,6 +38,8 @@ function readProtectedFile(path:string,maxBytes:number,forbiddenModeBits:number,
 }
 
 export type RouterConfig={nasId:string;url:string;username:string;password:string;caFile:string};
+export type IpBinding={id:string;macAddress?:string;type?:string;server?:string;comment?:string;disabled:boolean};
+const BINDING_ID=/^\*[0-9A-Fa-f]{1,16}$/;
 export class RouterUnavailable extends Error {constructor(){super('router_unavailable');}}
 export class RouterOS {
  private base:URL;
@@ -59,7 +61,7 @@ export class RouterOS {
    if(!this.ca.includes('-----BEGIN CERTIFICATE-----')||this.ca.includes('PRIVATE KEY'))throw new Error();
   }catch{throw new RouterUnavailable();}
  }
- private async call(path:string,method:'GET'|'DELETE',signal?:AbortSignal):Promise<unknown> {
+ private async call(path:string,method:'GET'|'DELETE'|'PUT',signal?:AbortSignal,body?:Record<string,string>):Promise<unknown> {
   let addresses:ResolvedAddress[];
   try{
    addresses=isIP(this.base.hostname)===4?[{address:this.base.hostname,family:4}]:await this.resolveHost(this.base.hostname);
@@ -72,17 +74,40 @@ export class RouterOS {
    if(options.all)callback(null,addresses);
    else callback(null,addresses[0].address,4);
   };
+  const data=body===undefined?undefined:JSON.stringify(body);
   return new Promise((resolve,reject)=>{
    const deadline=AbortSignal.timeout(5000);
-   const req=httpsRequest(new URL(path,this.base),{method,ca:this.ca,rejectUnauthorized:true,auth:`${this.config.username}:${this.config.password}`,headers:{accept:'application/json'},lookup:pinnedLookup,timeout:5000,signal:signal?AbortSignal.any([signal,deadline]):deadline},response=>{
+   const headers:Record<string,string|number>={accept:'application/json',...(data===undefined?{}:{'content-type':'application/json','content-length':Buffer.byteLength(data)})};
+   const req=httpsRequest(new URL(path,this.base),{method,ca:this.ca,rejectUnauthorized:true,auth:`${this.config.username}:${this.config.password}`,headers,lookup:pinnedLookup,timeout:5000,signal:signal?AbortSignal.any([signal,deadline]):deadline},response=>{
     if(!response.statusCode||response.statusCode<200||response.statusCode>=300){response.resume();reject(new RouterUnavailable());return;}
     let length=0;const chunks:Buffer[]=[];
     response.on('data',(chunk:Buffer)=>{length+=chunk.length;if(length>1024*1024){response.destroy();reject(new RouterUnavailable());}else chunks.push(chunk);});
     response.on('error',()=>reject(new RouterUnavailable()));
     response.on('end',()=>{try {const raw=Buffer.concat(chunks).toString('utf8');resolve(raw?JSON.parse(raw):null);}catch{reject(new RouterUnavailable());}});
    });
-   req.on('timeout',()=>req.destroy(new RouterUnavailable()));req.on('error',()=>reject(new RouterUnavailable()));req.end();
+   req.on('timeout',()=>req.destroy(new RouterUnavailable()));req.on('error',()=>reject(new RouterUnavailable()));req.end(data);
   });
+ }
+ // HotSpot IP bindings. Reads return every binding so the caller can prove an
+ // untagged entry exists; writes accept only a record ID or the fixed bypass
+ // shape. Ownership (the allowlist tag) is decided by the caller, never here.
+ async bindings(signal?:AbortSignal):Promise<IpBinding[]> {
+  const response=await this.call('ip/hotspot/ip-binding?.proplist=.id,mac-address,type,server,comment,disabled','GET',signal);
+  if(!Array.isArray(response)||response.length>4096)throw new RouterUnavailable();
+  return response.map(row=>{
+   if(!row||typeof row!=='object'||Array.isArray(row)||typeof row['.id']!=='string'||!BINDING_ID.test(row['.id']))throw new RouterUnavailable();
+   const text=(key:string)=>typeof row[key]==='string'?row[key] as string:undefined;
+   return {id:row['.id'],macAddress:text('mac-address'),type:text('type'),server:text('server'),comment:text('comment'),disabled:row.disabled===true||row.disabled==='true'};
+  });
+ }
+ async addBypassBinding(macAddress:string,comment:string,signal?:AbortSignal) {
+  if(!/^[0-9A-F]{2}(?::[0-9A-F]{2}){5}$/.test(macAddress)||!comment||comment.length>255||/[\u0000-\u001f\u007f]/.test(comment))throw new RouterUnavailable();
+  await this.call('ip/hotspot/ip-binding','PUT',signal,{'mac-address':macAddress,type:'bypassed',server:'all',comment});
+ }
+ async removeBinding(id:string,signal?:AbortSignal) {
+  // Keep the leading * literal: RouterOS does not decode %2A in record paths.
+  if(!BINDING_ID.test(id))throw new RouterUnavailable();
+  await this.call(`ip/hotspot/ip-binding/${id}`,'DELETE',signal);
  }
  async active(username:string,signal?:AbortSignal):Promise<Array<{id:string}>> {
   if(!/^[A-Za-z0-9_-]{16,128}$/.test(username))throw new RouterUnavailable();

@@ -873,6 +873,42 @@ paths:
       responses:
         '200': {description: New inverse change preview, linked to the original change}
         '409': {description: Parent not applied, current values changed, router busy or idempotency conflict}
+  /v1/admin/approved-devices:
+    get:
+      security: [{StaffSession: []}]
+      summary: List approved devices that bypass the captive portal at every configured site router
+      description: Approved MFA-verified administrators only. PAMOFI_APPROVED_DEVICES_ENABLED gates the feature. No query parameters. Router credentials, URLs and raw replies are never returned.
+      responses:
+        '200': {description: 'devices with label, MAC and per-router state; router sync status; recent audit events'}
+        '401': {description: 'Staff session required'}
+        '403': {description: 'Administrator role required'}
+        '404': {description: 'Approved devices disabled'}
+        '503': {description: 'Identity or network service unavailable'}
+    post:
+      security: [{StaffSession: []}]
+      summary: Approve a device
+      description: Requires Idempotency-Key UUID, an allowed Origin and PAMOFI_APPROVED_DEVICES_WRITE_ENABLED. Body {macAddress, label, reason}; the reason (10-500 characters) is recorded with the administrator.
+      responses:
+        '201': {description: '{device, syncing}'}
+        '400': {description: 'invalid_request or a specific MAC/label/reason error'}
+        '409': {description: 'writes_disabled, device_exists, allowlist_full or idempotency_conflict'}
+  /v1/admin/approved-devices/{id}/remove:
+    post:
+      security: [{StaffSession: []}]
+      summary: Remove an approved device with a recorded reason
+      description: Requires Idempotency-Key UUID and body {reason}.
+      responses:
+        '200': {description: '{device, syncing}'}
+        '404': {description: 'Unknown device'}
+        '409': {description: 'writes_disabled, device_not_active or idempotency_conflict'}
+  /v1/admin/approved-devices/sync:
+    post:
+      security: [{StaffSession: []}]
+      summary: Re-check and reconcile every configured router now
+      description: Body {}. Requires PAMOFI_APPROVED_DEVICES_WRITE_ENABLED.
+      responses:
+        '200': {description: '{syncing false}'}
+        '202': {description: '{syncing true}'}
 components:
   securitySchemes:
     CustomerSession:
