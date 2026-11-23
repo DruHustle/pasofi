@@ -5,6 +5,8 @@ import {eligibleMethod,type PaymentAdapter,type PaymentInput,type PaymentTerms} 
 import {beginProviderPayment,reconcileProviderPayment,expireUnusedOrder,PaymentError} from './payments.js';
 import {processPaymentReconciliation} from './payment-reconciliation.js';
 import {StripeAdapter,stripeConfiguration,stripePresentation,registerStripeWebhook} from './stripe.js';
+import {ECOCASH_METHOD,EcoCashCheckoutAdapter,EcoCashCheckoutError,ecocashCheckoutConfiguration,ecocashPresentation,payerNumber,persistEcoCashContext} from './ecocash-checkout.js';
+import {SIMULATED_PROVIDERS} from './payment-provider.js';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type Configuration={enabled:boolean;mode:'disabled'|'mock'|'sandbox'|'production'};
 type Customer=(request:FastifyRequest)=>Promise<string|null>;
@@ -12,11 +14,16 @@ const object=(v:unknown):Record<string,any>=>v&&typeof v==='object'&&!Array.isAr
 export function paymentConfiguration(demo:boolean):Configuration {
  const raw=process.env.PAMOFI_PAYMENT_MODE;
  if(process.env.PAMOFI_PAYMENTS_ENABLED!=='true')return {enabled:false,mode:'disabled'};
+ // EcoCash checkout has its own switch (PAMOFI_ECOCASH_CHECKOUT_ENABLED) and
+ // is never selected through PAMOFI_PAYMENT_PROVIDER, so a provider typo can
+ // never turn it on. Its gates are evaluated in ecocashCheckoutConfiguration.
+ const ecocash=ecocashCheckoutConfiguration(demo);
+ const ecocashMode:Configuration|null=ecocash?.newCheckout?{enabled:true,mode:ecocash.live?'production':'sandbox'}:null;
  // An explicit unsupported provider must not silently become a simulation.
  // An unset selector preserves the existing demo-only mock configuration.
  const provider=process.env.PAMOFI_PAYMENT_PROVIDER;
  if(provider==='stripe'){
-  const stripe=stripeConfiguration(demo);if(!stripe)return {enabled:false,mode:'disabled'};
+  const stripe=stripeConfiguration(demo);if(!stripe)return ecocashMode??{enabled:false,mode:'disabled'};
   // These are new-sale gates only. Keep the Stripe adapter configured for
   // signed callbacks and reconciliation of money already received when a site
   // or router is paused, but never expose a new checkout without live service.
@@ -26,13 +33,27 @@ export function paymentConfiguration(demo:boolean):Configuration {
  if(provider!==undefined&&provider!=='mock')return {enabled:false,mode:'disabled'};
  if(raw==='mock'&&demo)return {enabled:true,mode:'mock'};
  // Unqualified legacy providers stay disabled; only the explicitly selected,
- // independently verified Stripe path above can enable real settlement.
- return {enabled:false,mode:'disabled'};
+ // independently verified Stripe path above or fully gated EcoCash can enable settlement.
+ return ecocashMode??{enabled:false,mode:'disabled'};
 }
-function methods(adapter:PaymentAdapter,siteId:string){
- if(adapter instanceof StripeAdapter)return {items:[{active:true,code:'STRIPE_CARD',name:'Card or mobile wallet',currencies:['USD'],minimumAmount:'0.50',maximumAmount:'999999.99'}],
-  merchant:new Set(['STRIPE_CARD']),site:new Set(adapter.config.siteIds.has(siteId)?['STRIPE_CARD']:[])};
- return {items:[{active:true,code:'MOCKPAY',name:'Simulated payment',currencies:['USD'],minimumAmount:'0.01',maximumAmount:'10000000.00'}],merchant:new Set(['MOCKPAY']),site:new Set(['MOCKPAY'])};
+// New EcoCash checkout availability, for capabilities and method listing.
+// paymentConfiguration already refuses unsupported provider selectors.
+export function ecocashCheckoutAvailable(demo:boolean):boolean{
+ return paymentConfiguration(demo).enabled&&ecocashCheckoutConfiguration(demo)?.newCheckout===true;
+}
+type MethodItem={active:boolean;code:string;name:string;currencies:string[];minimumAmount:string;maximumAmount:string};
+type Offered={adapter:PaymentAdapter;item:MethodItem;siteQualified:(siteId:string)=>boolean};
+function offered(adapters:PaymentAdapter[],ecocashOpen:boolean):Offered[]{
+ const list:Offered[]=[];
+ for(const adapter of adapters){
+  if(adapter instanceof StripeAdapter)list.push({adapter,item:{active:true,code:'STRIPE_CARD',name:'Card or mobile wallet',currencies:['USD'],minimumAmount:'0.50',maximumAmount:'999999.99'},siteQualified:siteId=>adapter.config.siteIds.has(siteId)});
+  else if(adapter instanceof EcoCashCheckoutAdapter){if(ecocashOpen)list.push({adapter,item:ECOCASH_METHOD,siteQualified:siteId=>adapter.config.siteIds.has(siteId.toLowerCase())});}
+  else if(adapter.provider==='mock')list.push({adapter,item:{active:true,code:'MOCKPAY',name:'Simulated payment',currencies:['USD'],minimumAmount:'0.01',maximumAmount:'10000000.00'},siteQualified:()=>true});
+ }
+ return list;
+}
+function methods(list:Offered[],siteId:string){
+ return {items:list.map(o=>o.item),merchant:new Set(list.map(o=>o.item.code)),site:new Set(list.filter(o=>o.siteQualified(siteId)).map(o=>o.item.code))};
 }
 function mockAdapter(pool:Pool):PaymentAdapter{return {
  provider:'mock',
@@ -41,13 +62,27 @@ function mockAdapter(pool:Pool):PaymentAdapter{return {
 };}
 export function registerCheckout(app:FastifyInstance,pool:Pool|null,demo:boolean,customer:Customer,originAllowed:(request:FastifyRequest)=>boolean):()=>Promise<void>{
  const config=paymentConfiguration(demo);if(!pool)return async()=>{};
- const stripe=stripeConfiguration(demo);
+ const stripe=stripeConfiguration(demo),ecocash=ecocashCheckoutConfiguration(demo),ecocashOpen=ecocashCheckoutAvailable(demo);
  // Pausing new sales must not stop signed callbacks or reconciliation of money already received.
- const adapter:PaymentAdapter|null=stripe?new StripeAdapter(stripe):config.enabled?mockAdapter(pool):null;
- if(adapter instanceof StripeAdapter)registerStripeWebhook(app,pool,adapter);
+ const adapters:PaymentAdapter[]=[];
+ if(stripe)adapters.push(new StripeAdapter(stripe));else if(config.enabled&&config.mode==='mock')adapters.push(mockAdapter(pool));
+ if(ecocash)adapters.push(new EcoCashCheckoutAdapter(ecocash,pool));
+ const stripeAdapter=adapters.find((a):a is StripeAdapter=>a instanceof StripeAdapter);
+ const mock=adapters.find(a=>a.provider==='mock');
+ const offers=offered(adapters,ecocashOpen);
+ const adapter=adapters[0]??null;
+ if(stripeAdapter)registerStripeWebhook(app,pool,stripeAdapter);
  async function account(request:FastifyRequest,reply:FastifyReply){if(request.method!=='GET'&&!originAllowed(request)){reply.code(403).send({error:'origin_rejected'});return null;}try{const id=await customer(request);if(!id)reply.code(401).send({error:'not_authenticated'});return id;}catch{reply.code(503).send({error:'identity_unavailable'});return null;}}
- app.get('/v1/payments/methods',async(request,reply)=>{if(!config.enabled||!adapter)return reply.code(404).send({error:'payments_disabled'});const q=object(request.query);if(typeof q.siteId!=='string'||!uuid.test(q.siteId)||typeof q.bundleId!=='string')return reply.code(400).send({error:'site_and_bundle_required'});try{const product=(await pool.query('SELECT b.* FROM bundle_versions b,sales_locations s WHERE b.id=$1 AND b.published AND s.id=$2 AND s.enabled',[q.bundleId,q.siteId])).rows[0];if(!product)return reply.code(404).send({error:'site_or_bundle_unavailable'});const list=methods(adapter,q.siteId);return {enabled:true,mode:config.mode,simulation:config.mode!=='production',methods:list.items.filter(m=>eligibleMethod(m,product.currency,product.price_minor,list.merchant,list.site)).map(m=>({code:m.code,name:m.name,currency:product.currency,minMinor:Math.round(Number(m.minimumAmount)*100),maxMinor:Math.round(Number(m.maximumAmount)*100)}))};}catch{return reply.code(503).send({error:'payment_methods_unavailable'});}});
- app.post<{Params:{id:string}}>('/v1/orders/:id/checkout',{config:{rateLimit:{max:10,timeWindow:'1 minute'}},preValidation:async(_request,reply)=>{if(!config.enabled||!adapter)return reply.code(404).send({error:'payments_disabled'});},schema:{body:{type:'object',required:['siteId','methodCode'],additionalProperties:false,properties:{siteId:{type:'string'},methodCode:{type:'string',maxLength:40}}}}},async(request,reply)=>{if(!config.enabled||!adapter)return reply.code(404).send({error:'payments_disabled'});const id=await account(request,reply);if(!id)return;const b=object(request.body),key=request.headers['idempotency-key'];if(!uuid.test(request.params.id)||typeof key!=='string'||!uuid.test(key)||typeof b.siteId!=='string'||!uuid.test(b.siteId)||typeof b.methodCode!=='string')return reply.code(400).send({error:'invalid_checkout'});try{const order=(await pool.query('SELECT purchase_mode FROM purchase_orders WHERE id=$1 AND customer_id=$2',[request.params.id,id])).rows[0];if(!order)return reply.code(404).send({error:'order_not_found'});if(order.purchase_mode!=='checkout')return reply.code(409).send({error:'wrong_order_mode'});const location=await pool.query('SELECT 1 FROM sales_locations WHERE id=$1 AND enabled',[b.siteId]);if(!location.rowCount)return reply.code(409).send({error:'site_unavailable'});const list=methods(adapter,b.siteId),method=list.items.find(m=>m.code===b.methodCode);const result=await beginProviderPayment(pool,id,request.params.id,key,b.siteId,b.methodCode,{method,merchantEnabledCodes:list.merchant,siteQualifiedCodes:list.site},adapter);return {...result,redirectUrl:null,simulation:config.mode!=='production',...(adapter instanceof StripeAdapter?{stripe:await stripePresentation(pool,id,result.attemptId,adapter)}:{})};}catch(error){return reply.code(error instanceof PaymentError?409:503).send({error:error instanceof PaymentError?error.code:'payment_unavailable'});}});
+ app.get('/v1/payments/methods',async(request,reply)=>{if(!config.enabled||!adapter)return reply.code(404).send({error:'payments_disabled'});const q=object(request.query);if(typeof q.siteId!=='string'||!uuid.test(q.siteId)||typeof q.bundleId!=='string')return reply.code(400).send({error:'site_and_bundle_required'});try{const product=(await pool.query('SELECT b.* FROM bundle_versions b,sales_locations s WHERE b.id=$1 AND b.published AND s.id=$2 AND s.enabled',[q.bundleId,q.siteId])).rows[0];if(!product)return reply.code(404).send({error:'site_or_bundle_unavailable'});const list=methods(offers,q.siteId);return {enabled:true,mode:config.mode,simulation:config.mode!=='production',methods:list.items.filter(m=>eligibleMethod(m,product.currency,product.price_minor,list.merchant,list.site)).map(m=>({code:m.code,name:m.name,currency:product.currency,minMinor:Math.round(Number(m.minimumAmount)*100),maxMinor:Math.round(Number(m.maximumAmount)*100)}))};}catch{return reply.code(503).send({error:'payment_methods_unavailable'});}});
+ app.post<{Params:{id:string}}>('/v1/orders/:id/checkout',{config:{rateLimit:{max:10,timeWindow:'1 minute'}},preValidation:async(_request,reply)=>{if(!config.enabled||!adapter)return reply.code(404).send({error:'payments_disabled'});},schema:{body:{type:'object',required:['siteId','methodCode'],additionalProperties:false,properties:{siteId:{type:'string'},methodCode:{type:'string',maxLength:40},payerMsisdn:{type:'string',maxLength:16}}}}},async(request,reply)=>{if(!config.enabled||!adapter)return reply.code(404).send({error:'payments_disabled'});const id=await account(request,reply);if(!id)return;const b=object(request.body),key=request.headers['idempotency-key'];if(!uuid.test(request.params.id)||typeof key!=='string'||!uuid.test(key)||typeof b.siteId!=='string'||!uuid.test(b.siteId)||typeof b.methodCode!=='string')return reply.code(400).send({error:'invalid_checkout'});try{const order=(await pool.query('SELECT purchase_mode FROM purchase_orders WHERE id=$1 AND customer_id=$2',[request.params.id,id])).rows[0];if(!order)return reply.code(404).send({error:'order_not_found'});if(order.purchase_mode!=='checkout')return reply.code(409).send({error:'wrong_order_mode'});const location=await pool.query('SELECT 1 FROM sales_locations WHERE id=$1 AND enabled',[b.siteId]);if(!location.rowCount)return reply.code(409).send({error:'site_unavailable'});const list=methods(offers,b.siteId),offer=offers.find(o=>o.item.code===b.methodCode),method=offer?.item;
+  // A retried attempt is recovered under its original provider even if that
+  // method is no longer offered; beginProviderPayment never re-initiates it.
+  const previous=(await pool.query('SELECT provider FROM provider_payment_attempts WHERE customer_id=$1 AND request_key=$2',[id,key.toLowerCase()])).rows[0];
+  const chosen=offer?.adapter??(previous?adapters.find(a=>a.provider===previous.provider):undefined)??adapter;
+  let persist:((client:import('pg').PoolClient,attemptId:string)=>Promise<void>)|undefined;
+  if(chosen instanceof EcoCashCheckoutAdapter&&!previous){const msisdn=payerNumber(b.payerMsisdn);persist=(client,attemptId)=>persistEcoCashContext(client,chosen.config,attemptId,msisdn);}
+  const result=await beginProviderPayment(pool,id,request.params.id,key,b.siteId,b.methodCode,{method,merchantEnabledCodes:list.merchant,siteQualifiedCodes:list.site},chosen,persist);
+  return {...result,redirectUrl:null,simulation:config.mode!=='production',...(chosen instanceof StripeAdapter?{stripe:await stripePresentation(pool,id,result.attemptId,chosen)}:{}),...(chosen instanceof EcoCashCheckoutAdapter?{ecocash:await ecocashPresentation(pool,id,result.attemptId)}:{})};}catch(error){if(error instanceof EcoCashCheckoutError)return reply.code(400).send({error:error.code});return reply.code(error instanceof PaymentError?409:503).send({error:error instanceof PaymentError?error.code:'payment_unavailable'});}});
  app.get<{Params:{id:string}}>('/v1/orders/:id/status',async(request,reply)=>{
   const id=await account(request,reply);if(!id)return;
   if(!uuid.test(request.params.id))return reply.code(404).send({error:'order_not_found'});
@@ -55,7 +90,7 @@ export function registerCheckout(app:FastifyInstance,pool:Pool|null,demo:boolean
    const order=(await pool.query('SELECT id,bundle_id,price_minor,currency,byte_limit::text,validity_seconds,status,created_at,quote_expires_at,purchase_mode,expired_unused_at FROM purchase_orders WHERE id=$1 AND customer_id=$2',[request.params.id,id])).rows[0];
    if(!order)return reply.code(404).send({error:'order_not_found'});
    const attempts=(await pool.query('SELECT id,provider,state,created_at AS "createdAt",updated_at AS "updatedAt" FROM provider_payment_attempts WHERE order_id=$1 AND customer_id=$2 ORDER BY created_at DESC LIMIT 10',[order.id,id])).rows;
-   const provenance=(await pool.query("SELECT COALESCE(bool_and(provider IN ('mock','stripe_test')),false) AS simulated FROM provider_payment_attempts WHERE order_id=$1 AND customer_id=$2",[order.id,id])).rows[0];
+   const provenance=(await pool.query("SELECT COALESCE(bool_and(provider=ANY($3::text[])),false) AS simulated FROM provider_payment_attempts WHERE order_id=$1 AND customer_id=$2",[order.id,id,SIMULATED_PROVIDERS])).rows[0];
    const e=(await pool.query('SELECT id,revoked_at FROM purchase_entitlements WHERE order_id=$1 AND customer_id=$2',[order.id,id])).rows[0];
    const review=(await pool.query('SELECT 1 FROM payment_reviews WHERE order_id=$1 LIMIT 1',[order.id])).rowCount;
    const charges=(await pool.query('SELECT state,fulfilled_entitlement_id FROM verified_charges WHERE order_id=$1',[order.id])).rows;
@@ -69,9 +104,11 @@ export function registerCheckout(app:FastifyInstance,pool:Pool|null,demo:boolean
   try{return await expireUnusedOrder(pool,id,request.params.id);}
   catch(error){return reply.code(error instanceof PaymentError?(error.code==='order_not_found'?404:409):503).send({error:error instanceof PaymentError?error.code:'payment_unavailable'});}
  });
- if(adapter?.provider==='mock')app.post<{Params:{id:string}}>('/v1/orders/:id/mock-payment',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(request,reply)=>{const id=await account(request,reply);if(!id)return;const b=object(request.body);if(!uuid.test(request.params.id)||!['success','failed','reversed'].includes(b.outcome))return reply.code(400).send({error:'invalid_mock_outcome'});try{const target=(await pool.query('SELECT m.reference,m.state,a.id AS attempt_id FROM mock_provider_payments m JOIN provider_payment_attempts a ON a.provider_reference=m.reference JOIN purchase_orders o ON o.id=m.order_id WHERE o.id=$1 AND o.customer_id=$2 AND o.purchase_mode=\'checkout\' AND a.provider=\'mock\' ORDER BY a.created_at DESC LIMIT 1',[request.params.id,id])).rows[0];if(!target)return reply.code(404).send({error:'order_not_found'});const next=b.outcome==='success'?'verified_success':b.outcome;if(target.state==='reversed'&&next!=='reversed')return reply.code(409).send({error:'reversal_is_final'});await pool.query("UPDATE mock_provider_payments SET state=$2 WHERE reference=$1 AND (state<>'reversed' OR $2='reversed')",[target.reference,next]);return {...await reconcileProviderPayment(pool,target.attempt_id,adapter),simulation:true};}catch{return reply.code(503).send({error:'payment_unavailable'});}});
+ if(mock)app.post<{Params:{id:string}}>('/v1/orders/:id/mock-payment',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(request,reply)=>{const id=await account(request,reply);if(!id)return;const b=object(request.body);if(!uuid.test(request.params.id)||!['success','failed','reversed'].includes(b.outcome))return reply.code(400).send({error:'invalid_mock_outcome'});try{const target=(await pool.query('SELECT m.reference,m.state,a.id AS attempt_id FROM mock_provider_payments m JOIN provider_payment_attempts a ON a.provider_reference=m.reference JOIN purchase_orders o ON o.id=m.order_id WHERE o.id=$1 AND o.customer_id=$2 AND o.purchase_mode=\'checkout\' AND a.provider=\'mock\' ORDER BY a.created_at DESC LIMIT 1',[request.params.id,id])).rows[0];if(!target)return reply.code(404).send({error:'order_not_found'});const next=b.outcome==='success'?'verified_success':b.outcome;if(target.state==='reversed'&&next!=='reversed')return reply.code(409).send({error:'reversal_is_final'});await pool.query("UPDATE mock_provider_payments SET state=$2 WHERE reference=$1 AND (state<>'reversed' OR $2='reversed')",[target.reference,next]);return {...await reconcileProviderPayment(pool,target.attempt_id,mock),simulation:true};}catch{return reply.code(503).send({error:'payment_unavailable'});}});
  let running:Promise<void>|undefined,timer:ReturnType<typeof setInterval>|undefined;
- const tick=()=>{if(running||!adapter)return;running=processPaymentReconciliation(pool,adapter).then(()=>{}).catch(()=>{console.error('Payment reconciliation unavailable');}).finally(()=>{running=undefined;});};
+ // Each provider's worker claims only its own jobs; one provider's outage
+ // cannot block reconciliation for another.
+ const tick=()=>{if(running||!adapters.length)return;running=Promise.all(adapters.map(a=>processPaymentReconciliation(pool,a).catch(()=>{console.error('Payment reconciliation unavailable');}))).then(()=>{}).finally(()=>{running=undefined;});};
  if(adapter&&process.env.PAYMENT_RECONCILIATION_WORKER_ENABLED!=='false')app.addHook('onReady',async()=>{tick();timer=setInterval(tick,2000);timer.unref();});
  return async()=>{if(timer)clearInterval(timer);await running;};
 }

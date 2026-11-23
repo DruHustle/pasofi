@@ -1,7 +1,9 @@
 // Pesepay remains a historical ledger identity, not a selectable checkout.
-// No direct provider joins this settlement interface until independently
-// verifiable paid terms and its production contract have been qualified.
-export type PaymentProvider='mock'|'pesepay'|'stripe'|'stripe_test';
+// EcoCash joins this settlement interface switched off; its adapter fulfils only
+// on provider-reported terms matching the order (see ecocash-checkout.ts).
+export type PaymentProvider='mock'|'pesepay'|'stripe'|'stripe_test'|'ecocash'|'ecocash_test';
+export const SETTLEMENT_PROVIDERS:readonly PaymentProvider[]=['mock','pesepay','stripe','stripe_test','ecocash','ecocash_test'];
+export const SIMULATED_PROVIDERS:readonly PaymentProvider[]=['mock','stripe_test','ecocash_test'];
 export type MethodEligibility={method:unknown;merchantEnabledCodes:Set<string>;siteQualifiedCodes:Set<string>};
 export type PaymentInput={attemptId:string;orderId:string;customerId:string;siteId:string;amountMinor:number;currency:string;methodCode:string;eligibility:MethodEligibility};
 export type PaymentTerms={referenceNumber:string;amountMinor:number;currency:string;attemptId?:string;orderId?:string;customerId?:string;siteId?:string;methodCode?:string};
