@@ -120,7 +120,8 @@ PasoFi hostnames live under `pasofi.mobile.onesa.eu`. The Oracle API moved from
 `api.pasofi.onesa.eu` to `api.pasofi.mobile.onesa.eu` on 2026-11-23. The new name
 is a DNS-only Cloudflare A record to the dedicated Oracle gateway, covered by the
 `pasofi-public` certificate lineage together with `hotspot.pasofi.mobile.onesa.eu`.
-The router-local login name `hotspot.pasofi.onesa.eu` is separate and unchanged.
+The router-local HotSpot login moved from `hotspot.pasofi.onesa.eu` to
+`login.pasofi.mobile.onesa.eu` (see [Router-local login](#router-local-login)).
 
 The gateway has a single HTTPS server and authenticates the Vercel proxy by
 token, not by Host, and identity/prepaid check the forwarded browser `Origin`,
@@ -147,3 +148,25 @@ audience to the `pasofi` product.
 The legacy name was then retired: it was removed from the certificate and its DNS
 record deleted. Nothing in the Onesa Portal collector, Cloudflare Workers or the
 routers referenced it at that point.
+
+## Router-local login
+
+The RouterOS HotSpot login on each router is `login.pasofi.mobile.onesa.eu`; the
+hosted PasoFi page stays on `hotspot.pasofi.mobile.onesa.eu`. They must differ,
+because a HotSpot answers its own login name locally, so a shared name would send
+the "Continue to PasoFi" link back to the router.
+
+- Cloudflare has a DNS-only A record for the login name pointing at the Oracle
+  gateway, only so Let's Encrypt can validate it there; inside a HotSpot the
+  router answers the name with its own address.
+- Each router (G0, K0) generated its own P-256 key and certificate request. The
+  key never left the router. Oracle signs the saved request
+  (`infra/hotspot-certificate/router-login-sign.sh`), and the router imports the
+  leaf with the full Let's Encrypt chain.
+- The HotSpot profiles use that certificate, the login name and the
+  `pasofi-portal-v4` pages, which differ from v3 only in the login hostname.
+- The network service's `radius_nas.login_url` uses
+  `https://login.pasofi.mobile.onesa.eu/login`, the router form origin the
+  mobile app accepts.
+- `pamofi-hotspot-cert-check` warns 30 days before either router certificate
+  expires (first expiry 2027-02-21).
