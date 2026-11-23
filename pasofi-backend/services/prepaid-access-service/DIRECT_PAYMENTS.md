@@ -18,7 +18,7 @@ PasoFi supports the product design for **both** journeys and must enable them in
 
 | Customer journey | Start | Provider data needed | Fulfillment | Launch state |
 | --- | --- | --- | --- | --- |
-| EcoCash checkout inside PasoFi | Customer selects site and bundle in Web, iOS or Android; provides own EcoCash number and approves a merchant-initiated charge | Official Online Payments initiation, immutable correlation, read-only status, independently proven amount/currency/destination merchant, authentication and reversal contract | Fulfill the paid order once after verified settlement; expose an existing redeemable voucher or queued entitlement as appropriate | Sandbox adapter only; **not enabled** for production |
+| EcoCash checkout inside PasoFi | Customer selects site and bundle in Web, iOS or Android; provides own EcoCash number and approves a merchant-initiated charge | Official Online Payments initiation, immutable correlation, read-only status, independently proven amount/currency/destination merchant, authentication and reversal contract | Fulfill the paid order once after verified settlement; expose an existing redeemable voucher or queued entitlement as appropriate | Checkout adapter built and switched off (`PAMOFI_ECOCASH_CHECKOUT_ENABLED`); **not enabled** in any environment. See [ECOCASH_ACTIVATION.md](ECOCASH_ACTIVATION.md) |
 | EcoCash Pay Merchant, app or USSD | Customer independently pays the **published exact price** to a registered PasoFi merchant code, without starting PasoFi checkout | Authoritative incoming merchant credit feed or authenticated webhook, receiving merchant ID, original transaction ID, amount, currency, payer's SMS-capable number, settlement and reversals | One credit -> one voucher -> SMS to the payer -> optional redemption by purchaser or recipient | Local synthetic-credit path only; **not enabled** for production |
 
 **No double billing or invented funds:** These are distinct funding sources. An unsolicited Pay Merchant receipt never completes an unrelated checkout order. A checkout callback never manufactures a Pay Merchant credit. Use provider transaction identities and immutable ledger records for both; persist before side effects. Customer-visible success requires separately verified payment and any physical network authorization. A received payment must not be deemed settled solely from an SMS or customer-entered reference.
@@ -81,6 +81,8 @@ The [Go Live page](https://developers.ecocash.co.zw/docs/go-live) requires merch
 
 ## Implemented boundary
 
+**Update 2026-11-23:** the checkout journey is now wired, switched off, through `src/ecocash-checkout.ts`. It uses the generalized client in `src/ecocash.ts` and fulfils only when the lookup's provider-reported amount, currency and merchant code match the order. Activation steps and the remaining provider questions are in [ECOCASH_ACTIVATION.md](ECOCASH_ACTIVATION.md). The paragraphs below describe the original standalone sandbox class, `EcoCashSandboxAdapter`, which is unchanged.
+
 `src/ecocash.ts` is a standalone sandbox preparation adapter. It has no import from the application checkout registration and does not implement the settlement `PaymentAdapter` interface. Its only network destinations are the fixed official sandbox paths above. Configuration is explicit constructor input; no environment variable activates it.
 
 `prepareEcoCashPayment` creates immutable request context from server order terms and a unique attempt UUID. The same UUID becomes the correlation and reference values. The caller must persist the complete context before any initiation; automatic retry of the POST is prohibited. A timeout preserves the original lookup identity. The implementation itself performs no automatic POST retry and exposes a separate read-only lookup method.
@@ -100,7 +102,7 @@ Contract tests use fake HTTP responses only. They cover the documented request/a
 3. Documented terminal-failure, pending, reversal/refund and duplicate-request behavior, including accepted correlation length/format. The prepared UUID format requires provider acceptance testing.
 4. Controlled sandbox evidence for success, declined/insufficient funds, timeout, ambiguous response, duplicate request, missing lookup and reversal scenarios. If callbacks are introduced, their authentication, canonicalization and replay rules must also be qualified.
 
-After those inputs are available, implementation still needs a qualified direct-provider ledger identity, encrypted durable customer/correlation context before the first POST, a provider-specific reconciliation worker and customer approval UI. Those are deliberately absent from the current runtime so a configuration change cannot start unsupported charges.
+The direct-provider ledger identity (`ecocash`/`ecocash_test`), the encrypted customer/correlation context committed before the first POST, the provider-specific reconciliation and the customer approval UI now exist. They stay closed behind their own switch and gates, so a single configuration change can't start charges. See [ECOCASH_ACTIVATION.md](ECOCASH_ACTIVATION.md).
 
 ## Historical provider compatibility
 
