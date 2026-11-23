@@ -12,6 +12,15 @@ sales, usage, staff operations and hotspot access. The production website is
 | Oracle deployment, RADIUS, backup and remote-management tooling | `pasofi-backend/infra/` |
 | RouterOS commissioning and captive portal templates | `pasofi-backend/pasofi-routeros/` |
 
+## Local checkout
+
+Clone from [DruHustle/pasofi](https://github.com/DruHustle/pasofi) into a folder
+named `pasofi`. If that checkout already exists, reuse it.
+
+```sh
+git clone https://github.com/DruHustle/pasofi.git pasofi
+```
+
 See the [backend guide](pasofi-backend/README.md),
 [cash launch requirements](pasofi-backend/docs/CASH_HOTSPOT_LAUNCH.md),
 [native customer connection](NATIVE_CUSTOMER_CONNECTION.md) and
