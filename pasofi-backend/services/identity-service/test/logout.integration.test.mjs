@@ -116,7 +116,7 @@ test('managed browser logout hands off to Onesa only after revoking the requeste
   const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   Object.assign(process.env, {
     APP_ENV: 'production', NODE_ENV: 'production', DATABASE_URL: url, PUBLIC_ORIGIN: origin,
-    PUBLIC_ORIGIN_ALIASES: JSON.stringify([alias]), STAFF_MFA_ENCRYPTION_KEY: 'ab'.repeat(32),
+    PUBLIC_ORIGIN_ALIASES: JSON.stringify([alias]), STAFF_MFA_ENCRYPTION_KEY: randomBytes(32).toString('hex'),
     PASOFI_ONESA_MODE: 'managed', PASOFI_ONESA_ISSUER: issuer, PASOFI_ONESA_CLIENT_ID: clientId,
     PASOFI_ONESA_CLIENT_SECRET: randomBytes(48).toString('hex'),
     PASOFI_ONESA_REDIRECT_URI: origin + '/onesa-callback.html',
@@ -125,6 +125,11 @@ test('managed browser logout hands off to Onesa only after revoking the requeste
   });
   const app = buildApp(), pool = new pg.Pool({ connectionString: url });
   try {
+    for (const path of ['/v1/onesa/availability', '/v1/staff/onesa/availability']) {
+      const available = await app.inject({ url: path });
+      assert.equal(available.statusCode, 200);
+      assert.equal(available.json().origin, origin);
+    }
     await pool.query('INSERT INTO customers(id) VALUES($1)', [customer]);
     for (const mode of ['customer', 'staff']) {
       const path = mode === 'customer' ? '/v1/session' : '/v1/staff/session';
