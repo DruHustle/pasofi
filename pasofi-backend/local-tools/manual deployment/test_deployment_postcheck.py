@@ -156,6 +156,15 @@ class PostcheckTests(unittest.TestCase):
         self.assertEqual(result["queues"]["prepaid-access"]["counts"]["network_review"], 2)
         self.assertTrue(all(argv[0] in ("docker", "systemctl") for argv, _ in self.host.calls))
 
+    def test_payment_without_matching_entitlement_is_critical(self):
+        values = {name: 0 for name in postcheck.QUEUE_FIELDS["prepaid-access"]}
+        values["paid_unfulfilled"] = 1
+        self.host.queue_override["prepaid-access"] = values
+        result = self.collect()
+        self.assertFalse(result["software_checks_passed"])
+        self.assertIn("critical_paid_unfulfilled", result["problems"])
+        self.assertEqual(result["queues"]["prepaid-access"]["counts"]["paid_unfulfilled"], 1)
+
     def test_unexpected_aggregate_output_is_discarded_without_secret_leak(self):
         self.host.queue_override["notification"] = {"database_url": SECRET}
         result = self.collect()

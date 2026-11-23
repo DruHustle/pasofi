@@ -42,6 +42,7 @@ Use `PAMOFI_OPERATIONS_COMPOSE_FILE` with an absolute rendered configuration pat
 | --- | --- |
 | API/database not ready | Inspect bounded sanitized service logs and resource use; preserve all databases and queued work. Liveness alone does not permit new commerce. |
 | Unexpected published port | Restrict the unintended listener through the reviewed deployment configuration; keep local recovery access. Verify from outside the host. |
+| Critical: verified live payment without a matching entitlement | Reconcile the original charge and its order. Use the private `paid_unfulfilled` count to confirm the incident is resolved. |
 | Payment unknown/review | Reconcile by the existing provider reference and order terms. Do not initiate another charge to clear the alert. |
 | SMS unknown or delayed | Poll a known provider ID. Unknown submission is not permission to resend; an authorized reasoned resend is a separate audited action. |
 | Grant hold, stale accounting or unreachable router | Retain the reservation. Restore private management reachability, fence the credential, obtain final accounting and independent absence, then use the versioned administrator review when required. |
