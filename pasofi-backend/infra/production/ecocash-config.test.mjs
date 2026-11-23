@@ -1,9 +1,55 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const cwd=fileURLToPath(new URL('.',import.meta.url));
+
+test('the production prepaid entrypoint accepts EcoCash credentials only from secret files', async t => {
+  const fixture = await mkdtemp(join(tmpdir(), 'pasofi-ecocash-secret-'));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  const dist = join(fixture, 'dist');
+  await mkdir(dist);
+  const database = join(fixture, 'database');
+  const password = join(fixture, 'password');
+  const pin = join(fixture, 'pin');
+  await Promise.all([
+    writeFile(database, 'postgresql://pamofi_prepaid_access_runtime:fixture_only@127.0.0.1:1/pamofi_prepaid_access\n', { mode: 0o400 }),
+    writeFile(password, 'fixture-password\n', { mode: 0o400 }),
+    writeFile(pin, '0000\n', { mode: 0o400 }),
+    writeFile(join(dist, 'server.js'), `
+if (process.env.PAMOFI_ECOCASH_CHECKOUT_ENABLED === 'true' &&
+    (process.env.ECOCASH_API_PASSWORD !== 'fixture-password' || process.env.ECOCASH_MERCHANT_PIN !== '0000')) {
+  throw Error('fixture credentials were not loaded');
+}
+console.log('fixture service started');
+`),
+  ]);
+  const start = overrides => spawnSync(process.execPath, [join(cwd, 'entrypoint.mjs'), 'serve'], {
+    cwd: fixture,
+    env: { APP_ENV: 'production', NODE_ENV: 'production', PAMOFI_SERVICE: 'prepaid-access', DATABASE_URL_FILE: database, ...overrides },
+    encoding: 'utf8', timeout: 5000,
+  });
+  assert.equal(start({}).status, 0, 'base production remains available with EcoCash off');
+  for (const name of ['ECOCASH_API_PASSWORD', 'ECOCASH_MERCHANT_PIN']) {
+    const inline = start({ [name]: 'fixture-inline' });
+    assert.equal(inline.status, 1, `${name} stays out of the startup environment even while paused`);
+    assert.match(inline.stderr, new RegExp(`${name}_FILE`));
+    assert.doesNotMatch(inline.stdout + inline.stderr, /fixture-inline|fixture service started/);
+  }
+  const active = { PAMOFI_ECOCASH_CHECKOUT_ENABLED: 'true' };
+  const withoutPin = start({ ...active, ECOCASH_API_PASSWORD_FILE: password });
+  assert.equal(withoutPin.status, 1);
+  assert.match(withoutPin.stderr, /ECOCASH_MERCHANT_PIN_FILE/);
+  assert.doesNotMatch(withoutPin.stdout + withoutPin.stderr, /fixture-password|fixture service started/);
+  const mounted = start({ ...active, ECOCASH_API_PASSWORD_FILE: password, ECOCASH_MERCHANT_PIN_FILE: pin });
+  assert.equal(mounted.status, 0, mounted.stderr);
+  assert.match(mounted.stdout, /fixture service started/);
+});
+
 const available=spawnSync('docker',['compose','version','--short'],{encoding:'utf8'}).status===0;
 test('EcoCash overlay adds egress only to prepaid, loads secrets from files and keeps checkout switched off',
  {skip:!available&&process.env.CI!=='true'},()=>{

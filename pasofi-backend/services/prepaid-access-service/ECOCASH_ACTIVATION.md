@@ -40,6 +40,8 @@ Deploy with `infra/production/ecocash-payments.compose.yaml` on top of the exist
 
 When credentials are configured but the switch is off, the service still reconciles existing EcoCash attempts using read-only lookups. It never sends a new charge.
 
+Production prepaid startup requires the password and merchant PIN through their protected secret files when checkout is requested. Inline password and PIN settings prevent startup even when checkout is paused.
+
 ## What to ask EcoCash for
 
 1. Merchant registration approval and **sandbox credentials**: username, password, merchant code, merchant number, terminal ID, registered names and location, and test customer numbers.
