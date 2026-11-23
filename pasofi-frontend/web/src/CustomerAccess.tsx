@@ -11,6 +11,7 @@ import { type InvoiceDelivery, invoiceIdPattern, defaultInvoiceDelivery, invoice
 import LiveUsage, { dataAmount, useLiveUsage, type UsageSnapshot } from './LiveUsage';
 import StripeCheckout,{type StripePayment} from './StripeCheckout';
 import OnesaCustomerSignIn from './OnesaCustomerSignIn';
+import { followOnesaLogout, onesaLogoutHeaders, type LogoutResponse } from './onesa-browser-logout';
 import './customer-premium.css';
 
 type Entitlement = { id: string; bundle_id: string; byte_limit: string; consumed_bytes: string; validity_seconds: number; activated_at: string | null; revoked_at: string | null; start_by: string };
@@ -379,9 +380,10 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   async function logout() {
     if (busy) return; const revision = generation.current; setBusy(true); setLeaving(true);
     try {
-      await api('/api/session', { method: 'DELETE' }); clearSessionSecrets();
+      const result = await api<LogoutResponse>('/api/session', { method: 'DELETE', headers: onesaLogoutHeaders(), redirect: 'error' });
+      clearSessionSecrets();
       try { for (const key of Object.keys(sessionStorage)) if (key.startsWith('pamofi.operation:customer:')) sessionStorage.removeItem(key); } catch { /* The server session was revoked; private view is still cleared. */ }
-      announceSessionChange('signed_out'); if (isCurrent(revision)) { invalidateAccount(); close(); }
+      announceSessionChange('signed_out'); if (isCurrent(revision)) { invalidateAccount(); close(); followOnesaLogout(result); }
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error)); }
     finally { if (isCurrent(revision)) { setBusy(false); setLeaving(false); } }
   }
@@ -516,7 +518,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
 
     {tab === 'recovery' && <>
       <section className="customer-profile-card"><span className="customer-profile-avatar"><CustomerGlyph name="user" /></span><div><span className="eyebrow">YOUR EVERYDAY CONNECTION</span><h3>{owner ? 'Your PasoFi account' : 'Welcome to PasoFi'}</h3><p>{owner ? 'Your account is available in this browser.' : 'Start with a bundle, or bring back your saved account.'}</p></div><span className="customer-profile-language">English</span></section>
-      {owner ? <><div className="customer-account-grid"><RecoverySetup /><CreateHandoff customerId={owner} /></div><section className="workspace-card customer-signout-card"><h3>Sign out of this browser</h3>{signout ? <><p>Save your recovery details before you leave. Signing out does not end an active hotspot session; use the connection controls for that.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of customer account</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></> : <button className="secondary" onClick={() => setSignout(true)}>Prepare to sign out</button>}</section></> : <section className="workspace-card"><h3>Save or restore access</h3><p>Use your saved reference and recovery key to restore a guest purchase. Choose Sign in with Onesa to create an account.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button></div></section>}
+      {owner ? <><div className="customer-account-grid"><RecoverySetup /><CreateHandoff customerId={owner} /></div><section className="workspace-card customer-signout-card"><h3>Sign out of this browser</h3>{signout ? <><p>Save your recovery details before you leave. This can also sign you out of Onesa in this browser. Use the connection controls to end an active hotspot session.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of customer account</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></> : <button className="secondary" onClick={() => setSignout(true)}>Prepare to sign out</button>}</section></> : <section className="workspace-card"><h3>Save or restore access</h3><p>Use your saved reference and recovery key to restore a guest purchase. Choose Sign in with Onesa to create an account.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button></div></section>}
     </>}
   </section>;
 }

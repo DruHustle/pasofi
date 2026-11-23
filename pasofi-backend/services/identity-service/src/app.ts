@@ -1,4 +1,5 @@
 import { configureOnesaCustomer, registerCustomerOnesa } from './onesa-customer.js';
+import { managedBrowserLogoutUrl } from './onesa-browser-logout.js';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
@@ -86,14 +87,23 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
     if (!originAllowed(request.headers.origin)) return reply.code(403).send({ error: 'origin_rejected' });
     try {
       const token = request.cookies[cookieName];
+      let revokedManagedSession = false;
       if (token && /^[A-Za-z0-9_-]{43}$/.test(token)) {
         // Retain the creation record and its revoked session. Removing either
         // would let a retained first-response retry secret create an account
         // again after the user explicitly signed out.
         await pool.query('UPDATE customer_sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE token_hash = $1', [tokenHash(token)]);
-        await pool.query('UPDATE customer_onesa_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1',[tokenHash(token)]);
+        const revoked = await pool.query(`UPDATE customer_onesa_sessions SET revoked_at=now()
+          WHERE token_hash=$1 AND revoked_at IS NULL
+          RETURNING expires_at>now() AND left(access_ciphertext,8)='managed.' AS managed`, [tokenHash(token)]);
+        revokedManagedSession = revoked.rows[0]?.managed === true;
       }
       reply.clearCookie(cookieName, { path: '/', httpOnly: true, secure: !demo, sameSite: 'lax' });
+      const endSessionUrl = managedBrowserLogoutUrl(onesaCustomer?.config, {
+        preference: request.headers['x-pasofi-end-session'], publicOrigin: origin,
+        requestOrigin: request.headers.origin, revokedManagedSession,
+      });
+      if (endSessionUrl) return reply.send({ endSessionUrl });
       return reply.code(204).send();
     } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
