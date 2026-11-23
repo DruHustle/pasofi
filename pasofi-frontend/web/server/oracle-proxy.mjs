@@ -373,6 +373,9 @@ export function createProxyHandler({ env = process.env, request = httpsRequest, 
         if (nativeCustomer && name === 'idempotency-key' && value !== undefined && !/^[A-Za-z0-9_-]{16,128}$/.test(value)) throw new ProxyError(400, 'invalid_request');
         if (value !== undefined) headers[name] = value;
       }
+      if (!nativeCustomer && method === 'DELETE' && sourceOrigin === config.frontends[0].origin &&
+          ['/api/session', '/api/staff/session'].includes(route.path) &&
+          header(req, 'x-pasofi-end-session', 16) === 'onesa') headers['x-pasofi-end-session'] = 'onesa';
       const cookies = publicCookies(header(req, 'cookie'), nativeCustomer ? nativeCookieNames : cookieNames);
       if (cookies !== undefined) headers.cookie = cookies;
       if (sourceOrigin !== undefined) headers.origin = sourceOrigin;
