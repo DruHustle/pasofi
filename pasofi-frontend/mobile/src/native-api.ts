@@ -10,6 +10,7 @@ interface CustomerApiPlugin {
   request(options: NativeRequest): Promise<NativeResponse>;
   cancel(options: { requestId: string }): Promise<{ requestId: string }>;
   authenticate(options: { authorizationUrl: string }): Promise<{ callback: string }>;
+  registerAccount(options: { audience: 'user' | 'admin' }): Promise<{ callback: string }>;
   openSignIn(options: { requestId: string }): Promise<{ requestId: string; opened: boolean }>;
 }
 const bridge = registerPlugin<CustomerApiPlugin>('PasoFiCustomerApi');
@@ -72,6 +73,11 @@ export async function openNativeOnesaSignIn(origin: string): Promise<void> {
 export async function authenticateWithAppleBrowser(origin: string, authorizationUrl: string): Promise<string> {
   await configured(origin);
   const result = await bridge.authenticate({ authorizationUrl });
+  return result.callback;
+}
+
+export async function registerWithAppleBrowser(audience: 'user' | 'admin'): Promise<string> {
+  const result = await bridge.registerAccount({ audience });
   return result.callback;
 }
 

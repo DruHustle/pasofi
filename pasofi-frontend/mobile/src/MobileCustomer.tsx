@@ -5,17 +5,18 @@ import { messageFor } from './business';
 import CustomerAccess, { type CustomerTab } from './CustomerAccess';
 import Recovery from './Recovery';
 import Handoff from './Handoff';
-import RegistrationLink from './RegistrationLink';
+import RegistrationLink, {type RegistrationReturn} from './RegistrationLink';
 import OnesaSignIn from './OnesaSignIn';
 import { watchNativeReturn } from './native-oidc-ui';
 import { onSessionChange } from './session';
 import Icon from './Icon';
 import './customer.css';
 
-export default function MobileCustomer({ close, initialTab = 'access', handoffReturn, registrationTab, usedRegistration }: { close: () => void; initialTab?: CustomerTab; handoffReturn: number; registrationTab:CustomerTab|null; usedRegistration:()=>void }) {
+export default function MobileCustomer({ close, initialTab = 'access', handoffReturn, registration, usedRegistration }: { close: () => void; initialTab?: CustomerTab; handoffReturn: number; registration:RegistrationReturn|null; usedRegistration:()=>void }) {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null), [message, setMessage] = useState(''), [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<'account' | 'recover' | 'handoff' | 'onesa'>('account'), [attempt, setAttempt] = useState(0);
   const [activeTab, setActiveTab] = useState<CustomerTab>(initialTab);
+  const [administratorReturn,setAdministratorReturn]=useState(false);
   const [nativeReturnReady,setNativeReturnReady]=useState(!usesNativeCustomerApi),[nativeReturnFailed,setNativeReturnFailed]=useState(false);
   const live = useRef(false);
   useEffect(()=>{
@@ -27,7 +28,13 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
       .catch(()=>{if(mounted){setNativeReturnFailed(true);setNativeReturnReady(true);setMessage('Secure browser return is unavailable. Use the one-time account handoff instead.');}return ()=>{};});
     return ()=>{mounted=false;void listener.then(stop=>stop()).catch(()=>{});};
   },[]);
-  useEffect(()=>{if(registrationTab){setActiveTab(registrationTab);setScreen('onesa');}},[registrationTab]);
+  useEffect(()=>{
+    if(!registration)return;
+    setActiveTab(registration.tab);
+    setAdministratorReturn(registration.audience==='admin');
+    setScreen(registration.audience==='user'?'onesa':'account');
+    usedRegistration();
+  },[registration,usedRegistration]);
   useEffect(() => { if (handoffReturn) setScreen('handoff'); }, [handoffReturn]);
   useEffect(() => {
     const controller = new AbortController();
@@ -62,10 +69,11 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
       <button onClick={() => setScreen('handoff')}>Accept handoff</button>
     </>}
   </div>
+    {administratorReturn && <p className="mobile-notice" role="status">Administrator access requires approval.</p>}
     {loading && <p className="mobile-notice" role="status">Checking the configured PasoFi service…</p>}
     {message && <div className="mobile-notice"><div><p role="status">{message}</p><button className="mobile-primary" onClick={() => setAttempt(value => value + 1)}>Retry service connection</button></div></div>}
     {capabilities && (screen === 'onesa' ? nativeReturnReady
-      ? <OnesaSignIn resumeRegistration={Boolean(registrationTab)} usedRegistration={usedRegistration} destination={activeTab} close={() => setScreen('account')} enterCode={() => setScreen('handoff')} managedReturnReady={!nativeReturnFailed} />
+      ? <OnesaSignIn destination={activeTab} close={() => setScreen('account')} enterCode={() => setScreen('handoff')} managedReturnReady={!nativeReturnFailed} />
       : <p role="status">Preparing the secure sign-in return…</p>
       : screen === 'account' ? <CustomerAccess key={`account-${attempt}`} capabilities={capabilities} initialTab={activeTab} onNavigate={setActiveTab} close={close} recovered={() => setScreen('recover')} /> : screen === 'recover' ? <Recovery close={() => setScreen('account')} recovered={() => setScreen('account')} /> : <Handoff close={() => setScreen('account')} recovered={() => setScreen('account')} />)}
     {capabilities && <nav className="mobile-nav" aria-label="Account navigation">

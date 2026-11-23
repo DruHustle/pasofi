@@ -4,7 +4,7 @@ import { pendingNativeDestination } from './native-oidc';
 import { mobileApiConfigured } from './api';
 import Icon, { type IconName } from './Icon';
 import type { CustomerTab } from './CustomerAccess';
-import RegistrationLink, {watchRegistrationReturn} from './RegistrationLink';
+import RegistrationLink, {watchRegistrationReturn, type RegistrationReturn} from './RegistrationLink';
 import MobileCustomer from './MobileCustomer';
 import { PolicyNotice } from './Policies';
 import { policyHelpArticles } from './PolicyHelp';
@@ -68,11 +68,11 @@ export default function MobileApp() {
   const [pending] = useState(() => Capacitor.isNativePlatform() ? pendingNativeDestination(sessionStorage) : null);
   const [accountOpen, setAccountOpen] = useState(Boolean(pending)), [accountTab, setAccountTab] = useState<CustomerTab>(pending ?? 'access');
   const [selected, setSelected] = useState<string | null>(null), [category, setCategory] = useState<Category>('all');
-  const [registrationTab,setRegistrationTab]=useState<CustomerTab|null>(null);
+  const [registration,setRegistration]=useState<RegistrationReturn|null>(null);
   useEffect(()=>{
     let active=true;
-    const watching=watchRegistrationReturn(destination=>{
-      if(active){setAccountTab(destination);setRegistrationTab(destination);setHandoffReturn(0);setAccountOpen(true);}
+    const watching=watchRegistrationReturn(returned=>{
+      if(active){setAccountTab(returned.tab);setRegistration(returned);setHandoffReturn(0);setAccountOpen(true);}
     }).catch(()=>()=>{});
     return ()=>{active=false;void watching.then(stop=>stop());};
   },[]);
@@ -97,7 +97,10 @@ export default function MobileApp() {
   const shownExamples = examples.filter(bundle => categories.find(item => item.id === category)!.matches(bundle.days));
   const shownQuestions = questions.filter(item => helpQuery.trim().toLowerCase().split(/\s+/).every(word => `${item.q} ${item.a}`.toLowerCase().includes(word)));
 
-  if (accountOpen) return <div className="mobile-app mobile-live-shell"><AccountRenderBoundary close={() => { setHandoffReturn(0); setRegistrationTab(null); setAccountOpen(false); }}><MobileCustomer initialTab={accountTab} registrationTab={registrationTab} usedRegistration={()=>setRegistrationTab(null)} handoffReturn={handoffReturn} close={() => { setHandoffReturn(0); setRegistrationTab(null); setAccountOpen(false); }} /></AccountRenderBoundary></div>;
+  if (accountOpen) {
+    const close=()=>{setHandoffReturn(0);setRegistration(null);setAccountOpen(false);};
+    return <div className="mobile-app mobile-live-shell"><AccountRenderBoundary close={close}><MobileCustomer initialTab={accountTab} registration={registration} usedRegistration={()=>setRegistration(null)} handoffReturn={handoffReturn} close={close}/></AccountRenderBoundary></div>;
+  }
 
   return <div className="mobile-app">
     <a className="mobile-skip" href="#mobile-content">Skip to content</a>

@@ -55,6 +55,10 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
     if (method === 'availability') return { requestId: input.requestId, configured: true, origin: apiOrigin, protocol: 1, ...options.availability };
     if (method === 'openSignIn') return { requestId: input.requestId, opened: true };
     if (method === 'authenticate' && options.authenticate) return {callback: await options.authenticate(String(input.authorizationUrl))};
+    if (method === 'registerAccount' && options.authenticate) {
+      expect(Object.keys(input)).toEqual(['audience']);
+      return {callback: await options.authenticate('https://account.onesa.eu/register?audience='+input.audience+'&product=pasofi&platform=ios')};
+    }
     if (method === 'cancel') { options.cancel?.(String(input.requestId)); return { requestId: input.requestId }; }
     if (method === 'request') return { requestId: input.requestId, ...await handler(input as NativeRequest) };
     throw Error('Unexpected native method');
@@ -76,7 +80,7 @@ async function nativeBridge(page: Page, handler: (request: NativeRequest) => Nat
     };
     runtime.CapacitorCustomPlatform = { name: platform };
     runtime.Capacitor = {
-      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: [...['availability', 'request', 'cancel', 'openSignIn', 'authenticate', 'accountHandoffReturnState', 'acknowledgeAccountHandoffReturn', 'removeListener'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }] }],
+      PluginHeaders: absent ? [] : [{ name: 'PasoFiCustomerApi', methods: [...['availability', 'request', 'cancel', 'openSignIn', 'authenticate', 'registerAccount', 'accountHandoffReturnState', 'acknowledgeAccountHandoffReturn', 'removeListener'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }] }],
       nativeCallback: (plugin: string, method: string, options: Record<string, unknown>, callback: (event: object)=>void) => {
         // Match Capacitor's multiple subscriptions and per-handle removal.
         // StrictMode can overlap asynchronous mount/unmount registrations;
@@ -160,8 +164,8 @@ test('failed Android return setup leaves the qualified manual handoff available'
   await expect(page.getByText('Preparing the secure sign-in return…')).toHaveCount(0);
 });
 
-for (const platform of ['ios', 'android'] as const) {
-  test(`${platform} managed browser callback returns to protected history with the existing entitlement`, async ({page,configuredBaseURL})=>{
+for (const platform of ['ios', 'android'] as const) for (const signup of [false,true]) {
+  test(`${platform} managed ${signup?'signup':'sign-in'} returns to protected history with the existing entitlement`, async ({page,configuredBaseURL})=>{
     const issuer='https://id.pasofi.test/', callback='com.onesa.pasofi.identity://login/callback';
     const registrations={issuer,audience:'https://api.pasofi.test',ios:'pasofi_apple_test_client',android:'pasofi_android_test_client'};
     const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
@@ -186,7 +190,7 @@ for (const platform of ['ios', 'android'] as const) {
       const id_token=signable+'.'+sign('sha256',Buffer.from(signable),privateKey).toString('base64url');
       return route.fulfill({headers,json:{token_type:'Bearer',access_token:'fixture-customer-token',id_token}});
     });
-    await nativeBridge(page,req=>{
+    const calls=await nativeBridge(page,req=>{
       if(req.path==='/api/capabilities')return reply(capabilities);
       if(req.path==='/api/onesa/availability')return reply({origin:apiOrigin,handoff:true,native:registrations});
       if(req.path==='/api/onesa/native-session'){
@@ -203,7 +207,7 @@ for (const platform of ['ios', 'android'] as const) {
       if(req.path==='/api/bundles')return reply({products:[]});
       return reply({error:'unavailable'},503);
     },{platform,authenticate:async value=>{
-      if(value==='https://account.onesa.eu/register?audience='+(platform==='ios'?'user':'admin')+'&product=pasofi&platform='+platform){
+      if(value==='https://account.onesa.eu/register?audience=user&product=pasofi&platform='+platform){
         return 'com.onesa.pasofi.identity://login/registered';
       }
       const url=new URL(value);expect(url.origin+'/').toBe(issuer);authorization=url.searchParams;
@@ -214,17 +218,50 @@ for (const platform of ['ios', 'android'] as const) {
     await page.goto(configuredBaseURL);
     await page.getByRole('button',{name:'My PasoFi',exact:true}).click();
     await page.getByRole('button',{name:'History',exact:true}).first().click();
-    await page.getByRole('link',{name:platform==='ios'?'Register an Onesa account':'Request administrator access',exact:true}).click();
+    if (signup) await page.getByRole('link',{name:'Register an Onesa account',exact:true}).click();
+    else await page.getByRole('button',{name:'Sign in with Onesa',exact:true}).click();
     // The Android system-browser deep link is asynchronous. Wait for the
     // server-side session exchange and protected history read, not a fixed delay.
     await expect.poll(() => established && readHistory, { timeout: 15000 }).toBe(true);
     await expect(page.getByText('Bundle reference: '+orderId)).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole('heading',{name:'Your activity'})).toBeVisible();
     expect(readHistory).toBe(true);expect(established).toBe(true);
+    expect(calls.filter(call=>call.method==='registerAccount')).toHaveLength(platform==='ios'&&signup?1:0);
+    expect(calls.filter(call=>call.method==='openSignIn')).toHaveLength(0);
     expect(await page.evaluate(()=>JSON.stringify(sessionStorage))).not.toContain('fixture-customer-token');
     expect(await page.evaluate(()=>(window as any).browserApiFetches)).toBe(0);
   });
 }
+
+test('a native administrator request returns to PasoFi without opening customer sign-in', async ({page,configuredBaseURL})=>{
+  const calls=await nativeBridge(page, request=>request.path==='/api/capabilities'?reply(capabilities)
+    :reply({error:'not_authenticated'},401), {platform:'ios',authenticate:async url=>{
+      expect(url).toBe('https://account.onesa.eu/register?audience=admin&product=pasofi&platform=ios');
+      return 'com.onesa.pasofi.identity://login/registered';
+    }});
+  await page.goto(configuredBaseURL);
+  await page.getByRole('button',{name:'My PasoFi',exact:true}).click();
+  await page.getByRole('link',{name:'Request administrator access',exact:true}).click();
+  await expect(page.getByText('Administrator access requires approval.',{exact:true})).toBeVisible();
+  expect(calls.filter(call=>call.method==='registerAccount')).toHaveLength(1);
+  expect(calls.some(call=>call.method==='authenticate'||call.options.path==='/api/onesa/availability')).toBe(false);
+});
+
+test('a native guest keeps the recovery warning before switching accounts', async ({page,configuredBaseURL})=>{
+  const calls=await nativeBridge(page, request=>request.path==='/api/capabilities'?reply(capabilities)
+    :request.path==='/api/onesa/availability'?reply({origin:apiOrigin,handoff:true,native:{
+      issuer:'https://id.pasofi.test/',audience:'https://api.pasofi.test',ios:'pasofi_apple_test_client',android:'pasofi_android_test_client',
+    }})
+    :request.path==='/api/session'?reply({customerId}):reply({error:'not_authenticated'},401),
+  {platform:'ios',authenticate:async()=>{throw Error('An active session must not be switched automatically');}});
+  await page.goto(configuredBaseURL);
+  await page.getByRole('button',{name:'My PasoFi',exact:true}).click();
+  await page.getByRole('button',{name:'Sign in with Onesa',exact:true}).click();
+  await expect.poll(()=>calls.filter(call=>call.options.path==='/api/session').length).toBeGreaterThan(1);
+  await expect(page.getByText(/Guest purchases stay with the guest account/)).toBeVisible();
+  await expect(page.getByRole('button',{name:'Open Onesa sign-in in browser',exact:true})).toBeEnabled();
+  expect(calls.some(call=>call.method==='authenticate'||call.method==='openSignIn')).toBe(false);
+});
 
 for (const platform of ['ios', 'android'] as const) for (const returnMethod of ['deep link', 'manual'] as const) test(`${platform} native sign-in receives its one-use code by ${returnMethod} and registration opens Identity separately`, async ({ page, configuredBaseURL }) => {
   let recovered = false;

@@ -64,7 +64,7 @@ export async function watchNativeReturn(onSuccess: (destination: CustomerTab) =>
       appleReturn.removeEventListener('callback', listener);
     };
   }
-  if (!Capacitor.isPluginAvailable('App')) return () => {};
+  if (!Capacitor.isPluginAvailable('App')) throw Error('Secure browser return is unavailable');
   const handle = await App.addListener('appUrlOpen', (event) => {
     void finish(event.url);
   });

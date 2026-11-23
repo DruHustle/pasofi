@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 const paused = { demo: false, paymentMode: 'disabled', paymentCheckout: false, vouchers: false, receiptPairing: false, staffSales: false, deliverySms: false, networkAccess: false, mobileCookies: false };
 const bundle = { id: 'flex', price_minor: 100, currency: 'USD', byte_limit: '5000000000', validity_seconds: 86400 };
 
-for (const width of [320, 390, 1280]) test(`Onesa customer entry is discoverable and recovers focus at ${width}px`, async ({ page }, info) => {
+for (const width of [320, 390, 1280]) test(`a signed-out customer starts Onesa sign-in in one click at ${width}px`, async ({ page }, info) => {
   let starts = 0;
   await page.route('**/api/**', route => {
     const url = new URL(route.request().url());
@@ -18,24 +18,19 @@ for (const width of [320, 390, 1280]) test(`Onesa customer entry is discoverable
   const entry = page.getByRole('button', { name: 'Sign in with Onesa', exact: true });
   await expect(entry).toHaveCount(1); await expect(entry).toBeInViewport();
   await entry.click();
-  await expect(page.getByRole('heading', { name: 'Continue to your Onesa account' })).toBeFocused();
-  await expect(page.getByText(/Guest purchases stay with your guest account/)).toBeVisible();
-  expect(starts).toBe(0);
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(entry).toBeFocused(); await expect(entry).toHaveAttribute('aria-expanded', 'false');
-  await entry.click(); await page.getByRole('button', { name: 'Continue with Onesa', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Onesa sign-in is temporarily unavailable');
-  await expect(page.getByRole('button', { name: 'Continue with Onesa', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Continue with Onesa', exact: true })).toHaveCount(0);
+  await expect(entry).toBeEnabled();
   expect(starts).toBe(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: info.outputPath(`customer-entry-${width}.png`), fullPage: true });
 });
 
-test('central signup stays separate from the PasoFi interaction that returns to the account screen', async ({ page }) => {
+test('PasoFi resumes sign-in after email verification opens the registration return in a new tab', async ({ page }) => {
   let starts = 0;
   let releaseAvailability!: () => void;
   const waiting = new Promise<void>(resolve => {releaseAvailability = resolve;});
-  await page.route('**/api/**', async route => {
+  await page.context().route('**/api/**', async route => {
     const url = new URL(route.request().url());
     if (url.pathname === '/api/onesa/start') {
       starts++;
@@ -48,7 +43,7 @@ test('central signup stays separate from the PasoFi interaction that returns to 
       : {error:'not_authenticated'};
     return route.fulfill({status:url.pathname === '/api/session' ? 401 : 200,json:body});
   });
-  await page.route('https://portal-signup.example.invalid/**', route => route.fulfill({body:'Test Company Portal issuer'}));
+  await page.context().route('https://portal-signup.example.invalid/**', route => route.fulfill({body:'Test Onesa issuer'}));
   await page.goto('/#account');
   await expect(page.getByText('Checking Onesa sign-in…')).toBeVisible();
   await expect(page.getByRole('link', {name:'Create an Onesa account'})).toHaveCount(0);
@@ -59,18 +54,14 @@ test('central signup stays separate from the PasoFi interaction that returns to 
   const origin=new URL(page.url()).origin;
   await page.route('https://account.onesa.eu/**', route=>route.fulfill({contentType:'text/html',body:'<a href="'+origin+'/?registration=complete">Back to PasoFi</a>'}));
   await signup.click();
-  await page.getByRole('link',{name:'Back to PasoFi'}).click();
-  await expect(page).toHaveURL('https://portal-signup.example.invalid/authorize');
+  const returned=await page.context().newPage();
+  await returned.goto((await page.getByRole('link',{name:'Back to PasoFi'}).getAttribute('href'))!);
+  await expect(returned).toHaveURL('https://portal-signup.example.invalid/authorize');
   expect(starts).toBe(1);
-  await page.goto('/#account');
-  const signIn = page.getByRole('button', {name:'Sign in with Onesa',exact:true});
-  await signIn.click();
-  await page.getByRole('button', {name:'Cancel',exact:true}).click();
-  await expect(signIn).toBeFocused();
-  await signIn.click();
-  await page.getByRole('button', {name:'Continue with Onesa',exact:true}).click();
-  await expect(page).toHaveURL('https://portal-signup.example.invalid/authorize');
-  expect(starts).toBe(2);
+  await returned.goto(origin+'/?registration=complete');
+  await expect(returned).toHaveURL(origin+'/#account');
+  expect(await returned.evaluate(()=>localStorage.getItem('pasofi.registration'))).toBeNull();
+  expect(starts).toBe(1);
 });
 
 test('unverified availability cannot enable a published bundle and an explicit refresh recovers', async ({ page }) => {
@@ -190,7 +181,14 @@ test('a customer signing in at the hotspot welcome returns to the welcome screen
   await page.route('https://portal.example.invalid/authorize', route =>
     route.fulfill({contentType:'text/html',body:'<script>location.replace('+JSON.stringify(new URL('/onesa-callback.html?code=test&state=test',baseURL).href)+')</script>'}));
   await page.goto('/connect');
-  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
+  const signIn=page.getByRole('button', { name: 'Sign in with Onesa', exact: true });
+  await signIn.click();
+  await expect(page.getByRole('heading', { name: 'Continue to your Onesa account' })).toBeFocused();
+  await expect(page.getByText(/Guest purchases stay with your guest account/)).toBeVisible();
+  expect(returnTo).toBeUndefined();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(signIn).toBeFocused();
+  await signIn.click();
   await page.getByRole('button', { name: 'Continue with Onesa', exact: true }).click();
   await expect.poll(() => returnTo).toBe('/#connect');
   await expect(page).toHaveURL(/\/#connect$/);

@@ -14,6 +14,7 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "availability", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "authenticate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "registerAccount", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openSignIn", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "request", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
@@ -134,6 +135,18 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
               let host = parts.host, url.port == nil, issuer == "https://" + host,
               parts.queryItems?.filter({ $0.name == "redirect_uri" }).map({ $0.value }) == [callback]
         else { reject(call, .request); return }
+        openAuthenticationSession(call, url: url, callback: callback, allowsQuery: true)
+    }
+
+    @objc public func registerAccount(_ call: CAPPluginCall) {
+        guard Set(call.jsObjectRepresentation.keys) == ["audience"],
+              let audience = call.getString("audience"), ["user", "admin"].contains(audience),
+              let url = URL(string: "https://account.onesa.eu/register?audience=" + audience + "&product=pasofi&platform=ios")
+        else { reject(call, .request); return }
+        openAuthenticationSession(call, url: url, callback: "com.onesa.pasofi.identity://login/registered", allowsQuery: false)
+    }
+
+    private func openAuthenticationSession(_ call: CAPPluginCall, url: URL, callback: String, allowsQuery: Bool) {
         DispatchQueue.main.async {
             guard self.authenticationSession == nil, let window = self.bridge?.viewController?.view.window
             else { self.reject(call, .unavailable); return }
@@ -142,10 +155,12 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
                 DispatchQueue.main.async {
                     self.authenticationSession = nil
                     self.authenticationPresentation = nil
-                    guard let result, let prefix = result.absoluteString.components(separatedBy: "?").first,
-                          prefix == callback, result.fragment == nil
+                    guard let result, result.fragment == nil else { self.reject(call, .network); return }
+                    let returned = result.absoluteString
+                    let destination = allowsQuery ? returned.components(separatedBy: "?").first : returned
+                    guard destination == callback
                     else { self.reject(call, .network); return }
-                    call.resolve(["callback": result.absoluteString])
+                    call.resolve(["callback": returned])
                 }
             }
             session.presentationContextProvider = anchor

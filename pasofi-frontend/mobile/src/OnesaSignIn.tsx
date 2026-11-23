@@ -3,10 +3,10 @@ import { Browser } from '@capacitor/browser';
 import { startNativeSignIn, type NativeRegistration } from './native-oidc';
 import { nativePlatform, deliverAppleCallback } from './native-oidc-ui';
 import type { CustomerTab } from './CustomerAccess';
-import { api, mobileApiOrigin } from './api';
+import { api, ApiError, mobileApiOrigin } from './api';
 import { authenticateWithAppleBrowser, openNativeOnesaSignIn } from './native-api';
 
-export default function OnesaSignIn({ enterCode, close, destination, managedReturnReady = true, resumeRegistration=false, usedRegistration }: { destination: CustomerTab; enterCode: () => void; close: () => void; managedReturnReady?: boolean; resumeRegistration?:boolean; usedRegistration:()=>void }) {
+export default function OnesaSignIn({ enterCode, close, destination, managedReturnReady = true }: { destination: CustomerTab; enterCode: () => void; close: () => void; managedReturnReady?: boolean }) {
   const [available, setAvailable] = useState(false), [loading, setLoading] = useState(true);
   const [native,setNative] = useState<NativeRegistration | null>(null);
   const platform=nativePlatform();
@@ -23,20 +23,38 @@ export default function OnesaSignIn({ enterCode, close, destination, managedRetu
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [attempt]);
-  const resuming=useRef(false);
+  const opened=useRef(false);
   useEffect(()=>{
-    if(!resumeRegistration || !available || loading || resuming.current)return;
-    resuming.current=true;
-    usedRegistration();
-    void openBrowser();
-  },[resumeRegistration,available,loading]);
-  async function openBrowser() {
+    if(!direct || !available || loading || opened.current)return;
+    opened.current=true;
+    const check=new AbortController();
+    void openBrowser(check.signal);
+    return ()=>check.abort();
+  },[direct,available,loading]);
+  async function openBrowser(automatic?: AbortSignal) {
     if (busy || !available || !mobileApiOrigin) return;
     setBusy(true); setMessage('');
     try {
+      if (automatic) {
+        // A customer switching an active PasoFi session may need its recovery details.
+        try {
+          await api('/api/session', {signal:automatic});
+          return;
+        } catch (error) {
+          if (automatic.aborted) return;
+          if (!(error instanceof ApiError) || error.status !== 401) {
+            setMessage('Your current PasoFi session could not be checked. You can retry here.');
+            return;
+          }
+        }
+      }
       if (direct && native && platform) {
         const url = await startNativeSignIn(native, platform, destination, sessionStorage);
-        if (platform === 'ios') deliverAppleCallback(await authenticateWithAppleBrowser(mobileApiOrigin, url));
+        if (automatic?.aborted) return;
+        if (platform === 'ios') {
+          const callback=await authenticateWithAppleBrowser(mobileApiOrigin, url);
+          if (!automatic?.aborted) deliverAppleCallback(callback);
+        }
         else {
           await Browser.open({url});
           setMessage('Complete sign-in in your browser to return to this screen.');
@@ -55,7 +73,7 @@ export default function OnesaSignIn({ enterCode, close, destination, managedRetu
       {!direct && <ol className="onesa-app-steps"><li>Open PasoFi in your browser and choose <strong>Sign in with Onesa</strong>. Sign in or register through Onesa Identity.</li><li>In <strong>Account</strong>, choose <strong>Create one-time handoff code</strong>. Use only a code from your own account.</li><li>Copy your code and select the browser’s return link to open this app at Accept an account handoff. Enter the code within two minutes. Sign out of any other app account first.</li></ol>}
       <p className="private-value">PasoFi address: <strong>{mobileApiOrigin}</strong></p>
       <p>Guest purchases stay with the guest account. Save its recovery details before switching accounts.</p>
-      <div className="purchase-actions"><button className="primary" disabled={busy} onClick={openBrowser}>{busy ? 'Opening browser…' : 'Open Onesa sign-in in browser'}</button>{!direct && <button className="secondary" disabled={busy} onClick={enterCode}>Enter sign-in code</button>}</div>
+      <div className="purchase-actions"><button className="primary" disabled={busy} onClick={()=>void openBrowser()}>{busy ? 'Opening browser…' : 'Open Onesa sign-in in browser'}</button>{!direct && <button className="secondary" disabled={busy} onClick={enterCode}>Enter sign-in code</button>}</div>
     </>}
     {message && <p role="status">{message}</p>}
   </section>;
