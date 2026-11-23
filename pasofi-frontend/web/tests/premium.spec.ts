@@ -95,6 +95,13 @@ for (const width of [320, 390, 430, 1280]) {
   });
 }
 
+test('account settings link directly to Onesa account closure', async ({ page }) => {
+  await fixture(page);
+  await page.route('**/api/recovery/status', route => json(route, { authentication: 'onesa', configured: false }));
+  await page.goto('/#account');
+  await expect(page.getByRole('link', { name: 'Delete your Onesa account' })).toHaveAttribute('href', 'https://account.onesa.eu/account/closure');
+});
+
 test('bundle filters use published validity and never invent unlimited offers', async ({ page }) => {
   await fixture(page); await page.goto('/#bundles');
   const filters = page.getByRole('group', { name: 'Bundle duration' });
