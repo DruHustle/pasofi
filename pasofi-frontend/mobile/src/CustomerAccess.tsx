@@ -16,7 +16,11 @@ type Entitlement = { id: string; bundle_id: string; byte_limit: string; consumed
 type Pairing = { id: string; code: string; expiresAt: string; status?: string; quote?: { bundleId: string; siteId: string; siteName: string; priceMinor: number; currency: string; byteLimit: string; validitySeconds: number } };
 type Receipt = { sale: { id: string; siteName: string; bundleId: string; priceMinor: number; currency: string; byteLimit: string; validitySeconds: number; startBy: string; simulation: boolean; payment?: CashEvidence }; voucher: { id: string; code: string; state: string } };
 type Order = { id: string; bundle_id: string; price_minor: number; currency: string; status: string; quote_expires_at: string };
-type PurchaseDetails = { bundleId: string; siteId: string; methodCode: string; invoiceDelivery?: InvoiceDelivery };
+// payerMsisdn is the customer's own EcoCash number, kept only in this tab's
+// retry record until the checkout settles. The PIN is never collected here.
+type PurchaseDetails = { bundleId: string; siteId: string; methodCode: string; payerMsisdn?: string; invoiceDelivery?: InvoiceDelivery };
+type EcoCashPayment = { provider: 'ecocash'; payerHint: string; awaitingApproval: boolean };
+const ecocashNumber = (value: string) => /^(?:\+?263|0)?7[0-9]{8}$/.test(value.replace(/[\s-]/g, ''));
 type PaymentMethod = { code: string; name: string; currency: string; minMinor: number; maxMinor: number };
 type PaymentStatus = { order: Order; attempts: { id: string; state: string }[]; entitlementId: string | null; simulation: boolean; fulfillmentState: 'unconfirmed' | 'fulfilled' | 'reversed' | 'pending_review'; entitlementRevokedAt: string | null; safeToRequote?: boolean };
 export type CustomerTab = 'access' | 'wifi' | 'history' | 'voucher' | 'receipt' | 'purchase' | 'recovery';
@@ -54,6 +58,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const [order, setOrder] = useState<Order | null>(null), [payment, setPayment] = useState<PaymentStatus | null>(null), [redirectUrl, setRedirectUrl] = useState('');
   const [checkoutPending, setCheckoutPending] = useState(false);
   const [stripePayment,setStripePayment]=useState<StripePayment|null>(null);
+  const [payerMsisdn, setPayerMsisdn] = useState(''), [ecocashPayment, setEcocashPayment] = useState<EcoCashPayment | null>(null);
   const [invoiceDelivery, setInvoiceDelivery] = useState<InvoiceDelivery>(() => defaultInvoiceDelivery(capabilities));
   const [catalogueLoaded, setCatalogueLoaded] = useState(false), [catalogueLoading, setCatalogueLoading] = useState(true), [catalogueError, setCatalogueError] = useState(false), [catalogueAttempt, setCatalogueAttempt] = useState(0), [recoveryReminder, setRecoveryReminder] = useState(false);
   const restoredMethod = useRef(''), savedOrderLookup = useRef(0), invoiceChoiceExplicit = useRef(false);
@@ -310,8 +315,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       setOrder(result.order); setPayment(result);
       if (result.fulfillmentState === 'fulfilled' && result.entitlementId) setRecoveryReminder(true);
       const settled = result.safeToRequote === true || ['fulfilled', 'reversed'].includes(result.fulfillmentState) || (result.fulfillmentState === 'unconfirmed' && result.attempts.length > 0 && result.attempts.every(attempt => ['failed', 'reversed'].includes(attempt.state)));
-      if (settled && ownerRef.current) { finishMutation(`customer:${ownerRef.current}`, `order:${result.order.bundle_id}`); finishMutation(`customer:${ownerRef.current}`, `checkout:${result.order.id}`); finishMutation(`customer:${ownerRef.current}`, 'purchase-details'); setCheckoutPending(false); setRedirectUrl(''); setStripePayment(null); }
-      if (result.entitlementId || result.fulfillmentState === 'reversed' || result.fulfillmentState === 'pending_review') { setRedirectUrl(''); setStripePayment(null); await refreshAccess(); await usage.refresh(); }
+      if (settled && ownerRef.current) { finishMutation(`customer:${ownerRef.current}`, `order:${result.order.bundle_id}`); finishMutation(`customer:${ownerRef.current}`, `checkout:${result.order.id}`); finishMutation(`customer:${ownerRef.current}`, 'purchase-details'); setCheckoutPending(false); setRedirectUrl(''); setStripePayment(null); setEcocashPayment(null); }
+      if (result.entitlementId || result.fulfillmentState === 'reversed' || result.fulfillmentState === 'pending_review') { setRedirectUrl(''); setStripePayment(null); setEcocashPayment(null); await refreshAccess(); await usage.refresh(); }
     }
   }
   async function expireUnusedQuote() {
@@ -334,13 +339,14 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       if (error) { setMessage(error); return; }
       if ((invoiceDelivery.channel === 'email' && !capabilities.invoiceEmail) || (invoiceDelivery.channel === 'sms' && !capabilities.invoiceSms)) { setMessage('That invoice delivery method is unavailable. Choose Download PDF or another available method.'); return; }
     }
-    const revision = generation.current; setBusy(true); setMessage(''); setRedirectUrl(''); setStripePayment(null);
+    if (!order && !checkoutPending && methodCode === 'ECOCASH' && !ecocashNumber(payerMsisdn)) { setMessage('Enter the EcoCash number that will approve this payment, for example 077 123 4567.'); return; }
+    const revision = generation.current; setBusy(true); setMessage(''); setRedirectUrl(''); setStripePayment(null); setEcocashPayment(null);
     try {
       const id = await identity(true), purchaseOwner = `customer:${id}`;
       // Restore the complete original request, including an omitted legacy invoice
       // choice. Current capabilities must never change an unresolved retry body.
       const savedDetails = sessionStorage.getItem(`pamofi.operation:${purchaseOwner}:purchase-details`);
-      const details: PurchaseDetails = savedDetails ? JSON.parse(JSON.parse(savedDetails).payload) : { bundleId, siteId, methodCode, ...(capabilities.invoices ? { invoiceDelivery: invoiceDeliveryPayload(invoiceDelivery) } : {}) };
+      const details: PurchaseDetails = savedDetails ? JSON.parse(JSON.parse(savedDetails).payload) : { bundleId, siteId, methodCode, ...(methodCode === 'ECOCASH' ? { payerMsisdn: payerMsisdn.replace(/[\s-]/g, '') } : {}), ...(capabilities.invoices ? { invoiceDelivery: invoiceDeliveryPayload(invoiceDelivery) } : {}) };
       mutationIntent(purchaseOwner, 'purchase-details', details); setCheckoutPending(true); restoredMethod.current = details.methodCode;
       const savedOrder = sessionStorage.getItem(`pamofi.operation:${purchaseOwner}:order:${details.bundleId}`);
       const payload = savedOrder ? JSON.parse(JSON.parse(savedOrder).payload) : { bundleId: details.bundleId, mode: 'checkout', ...(details.invoiceDelivery ? { invoiceDelivery: details.invoiceDelivery } : {}) };
@@ -348,16 +354,16 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       const created = await api<{ order: Order }>('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(payload) });
       if (!isCurrent(revision)) return;
       setOrder(created.order);
-      const checkoutPayload = { siteId: details.siteId, methodCode: details.methodCode }, checkoutKey = mutationIntent(purchaseOwner, `checkout:${created.order.id}`, checkoutPayload);
-      const result = await api<{ attemptId: string; state: string; redirectUrl: string | null; simulation: boolean; stripe?: StripePayment | null }>(`/api/orders/${created.order.id}/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': checkoutKey }, body: JSON.stringify(checkoutPayload) });
+      const checkoutPayload = { siteId: details.siteId, methodCode: details.methodCode, ...(details.payerMsisdn ? { payerMsisdn: details.payerMsisdn } : {}) }, checkoutKey = mutationIntent(purchaseOwner, `checkout:${created.order.id}`, checkoutPayload);
+      const result = await api<{ attemptId: string; state: string; redirectUrl: string | null; simulation: boolean; stripe?: StripePayment | null; ecocash?: EcoCashPayment | null }>(`/api/orders/${created.order.id}/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': checkoutKey }, body: JSON.stringify(checkoutPayload) });
       if (result.redirectUrl) {
         const url = new URL(result.redirectUrl);
         if (url.protocol !== 'https:' || url.username || url.password) throw Error('invalid_checkout_url');
         if (isCurrent(revision)) setRedirectUrl(url.href);
       }
       if (isCurrent(revision)) {
-        setStripePayment(result.stripe??null);
-        setMessage(result.stripe ? 'Your saved checkout is ready. Complete the secure payment below; your bundle is queued only after server verification.' : result.simulation ? 'Simulation checkout prepared. No real payment has been taken.' : 'Check the verified order status before paying again.');
+        setStripePayment(result.stripe??null); setEcocashPayment(result.ecocash ?? null);
+        setMessage(result.ecocash ? `Approve the EcoCash prompt on the phone ending ${result.ecocash.payerHint}. Enter your PIN only on your phone. Your bundle is queued only after EcoCash confirms the payment to PasoFi.` : result.stripe ? 'Your saved checkout is ready. Complete the secure payment below; your bundle is queued only after server verification.' : result.simulation ? 'Simulation checkout prepared. No real payment has been taken.' : 'Check the verified order status before paying again.');
       }
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'Checkout could not be confirmed. Check the order before starting another payment. Retry uses the same saved request.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
@@ -475,14 +481,16 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     {tab === 'purchase' && <section className="workspace-card customer-payment-card">
       {capabilities.staffSales && <div className="cash-path"><span className="customer-record-icon"><CustomerGlyph name="receipt" /></span><h3>Buy from an authorized agent</h3><ol><li>Choose your bundle and confirm its cash price with the agent.</li><li>Show your private pairing code, then pay the agreed cash amount.</li><li>Redeem the voucher in your receipt to add the queued data.</li></ol>{capabilities.receiptPairing && <button className="primary" onClick={() => selectTab('receipt')}>Get a private agent receipt</button>}<p>Time starts after a successful hotspot connection. A cash receipt alone does not connect your device.</p></div>}
       <div className="eyebrow">MORE WAYS TO CONNECT</div><h3>{capabilities.paymentMode === 'mock' ? 'Optional online payment simulation' : 'Online payment options'}</h3>
-      {!capabilities.paymentCheckout ? <><p className="notice">Online checkout is not enabled here. Use a voucher from an authorized agent when available.</p><div className="customer-provider-list" aria-label="Payment integrations awaiting activation"><span>EcoCash<small>Pending</small></span><span>InnBucks<small>Pending</small></span><span>Bank & card<small>Pending</small></span></div></> : <>
+      {!capabilities.paymentCheckout ? <><p className="notice">Online checkout is not enabled here. Use a voucher from an authorized agent when available.</p><div className="customer-provider-list" aria-label="Payment integrations awaiting activation"><span>EcoCash<small>{capabilities.ecocashCheckout ? 'Unavailable here' : 'Pending'}</small></span><span>InnBucks<small>Pending</small></span><span>Bank & card<small>Pending</small></span></div></> : <>
         <form className="form-grid" onSubmit={checkout}><fieldset disabled={busy || !!order || checkoutPending || catalogueLoading || catalogueError}><label>Purchase site<select required value={siteId} onChange={event => setSiteId(event.target.value)}><option value="">Choose a site</option>{sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><label>Bundle<select required value={bundleId} onChange={event => { setBundleId(event.target.value); onNavigate?.('purchase', event.target.value); }}><option value="">Choose a bundle</option>{products.map(item => <option key={item.id} value={item.id}>{item.id.toUpperCase()} · {money(item.price_minor, item.currency)}</option>)}</select></label>
           {product && <div className="summary-tile"><strong>{money(product.price_minor, product.currency)}</strong><span>{Number(product.byte_limit) / 1e9} GB · {product.validity_seconds / 86400} days · One active connection</span></div>}
           <label>Payment method<select required disabled={methodsLoading} value={methodCode} onChange={event => setMethodCode(event.target.value)}><option value="">{methodsLoading ? 'Checking payment methods…' : 'Choose an enabled method'}</option>{methods.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select></label>{method && <small>Provider limits: {money(method.minMinor, method.currency)} to {money(method.maxMinor, method.currency)}.</small>}
+          {methodCode === 'ECOCASH' && <><label>EcoCash number<input type="tel" inputMode="tel" autoComplete="tel" required maxLength={16} value={payerMsisdn} onChange={event => setPayerMsisdn(event.target.value)} aria-describedby="ecocash-pin-note" placeholder="077 123 4567" /></label><small id="ecocash-pin-note">PasoFi never asks for your EcoCash PIN. You approve the charge on your own phone.</small></>}
           {capabilities.invoices && <InvoiceDeliveryFields value={invoiceDelivery} onChange={value => { invoiceChoiceExplicit.current = true; setInvoiceDelivery(value); setAgreed(false); }} disabled={busy || !!order || checkoutPending} emailEnabled={capabilities.invoiceEmail} smsEnabled={capabilities.invoiceSms} />}
         </fieldset><label className="check-label"><input type="checkbox" required checked={agreed} onChange={event => setAgreed(event.target.checked)} disabled={busy} />I have reviewed the price, allowance, and validity. {capabilities.paymentMode === 'mock' ? 'This is a simulation.' : 'Payment confirmation does not mean I am connected.'}</label><button className="primary" disabled={busy || (!order && !checkoutPending && (catalogueLoading || catalogueError || !sites.some(site => site.id === siteId))) || !methodEligible || !agreed || (!!payment && (payment.fulfillmentState !== 'unconfirmed' || payment.safeToRequote === true))}>{order || checkoutPending ? 'Retry this checkout safely' : 'Prepare checkout'}</button></form>
         {!methodsLoading && methods.length === 0 && <p>No configured payment method is available for this bundle and site.</p>}
         {redirectUrl && <a className="primary button-link" href={redirectUrl} target="_blank" rel="noopener noreferrer">Continue to payment provider ↗</a>}
+        {ecocashPayment && order && <div className="notice customer-ecocash-approval" role="status"><h4>Approve on your phone</h4><p>EcoCash sent a payment prompt to the number ending {ecocashPayment.payerHint}. Approve it there, then check the verified status. Do not pay a second time while this is pending.</p></div>}
         {stripePayment && owner && order && <StripeCheckout key={order.id} payment={stripePayment} owner={owner} amount={money(order.price_minor,order.currency)} disabled={busy} verify={identity} onBusy={value=>{if(ownerRef.current===owner)setBusy(value);}} onSubmitted={async()=>{if(ownerRef.current!==owner)return;setStripePayment(null);setMessage('Payment submitted. Waiting for verified confirmation; please do not start another purchase.');await checkPayment();}}/> }
       </>}
       {checkoutPending && !order && <div className="notice customer-saved-order"><h4>Check your saved purchase</h4><p>Its status can be checked even if the bundle or payment method is no longer offered. This check does not start a payment.</p><button className="secondary" disabled={busy} onClick={restoreOrder}>Check saved checkout status</button></div>}

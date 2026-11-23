@@ -1,13 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import {eligibleMethod,type PaymentAdapter as Adapter,type MethodEligibility as Eligibility} from './payment-provider.js';
+import {eligibleMethod,SETTLEMENT_PROVIDERS,type PaymentAdapter as Adapter,type MethodEligibility as Eligibility} from './payment-provider.js';
 import {issueDigitalInvoice} from './invoices.js';
 export class PaymentError extends Error {constructor(public readonly code:string){super(code);}}
 async function tx<T>(pool:Pool,fn:(client:PoolClient)=>Promise<T>):Promise<T>{const client=await pool.connect();try{await client.query('BEGIN');const r=await fn(client);await client.query('COMMIT');return r;}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}
 // The checkout boundary authenticates ownership and supplies the server's
 // merchant-enabled, site-qualified method and immutable order terms.
-export async function beginProviderPayment(pool:Pool,customerId:string,orderId:string,requestKey:string,siteId:string,methodCode:string,eligibility:Eligibility,adapter:Adapter){
- if(!['mock','pesepay','stripe','stripe_test'].includes(adapter.provider))throw new PaymentError('provider_unavailable');
+// persistContext runs in the attempt-creation transaction, so provider-specific
+// context (e.g. a sealed payer number) is durable before any provider call.
+export async function beginProviderPayment(pool:Pool,customerId:string,orderId:string,requestKey:string,siteId:string,methodCode:string,eligibility:Eligibility,adapter:Adapter,
+ persistContext?:(client:PoolClient,attemptId:string)=>Promise<void>){
+ if(!SETTLEMENT_PROVIDERS.includes(adapter.provider))throw new PaymentError('provider_unavailable');
  customerId=customerId.toLowerCase();orderId=orderId.toLowerCase();requestKey=requestKey.toLowerCase();siteId=siteId.toLowerCase();
  const attempt=await tx(pool,async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`${customerId}:${requestKey}`]);
@@ -26,6 +29,7 @@ export async function beginProviderPayment(pool:Pool,customerId:string,orderId:s
   if(unresolved.rowCount)throw new PaymentError('payment_pending');
   const id=randomUUID();
   const created=await client.query("INSERT INTO provider_payment_attempts(id,order_id,customer_id,request_key,site_id,method_code,provider,state) VALUES ($1,$2,$3,$4,$5,$6,$7,'initiating') RETURNING *",[id,orderId,customerId,requestKey,siteId,methodCode,adapter.provider]);
+  if(persistContext)await persistContext(client,id);
   return {created:true,payable,row:created.rows[0],order:order.rows[0]};
  });
  const age=(Date.now()-new Date(attempt.row.created_at).getTime())/1000;

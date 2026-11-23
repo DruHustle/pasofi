@@ -118,6 +118,11 @@ async function main() {
         query(runtimeEnv, 'DELETE FROM invoice_deliveries', true);
         assert.match(query(runtimeEnv, "SELECT nextval('paid_invoice_number_seq')"), /^[0-9]+$/);
         query(runtimeEnv, "SELECT setval('paid_invoice_number_seq',1)", true);
+        // EcoCash payer context: runtime may only record the provider reference, never rewrite or remove the sealed payer.
+        query(runtimeEnv, 'UPDATE ecocash_checkout_contexts SET ecocash_reference=ecocash_reference WHERE false');
+        query(runtimeEnv, "UPDATE ecocash_checkout_contexts SET payer_hint='000' WHERE false", true);
+        query(runtimeEnv, "UPDATE ecocash_checkout_contexts SET merchant_code='forbidden' WHERE false", true);
+        query(runtimeEnv, 'DELETE FROM ecocash_checkout_contexts WHERE false', true);
       }
       if (service === 'network') {
         const nas = randomUUID(), site = randomUUID();
