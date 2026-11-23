@@ -13,6 +13,7 @@ async function fixture(page: Page) {
     if (path === '/api/capabilities') return json(route, caps);
     if (path === '/api/bundles') return json(route, { products: state.products, candidate: false });
     if (path === '/api/help') return json(route, { articles: [] });
+    if (path === '/api/onesa/availability') return json(route, { origin: url.origin });
     if (path === '/api/sites') { state.locationReads++; return json(route, state.locationsFail ? { error: 'unavailable' } : { sites: state.locations }, state.locationsFail ? 503 : 200); }
     if (path === '/api/session' && url.searchParams.get('restore') === '1') return route.fulfill({ status: 204 });
     if (['/api/session', '/api/access', '/api/usage', '/api/recovery/status', '/api/orders'].includes(path)) return json(route, { error: 'not_authenticated' }, 401);
@@ -99,9 +100,10 @@ test('Home handles an empty published catalogue without inserting promotional pr
 
 test('Home checks for a returning session without requiring sign-in to browse', async ({ page }) => {
   const state = await fixture(page);
-  const rejected: number[] = [];
+  const rejected: string[] = [];
   page.on('response', response => {
-    if (new URL(response.url()).pathname.startsWith('/api/') && response.status() >= 400) rejected.push(response.status());
+    const url = new URL(response.url());
+    if (url.pathname.startsWith('/api/') && response.status() >= 400) rejected.push(`${response.status()} ${url.pathname}${url.search}`);
   });
   const restore = page.waitForResponse(response => new URL(response.url()).pathname === '/api/session');
   await page.goto('/');
