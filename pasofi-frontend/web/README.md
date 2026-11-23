@@ -2,7 +2,7 @@
 
 This is the independent React/Vite customer and staff web application. It has its own dependencies and build; it imports no backend source or mobile package. Node.js 22 or newer is required.
 
-The selected canonical website is **https://pasofi.mobile.onesa.eu** on the existing Vercel project. The Oracle API stays at `https://api.pasofi.onesa.eu`. Keep the earlier website aliases during the [bounded hostname handoff](../../docs/CANONICAL_HOSTNAME.md); a source change does not configure DNS, TLS, server origins or a user's new host-bound session.
+The selected canonical website is **https://pasofi.mobile.onesa.eu** on the existing Vercel project. The Oracle API is `https://api.pasofi.mobile.onesa.eu` (legacy alias `https://api.pasofi.onesa.eu`). Keep the earlier website aliases during the [bounded hostname handoff](../../docs/CANONICAL_HOSTNAME.md); a source change does not configure DNS, TLS, server origins or a user's new host-bound session.
 
 ```sh
 npm ci

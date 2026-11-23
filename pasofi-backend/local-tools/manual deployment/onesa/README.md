@@ -17,7 +17,7 @@ The script uses a fixed private drill subnet `10.245.244.0/24` and refuses an ov
 
 ## HTTPS and operational alerts
 
-The following domain and provisioned-name references describe the original installation retained by these scripts. The current customer website is `https://pasofi.mobile.onesa.eu`; its current gateway origin is `https://api.pasofi.onesa.eu`. Confirm the installed lineage and scheduler before applying these historical installers; a product-name correction does not migrate certificates, DNS, firewall rules or existing unit names.
+The following domain and provisioned-name references describe the original installation retained by these scripts. The current customer website is `https://pasofi.mobile.onesa.eu`; its current gateway origin is `https://api.pasofi.mobile.onesa.eu`, with `https://api.pasofi.onesa.eu` kept as a legacy alias on the same `pasofi-public` certificate lineage. Confirm the installed lineage and scheduler before applying these historical installers; a product-name correction does not migrate certificates, DNS, firewall rules or existing unit names.
 
 The original deployment used a Vercel frontend at `https://pamofi.onesa.eu` and an API at `https://api.pamofi.onesa.eu`, with the API DNS-only record pointing to Onesa UG Backend. The public gateway uses the static private address `10.245.242.10` and publishes TCP 443 only. Oracle's PamoFi-specific security group permits TCP 80 for certificate validation and TCP 443 for the authenticated gateway. The host firewall accepts port 443 only for that gateway address; TCP 80 is opened temporarily by the certificate scripts during validation. These scripts do not attach the Oracle security group or alter unrelated Onesa firewall rules.
 
