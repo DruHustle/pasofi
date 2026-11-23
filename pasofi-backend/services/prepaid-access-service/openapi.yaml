@@ -159,6 +159,7 @@ paths:
                   demo: {type: boolean}
                   paymentMode: {type: string, enum: [disabled, mock]}
                   paymentCheckout: {type: boolean}
+                  ecocashCheckout: {type: boolean, description: New EcoCash checkout is open. False unless PAMOFI_ECOCASH_CHECKOUT_ENABLED and every EcoCash activation gate pass (see ECOCASH_ACTIVATION.md). Independent of the EcoCash Pay Merchant journey.}
                   vouchers: {type: boolean, description: Voucher redemption can remain enabled during a new-sales pause only with the explicit PAMOFI_VOUCHER_REDEMPTION_WHILE_SALES_PAUSED recovery flag, database and keys. Never implies payment or RADIUS access.}
                   receiptPairing: {type: boolean}
                   cashReceiptRecovery: {type: boolean, description: Existing paid receipts and exact agent sale retries can be recovered.}
@@ -205,6 +206,7 @@ paths:
               properties:
                 siteId: {type: string, format: uuid}
                 methodCode: {type: string}
+                payerMsisdn: {type: string, maxLength: 16, description: Required for methodCode ECOCASH on a new attempt. The customer's own EcoCash wallet number (07x / 2637x). Never a PIN. Sealed before the provider charge is requested.}
       responses:
         '200': {description: 'attemptId, state, nullable redirectUrl and simulation'}
         '409': {description: Idempotency conflict or quote/method/payment cannot be initiated}

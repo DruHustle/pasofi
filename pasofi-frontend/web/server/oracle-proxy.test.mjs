@@ -115,6 +115,47 @@ test('customer/staff cookies, comma-containing expiry and clearing survive separ
   });
 });
 
+test('only canonical web session deletion forwards the Onesa logout preference', async () => {
+  const alias = 'https://pasofi.example';
+  const target = 'https://auth.onesa.eu/v2/logout?client_id=pasofi_fixture_client&returnTo=https%3A%2F%2Fweb.pamofi.test%2F';
+  await withProxy({ env: { ...env, PASOFI_PUBLIC_ORIGIN_ALIASES: JSON.stringify([alias]),
+    PAMOFI_NATIVE_CUSTOMER_ENABLED: 'true', PAMOFI_NATIVE_CUSTOMER_QUALIFIED: 'true' } }, async call => {
+    behavior = (request, response) => {
+      if (request.method === 'DELETE') {
+        response.setHeader('set-cookie', '__Host-pamofi_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax');
+        if (request.headers['x-pasofi-end-session'] !== 'onesa') {
+          response.statusCode = 204;
+          return response.end();
+        }
+      }
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({ endSessionUrl: target }));
+    };
+    for (const path of ['/api/session', '/api/gateway?__pamofi_path=staff/session']) {
+      const response = await call(path, { method: 'DELETE', headers: {
+        origin: env.PAMOFI_PUBLIC_ORIGIN, 'x-pasofi-end-session': 'onesa',
+      } });
+      assert.equal(response.status, 200);
+      assert.deepEqual(JSON.parse(response.body), { endSessionUrl: target });
+      assert.match(response.headers['set-cookie'][0], /^__Host-pamofi_session=;/);
+      privateResponse(response);
+      assert.equal(events.at(-1).headers['x-pasofi-end-session'], 'onesa');
+    }
+    const aliasResponse = await call('/api/session', { method: 'DELETE', headers: {
+      host: 'pasofi.example', origin: alias, 'x-pasofi-end-session': 'onesa',
+    } });
+    assert.equal(aliasResponse.status, 204);
+    assert.equal(events.at(-1).headers['x-pasofi-end-session'], undefined);
+    const native = await call('/api/session', { method: 'DELETE', headers: {
+      origin: env.PAMOFI_PUBLIC_ORIGIN, 'x-pasofi-end-session': 'onesa', 'x-pasofi-native-customer': '1',
+    } });
+    assert.equal(native.status, 204);
+    assert.equal(events.at(-1).headers['x-pasofi-end-session'], undefined);
+    assert.equal((await call('/api/session', { headers: { 'x-pasofi-end-session': 'onesa' } })).status, 200);
+    assert.equal(events.at(-1).headers['x-pasofi-end-session'], undefined);
+  });
+});
+
 test('invalid deployment configuration and non-Vercel runtime make no outbound call', async () => {
   for (const patch of [
     { VERCEL: undefined }, { NODEJS_HELPERS: undefined }, { PAMOFI_VERCEL_PROXY_TOKEN: '' }, { PAMOFI_VERCEL_PROXY_TOKEN: 'A'.repeat(64) },

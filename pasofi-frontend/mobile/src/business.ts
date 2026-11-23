@@ -2,7 +2,7 @@ import { ApiError, usesNativeCustomerApi } from './api';
 
 export type Capabilities = {
   demo: boolean; paymentMode: 'disabled' | 'mock' | 'sandbox' | 'production';
-  paymentCheckout: boolean; vouchers: boolean; receiptPairing: boolean; cashReceiptRecovery?: boolean;
+  paymentCheckout: boolean; ecocashCheckout?: boolean; vouchers: boolean; receiptPairing: boolean; cashReceiptRecovery?: boolean;
   invoices?: boolean; invoiceEmail?: boolean; invoiceSms?: boolean;
   staffSales: boolean; deliverySms: boolean; networkAccess: boolean; mobileCookies: boolean; nativeCustomerApiVersion?: number;
 };

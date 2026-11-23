@@ -1,0 +1,47 @@
+# Optional, reviewed deployment overlay for EcoCash checkout ("Pay in PasoFi").
+# Do not add this to the running stack before every step in
+# services/prepaid-access-service/ECOCASH_ACTIVATION.md is complete.
+# New EcoCash checkout stays closed until PAMOFI_ECOCASH_CHECKOUT_ENABLED=true,
+# ECOCASH_PRODUCTION_QUALIFIED=true, a non-empty qualified-site list and the
+# physical customer-network gates are all set. Base production stays disabled.
+services:
+  prepaid-access:
+    environment:
+      PAMOFI_PAYMENTS_ENABLED: '${PAMOFI_PAYMENTS_ENABLED:-false}'
+      PAMOFI_PAYMENT_MODE: production
+      PAMOFI_ECOCASH_CHECKOUT_ENABLED: '${PAMOFI_ECOCASH_CHECKOUT_ENABLED:-false}'
+      ECOCASH_ENVIRONMENT: production
+      ECOCASH_PRODUCTION_QUALIFIED: '${ECOCASH_PRODUCTION_QUALIFIED:-false}'
+      ECOCASH_API_BASE_URL: '${ECOCASH_API_BASE_URL:?Set the production base URL issued by EcoCash at go-live}'
+      ECOCASH_API_USERNAME: '${ECOCASH_API_USERNAME:?Set the EcoCash API username}'
+      ECOCASH_MERCHANT_CODE: '${ECOCASH_MERCHANT_CODE:?Set the approved merchant code}'
+      ECOCASH_MERCHANT_NUMBER: '${ECOCASH_MERCHANT_NUMBER:?Set the merchant wallet number}'
+      ECOCASH_TERMINAL_ID: '${ECOCASH_TERMINAL_ID:?Set the issued terminal ID}'
+      ECOCASH_LOCATION: '${ECOCASH_LOCATION:?Set the registered merchant location}'
+      ECOCASH_SUPER_MERCHANT_NAME: '${ECOCASH_SUPER_MERCHANT_NAME:?Set the registered super-merchant name}'
+      ECOCASH_MERCHANT_NAME: '${ECOCASH_MERCHANT_NAME:?Set the registered merchant name}'
+      ECOCASH_QUALIFIED_SITE_IDS_JSON: '${ECOCASH_QUALIFIED_SITE_IDS_JSON:-[]}'
+      ECOCASH_API_PASSWORD_FILE: /run/secrets/ecocash_api_password
+      ECOCASH_MERCHANT_PIN_FILE: /run/secrets/ecocash_merchant_pin
+    # Only prepaid-access gets provider egress; no host port is published.
+    networks:
+      services: {}
+      database: {}
+      ecocash_egress: {gw_priority: 1}
+    secrets:
+      - ecocash_api_password
+      - ecocash_merchant_pin
+secrets:
+  ecocash_api_password:
+    file: '${PAMOFI_SECRETS_DIR:?Set the protected secret directory}/ecocash_api_password'
+  ecocash_merchant_pin:
+    file: '${PAMOFI_SECRETS_DIR:?Set the protected secret directory}/ecocash_merchant_pin'
+networks:
+  ecocash_egress:
+    labels:
+      eu.onesa.product: pasofi
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: '${PAMOFI_ECOCASH_EGRESS_SUBNET:?Set a reviewed non-overlapping private IPv4 EcoCash-egress CIDR}'

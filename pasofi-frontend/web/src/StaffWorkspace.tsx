@@ -2,6 +2,7 @@ import { registrationUrl, rememberRegistration, startProductSignIn } from './reg
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, ApiError } from './api';
+import { followOnesaLogout, onesaLogoutHeaders, type LogoutResponse } from './onesa-browser-logout';
 import { type Capabilities, type Staff, discardStaffDrafts, announceStaffSession, onStaffSessionChange, messageFor } from './business';
 import AgentWorkspace from './staff/AgentWorkspace';
 import AdminWorkspace from './staff/AdminWorkspace';
@@ -138,8 +139,13 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
   async function logout() {
     if (busy) return; const requestGeneration = ++generation.current; setSecret(''); setEnrollmentUri(''); setCode(''); setBusy(true); setMessage('');
     try {
-      await api('/api/staff/session', { method: 'DELETE' });
-      if (isCurrent(requestGeneration)) { generation.current++; setBusy(false); setExpiresAt(0); discardStaffDrafts(); announceStaffSession('signed_out'); challengeOwner.current = null; setStaff(null); setSecret(''); setEnrollmentUri(''); setCode(''); setPassword(''); setStep('login'); setMessage('Signed out of the staff workspace.'); }
+      const result = await api<LogoutResponse>('/api/staff/session', { method: 'DELETE',
+        headers: onesaLogoutHeaders(step === 'workspace' && !!staff), redirect: 'error' });
+      if (isCurrent(requestGeneration)) {
+        generation.current++; setBusy(false); setExpiresAt(0); discardStaffDrafts(); announceStaffSession('signed_out');
+        challengeOwner.current = null; setStaff(null); setSecret(''); setEnrollmentUri(''); setCode(''); setPassword('');
+        setStep('login'); setMessage('Signed out of the staff workspace.'); followOnesaLogout(result);
+      }
     } catch (error) { if (isCurrent(requestGeneration)) setMessage(messageFor(error, 'Sign out could not be completed. Please try again.')); }
     finally { if (isCurrent(requestGeneration)) setBusy(false); }
   }

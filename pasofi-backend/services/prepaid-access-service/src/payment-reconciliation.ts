@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
-import type {PaymentAdapter,PaymentProvider} from './payment-provider.js';
+import {SETTLEMENT_PROVIDERS,type PaymentAdapter,type PaymentProvider} from './payment-provider.js';
 import { reconcileProviderPayment } from './payments.js';
 
 type CallbackAdapter = {callbackAuthorized(header:unknown):boolean};
@@ -73,7 +73,7 @@ export async function finishPaymentReconciliation(pool: Pool, lease: Lease, resu
 }
 
 export async function processPaymentReconciliation(pool: Pool, adapter: PaymentAdapter): Promise<boolean> {
- if(!['mock','pesepay','stripe','stripe_test'].includes(adapter.provider))throw Error('provider_unavailable');
+ if(!SETTLEMENT_PROVIDERS.includes(adapter.provider))throw Error('provider_unavailable');
  const lease=await claimPaymentReconciliation(pool,30,adapter.provider);
  if (!lease) return false;
  let result: string;
