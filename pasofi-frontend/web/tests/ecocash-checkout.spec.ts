@@ -6,7 +6,7 @@ import {usageSnapshot} from './usage-fixture';
 // "approve on your phone" state; only the server's verified status queues access.
 const customerId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',siteId='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const orderId='ffffffff-ffff-4fff-8fff-ffffffffffff',attemptId='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
-async function fixture(page:Page){
+async function fixture(page:Page,awaitingApproval=true){
  let verified=false;const bodies:unknown[]=[];
  const order={id:orderId,bundle_id:'flex',price_minor:100,currency:'USD',status:'awaiting_payment',quote_expires_at:new Date(Date.now()+900000).toISOString(),purchase_mode:'checkout'};
  await page.route('**/api/**',async route=>{
@@ -22,7 +22,7 @@ async function fixture(page:Page){
   if(path==='/api/access')return json({customerId,entitlements:[],hasMore:false,nextOffset:null});
   if(path==='/api/payments/methods')return json({enabled:true,mode:'sandbox',simulation:true,methods:[{code:'ECOCASH',name:'EcoCash',currency:'USD',minMinor:50,maxMinor:50000}]});
   if(path==='/api/orders')return json(request.method()==='POST'?{order}:{customerId,lookupKey:url.searchParams.get('requestKey'),orders:[order]});
-  if(path===`/api/orders/${orderId}/checkout`){bodies.push(request.postDataJSON());return json({attemptId,state:'pending',redirectUrl:null,simulation:true,ecocash:{provider:'ecocash',payerHint:'653',awaitingApproval:true}});}
+  if(path===`/api/orders/${orderId}/checkout`){bodies.push(request.postDataJSON());return json({attemptId,state:'pending',redirectUrl:null,simulation:true,ecocash:{provider:'ecocash',payerHint:'653',awaitingApproval}});}
   if(path===`/api/orders/${orderId}/status`)return json({order:{...order,status:verified?'payment_confirmed':'awaiting_payment'},attempts:[{id:attemptId,provider:'ecocash_test',state:verified?'succeeded':'pending'}],entitlementId:verified?'11111111-1111-4111-8111-111111111111':null,entitlementRevokedAt:null,fulfillmentState:verified?'fulfilled':'unconfirmed',simulation:true});
   return json({error:'unexpected_request'},500);
  });
@@ -52,5 +52,17 @@ test('EcoCash checkout sends the normalized payer number once and waits for serv
  f.verify();await page.getByRole('button',{name:'Check verified payment status'}).click();
  await expect(page.getByText('Simulated payment verified.',{exact:false})).toBeVisible();
  await expect(page.getByRole('heading',{name:'Approve on your phone'})).toHaveCount(0);
+ expect(f.bodies).toHaveLength(1);
+});
+
+test('EcoCash offers a status check when the current attempt needs no phone approval',async({page})=>{
+ const f=await fixture(page,false);
+ await page.getByLabel('EcoCash number').fill('077 304 7653');
+ await page.getByRole('checkbox',{name:/reviewed the price/}).check();
+ await page.getByRole('button',{name:'Prepare checkout'}).click();
+ await expect(page.getByRole('button',{name:'Check verified payment status'})).toBeVisible();
+ await expect(page.getByText('Check the verified EcoCash payment status before paying again.')).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Approve on your phone'})).toHaveCount(0);
+ await expect(page.getByText('Bundle queued',{exact:true})).toHaveCount(0);
  expect(f.bodies).toHaveLength(1);
 });
