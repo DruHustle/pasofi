@@ -25,7 +25,10 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: '#/components/parameters/OnesaBrowserLogout'
       responses:
+        '200':
+          $ref: '#/components/responses/OnesaBrowserLogout'
         '204':
           description: Current session revoked, or no session was present; cookie cleared
         '403':
@@ -365,7 +368,11 @@ paths:
     delete:
       summary: Revoke the current staff session and challenge
       description: Requires configured Origin; clears cookies only after the database update commits. Other staff sessions and customer sessions remain valid.
+      parameters:
+        - $ref: '#/components/parameters/OnesaBrowserLogout'
       responses:
+        '200':
+          $ref: '#/components/responses/OnesaBrowserLogout'
         '204':
           description: Current session and challenge revoked, cookies cleared
         '403':
@@ -551,6 +558,25 @@ paths:
           description: Staff identity not found
 
 components:
+  parameters:
+    OnesaBrowserLogout:
+      in: header
+      name: X-PasoFi-End-Session
+      required: false
+      description: Opt in to an Onesa browser handoff for a managed session on the canonical public origin.
+      schema:
+        const: onesa
+  responses:
+    OnesaBrowserLogout:
+      description: Local session revoked and cookie cleared. Navigate to the trusted URL to end the Onesa browser session.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [endSessionUrl]
+            properties:
+              endSessionUrl: {type: string, format: uri}
   requestBodies:
     mfaCode:
       required: true

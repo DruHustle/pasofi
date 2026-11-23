@@ -1,4 +1,5 @@
 import { configuredOnesaStaff, OnesaError, RejectedStaffSession } from './onesa-staff.js';
+import { managedBrowserLogoutUrl } from './onesa-browser-logout.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
@@ -284,17 +285,29 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
 
   app.get('/v1/staff/session', { preHandler: publicGuard }, async (request, reply) => execute(reply, async () => ({ ...publicStaff(await current(request)), mfaVerified: true })));
   app.delete('/v1/staff/session', { preHandler: publicGuard, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => execute(reply, async () => {
-    await transaction(async client => {
+    const revokedManagedSession = await transaction(async client => {
       const session = request.cookies[sessionCookie], pending = request.cookies[challengeCookie];
-      if (isOpaque(session)) await client.query('UPDATE staff_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1', [opaqueHash(session)]);
-      if (isOpaque(session)) await client.query('DELETE FROM staff_onesa_sessions WHERE token_hash=$1', [opaqueHash(session)]);
+      let managed = false;
+      if (isOpaque(session)) {
+        const hash = opaqueHash(session);
+        await client.query('UPDATE staff_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1', [hash]);
+        const revoked = await client.query(`DELETE FROM staff_onesa_sessions WHERE token_hash=$1
+          RETURNING expires_at>now() AND left(access_ciphertext,8)='managed.' AS managed`, [hash]);
+        managed = revoked.rows[0]?.managed === true;
+      }
       const flow = request.cookies[flowCookie];
       if (isOpaque(flow)) await client.query('DELETE FROM staff_onesa_flows WHERE browser_hash=$1', [opaqueHash(flow)]);
       if (isOpaque(pending)) await client.query('UPDATE staff_auth_challenges SET consumed_at=COALESCE(consumed_at,now()),enrollment_ciphertext=NULL WHERE token_hash=$1', [opaqueHash(pending)]);
+      return managed;
     });
     reply.clearCookie(sessionCookie, attributes);
     reply.clearCookie(challengeCookie, attributes);
     if (request.cookies[flowCookie]) reply.clearCookie(flowCookie, attributes);
+    const endSessionUrl = managedBrowserLogoutUrl(onesa?.config, {
+      preference: request.headers['x-pasofi-end-session'], publicOrigin: origin,
+      requestOrigin: request.headers.origin, revokedManagedSession,
+    });
+    if (endSessionUrl) return reply.send({ endSessionUrl });
     return reply.code(204).send();
   }));
 
