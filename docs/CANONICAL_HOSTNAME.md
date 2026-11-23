@@ -97,9 +97,8 @@ alone do not establish that a domain, origin configuration or session has moved.
 
 The 2026-11-09 origin handoff left the five application services on their same
 qualified images with the new primary. Identity/prepaid retain both earlier
-websites and the observed `https://api.pasofi.onesa.eu` gateway alias (the retired
-API name, harmless until the next release removes it; see
-[API hostname move](#api-hostname-move)). Preserve
+websites and the gateway origin alias, now `https://api.pasofi.mobile.onesa.eu`
+(see [API hostname move](#api-hostname-move)). Preserve
 the current private Compose input copies and candidate overlay referenced by
 the running containers' labels; they are current deployment inputs, not
 disposable staging files. Do not overwrite the historical baseline or deploy
@@ -135,14 +134,15 @@ release. Each consumer was moved and read back:
    K0 has no service tunnel and K1 connects by IP).
 3. Host monitoring (`pamofi-health-check`) and the Onesa Portal infrastructure
    monitor → `https://api.pasofi.mobile.onesa.eu/health/live`.
-4. Still open for the next normal release plan: set the gateway's
-   `PAMOFI_PUBLIC_HOST` to the new name and drop `https://api.pasofi.onesa.eu`
-   from identity/prepaid `PUBLIC_ORIGIN_ALIASES`. It only selects the HTTP-redirect host; TCP 80 is opened solely for
+4. The gateway's `PAMOFI_PUBLIC_HOST` and the identity/prepaid gateway origin
+   alias in the live Compose input now use the new name. It only selects the HTTP-redirect host; TCP 80 is opened solely for
    certificate validation.
 
-`PASOFI_ONESA_AUDIENCE=https://api.pasofi.onesa.eu` is the Auth0 API identifier,
-not a hostname. Auth0 identifiers are immutable, so it stays unchanged unless the
-owner chooses a coordinated delete-and-recreate of the PasoFi API.
+The Auth0 PasoFi API identifier (`PASOFI_ONESA_AUDIENCE`) is
+`https://api.pasofi.mobile.onesa.eu`. Auth0 identifiers are immutable, so the
+move deleted the old API and recreated it with the same settings and the same
+user-delegated grants. Onesa Identity's `RESOURCE_CLIENTS_JSON` maps the new
+audience to the `pasofi` product.
 
 The legacy name was then retired: it was removed from the certificate and its DNS
 record deleted. Nothing in the Onesa Portal collector, Cloudflare Workers or the
