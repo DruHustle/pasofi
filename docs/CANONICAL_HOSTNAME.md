@@ -2,9 +2,9 @@
 
 The selected main website is **https://pasofi.mobile.onesa.eu**. It uses the
 existing Vercel `pasofi` project and independent `pasofi-frontend/web` build.
-The Oracle API is **https://api.pasofi.mobile.onesa.eu**; `https://api.pasofi.onesa.eu`
-is a legacy alias on the same gateway and certificate until every consumer has
-moved (see [API hostname move](#api-hostname-move)). This is a hostname handoff; it does not integrate Pasofi into Onesa Mobile or change
+The Oracle API is **https://api.pasofi.mobile.onesa.eu**; the earlier
+`https://api.pasofi.onesa.eu` was retired on 2026-11-23 (see
+[API hostname move](#api-hostname-move)). This is a hostname handoff; it does not integrate Pasofi into Onesa Mobile or change
 payment, customer-network, native-qualification or staff-access gates.
 
 ## Exact existing configuration contract
@@ -13,7 +13,7 @@ payment, customer-network, native-qualification or staff-access gates.
 | --- | --- | --- |
 | Vercel primary browser origin | `PAMOFI_PUBLIC_ORIGIN` | `https://pasofi.mobile.onesa.eu` |
 | Vercel accepted website aliases | `PASOFI_PUBLIC_ORIGIN_ALIASES` | `["https://pasofi.onesa.eu","https://pamofi.onesa.eu"]` |
-| Vercel upstream API | `PAMOFI_ORACLE_API_ORIGIN` | `https://api.pasofi.mobile.onesa.eu` (legacy `https://api.pasofi.onesa.eu` still served) |
+| Vercel upstream API | `PAMOFI_ORACLE_API_ORIGIN` | `https://api.pasofi.mobile.onesa.eu` |
 | Onesa split Compose primary | `PAMOFI_PUBLIC_ORIGIN` → services' `PUBLIC_ORIGIN` | Same new canonical website |
 | Onesa split Compose aliases | `PASOFI_PUBLIC_ORIGIN_ALIASES` → identity/prepaid `PUBLIC_ORIGIN_ALIASES` | Both earlier website aliases plus any existing qualified gateway HTTPS origin; reconcile the actual bounded list |
 
@@ -97,8 +97,9 @@ alone do not establish that a domain, origin configuration or session has moved.
 
 The 2026-11-09 origin handoff left the five application services on their same
 qualified images with the new primary. Identity/prepaid retain both earlier
-websites and the observed `https://api.pasofi.onesa.eu` gateway alias (the legacy
-API name; see [API hostname move](#api-hostname-move)). Preserve
+websites and the observed `https://api.pasofi.onesa.eu` gateway alias (the retired
+API name, harmless until the next release removes it; see
+[API hostname move](#api-hostname-move)). Preserve
 the current private Compose input copies and candidate overlay referenced by
 the running containers' labels; they are current deployment inputs, not
 disposable staging files. Do not overwrite the historical baseline or deploy
@@ -116,31 +117,33 @@ bounded alias list through the next normal release plan.
 
 ## API hostname move
 
-PasoFi hostnames live under `pasofi.mobile.onesa.eu`. The Oracle API moves from
-`api.pasofi.onesa.eu` to `api.pasofi.mobile.onesa.eu`; both names point to the
-same DNS-only Cloudflare A record target (the dedicated Oracle gateway) and are
-covered by the `pasofi-public` certificate lineage together with
-`hotspot.pasofi.mobile.onesa.eu`.
+PasoFi hostnames live under `pasofi.mobile.onesa.eu`. The Oracle API moved from
+`api.pasofi.onesa.eu` to `api.pasofi.mobile.onesa.eu` on 2026-11-23. The new name
+is a DNS-only Cloudflare A record to the dedicated Oracle gateway, covered by the
+`pasofi-public` certificate lineage together with `hotspot.pasofi.mobile.onesa.eu`.
+The router-local login name `hotspot.pasofi.onesa.eu` is separate and unchanged.
 
 The gateway has a single HTTPS server and authenticates the Vercel proxy by
 token, not by Host, and identity/prepaid check the forwarded browser `Origin`,
 not the API Host. Moving a consumer to the new name therefore needs no service
-release. Move each consumer, then read it back:
+release. Each consumer was moved and read back:
 
 1. Vercel `PAMOFI_ORACLE_API_ORIGIN` → `https://api.pasofi.mobile.onesa.eu`,
    followed by a production redeploy (environment changes apply only to new
    deployments).
-2. Field routers' WireGuard peer endpoint → `api.pasofi.mobile.onesa.eu`.
+2. Field routers' WireGuard peer endpoint → `api.pasofi.mobile.onesa.eu` (G0;
+   K0 has no service tunnel and K1 connects by IP).
 3. Host monitoring (`pamofi-health-check`) and the Onesa Portal infrastructure
    monitor → `https://api.pasofi.mobile.onesa.eu/health/live`.
-4. In the next normal release plan, set the gateway's `PAMOFI_PUBLIC_HOST` to the
-   new name. It only selects the HTTP-redirect host; TCP 80 is opened solely for
+4. Still open for the next normal release plan: set the gateway's
+   `PAMOFI_PUBLIC_HOST` to the new name and drop `https://api.pasofi.onesa.eu`
+   from identity/prepaid `PUBLIC_ORIGIN_ALIASES`. It only selects the HTTP-redirect host; TCP 80 is opened solely for
    certificate validation.
 
 `PASOFI_ONESA_AUDIENCE=https://api.pasofi.onesa.eu` is the Auth0 API identifier,
 not a hostname. Auth0 identifiers are immutable, so it stays unchanged unless the
 owner chooses a coordinated delete-and-recreate of the PasoFi API.
 
-Retire the legacy name only after all consumers read back the new name: remove it
-from the certificate, then delete its DNS record. Identity/prepaid keep their
-existing bounded alias list (at most three aliases) until that release.
+The legacy name was then retired: it was removed from the certificate and its DNS
+record deleted. Nothing in the Onesa Portal collector, Cloudflare Workers or the
+routers referenced it at that point.
