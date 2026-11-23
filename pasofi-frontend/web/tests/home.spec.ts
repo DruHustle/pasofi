@@ -7,12 +7,14 @@ const json = (route: Route, body: unknown, status = 200) => route.fulfill({ stat
 async function fixture(page: Page) {
   const state = { products: [product], locations: [{ id: siteId, name: 'Kuwadzana' }], locationsFail: false, locationReads: 0, mutations: [] as string[] };
   await page.route('**/api/**', async route => {
-    const path = new URL(route.request().url()).pathname;
+    const url = new URL(route.request().url());
+    const path = url.pathname;
     if (route.request().method() !== 'GET') { state.mutations.push(path); return json(route, { error: 'unexpected_mutation' }, 405); }
     if (path === '/api/capabilities') return json(route, caps);
     if (path === '/api/bundles') return json(route, { products: state.products, candidate: false });
     if (path === '/api/help') return json(route, { articles: [] });
     if (path === '/api/sites') { state.locationReads++; return json(route, state.locationsFail ? { error: 'unavailable' } : { sites: state.locations }, state.locationsFail ? 503 : 200); }
+    if (path === '/api/session' && url.searchParams.get('restore') === '1') return route.fulfill({ status: 204 });
     if (['/api/session', '/api/access', '/api/usage', '/api/recovery/status', '/api/orders'].includes(path)) return json(route, { error: 'not_authenticated' }, 401);
     return json(route, { error: 'unexpected_request' }, 500);
   });
@@ -95,10 +97,24 @@ test('Home handles an empty published catalogue without inserting promotional pr
   expect(state.mutations).toEqual([]);
 });
 
+test('Home checks for a returning session without requiring sign-in to browse', async ({ page }) => {
+  const state = await fixture(page);
+  const rejected: number[] = [];
+  page.on('response', response => {
+    if (new URL(response.url()).pathname.startsWith('/api/') && response.status() >= 400) rejected.push(response.status());
+  });
+  const restore = page.waitForResponse(response => new URL(response.url()).pathname === '/api/session');
+  await page.goto('/');
+  expect((await restore).status()).toBe(204);
+  await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toBeVisible();
+  expect(rejected).toEqual([]);
+  expect(state.mutations).toEqual([]);
+});
+
 test('a delayed returning session cannot replace Home after local location or guide interaction', async ({ page }) => {
   await fixture(page);
   let held: Route | undefined;
-  await page.route('**/api/session', route => { held = route; });
+  await page.route(url => url.pathname === '/api/session' && url.searchParams.get('restore') === '1', route => { held = route; });
   await page.goto('/'); await expect.poll(() => !!held).toBe(true);
   await page.getByRole('button', { name: 'Hotspot locations', exact: true }).click();
   await page.getByLabel('Search locations').fill('kuwadzana');

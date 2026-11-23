@@ -5,7 +5,7 @@ import { InvoiceLink } from './InvoiceActions';
 import type { Capabilities, Product } from './business';
 import type { CustomerTab } from './CustomerAccess';
 import { api } from './api';
-import { currentSession, onSessionChange } from './session';
+import { onSessionChange, restorableSession } from './session';
 import Icon, { type IconName } from './Icon';
 import BundleCatalogue from './BundleCatalogue';
 import Home from './Home';
@@ -94,7 +94,12 @@ function App() {
     // never creates an account, and a late result cannot override a user action.
     if (!allowHomeRestore.current || capabilities?.demo !== false || view !== 'home' || workspace || purchase) return;
     let active = true; const revision = interactions.current;
-    currentSession().then(() => { if (active && interactions.current === revision) { setCustomerTab('access'); setWorkspace('customer'); } }).catch(() => {});
+    restorableSession().then(customerId => {
+      if (customerId && active && interactions.current === revision) {
+        setCustomerTab('access');
+        setWorkspace('customer');
+      }
+    }).catch(() => {});
     return () => { active = false; };
   }, [capabilities?.demo, view]);
   useEffect(() => onSessionChange(change => {

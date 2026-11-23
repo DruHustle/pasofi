@@ -70,11 +70,15 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
       return customerId ? { customerId } : reply.code(401).send({ error: 'not_authenticated' });
     } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
-  app.get('/v1/session', async (request, reply) => {
+  app.get<{ Querystring: { restore?: string } }>('/v1/session', async (request, reply) => {
     reply.header('Cache-Control','no-store');
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
-    try { const customerId = await current(request); return customerId ? { customerId } : reply.code(401).send({ error: 'not_authenticated' }); }
-    catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
+    try {
+      const customerId = await current(request);
+      if (customerId) return { customerId };
+      if (request.query.restore === '1') return reply.code(204).send();
+      return reply.code(401).send({ error: 'not_authenticated' });
+    } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
   app.delete('/v1/session', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
     reply.header('Cache-Control', 'no-store');

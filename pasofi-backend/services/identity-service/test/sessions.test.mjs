@@ -25,6 +25,10 @@ test('customer session is opaque, reuses an existing cookie and checks request o
   assert.equal(again.json().customerId, created.json().customerId);
   const authenticated = await app.inject({method:'GET',url:'/v1/session',headers:{cookie}});
   assert.equal(authenticated.json().customerId,created.json().customerId);
+  const restored = await app.inject({ method: 'GET', url: '/v1/session?restore=1', headers: { cookie } });
+  assert.equal(restored.statusCode, 200);
+  assert.equal(restored.json().customerId, created.json().customerId);
+  assert.equal(restored.headers['cache-control'], 'no-store');
   const makeToken = (issuer,scope,expires='15s') => new SignJWT({scope}).setProtectedHeader({alg:'HS256'}).setIssuer(issuer).setSubject('prepaid-access').setAudience('identity').setIssuedAt().setExpirationTime(expires).sign(new TextEncoder().encode(process.env.INTERNAL_IDENTITY_SECRET));
   const wrongIssuer = await makeToken('network','identity:resolve');
   assert.equal((await app.inject({method:'GET',url:'/internal/v1/session',headers:{cookie,authorization:`Bearer ${wrongIssuer}`}})).statusCode,401);
@@ -38,6 +42,14 @@ test('customer session is opaque, reuses an existing cookie and checks request o
   assert.equal(internal.json().customerId,created.json().customerId);
   const forged = await app.inject({method:'GET',url:'/v1/session',headers:{cookie:'pamofi_demo_session=invalid'}});
   assert.equal(forged.statusCode,401);
+  for (const headers of [{}, { cookie: 'pamofi_demo_session=invalid' }]) {
+    const guest = await app.inject({ method: 'GET', url: '/v1/session?restore=1', headers });
+    assert.equal(guest.statusCode, 204);
+    assert.equal(guest.body, '');
+    assert.equal(guest.headers['cache-control'], 'no-store');
+    assert.equal(guest.headers['set-cookie'], undefined);
+  }
+  assert.equal((await app.inject({ method: 'GET', url: '/v1/session' })).statusCode, 401);
   await app.close();
 });
 test('a database outage is not mistaken for an invalid customer session', async () => {

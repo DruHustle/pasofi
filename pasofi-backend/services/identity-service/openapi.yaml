@@ -36,11 +36,20 @@ paths:
           description: Identity unavailable; logout not confirmed
     get:
       summary: Read the customer session from its HttpOnly cookie
+      parameters:
+        - in: query
+          name: restore
+          description: Opt in to an empty successful response when checking if a returning visitor has a session.
+          schema:
+            type: string
+            enum: ['1']
       responses:
         '200':
           description: Authenticated customer identity
+        '204':
+          description: No valid session during an optional restore check
         '401':
-          description: No valid session
+          description: No valid session during a strict session read
         '503':
           description: Identity unavailable
     post:

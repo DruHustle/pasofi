@@ -24,6 +24,11 @@ function retryKey(): string {
 function clearCreationKey() { try { sessionStorage.removeItem(storageKey); } catch { /* An existing cookie still works without storage. */ } }
 
 export async function currentSession(): Promise<string> { return validSession(await api<Session>('/api/session')); }
+
+export async function restorableSession(): Promise<string | undefined> {
+  const value = await api<Session | undefined>('/api/session?restore=1');
+  return value === undefined ? undefined : validSession(value);
+}
 let creating: Promise<string> | null = null;
 export function ensureSession(): Promise<string> {
   if (creating) return creating;
