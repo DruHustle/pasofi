@@ -66,3 +66,19 @@ test('EcoCash offers a status check when the current attempt needs no phone appr
  await expect(page.getByText('Bundle queued',{exact:true})).toHaveCount(0);
  expect(f.bodies).toHaveLength(1);
 });
+
+test('An expired account session clears the EcoCash checkout form', async ({ page }) => {
+  const checkouts = await fixture(page);
+  const walletNumber = page.getByLabel('EcoCash number');
+  await walletNumber.fill('077 304 7653');
+  await page.getByRole('checkbox', { name: /reviewed the price/ }).check();
+  await page.getByRole('button', { name: 'Prepare checkout' }).click();
+  await expect(page.getByRole('heading', { name: 'Approve on your phone' })).toBeVisible();
+
+  await page.route('**/api/session', route => route.fulfill({ status: 401, json: { error: 'session_required' } }));
+  await page.getByRole('button', { name: 'Check verified payment status' }).click();
+  await expect(page.getByText('Your customer session changed or expired.', { exact: false })).toBeVisible();
+  await expect(walletNumber).toHaveValue('');
+  await expect(page.getByRole('heading', { name: 'Approve on your phone' })).toHaveCount(0);
+  expect(checkouts.bodies).toHaveLength(1);
+});

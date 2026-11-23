@@ -89,7 +89,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   function invalidateAccount(expectedOwner?: string) {
     if (expectedOwner && ownerRef.current !== expectedOwner) return;
     ++generation.current; ownerRef.current = null; lastUsage.current = null; invoiceChoiceExplicit.current = false; clearSessionSecrets();
-    if (live.current) { setOwner(null); setAccess([]); setBundleListUnavailable(false); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setReferencePending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setCheckoutPending(false); setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
+    if (live.current) { setOwner(null); setAccess([]); setBundleListUnavailable(false); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setReferencePending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setPayerMsisdn(''); setEcocashPayment(null); setCheckoutPending(false); setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
   }
   function mergeUsage(snapshot: UsageSnapshot) {
     if (snapshot.customerId !== ownerRef.current || !live.current) return;
