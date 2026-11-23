@@ -71,6 +71,11 @@ test('ECO-002 every activation requirement is independently required and fails c
   assert.equal(ecocashCheckoutConfiguration(false)?.live,true);
   assert.equal(ecocashCheckoutConfiguration(true),null,'production configuration is refused in demo');
  });
+ await withEnv({...production,PAMOFI_PAYMENT_PROVIDER:'mock'},async()=>{
+  assert.deepEqual(paymentConfiguration(false),{enabled:false,mode:'disabled'},'the demo-only selector cannot expose live checkout');
+  assert.equal(ecocashCheckoutAvailable(false),false);
+  assert.equal(ecocashCheckoutConfiguration(false)?.live,true,'existing EcoCash attempts can still be reconciled');
+ });
  for(const name of ['ECOCASH_PRODUCTION_QUALIFIED','ECOCASH_API_BASE_URL','PAMOFI_PAYMENT_MODE']){
   const {[name]:_missing,...env}=production;
   await withEnv(env,async()=>assert.equal(ecocashCheckoutConfiguration(false),null,name));

@@ -14,14 +14,14 @@ const object=(v:unknown):Record<string,any>=>v&&typeof v==='object'&&!Array.isAr
 export function paymentConfiguration(demo:boolean):Configuration {
  const raw=process.env.PAMOFI_PAYMENT_MODE;
  if(process.env.PAMOFI_PAYMENTS_ENABLED!=='true')return {enabled:false,mode:'disabled'};
+ // Refuse unsupported selections and keep the legacy mock selector demo-only.
+ const provider=process.env.PAMOFI_PAYMENT_PROVIDER;
+ if(provider!==undefined&&provider!=='stripe'&&(provider!=='mock'||!demo))return {enabled:false,mode:'disabled'};
  // EcoCash checkout has its own switch (PAMOFI_ECOCASH_CHECKOUT_ENABLED) and
  // is never selected through PAMOFI_PAYMENT_PROVIDER, so a provider typo can
  // never turn it on. Its gates are evaluated in ecocashCheckoutConfiguration.
  const ecocash=ecocashCheckoutConfiguration(demo);
  const ecocashMode:Configuration|null=ecocash?.newCheckout?{enabled:true,mode:ecocash.live?'production':'sandbox'}:null;
- // An explicit unsupported provider must not silently become a simulation.
- // An unset selector preserves the existing demo-only mock configuration.
- const provider=process.env.PAMOFI_PAYMENT_PROVIDER;
  if(provider==='stripe'){
   const stripe=stripeConfiguration(demo);if(!stripe)return ecocashMode??{enabled:false,mode:'disabled'};
   // These are new-sale gates only. Keep the Stripe adapter configured for
@@ -30,7 +30,7 @@ export function paymentConfiguration(demo:boolean):Configuration {
   if(stripe.live&&(process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED!=='true'||process.env.PAMOFI_RADIUS_QUALIFIED!=='true'||process.env.PAMOFI_ROUTER_CONTROL_QUALIFIED!=='true'))return {enabled:false,mode:'disabled'};
   return {enabled:true,mode:stripe.live?'production':'sandbox'};
  }
- if(provider!==undefined&&provider!=='mock')return {enabled:false,mode:'disabled'};
+ // An unset selector preserves the existing demo-only mock configuration.
  if(raw==='mock'&&demo)return {enabled:true,mode:'mock'};
  // Unqualified legacy providers stay disabled; only the explicitly selected,
  // independently verified Stripe path above or fully gated EcoCash can enable settlement.
