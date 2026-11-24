@@ -302,6 +302,7 @@ gosu postgres pgbackrest version
       assert.equal(portalConfig.services.gateway.environment.PASOFI_HOTSPOT_PORTAL, 'true');
       assert.equal(portalConfig.services.gateway.volumes.find(item => item.target === '/opt/pasofi/hotspot-web').read_only, true);
       config.services.gateway.environment.PASOFI_HOTSPOT_PORTAL = 'true';
+      config.services.gateway.environment.PASOFI_HOTSPOT_PUBLIC_HOST = portalConfig.services.gateway.environment.PASOFI_HOTSPOT_PUBLIC_HOST;
       config.services.gateway.volumes.push(
         { type: 'bind', source: join(here, 'gateway/hotspot-portal.conf'), target: '/opt/pasofi/hotspot-portal.conf', read_only: true },
         { type: 'bind', source: portalAssets, target: '/opt/pasofi/hotspot-web', read_only: true },

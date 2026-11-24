@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Capabilities, Product } from './business';
 import Icon from './Icon';
 
@@ -48,10 +48,10 @@ export function bundleDuration(seconds: number) {
   const amount = seconds / (unit === 'day' ? 86400 : unit === 'hour' ? 3600 : 60);
   return `${Number(amount.toFixed(2))} ${unit}${amount === 1 ? '' : 's'}`;
 }
-export default function BundleCatalogue({ bundles, demo, capabilities, error, retry, refreshAvailability, choose, help, headingLevel = 2, compact = false }: {
+export default function BundleCatalogue({ bundles, demo, capabilities, error, retry, refreshAvailability, choose, help, headingLevel = 2, compact = false, accountEntry }: {
   bundles: Product[] | null; demo: boolean; capabilities: Capabilities | null; error: boolean;
   retry: () => void; refreshAvailability: () => void; choose: (bundle: Product, button: HTMLButtonElement) => void; help: () => void;
-  headingLevel?: 1 | 2; compact?: boolean;
+  headingLevel?: 1 | 2; compact?: boolean; accountEntry?: ReactNode;
 }) {
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState<Sort>('published');
@@ -90,6 +90,7 @@ export default function BundleCatalogue({ bundles, demo, capabilities, error, re
   </>;
   return <section className={narrowHotspotCatalogue ? 'pf-catalogue pf-catalogue--hotspot' : 'pf-catalogue'} id="explore" aria-labelledby="catalogue-heading" tabIndex={-1}>
     <div className="pf-section-heading"><div><span className="pf-eyebrow">A LITTLE MORE FREEDOM</span><Heading id="catalogue-heading" tabIndex={-1}>Find your fit.</Heading><p>Pick your data. Make more of your day.</p></div><button className="pf-text-link" onClick={help}>Help & FAQs <Icon name="arrow"/></button></div>
+    {accountEntry}
     {compact || narrowHotspotCatalogue ? <details className="pf-catalogue-options"><summary>{narrowHotspotCatalogue ? 'Filter & sort' : 'Filter & sort bundles'}</summary>{controls}</details> : controls}
     {sort.startsWith('price-') && multipleCurrencies && <p className="pf-sort-note">Prices are grouped by currency, then sorted within each currency.</p>}
     {!demo && bundles !== null && bundles.length > 0 && !error && !availableToBuy && <div className="pf-purchase-availability" role="status"><div><strong>{capabilities === null ? 'Purchase availability is not confirmed' : narrowHotspotCatalogue ? 'Purchases paused' : 'Purchases are paused'}</strong><p>{purchaseGuidance}</p></div><button className="pf-button pf-button-secondary" onClick={refreshAvailability}>Refresh availability</button></div>}

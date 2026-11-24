@@ -70,6 +70,8 @@ export async function inspectVercelConfiguration(environment = process.env) {
     throw Error('The public certificate/key must match the exact Oracle hostname and be within its validity period.');
   }
   let hotspotPortal;
+  const hotspotCallback = environment.PASOFI_ONESA_HOTSPOT_REDIRECT_URI;
+  if (hotspotCallback && environment.PASOFI_HOTSPOT_PORTAL !== 'true') throw Error('The hotspot callback requires the dedicated gateway.');
   if (environment.PASOFI_HOTSPOT_PORTAL !== undefined && environment.PASOFI_HOTSPOT_PORTAL !== 'false') {
     if (environment.PASOFI_HOTSPOT_PORTAL !== 'true') throw Error('Invalid hotspot portal activation flag.');
     const value = environment.PASOFI_HOTSPOT_PUBLIC_ORIGIN;
@@ -88,6 +90,14 @@ export async function inspectVercelConfiguration(environment = process.env) {
     if (await readFile(join(assets, 'hotspot-build.json'), 'utf8') !== '{"apiPrefix":"/portal-api"}\n' ||
         !(await readFile(join(assets, 'index.html'), 'utf8')).includes('/assets/')) throw Error('Build the matching hotspot frontend.');
     hotspotPortal = { origin: value, apiPrefix: '/portal-api', status: 'prepared-only' };
+    if (hotspotCallback) {
+      if (hotspotCallback !== value + '/onesa-callback.html' || value === origins.browserOrigin ||
+          (environment.PASOFI_ONESA_MODE || 'managed') !== 'managed' ||
+          (environment.PASOFI_ONESA_ISSUER || 'https://auth.onesa.eu/') !== 'https://auth.onesa.eu/' ||
+          !(await readFile(join(assets, 'hotspot-onesa-callback.html'), 'utf8')).includes('data-api-prefix="/portal-api"') ||
+          !(await lstat(join(assets, 'onesa-callback.js'))).isFile()) throw Error('Qualify the dedicated hosted Onesa callback and build.');
+      hotspotPortal.customerCallback = hotspotCallback;
+    }
   }
   return {
     status: 'prepared-only', browserOrigin: origins.browserOrigin, oracleOrigin: origins.oracleOrigin,

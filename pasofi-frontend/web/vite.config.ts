@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
 
 // Server-only targets. Only explicit public customer/staff routes can reach the services.
 const rewrite = (path: string) => path.replace(/^\/api\//, '/v1/');
@@ -34,7 +35,16 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), {
       name: 'pasofi-hotspot-build-marker',
       generateBundle() {
-        if (portal === '1') this.emitFile({ type: 'asset', fileName: 'hotspot-build.json', source: '{"apiPrefix":"/portal-api"}\n' });
+        if (portal !== '1') return;
+        this.emitFile({ type: 'asset', fileName: 'hotspot-build.json', source: '{"apiPrefix":"/portal-api"}\n' });
+        const callback = readFileSync(new URL('./public/onesa-callback.html', import.meta.url), 'utf8');
+        const script = 'src="/onesa-callback.js"';
+        if (callback.split(script).length !== 2) throw Error('Expected exactly one PasoFi callback script');
+        this.emitFile({
+          type: 'asset',
+          fileName: 'hotspot-onesa-callback.html',
+          source: callback.replace(script, script + ' data-api-prefix="/portal-api"').replace('href="/"', 'href="/connect"'),
+        });
       },
     }, {
       name: 'pamofi-public-api-boundary',

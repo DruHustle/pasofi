@@ -155,7 +155,14 @@ test('customer login binds browser and persistent subject; revocation, expiry an
 });
 
 test('customer destinations cannot redirect outside PasoFi',()=>{
- for(const value of ['https://attacker.invalid','//attacker.invalid','/#staff','/#wifi%0a','/#wifi?private=token','/#connect?redirect=other',null])assert.equal(customerReturnTo(value),'/#account');
+ for(const value of ['https://attacker.invalid','//attacker.invalid','/#staff','/#wifi%0a','/#wifi?private=token','/#connect?redirect=other',null]){
+  assert.equal(customerReturnTo(value),'/#account');
+  assert.equal(customerReturnTo(value,true),'/#account');
+ }
+ for(const value of ['/connect','/connect#bundles','/connect#voucher']){
+  assert.equal(customerReturnTo(value),'/#account');
+  assert.equal(customerReturnTo(value,true),value);
+ }
  assert.equal(customerReturnTo('/#connect'),'/#connect');
  assert.equal(customerReturnTo('/#checkout?bundle=week'),'/#checkout?bundle=week');
 });
