@@ -64,7 +64,7 @@ async function fixture(page: Page) {
     }
     if (path === '/portal-api/bundles') return route.fulfill({ json: { products, candidate: false } });
     if (path === '/portal-api/capabilities') return route.fulfill({ json: capabilities });
-    if (path === '/portal-api/onesa/availability') return route.fulfill({ json: { origin: null } });
+    if (path === '/portal-api/onesa/availability') return route.fulfill({ json: { origin: 'https://pasofi.example.invalid', hotspotOrigin: origin } });
     if (path === '/portal-api/help') return route.fulfill({ json: { articles: [] } });
     if (path === '/portal-api/sites') return route.fulfill({ json: { sites: [] } });
     if (path === '/portal-api/payments/methods') return route.fulfill({ json: { methods: [] } });
@@ -83,12 +83,12 @@ test.describe('narrow hotspot catalogue', () => {
       await page.goto(`${origin}/connect`);
       await page.getByRole('button', { name: 'View bundles', exact: true }).click();
       await expect(page).toHaveURL(/\/#bundles$/);
-      await expect(page.getByRole('heading', { name: 'Bundles', exact: true })).toBeFocused();
+      await expect(page.getByRole('heading', { name: 'Find your fit.', exact: true })).toBeFocused();
 
-      const catalogue = page.getByRole('region', { name: 'Bundles', exact: true });
+      const catalogue = page.getByRole('region', { name: 'Find your fit.', exact: true });
       const rows = catalogue.getByRole('article');
       const pause = catalogue.getByRole('button', { name: 'Refresh availability' });
-      await expect(catalogue.getByText('Purchases are paused', { exact: true })).toBeVisible();
+      await expect(catalogue.getByText('Purchases paused', { exact: true })).toBeVisible();
       await expect(pause).toHaveCount(1);
       await expect(rows).toHaveCount(5);
       await expect(rows.getByRole('button')).toHaveCount(0);
