@@ -1,6 +1,9 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { createServer, type ViteDevServer } from 'vite';
+import { build, preview, type PreviewServer } from 'vite';
 import type { Capabilities, Product } from '../src/business';
 
 const plans = [
@@ -18,21 +21,33 @@ const products: Product[] = plans.map(plan => ({
   currency: 'USD',
 }));
 
-let server: ViteDevServer;
+let outputDir: string;
+let server: PreviewServer;
 let origin: string;
 test.beforeAll(async () => {
-  // Exercise the dedicated app and /portal-api paths without a router or live services.
-  server = await createServer({
-    root: fileURLToPath(new URL('..', import.meta.url)),
-    define: { 'import.meta.env.VITE_PASOFI_HOTSPOT_PORTAL': JSON.stringify('1') },
-    server: { host: '127.0.0.1', port: 0, hmr: false },
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  outputDir = await mkdtemp(join(tmpdir(), 'pasofi-captive-bundles-'));
+  // Build the actual captive assets and use fixture APIs without a router or live services.
+  const previousFlag = process.env.VITE_PASOFI_HOTSPOT_PORTAL;
+  process.env.VITE_PASOFI_HOTSPOT_PORTAL = '1';
+  try {
+    await build({ root, build: { outDir: outputDir }, logLevel: 'error' });
+  } finally {
+    if (previousFlag === undefined) delete process.env.VITE_PASOFI_HOTSPOT_PORTAL;
+    else process.env.VITE_PASOFI_HOTSPOT_PORTAL = previousFlag;
+  }
+  server = await preview({
+    root, configFile: false, build: { outDir: outputDir }, logLevel: 'error',
+    preview: { host: '127.0.0.1', port: 0 },
   });
-  await server.listen();
-  const address = server.httpServer?.address();
+  const address = server.httpServer.address();
   if (!address || typeof address === 'string') throw Error('Captive fixture did not bind to loopback');
   origin = `http://127.0.0.1:${address.port}`;
 });
-test.afterAll(async () => { await server?.close(); });
+test.afterAll(async () => {
+  await server?.close();
+  if (outputDir) await rm(outputDir, { force: true, recursive: true });
+});
 
 async function fixture(page: Page) {
   const capabilities: Capabilities = {

@@ -277,7 +277,7 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
   grid-template-areas: "name name price action" "data validity price action";
   align-items: center;
   gap: 1px 8px;
-  min-height: 54px;
+  min-height: 52px;
   padding: 6px 10px;
 }
 .pf-catalogue--hotspot .pf-bundle-card:nth-child(n) {
