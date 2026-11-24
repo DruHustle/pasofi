@@ -210,7 +210,7 @@ paths:
     get:
       summary: Read the configured Onesa customer sign-in origin and handoff capability
       responses:
-        '200': {description: Canonical customer origin, or null when unconfigured}
+        '200': {description: Canonical customer origin or null, plus the exact optional hotspotOrigin when commissioned}
   /v1/onesa/native-session:
     post:
       summary: Establish a native customer session from a platform-issued PasoFi access token

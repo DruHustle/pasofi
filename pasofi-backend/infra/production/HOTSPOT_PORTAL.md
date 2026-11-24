@@ -30,6 +30,26 @@ not verify DNS ownership or replace the live TLS and browser acceptance tests.
 This browser origin has its own host-only cookies; it does not inherit a
 customer's Vercel session. Normal recovery and explicit account handoff apply.
 
+Managed customer sign-in on the dedicated portal is optional. Pair the portal
+overlay with the managed Onesa identity overlay. Register the exact
+`https://hotspot.pasofi.mobile.onesa.eu/onesa-callback.html` callback on the
+existing PasoFi confidential application and set
+`PASOFI_ONESA_HOTSPOT_REDIRECT_URI` to that URL only after qualifying it. Keep the
+existing canonical callback and approved PasoFi API audience. The captive build
+exposes the callback page and script at exact routes and completes login through
+`/portal-api/onesa/complete`. The browser resumes the same Connect, bundles or
+voucher screen on the dedicated origin. Staff and native callbacks retain
+their original bindings.
+
+The Sign up action requires the Account service to register the fixed
+`pasofi-hotspot` customer entry and return to the dedicated portal. Verify the
+signup email, original browser return and subsequent product session before
+enabling the dedicated callback. From an expired trial, independently test the
+browser can reach the exact approved Account and Auth0 origins and their
+required assets. Keep unrelated Internet, private addresses and management
+ports outside this access. A successful callback alone does not establish the
+pre-login network path.
+
 The public portal entry strips caller-supplied proxy identity and uses nginx's
 original socket address, even when a forged header was parsed by the shared
 real-IP module. The existing private web route allowlist, application roles,

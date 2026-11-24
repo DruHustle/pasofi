@@ -45,6 +45,12 @@ for (const [path, type, signature] of [
   check(icon.headers['set-cookie'], undefined, 'static icon never creates a customer account');
 }
 for (const path of ['/favicon.svg/private', '/favicon.ico/private', '/apple-touch-icon.png/private', '/favicon-secret.svg']) check((await request(path)).status, 404, 'icon allowlist is exact');
+const callback = await request('/onesa-callback.html');
+check(callback.status, 200, 'dedicated callback HTML');
+assert.match(callback.text, /data-api-prefix="\/portal-api"/); checks++;
+check((await request('/onesa-callback.js')).status, 200, 'dedicated callback script');
+check((await request('/hotspot-onesa-callback.html')).status, 404, 'internal callback asset has no public alias');
+check((await request('/onesa-callback.html/private')).status, 404, 'callback route is exact');
 for (const path of ['/internal/v1/session', '/v1/session', '/portal-api/internal/v1/session', '/portal-api/no-such-route', '/hotspot-build.json', '/run/secrets/vercel_proxy_token']) check((await request(path)).status, 404, path);
 for (const path of ['/api/session', '/api/capabilities']) check((await request(path)).status, 403, 'Vercel boundary remains credential-protected');
 check((await request('/portal-api/session')).status, 401);

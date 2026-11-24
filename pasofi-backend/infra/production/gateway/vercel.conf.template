@@ -21,6 +21,10 @@ map $host $pasofi_https_redirect_host {
   __PAMOFI_PUBLIC_HOST__ __PAMOFI_PUBLIC_HOST__;
 __PASOFI_HOTSPOT_REDIRECT_MAP__
 }
+map $host $pasofi_hotspot_request {
+  default 0;
+__PASOFI_HOTSPOT_REQUEST_MAP__
+}
 server {
   listen 80;
   server_name __PAMOFI_PUBLIC_HOST__ __PASOFI_HOTSPOT_PUBLIC_HOST__;

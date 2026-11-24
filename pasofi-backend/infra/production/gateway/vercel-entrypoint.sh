@@ -15,6 +15,11 @@ case "${PASOFI_HOTSPOT_PORTAL:-false}" in
     test -f /opt/pasofi/hotspot-web/index.html || fail
     test -f /opt/pasofi/hotspot-web/hotspot-build.json || fail
     grep -qx '{"apiPrefix":"/portal-api"}' /opt/pasofi/hotspot-web/hotspot-build.json || fail
+    if [ -n "${PASOFI_ONESA_HOTSPOT_REDIRECT_URI:-}" ]; then
+      test "$PASOFI_ONESA_HOTSPOT_REDIRECT_URI" = "https://${PASOFI_HOTSPOT_PUBLIC_HOST:-}/onesa-callback.html" || fail
+      test -f /opt/pasofi/hotspot-web/onesa-callback.js || fail
+      grep -Fq 'data-api-prefix="/portal-api"' /opt/pasofi/hotspot-web/hotspot-onesa-callback.html || fail
+    fi
     ;;
   *) fail ;;
 esac
@@ -36,6 +41,7 @@ BEGIN {
   portalHost = ENVIRON["PASOFI_HOTSPOT_PUBLIC_HOST"]
   portalAlias = ""
   portalRedirectMap = ""
+  portalRequestMap = ""
   if (portalHost != "") {
     if (length(portalHost) + 8 > 253 || portalHost !~ /^[a-z0-9.-]+$/ || portalHost !~ /\./) exit 1
     pn = split(portalHost, portalLabels, /\./)
@@ -45,6 +51,7 @@ BEGIN {
       if (length(portalLabels[i]) < 1 || length(portalLabels[i]) > 63 ||
           portalLabels[i] !~ /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/) exit 1
     }
+    portalRequestMap = "  " portalHost " 1;"
     if (portalHost != host) {
       portalAlias = portalHost
       portalRedirectMap = "  " portalHost " " portalHost ";"
@@ -67,6 +74,7 @@ BEGIN {
   gsub(/__PAMOFI_PUBLIC_HOST__/, host)
   gsub(/__PASOFI_HOTSPOT_PUBLIC_HOST__/, portalAlias)
   gsub(/__PASOFI_HOTSPOT_REDIRECT_MAP__/, portalRedirectMap)
+  gsub(/__PASOFI_HOTSPOT_REQUEST_MAP__/, portalRequestMap)
   gsub(/__PAMOFI_PROXY_TOKEN__/, token)
   portal = ENVIRON["PASOFI_HOTSPOT_PORTAL"] == "true" ? "include /opt/pasofi/hotspot-portal.conf;" : ""
   gsub(/__PASOFI_HOTSPOT_PORTAL_INCLUDE__/, portal)
