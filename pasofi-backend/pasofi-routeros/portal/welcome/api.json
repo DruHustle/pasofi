@@ -1,0 +1,11 @@
+$(if http-header == "Content-Type")application/captive+json$(endif)
+$(if http-header == "Cache-Control")private, no-store$(endif)
+{
+  "captive": $(if logged-in == 'yes')false$(else)true$(endif),
+  "user-portal-url": "https://login.pasofi.mobile.onesa.eu/$(if logged-in == 'yes')status$(else)login$(endif)",
+  "venue-info-url": "https://hotspot.pasofi.mobile.onesa.eu/connect"
+  $(if logged-in == 'yes')
+  $(if session-timeout-secs)$(if session-timeout-secs != 0),"seconds-remaining": $(session-timeout-secs)$(endif)$(endif)
+  $(if remain-bytes-total),"bytes-remaining": $(remain-bytes-total)$(endif)
+  $(endif)
+}
