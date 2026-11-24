@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import type {Pool} from 'pg';
+import type Stripe from 'stripe';
 import {eligibleMethod,type PaymentAdapter,type PaymentInput,type PaymentTerms} from './payment-provider.js';
 import {beginProviderPayment,reconcileProviderPayment,expireUnusedOrder,PaymentError} from './payments.js';
 import {processPaymentReconciliation} from './payment-reconciliation.js';
@@ -60,12 +61,12 @@ function mockAdapter(pool:Pool):PaymentAdapter{return {
  initiate:async(input:PaymentInput)=>{const ref=`MOCK-${randomUUID()}`;await pool.query('INSERT INTO mock_provider_payments(reference,order_id) VALUES($1,$2)',[ref,input.orderId]);return {state:'initiated' as const,referenceNumber:ref,redirectUrl:''};},
  check:async(terms:PaymentTerms)=>{const r=await pool.query('SELECT m.state,o.price_minor,o.currency FROM mock_provider_payments m JOIN purchase_orders o ON o.id=m.order_id WHERE m.reference=$1',[terms.referenceNumber]);if(!r.rowCount||r.rows[0].price_minor!==terms.amountMinor||r.rows[0].currency!==terms.currency)return {state:'unknown' as const,providerStatus:null};return {state:r.rows[0].state as 'pending'|'verified_success'|'failed'|'reversed',providerStatus:`MOCK_${r.rows[0].state}`};}
 };}
-export function registerCheckout(app:FastifyInstance,pool:Pool|null,demo:boolean,customer:Customer,originAllowed:(request:FastifyRequest)=>boolean):()=>Promise<void>{
+export function registerCheckout(app:FastifyInstance,pool:Pool|null,demo:boolean,customer:Customer,originAllowed:(request:FastifyRequest)=>boolean,demoStripeClient?:Stripe):()=>Promise<void>{
  const config=paymentConfiguration(demo);if(!pool)return async()=>{};
  const stripe=stripeConfiguration(demo),ecocash=ecocashCheckoutConfiguration(demo),ecocashOpen=ecocashCheckoutAvailable(demo);
  // Pausing new sales must not stop signed callbacks or reconciliation of money already received.
  const adapters:PaymentAdapter[]=[];
- if(stripe)adapters.push(new StripeAdapter(stripe));else if(config.enabled&&config.mode==='mock')adapters.push(mockAdapter(pool));
+ if(stripe)adapters.push(new StripeAdapter(stripe,demo?demoStripeClient:undefined));else if(config.enabled&&config.mode==='mock')adapters.push(mockAdapter(pool));
  if(ecocash)adapters.push(new EcoCashCheckoutAdapter(ecocash,pool));
  const stripeAdapter=adapters.find((a):a is StripeAdapter=>a instanceof StripeAdapter);
  const mock=adapters.find(a=>a.provider==='mock');

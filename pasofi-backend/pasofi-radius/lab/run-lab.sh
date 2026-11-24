@@ -76,6 +76,7 @@ for attempt in $(seq 1 30); do
 done
 
 customer=$(uuidgen | tr '[:upper:]' '[:lower:]')
+stripe_customer=$(uuidgen | tr '[:upper:]' '[:lower:]')
 site_a=$(uuidgen | tr '[:upper:]' '[:lower:]')
 site_b=$(uuidgen | tr '[:upper:]' '[:lower:]')
 nas_a=$(uuidgen | tr '[:upper:]' '[:lower:]')
@@ -84,9 +85,10 @@ nas_b=$(uuidgen | tr '[:upper:]' '[:lower:]')
 # uses it at A. Only the identity responder is synthetic; no merchant is called.
 entitlement=$(compose exec -T prepaid node --input-type=module - "$customer" "$site_b" < voucher-fixture.mjs)
 [[ "$entitlement" =~ ^[0-9a-f-]{36}$ ]]
-compose exec -T radius-api node --input-type=module - "$customer" "$site_a" "$site_b" "$nas_a" "$nas_b" < credential-fixture.mjs > "$lab_temp/issued"
+compose exec -T radius-api node --input-type=module - "$customer" "$site_a" "$site_b" "$nas_a" "$nas_b" "$stripe_customer" < credential-fixture.mjs > "$lab_temp/issued"
 read -r user_a password_a < "$lab_temp/issued"
 read -r user_b password_b < <(sed -n '2p' "$lab_temp/issued")
+read -r stripe_user stripe_password < <(sed -n '3p' "$lab_temp/issued")
 printf 'User-Name = "%s"\nUser-Password = "%s"\nAcct-Session-Id = "LAB-SESSION-A"\n' "$user_a" "$password_a" > "$lab_temp/access-a"
 printf 'User-Name = "%s"\nUser-Password = "%s"\nAcct-Session-Id = "LAB-SESSION-B"\n' "$user_b" "$password_b" > "$lab_temp/access-b"
 rad() { local nas="$1" kind="$2" secret="$3" input="$4" output="$5"; compose exec -T "$nas" /opt/bin/radclient -x -t 2 -r 2 "radius:1812" "$kind" "$secret" < "$input" > "$output" 2>&1; }
@@ -146,6 +148,39 @@ matched=$(compose exec -T postgres psql -v ON_ERROR_STOP=1 -At -U pamofi_prepaid
     AND g.site_id='$site_a' AND g.nas_id='$nas_a' AND a.site_id<>g.site_id")
 test "$matched" = 1
 printf 'Voucher journey passed: one receipt and entitlement, cross-site access, 4294967306 bytes in owner usage, foreign access denied.\n'
+
+# The same NAS credentials must fail before an isolated card payment settles
+# and pass afterward. The fixture's SDK transport cannot reach a merchant.
+stripe_fixture() {
+ compose exec -T -e PAMOFI_TEST_CONFIRM_ISOLATED=1 prepaid node --input-type=module - "$stripe_customer" "$site_a" "$@" < stripe-fixture.mjs
+}
+stripe_order=$(stripe_fixture)
+[[ "$stripe_order" =~ ^[0-9a-f-]{36}$ ]]
+printf 'User-Name = "%s"\nUser-Password = "%s"\nAcct-Session-Id = "LAB-SESSION-STRIPE"\n' "$stripe_user" "$stripe_password" > "$lab_temp/access-stripe"
+rad nas-a auth LAB_ONLY_nas_a_secret_26characters "$lab_temp/access-stripe" "$lab_temp/stripe-unpaid" || true
+grep -q 'Received Access-Reject' "$lab_temp/stripe-unpaid"
+stripe_entitlement=$(stripe_fixture "$stripe_order")
+[[ "$stripe_entitlement" =~ ^[0-9a-f-]{36}$ ]]
+rad nas-a auth LAB_ONLY_nas_a_secret_26characters "$lab_temp/access-stripe" "$lab_temp/stripe-paid"
+grep -q 'Received Access-Accept' "$lab_temp/stripe-paid"
+stripe_class=$(sed -n 's/^[[:space:]]*Class = \(0x[0-9a-fA-F]*\).*/\1/p' "$lab_temp/stripe-paid" | head -1)
+test -n "$stripe_class"
+printf 'Acct-Status-Type = Start\nAcct-Session-Id = "LAB-SESSION-STRIPE"\nClass = %s\n' "$stripe_class" > "$lab_temp/stripe-start"
+compose exec -T nas-a /opt/bin/radclient -x -t 2 -r 2 radius:1813 acct LAB_ONLY_nas_a_secret_26characters < "$lab_temp/stripe-start" > "$lab_temp/stripe-start-result" 2>&1
+grep -q 'Received Accounting-Response' "$lab_temp/stripe-start-result"
+printf 'Acct-Status-Type = Interim-Update\nAcct-Session-Id = "LAB-SESSION-STRIPE"\nClass = %s\nAcct-Input-Octets = 12345\nAcct-Input-Gigawords = 0\nAcct-Output-Octets = 0\nAcct-Output-Gigawords = 0\n' "$stripe_class" > "$lab_temp/stripe-interim"
+sed 's/Interim-Update/Stop/' "$lab_temp/stripe-interim" > "$lab_temp/stripe-stop"
+for packet in interim stop; do
+ compose exec -T nas-a /opt/bin/radclient -x -t 2 -r 2 radius:1813 acct LAB_ONLY_nas_a_secret_26characters < "$lab_temp/stripe-$packet" > "$lab_temp/stripe-$packet-result" 2>&1
+ grep -q 'Received Accounting-Response' "$lab_temp/stripe-$packet-result"
+done
+stripe_used=$(compose exec -T postgres psql -v ON_ERROR_STOP=1 -At -U pamofi_prepaid_access -d pamofi_prepaid_access -c "
+  SELECT e.consumed_bytes FROM purchase_entitlements e
+  JOIN access_grants g ON g.entitlement_id=e.id
+  WHERE e.id='$stripe_entitlement' AND e.order_id='$stripe_order' AND e.customer_id='$stripe_customer'
+    AND g.nas_id='$nas_a' AND g.stop_received_at IS NOT NULL")
+test "$stripe_used" = 12345
+printf 'Card journey passed: unpaid access rejected, signed synthetic settlement yielded one invoice and entitlement, paid RADIUS Start/Interim/Stop recorded 12345 bytes.\n'
 
 # A positive 2^32-byte reservation has a zero low word and a nonzero high word.
 customer_c=$(uuidgen | tr '[:upper:]' '[:lower:]')
