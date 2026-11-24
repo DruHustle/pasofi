@@ -44,16 +44,19 @@ const htmlText = value => value.replace(/[&<>"'$]/g, char => ({ '&': '&amp;', '<
 
 async function renderPages(config) {
   const pages = {};
-  for (const name of ['pasofi.css', 'login.html', 'status.html', 'alogin.html', 'logout.html']) {
+  const origins = { [defaults.hotspotOrigin]: config.hotspotOrigin, [defaults.appOrigin]: config.appOrigin };
+  for (const name of ['pasofi.css', 'login.html', 'status.html', 'alogin.html', 'logout.html', 'rlogin.html', 'api.json']) {
     const template = await readFile(new URL(name, import.meta.url), 'utf8');
     // One replacement pass prevents a selected origin that resembles a default
     // origin from being replaced a second time.
-    const contents = template.replaceAll(defaults.hotspotOrigin, config.hotspotOrigin)
-      .replaceAll(defaults.appOrigin, config.appOrigin)
+    const contents = template.replace(/https:\/\/(?:login|hotspot)\.pasofi\.mobile\.onesa\.eu/g, origin => origins[origin])
       .replaceAll('<span class="place">Kuwadzana</span>', `<span class="place">${htmlText(config.siteLabel)}</span>`);
     if (Buffer.byteLength(contents) > 4000) throw Error(`${name} exceeds bounded RouterOS upload size`);
     pages[name] = contents;
   }
+  pages['fstatus.html'] = pages['rlogin.html'];
+  pages['flogout.html'] = pages['rlogin.html'];
+  pages['flogin.html'] = pages['login.html'];
   return pages;
 }
 
@@ -77,6 +80,7 @@ export async function buildInstall({ source, target, profile, site = {} }) {
     `:local profile ${routerString(profile)}`,
     ':if ([:len [/ip hotspot profile find where name=$profile]] != 1) do={ :error "Expected one HotSpot profile" }',
     ':if ([/ip hotspot profile get [find name=$profile] html-directory] != $source) do={ :error "Portal directory changed; inspect before retrying" }',
+    ':if ([:len [:tostr [/ip hotspot profile get [find name=$profile] html-directory-override]]] != 0) do={ :error "A separate portal override is active; inspect it before installing" }',
     `:if ([/ip hotspot profile get [find name=$profile] dns-name] != ${routerString(new URL(config.hotspotOrigin).hostname)}) do={ :error "Unexpected HTTPS hostname" }`,
     ':if ([:len [/file find where name=($source . "/login.html")]] != 1) do={ :error "Source portal missing" }',
     ':if ([:len [/file find where name=$target]] != 0) do={ :error "Target exists; inspect before retrying" }',
@@ -89,10 +93,10 @@ export async function buildInstall({ source, target, profile, site = {} }) {
       '/file set [find name=$path] contents=$page',
       ':if ([/file get [find name=$path] contents] != $page) do={ :error "Portal file verification failed; profile unchanged" }');
   }
-  // Failed authentication must use the same error-aware page, not the old fallback.
-  commands.push(':if ([:len [/file find where name=($target . "/flogin.html")]] > 0) do={ /file set [find name=($target . "/flogin.html")] contents=[/file get [find name=($target . "/login.html")] contents] }',
+  commands.push(
     '/ip hotspot profile set [find name=$profile] html-directory=$target',
-    ':put "PasoFi welcome portal installed. Network access policy is unchanged."', '}');
+    ':if ([/ip hotspot profile get [find name=$profile] html-directory] != $target) do={ :error "Portal directory did not switch" }',
+    ':put "PasoFi voucher portal installed."', '}');
   return commands.join('\n') + '\n';
 }
 async function main() {

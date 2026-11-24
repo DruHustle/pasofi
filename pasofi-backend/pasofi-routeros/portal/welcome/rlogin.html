@@ -1,0 +1,22 @@
+$(if http-status == 302)PasoFi sign-in required$(endif)
+$(if http-header == "Location")https://login.pasofi.mobile.onesa.eu/login$(endif)
+$(if http-header == "Cache-Control")no-store$(endif)
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>PasoFi · Reconnect</title>
+  <link rel="stylesheet" href="/pasofi.css">
+</head>
+<body>
+  <main>
+    <section class="card">
+      <h1>Reconnect to PasoFi</h1>
+      <a class="button" href="https://login.pasofi.mobile.onesa.eu/login">Open PasoFi Wi-Fi</a>
+      <a class="button secondary" href="https://hotspot.pasofi.mobile.onesa.eu/connect#voucher">Redeem a voucher</a>
+    </section>
+  </main>
+</body>
+</html>
