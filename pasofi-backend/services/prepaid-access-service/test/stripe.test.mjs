@@ -27,7 +27,12 @@ test('Stripe configuration fails closed across environment, key mode, merchant a
  const saved=Object.fromEntries(Object.keys(env).map(key=>[key,process.env[key]]));
  try{
   Object.assign(process.env,env);assert.deepEqual(paymentConfiguration(true),{enabled:true,mode:'sandbox'});
-  for(const [name,value]of [['STRIPE_SECRET_KEY',synthetic('sk','live')],['STRIPE_PUBLISHABLE_KEY',synthetic('pk','live')],['STRIPE_WEBHOOK_SECRET',''],['STRIPE_ACCOUNT_ID',''],['STRIPE_MERCHANT_COUNTRY',''],['STRIPE_QUALIFIED_SITE_IDS_JSON','[]'],['STRIPE_QUALIFIED_SITE_IDS_JSON','["not-a-site"]'],['STRIPE_APPLE_PAY_ENABLED','true']]){
+  for(const restricted of ['rk','rkcs']){
+   Object.assign(process.env,env,{STRIPE_SECRET_KEY:synthetic(restricted)});
+   assert.deepEqual(paymentConfiguration(true),{enabled:true,mode:'sandbox'},`${restricted} only enables isolated test checkout`);
+   assert.equal(stripeConfiguration(false),null);
+  }
+  for(const [name,value]of [['STRIPE_SECRET_KEY',synthetic('sk','live')],['STRIPE_SECRET_KEY',synthetic('rk','live')],['STRIPE_SECRET_KEY',synthetic('rkcs','live')],['STRIPE_PUBLISHABLE_KEY',synthetic('pk','live')],['STRIPE_WEBHOOK_SECRET',''],['STRIPE_ACCOUNT_ID',''],['STRIPE_MERCHANT_COUNTRY',''],['STRIPE_QUALIFIED_SITE_IDS_JSON','[]'],['STRIPE_QUALIFIED_SITE_IDS_JSON','["not-a-site"]'],['STRIPE_APPLE_PAY_ENABLED','true']]){
    Object.assign(process.env,env,{[name]:value});assert.equal(stripeConfiguration(true),null,`${name} must fail closed`);
   }
   Object.assign(process.env,env);assert.equal(stripeConfiguration(false),null,'test mode cannot issue production access');

@@ -20,7 +20,9 @@ export function stripeConfiguration(demo:boolean):StripeConfiguration|null {
   : mode!=='sandbox'||!demo)return null;
  const secretKey=env.STRIPE_SECRET_KEY??'',publishableKey=env.STRIPE_PUBLISHABLE_KEY??'',webhookSecret=env.STRIPE_WEBHOOK_SECRET??'';
  const prefix=live?'live':'test';
- if(!new RegExp(`^sk_${prefix}_[A-Za-z0-9]{16,256}$`).test(secretKey)
+ // Stripe's isolated sandboxes can issue restricted or claimable test keys.
+ const validSecretKey=live ? /^sk_live_[A-Za-z0-9]{16,256}$/ : /^(?:sk|rk|rkcs)_test_[A-Za-z0-9]{16,256}$/;
+ if(!validSecretKey.test(secretKey)
   ||!new RegExp(`^pk_${prefix}_[A-Za-z0-9]{16,256}$`).test(publishableKey)
   ||!/^whsec_[A-Za-z0-9]{16,256}$/.test(webhookSecret))return null;
  const accountId=env.STRIPE_ACCOUNT_ID??'',country=env.STRIPE_MERCHANT_COUNTRY??'';
