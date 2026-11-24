@@ -8,15 +8,23 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { buildInstall, buildPages, routerString } from './build-install.mjs';
 const read = name => readFile(new URL(name, import.meta.url), 'utf8');
-function render(source, vars) {
+function render(source, vars, response = {}) {
+  source = source.replace(/^\$\(if http-(status|header) == (\d{3}|"[^"]+")\)([^\n]*)\$\(endif\)\n/gm,
+    (_, kind, target, value) => {
+      if (kind === 'status') response.status = Number(target);
+      else (response.headers ??= {})[JSON.parse(target)] = value;
+      return '';
+    });
   const stack = []; let active = true;
   return source.split(/(\$\([^)]*\))/g).map(part => {
     if (!part.startsWith('$(')) return active ? part : '';
     const token = part.slice(2, -1);
     if (token.startsWith('if ')) {
-      const [, key, match] = /^if ([\w-]+)(?: == '([^']*)')?$/.exec(token) ?? [];
+      const [, key, operator, quoted, literal] = /^if ([\w-]+)(?: (==|!=) (?:'([^']*)'|(\d+)))?$/.exec(token) ?? [];
       if (!key) throw Error(`Unsupported conditional ${token}`);
-      const pass = match === undefined ? !!vars[key] : vars[key] === match;
+      const value = vars[key] ?? '';
+      const expected = quoted ?? literal;
+      const pass = operator === '==' ? value === expected : operator === '!=' ? value !== expected : !!value && value !== '0';
       stack.push({ parent: active, pass }); active = active && pass; return '';
     }
     if (token === 'else') { const last = stack.at(-1); active = last.parent && !last.pass; return ''; }
@@ -38,16 +46,33 @@ test('welcome auto-connects only when trial is eligible, with manual fallback an
     assert.doesNotMatch(render(source, vars), /<script>/);
   }
   assert.doesNotMatch(render(source, { trial: 'no' }), /id="welcome"/);
-  assert.match(render(source, { trial: 'no' }), /Continue to Pasofi/);
+  for (const label of ['View bundles', 'Redeem a voucher']) assert.match(render(source, { trial: 'no' }), new RegExp(label));
   assert.doesNotMatch(source, /\$\((?:link-orig|error|username)\)/);
 });
-test('countdown uses router time and returns to login at expiry even after a background pause', async () => {
+test('countdown keeps the voucher prompt on screen when the trial expires in the background', async () => {
   const source = render(await read('status.html'), { 'login-by': 'trial', 'session-time-left-secs': '300' });
   const script = /<script>([\s\S]*?)<\/script>/.exec(source)[1];
-  let now = 0, tick, redirect; const node = {};
-  vm.runInNewContext(script, { Number, Math, String, Date: { now: () => now }, document: { getElementById: () => node }, setInterval: fn => { tick = fn; }, location: { replace: url => { redirect = url; } } });
-  assert.equal(node.textContent, '5:00'); now = 65_000; tick(); assert.equal(node.textContent, '3:55');
-  now = 330_000; tick(); assert.equal(redirect, 'https://login.pasofi.mobile.onesa.eu/login');
+  let now = 0, tick, onResume, cancelled;
+  const elements = Object.fromEntries(['remaining', 'trial-clock', 'connection-title', 'connection-message'].map(id => [id, {}]));
+  vm.runInNewContext(script, {
+    Date: { now: () => now },
+    document: {
+      getElementById: id => elements[id],
+      addEventListener: (event, callback) => { assert.equal(event, 'visibilitychange'); onResume = callback; },
+    },
+    setInterval: callback => { tick = callback; return 42; },
+    clearInterval: timer => { cancelled = timer; },
+  });
+  assert.equal(elements.remaining.textContent, '5:00');
+  now = 65_000;
+  tick();
+  assert.equal(elements.remaining.textContent, '3:55');
+  now = 330_000;
+  onResume();
+  assert.equal(elements['connection-title'].textContent, 'Your welcome time has ended.');
+  assert.match(elements['connection-message'].textContent, /redeem a voucher/);
+  assert.equal(elements['trial-clock'].hidden, true);
+  assert.equal(cancelled, 42);
   assert.doesNotMatch(render(await read('status.html'), { 'login-by': 'https' }), /<script>/);
 });
 test('installer escapes templates, preserves the original folder, and changes no access controls', async () => {
@@ -55,7 +80,11 @@ test('installer escapes templates, preserves the original folder, and changes no
   assert.equal(routerString('→'), '"\\E2\\86\\92"');
   const script = await buildInstall({ source: 'old-portal', target: 'new-portal', profile: 'https-pilot' });
   assert.ok(script.indexOf('Target exists') < script.indexOf('/file copy'));
+  assert.ok(script.indexOf('A separate portal override is active') < script.indexOf('/file copy'));
   assert.ok(script.indexOf('Portal file verification failed') < script.indexOf('html-directory=$target'));
+  for (const page of ['api.json', 'rlogin.html', 'fstatus.html', 'flogout.html', 'flogin.html']) {
+    assert.ok(script.includes(`/${page}"`), page);
+  }
   assert.match(script, /\\\$\(mac\)/);
   assert.doesNotMatch(script, /\/file remove|login-by=|\/ip firewall|walled-garden|password=/);
   await assert.rejects(buildInstall({ source: 'a', target: 'a', profile: 'p' }));
@@ -67,7 +96,8 @@ test('installer escapes templates, preserves the original folder, and changes no
 
 test('default welcome output preserves the existing templates byte for byte', async () => {
   const pages = await buildPages();
-  for (const [name, content] of Object.entries(pages)) assert.equal(content, await read(name), name);
+  const fallback = { 'fstatus.html': 'rlogin.html', 'flogout.html': 'rlogin.html', 'flogin.html': 'login.html' };
+  for (const [name, content] of Object.entries(pages)) assert.equal(content, await read(fallback[name] ?? name), name);
 });
 
 test('site-specific pages keep every login, countdown and app link on its selected origin', async () => {
@@ -79,21 +109,53 @@ test('site-specific pages keep every login, countdown and app link on its select
   const eligible = render(pages['login.html'], { trial: 'yes', mac: 'AA:BB:CC:DD:EE:FF' });
   assert.match(eligible, /action="https:\/\/hotspot-lawfield\.example\.com\/login" method="post"/);
   assert.match(eligible, /name="username" value="T-AA:BB:CC:DD:EE:FF"/);
-  assert.match(render(pages['login.html'], { trial: 'no' }), /href="https:\/\/portal\.example\.com\/connect"/);
-  assert.match(pages['status.html'], /href="https:\/\/portal\.example\.com\/connect#voucher"/);
+  for (const name of ['login.html', 'flogin.html', 'status.html', 'logout.html']) {
+    const page = render(pages[name], { trial: 'no' });
+    assert.match(page, /href="https:\/\/portal\.example\.com\/connect#bundles"/);
+    assert.match(page, /href="https:\/\/portal\.example\.com\/connect#voucher"/);
+  }
   assert.match(pages['alogin.html'], /content="0;url=https:\/\/hotspot-lawfield\.example\.com\/status"/);
-  assert.match(pages['logout.html'], /href="https:\/\/hotspot-lawfield\.example\.com\/login"/);
-  const script = /<script>([\s\S]*?)<\/script>/.exec(render(pages['status.html'], { 'login-by': 'trial', 'session-time-left-secs': '0' }))[1];
-  let redirect;
-  vm.runInNewContext(script, { Number, Math, String, Date, document: { getElementById: () => ({}) }, setInterval() {}, location: { replace: url => { redirect = url; } } });
-  assert.equal(redirect, 'https://hotspot-lawfield.example.com/login');
   const installer = await buildInstall({ source: 'hotspot', target: 'flash/lawfield-welcome', profile: 'lawfield-https', site });
   assert.match(installer, /dns-name\] != "hotspot-lawfield\.example\.com"/);
   assert.doesNotMatch(installer, /login-by=|\/ip firewall|walled-garden|\/radius|disabled=no|password=/);
   // Swapping the two default names must not replace an inserted origin twice.
-  const swapped = await buildPages({ hotspotOrigin: 'https://pasofi.onesa.eu', appOrigin: 'https://hotspot.pasofi.mobile.onesa.eu' });
-  assert.match(swapped['login.html'], /action="https:\/\/pasofi\.onesa\.eu\/login"/);
-  assert.match(swapped['login.html'], /href="https:\/\/hotspot\.pasofi\.mobile\.onesa\.eu\/connect"/);
+  const swapped = await buildPages({ hotspotOrigin: 'https://hotspot.pasofi.mobile.onesa.eu', appOrigin: 'https://login.pasofi.mobile.onesa.eu' });
+  assert.match(swapped['login.html'], /action="https:\/\/hotspot\.pasofi\.mobile\.onesa\.eu\/login"/);
+  assert.match(swapped['login.html'], /href="https:\/\/login\.pasofi\.mobile\.onesa\.eu\/connect#voucher"/);
+});
+
+test('captive network detection and status retries lead to the site’s trusted login after expiry', async () => {
+  for (const site of [
+    { siteLabel: 'Kuwadzana', hotspotOrigin: 'https://kuwadzana.example.net' },
+    { siteLabel: 'Goromonzi', hotspotOrigin: 'https://goromonzi.example.net' },
+  ]) {
+    const pages = await buildPages({ ...site, appOrigin: 'https://portal.example.net' });
+    for (const name of ['rlogin.html', 'fstatus.html', 'flogout.html']) {
+      const response = {};
+      const page = render(pages[name], { 'link-orig': 'https://outside.example.net/?session=private' }, response);
+      assert.equal(response.status, 302);
+      assert.equal(response.headers.Location, `${site.hotspotOrigin}/login`);
+      assert.match(page, /href="https:\/\/portal\.example\.net\/connect#voucher"/);
+      assert.doesNotMatch(page, /outside\.example\.net|session=private/);
+    }
+
+    const response = {};
+    const venue = { 'venue-info-url': 'https://portal.example.net/connect' };
+    const active = { 'logged-in': 'yes', 'session-timeout-secs': '167', 'remain-bytes-total': '8123' };
+    assert.deepEqual(JSON.parse(render(pages['api.json'], active, response)), {
+      ...venue, captive: false, 'user-portal-url': `${site.hotspotOrigin}/status`,
+      'seconds-remaining': 167, 'bytes-remaining': 8123,
+    });
+    assert.deepEqual(response.headers, { 'Content-Type': 'application/captive+json', 'Cache-Control': 'private, no-store' });
+    for (const state of [{ 'logged-in': 'yes', 'session-timeout-secs': '0' }, { 'logged-in': 'yes' }]) {
+      assert.deepEqual(JSON.parse(render(pages['api.json'], state)), {
+        ...venue, captive: false, 'user-portal-url': `${site.hotspotOrigin}/status`,
+      });
+    }
+    assert.deepEqual(JSON.parse(render(pages['api.json'], { ...active, 'logged-in': 'no' })), {
+      ...venue, captive: true, 'user-portal-url': `${site.hotspotOrigin}/login`,
+    });
+  }
 });
 
 test('site inputs reject unsafe origins and escape HTML and RouterOS portal tokens', async () => {
