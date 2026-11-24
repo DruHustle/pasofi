@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import type { Capabilities, Product } from './business';
 import Icon from './Icon';
 
+const hotspotBuild = import.meta.env.VITE_PASOFI_HOTSPOT_PORTAL === '1';
+const narrowViewport = '(max-width: 599px)';
+
 const filters = [
   { id: 'all', label: 'All bundles', matches: (_: Product) => true },
   { id: 'daily', label: 'Daily', matches: (b: Product) => b.validity_seconds <= 86400 },
@@ -52,6 +55,20 @@ export default function BundleCatalogue({ bundles, demo, capabilities, error, re
 }) {
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState<Sort>('published');
+  const [narrow, setNarrow] = useState(() => hotspotBuild && window.matchMedia(narrowViewport).matches);
+  useEffect(() => {
+    if (!hotspotBuild) return;
+    const viewport = window.matchMedia(narrowViewport);
+    const update = () => setNarrow(viewport.matches);
+    update();
+    if (!viewport.addEventListener) {
+      viewport.addListener(update);
+      return () => viewport.removeListener(update);
+    }
+    viewport.addEventListener('change', update);
+    return () => viewport.removeEventListener('change', update);
+  }, []);
+  const narrowHotspotCatalogue = narrow && headingLevel === 1;
   const available = filters.filter(f => f.id === 'all' || bundles?.some(f.matches));
   // Keep the customer's filter while a refresh is loading; fall back only when
   // the newly published catalogue no longer contains that duration.
@@ -59,7 +76,10 @@ export default function BundleCatalogue({ bundles, demo, capabilities, error, re
   const selected = available.find(f => f.id === filter) ?? filters[0];
   const visible = (bundles?.filter(selected.matches) ?? []).sort((left, right) => compareBundles(left, right, sort));
   const multipleCurrencies = new Set(visible.map(bundle => bundle.currency)).size > 1;
-  const availableToBuy = demo || capabilities?.staffSales || capabilities?.paymentCheckout;
+  const availableToBuy = Boolean(demo || capabilities?.staffSales || capabilities?.paymentCheckout);
+  const purchaseGuidance = narrowHotspotCatalogue ? 'Check before paying.' : capabilities === null
+    ? 'You can compare these bundles. Check service availability before making a payment.'
+    : 'You can compare published prices. Check again before visiting an agent or making a payment.';
   const Heading = headingLevel === 1 ? 'h1' : 'h2';
   const controls = <>
     <div className="pf-filter-row" role="group" aria-label="Bundle duration">{available.map(f => <button key={f.id} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</button>)}</div>
@@ -68,23 +88,24 @@ export default function BundleCatalogue({ bundles, demo, capabilities, error, re
       <label className="pf-sort" htmlFor="bundle-sort"><span>Sort bundles</span><select id="bundle-sort" value={sort} disabled={!bundles?.length || error} onChange={event => setSort(event.target.value as Sort)}>{sorts.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
     </div>
   </>;
-  return <section className="pf-catalogue" id="explore" aria-labelledby="catalogue-heading" tabIndex={-1}>
+  return <section className={narrowHotspotCatalogue ? 'pf-catalogue pf-catalogue--hotspot' : 'pf-catalogue'} id="explore" aria-labelledby="catalogue-heading" tabIndex={-1}>
     <div className="pf-section-heading"><div><span className="pf-eyebrow">A LITTLE MORE FREEDOM</span><Heading id="catalogue-heading" tabIndex={-1}>Find your fit.</Heading><p>Pick your data. Make more of your day.</p></div><button className="pf-text-link" onClick={help}>Help & FAQs <Icon name="arrow"/></button></div>
-    {compact ? <details className="pf-catalogue-options"><summary>Filter & sort bundles</summary>{controls}</details> : controls}
+    {compact || narrowHotspotCatalogue ? <details className="pf-catalogue-options"><summary>{narrowHotspotCatalogue ? 'Filter & sort' : 'Filter & sort bundles'}</summary>{controls}</details> : controls}
     {sort.startsWith('price-') && multipleCurrencies && <p className="pf-sort-note">Prices are grouped by currency, then sorted within each currency.</p>}
-    {!demo && bundles !== null && bundles.length > 0 && !error && !availableToBuy && <div className="pf-purchase-availability" role="status"><div><strong>{capabilities === null ? 'Purchase availability is not confirmed' : 'Purchases are paused'}</strong><p>{capabilities === null ? 'You can compare these bundles. Check service availability before making a payment.' : 'You can compare published prices. Check again before visiting an agent or making a payment.'}</p></div><button className="pf-button pf-button-secondary" onClick={refreshAvailability}>Refresh availability</button></div>}
+    {!demo && bundles !== null && bundles.length > 0 && !error && !availableToBuy && <div className="pf-purchase-availability" role="status"><div><strong>{capabilities === null ? 'Purchase availability is not confirmed' : narrowHotspotCatalogue ? 'Purchases paused' : 'Purchases are paused'}</strong><p>{purchaseGuidance}</p></div><button className="pf-button pf-button-secondary" onClick={refreshAvailability}>Refresh availability</button></div>}
     {error ? <div className="pf-empty" role="status"><span className="pf-empty-icon"><Icon name="wifi"/></span><h3>Let’s try that again.</h3><p>Bundle information is temporarily unavailable.</p><button className="pf-button pf-button-secondary" onClick={retry}>Retry bundles</button></div>
       : bundles === null ? <div className="pf-bundle-grid" role="status" aria-label="Loading bundle information"><span className="pf-sr-only">Loading bundle information…</span>{[1, 2, 3].map(i => <div key={i} className="pf-bundle-skeleton" aria-hidden="true"><span/><span/><span/></div>)}</div>
       : bundles.length === 0 ? <div className="pf-empty"><span className="pf-empty-icon"><Icon name="grid"/></span><h3>More connection is on the way.</h3><p role="status">No bundles are published yet. Check back when PasoFi launches.</p><div className="purchase-actions"><button className="pf-button pf-button-secondary" onClick={refreshAvailability}>Refresh availability</button><button className="pf-button pf-button-secondary" onClick={help}>Explore help <Icon name="arrow"/></button></div></div>
-      : <div className="pf-bundle-grid">{visible.map(bundle => {
+      : <div className="pf-bundle-grid" data-purchasable={availableToBuy}>{visible.map(bundle => {
         const data = bundleData(bundle.byte_limit);
         const label = demo ? `Try ${bundle.id} demo bundle` : capabilities?.staffSales ? `Buy ${bundle.id} from an agent` : capabilities?.paymentCheckout ? `Review ${bundle.id} bundle` : `${bundle.id} purchasing is not available`;
-        return <article className="pf-bundle-card" key={bundle.id}>
-          <div className="pf-bundle-top"><span className="pf-plan-name">{bundle.id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ')}</span><Icon name="wifi"/></div>
+        const nameId = `bundle-name-${bundle.id}`;
+        return <article className="pf-bundle-card" key={bundle.id} aria-labelledby={nameId}>
+          <div className="pf-bundle-top"><span className="pf-plan-name" id={nameId}>{bundle.id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ')}</span><Icon name="wifi"/></div>
           <h3>{data.amount}<span>{data.unit}</span></h3>
           <p className="pf-validity"><Icon name="clock"/>{bundleDuration(bundle.validity_seconds)}</p>
           <div className="pf-bundle-price"><strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: bundle.currency }).format(bundle.price_minor / 100)}</strong><span>{bundle.currency}</span></div>
-          <button className="pf-button pf-button-primary" disabled={!availableToBuy} aria-label={label} onClick={event => choose(bundle, event.currentTarget)}>{demo ? 'Try demo' : availableToBuy ? 'Choose' : capabilities === null ? 'Check status' : 'Paused'}<Icon name="arrow"/></button>
+          {(!narrowHotspotCatalogue || availableToBuy) && <button className="pf-button pf-button-primary" disabled={!availableToBuy} aria-label={label} onClick={event => choose(bundle, event.currentTarget)}>{demo ? 'Try demo' : availableToBuy ? 'Choose' : capabilities === null ? 'Check status' : 'Paused'}<Icon name="arrow"/></button>}
         </article>;
       })}</div>}
     <div className="pf-bundle-terms"><Icon name="shield"/><p><strong>Simple, upfront terms.</strong> One-off prices. Time starts on your first successful connection. Uploads and downloads count. One active connection per customer. Start within 30 days; your bundle ends when its time or data runs out.</p></div>
