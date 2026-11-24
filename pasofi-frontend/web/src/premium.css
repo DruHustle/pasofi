@@ -253,3 +253,73 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
 .pf-platform-status { display: block; color: #48635a; font-size: 11px; }
 .pf-platform-icon { width: 20px; height: 20px; }
 .pf-platform-list a:hover, .pf-platform-list a:focus-visible { text-decoration: underline; outline-color: #003a99; }
+
+.pf-main:has(> .pf-catalogue--hotspot) > .pf-service-status { margin-bottom: 8px; padding: 6px 10px; }
+.pf-main:has(> .pf-catalogue--hotspot) > .pf-service-status:is([data-status="available"], [data-status="preparation"]) .pf-service-detail {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.pf-catalogue--hotspot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.pf-catalogue--hotspot > * { grid-column: 1 / -1; min-width: 0; }
+.pf-catalogue--hotspot .pf-section-heading { grid-area: 1 / 1; align-self: center; margin: 0; }
+.pf-catalogue--hotspot .pf-section-heading > .pf-text-link { display: none; }
+.pf-catalogue--hotspot .pf-catalogue-options { grid-area: 1 / 2; margin: 0; padding: 0 9px; }
+.pf-catalogue--hotspot .pf-catalogue-options[open] { grid-area: 2 / 1 / auto / -1; }
+.pf-catalogue--hotspot .pf-onesa-sign-in-prominent {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+  margin: 0;
+  padding: 6px 8px;
+}
+.pf-catalogue--hotspot .pf-onesa-sign-in-prominent > :is(button, a) { width: 100%; min-height: 44px; padding: 6px 8px; }
+.pf-catalogue--hotspot .pf-onesa-sign-in-prominent > p { grid-column: 1 / -1; margin: 0; font-size: 12px; line-height: 1.4; }
+.pf-catalogue--hotspot .pf-purchase-availability {
+  gap: 4px 8px;
+  margin: 0;
+  padding: 8px 10px;
+}
+.pf-catalogue--hotspot .pf-purchase-availability > div { flex-basis: 125px; }
+.pf-catalogue--hotspot .pf-purchase-availability strong { display: block; font-size: 14px; }
+.pf-catalogue--hotspot .pf-purchase-availability p { margin-top: 2px; line-height: 1.35; }
+.pf-catalogue--hotspot .pf-purchase-availability > .pf-button { min-height: 44px; padding: 8px; font-size: 12px; }
+
+.pf-catalogue--hotspot .pf-bundle-grid[data-purchasable] {
+  gap: 0;
+  border: 1px solid var(--pf-line);
+  border-radius: 12px;
+  background: #fff;
+}
+.pf-catalogue--hotspot .pf-bundle-card {
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, 68px) auto;
+  grid-template-areas: "name name price action" "data validity price action";
+  align-items: center;
+  gap: 1px 8px;
+  min-height: 52px;
+  padding: 6px 10px;
+}
+.pf-catalogue--hotspot .pf-bundle-card:nth-child(n) {
+  border: 0;
+  border-top: 1px solid var(--pf-line);
+  border-radius: 0;
+  background: transparent;
+}
+.pf-catalogue--hotspot .pf-bundle-card:first-child { border-top: 0; }
+.pf-catalogue--hotspot [data-purchasable="false"] .pf-bundle-card {
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, 68px);
+  grid-template-areas: "name name price" "data validity price";
+}
+.pf-catalogue--hotspot .pf-plan-name { font-size: 14px; }
+.pf-catalogue--hotspot .pf-bundle-card h3 { gap: 3px; font-size: 15px; letter-spacing: 0; line-height: 1.3; }
+.pf-catalogue--hotspot .pf-validity { overflow-wrap: anywhere; }
+.pf-catalogue--hotspot .pf-validity .pf-icon { display: none; }
+.pf-catalogue--hotspot .pf-bundle-price { gap: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.pf-catalogue--hotspot .pf-bundle-price strong { font-size: 17px; letter-spacing: 0; }
+.pf-catalogue--hotspot .pf-bundle-card > .pf-button { min-width: 60px; padding: 6px; }
