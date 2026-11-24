@@ -49,6 +49,8 @@ The gates have separate purposes:
 | `PAMOFI_ROUTER_CONTROL_QUALIFIED` | Input to `router-control.compose.yaml`, mapped to `NETWORK_RECONCILER_ENABLED`. Required for the managed disconnect/absence cycle. |
 | `salesLocationStatus`, `routerFleet`, `routerFleetWrite` capabilities | Availability of specific administration contracts. None enables commerce or customer connections. Fleet administration and session reconciliation use separate configuration. |
 
+The base production Compose file keeps both cash commissioning controls closed. Include [`infra/production/cash-sales.compose.yaml`](../infra/production/cash-sales.compose.yaml) in the reviewed complete Compose stack when the owner has authorized cash commissioning for the specific site. Supply both values through the protected deployment environment. The overlay defaults to `false` and `[]`. Render the complete stack privately to confirm the intended values reach `prepaid-access` before a separately approved rollout.
+
 Keep `PAMOFI_PAYMENTS_ENABLED=false`, `PAMOFI_PAYMENT_MODE=disabled` and unqualified delivery channels disabled. Do not use demo/simulation mode to represent a real cash receipt.
 
 ## 2. Upgrade the application while preserving its existing gates
