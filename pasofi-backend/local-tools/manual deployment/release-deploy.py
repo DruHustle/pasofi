@@ -351,6 +351,24 @@ def origin_record(container):
     if environment == "/dev/null":
         verify_explicit_empty_environment()
         env_files, mode = [], "explicit-empty-device"
+    elif environment and ".." in environment.split("/"):
+        # Compose can record the generated empty replay input relative to
+        # another Compose file, even when its label starts with a slash.
+        require(len(environment) <= 32768 and "," not in environment
+                and Path(environment).is_absolute()
+                and all(character.isprintable() for character in environment),
+                "A baseline service has invalid ordered file labels.")
+        canonical = Path(os.path.normpath(environment))
+        companions = {
+            Path(record["path"][:-len(".compose.json")] + ".empty.env")
+            for record in files
+            if record["path"].endswith(".compose.json")
+        }
+        require(canonical in companions and Path(environment).resolve() == canonical,
+                "A noncanonical environment label must resolve to its recorded baseline's empty companion.")
+        env_files, mode = paths(str(canonical)), "recorded-files"
+        require(env_files[0]["sha256"] == hashlib.sha256(b"").hexdigest(),
+                "A noncanonical baseline environment companion must be empty.")
     elif environment:
         env_files, mode = paths(environment), "recorded-files"
     else:
