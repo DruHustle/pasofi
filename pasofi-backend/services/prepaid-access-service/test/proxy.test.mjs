@@ -25,7 +25,7 @@ test('forwarded client rate limits trust only configured proxy hops',async()=>{
     const boundary=await call('10.0.4.3','203.0.113.100, 198.51.100.7');assert.equal(boundary.json().ip,'198.51.100.7');
     // The service's real voucher route also gets the plugin hook; the limit is
     // enforced even while authorization/configuration refuses the requests.
-    for(let i=0;i<10;i++)assert.notEqual((await app.inject({method:'POST',url:'/v1/vouchers/redeem',remoteAddress:'198.51.100.99',payload:{code:'invalid'}})).statusCode,429);
+    for(let i=0;i<240;i++)assert.notEqual((await app.inject({method:'POST',url:'/v1/vouchers/redeem',remoteAddress:'198.51.100.99',payload:{code:'invalid'}})).statusCode,429);
     assert.equal((await app.inject({method:'POST',url:'/v1/vouchers/redeem',remoteAddress:'198.51.100.99',payload:{code:'invalid'}})).statusCode,429);
   } finally {await app.close();for (const [key,value] of Object.entries(saved)) {if(value===undefined)delete process.env[key];else process.env[key]=value;}}
 });

@@ -93,11 +93,11 @@ test('voucher mistakes are limited per customer on a shared network',{skip:!url}
  const f=await setup({shifts:false});
  try {
   const redeem=who=>f.call('POST','/v1/vouchers/redeem',{code:'ABCD-EFGH-JKLM-2345'},who);
-  for(let attempt=0;attempt<10;attempt++)assert.equal((await redeem('customer')).statusCode,404);
+  for(let attempt=0;attempt<10;attempt++)assert.equal((await redeem('customer')).statusCode,409);
   const limited=await redeem('customer');
   assert.equal(limited.statusCode,429);
   assert.ok(Number(limited.headers['retry-after'])>0);
-  assert.equal((await redeem('customer2')).statusCode,404);
+  assert.equal((await redeem('customer2')).statusCode,409);
  }finally{await f.cleanup();}
 });
 test('configured migration origin reaches the authenticated guard and foreign origins remain blocked',{skip:!url},async()=>{

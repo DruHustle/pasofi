@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import Fastify from 'fastify';
+import rateLimit from '@fastify/rate-limit';
 import {jwtVerify} from 'jose';
 import {registerCommerce} from '../dist/commerce.js';
 import {routerFleetCapabilities} from '../dist/router-fleet.js';
@@ -37,7 +38,8 @@ async function fixture(fn) {
     PAMOFI_COMMERCE_ENABLED: 'false', PAMOFI_CUSTOMER_NETWORK_ENABLED: 'false',
   });
   const app = Fastify({logger: false, bodyLimit: 16384});
-  registerCommerce(app, {}, true, async () => null, request => request.headers.origin === origin);
+  app.register(rateLimit,{global:false});
+  app.after(()=>registerCommerce(app, {}, true, async () => null, request => request.headers.origin === origin));
   const call = (path = '', options = {}) => app.inject({
     method: options.method ?? 'GET', url: `/v1/admin/routers${path}`,
     headers: {cookie: '__Host-pamofi_staff_session=private_browser_cookie', origin, 'idempotency-key': requestKey, ...options.headers},
