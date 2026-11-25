@@ -8,7 +8,8 @@ import { build, preview, type PreviewServer } from 'vite';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const captive = 'https://hotspot.pasofi.example.invalid';
 const canonical = 'https://pasofi.example.invalid';
-const authorize = 'https://auth.onesa.eu/authorize';
+const state = 'h'.repeat(43);
+const authorize = 'https://auth.onesa.eu/authorize?state=' + state;
 const account = 'https://account.onesa.eu/register?audience=user&product=pasofi&platform=web&entry=pasofi-hotspot';
 const customerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const capabilities = { demo: false, paymentMode: 'disabled', paymentCheckout: false, vouchers: true,
@@ -54,7 +55,7 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
         returns.push(route.request().postDataJSON().returnTo);
         return route.fulfill({ json: { authorizationUrl: authorize } });
       case '/portal-api/onesa/complete':
-        expect(route.request().postDataJSON()).toEqual({ code: 'isolated-code', state: 'isolated-state' });
+        expect(route.request().postDataJSON()).toEqual({ code: 'isolated-code', state });
         completed = true;
         return route.fulfill({ json: { authenticated: true, customerId, returnTo: returns.at(-1) } });
       case '/portal-api/session':
@@ -73,7 +74,7 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
     }
   });
   await page.route(authorize, route => route.fulfill({ contentType: 'text/html',
-    body: '<a href="' + captive + '/onesa-callback.html?code=isolated-code&amp;state=isolated-state">Continue fixture sign-in</a>' }));
+    body: '<a href="' + captive + '/onesa-callback.html?code=isolated-code&amp;state=' + state + '">Continue fixture sign-in</a>' }));
   await page.route(account, route => route.fulfill({ contentType: 'text/html',
     body: '<a href="' + captive + '/?registration=complete">Return after fixture registration</a>' }));
 

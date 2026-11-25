@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('Onesa callback removes credentials from the URL and returns a verified administrator to staff', async ({ page }) => {
+  const state = 's'.repeat(43);
   let body: unknown;
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
@@ -14,9 +15,9 @@ test('Onesa callback removes credentials from the URL and returns a verified adm
     }
     return route.fulfill({ status: 503, json: {} });
   });
-  await page.goto('/onesa-callback.html?code=test-code&state=test-state&iss=https%3A%2F%2Fportal.example.invalid');
+  await page.goto('/onesa-callback.html?code=test-code&state=' + state + '&iss=https%3A%2F%2Fportal.example.invalid');
   await expect(page).toHaveURL(/\/#staff$/);
-  expect(body).toEqual({ code: 'test-code', state: 'test-state', iss: 'https://portal.example.invalid' });
+  expect(body).toEqual({ code: 'test-code', state, iss: 'https://portal.example.invalid' });
   await expect(page.getByText('Onesa administrator', { exact: true })).toBeVisible();
 });
 
@@ -25,8 +26,8 @@ test('a cancelled or malformed callback presents a clean sign-in retry', async (
   await page.route('**/api/staff/onesa/complete', route => { exchange = true; return route.fulfill({ status: 401 }); });
   await page.goto('/onesa-callback.html?error=access_denied&state=private-state');
   await expect(page).toHaveURL(/\/onesa-callback\.html$/);
-  await expect(page.getByRole('status')).toContainText('Sign-in could not be completed');
-  await expect(page.getByRole('link', { name: 'Return to PasoFi' })).toHaveAttribute('href', '/');
+  await expect(page.getByRole('heading', { name: 'Staff sign-in needs attention' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Return to PasoFi Staff' })).toHaveAttribute('href', '/#staff');
   expect(exchange).toBe(false);
 });
 
@@ -35,8 +36,8 @@ test('blocked callback storage presents a readable retry after removing URL cred
   let exchanged=false;
   await page.addInitScript(() => Object.defineProperty(window,'sessionStorage',{get(){throw new DOMException('Storage unavailable','SecurityError');}}));
   await page.route('**/api/**',route=>{exchanged=true;return route.fulfill({status:503,json:{}});});
-  await page.goto('/onesa-callback.html?code=synthetic-code&state=synthetic-state');
+  await page.goto('/onesa-callback.html?code=synthetic-code&state=' + 'x'.repeat(43));
   await expect(page).toHaveURL(/\/onesa-callback\.html$/);
-  await expect(page.getByRole('status')).toContainText('Sign-in could not be completed');
+  await expect(page.getByRole('status')).toContainText('Allow site storage');
   expect(exchanged).toBe(false);
 });
