@@ -11,7 +11,7 @@
     ? ['/connect', '/connect#bundles', '/connect#voucher'].includes(path)
     : path === '/#connect' || /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(path));
   const state = query.get('state');
-  let flow, legacyCustomer = false;
+  let flow, legacyCustomer = false, storageUnavailable = false;
   try {
     const key = 'pasofi-onesa-flow:' + state;
     const saved = state && /^[A-Za-z0-9_-]{43}$/.test(state) && sessionStorage.getItem(key);
@@ -22,7 +22,7 @@
     }
     legacyCustomer = sessionStorage.getItem('pasofi-onesa-customer') === '1';
     sessionStorage.removeItem('pasofi-onesa-customer');
-  } catch { /* The server still verifies its browser cookie and the one-time state. */ }
+  } catch { storageUnavailable = true; }
   const customer = hotspot || (flow ? !flow.staff : legacyCustomer);
   const destination = customer
     ? (knownCustomerDestination(flow?.returnTo) ? flow.returnTo : hotspot ? '/connect' : '/#account')
@@ -35,6 +35,11 @@
     if (heading) heading.textContent = title;
     if (status) status.textContent = message;
     if (staffHelp && showStaffHelp) staffHelp.hidden = false;
+  }
+  if (storageUnavailable && !hotspot) {
+    if (back) { back.href = '/'; back.textContent = 'Return to PasoFi'; }
+    failure('Browser could not finish sign-in', 'Allow site storage in this browser, then return to PasoFi and start a new sign-in.');
+    return;
   }
   if (query.has('error')) {
     if (!customer && query.get('error') === 'access_denied') {

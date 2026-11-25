@@ -40,7 +40,7 @@ export async function startProductSignIn(staff:boolean,returnTo:string,reauthent
     throw Error('Invalid hotspot sign-in destination');
   }
   const state = target.searchParams.get('state');
-  if (state && /^[A-Za-z0-9_-]{43}$/.test(state)) {
+  if (!hotspotPortal && state && /^[A-Za-z0-9_-]{43}$/.test(state)) {
     sessionStorage.setItem('pasofi-onesa-flow:' + state, JSON.stringify({
       staff, returnTo: staff ? '/#staff' : destination(returnTo), expires: Date.now() + 300000,
     }));
