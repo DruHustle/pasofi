@@ -108,7 +108,10 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
   expect(completed).toBe(true);
 
   completed = false;
-  await page.goto(captive + '/connect#voucher');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(captive + '/connect');
+  await page.getByRole('region', { name: 'Have a voucher?' }).getByRole('button', { name: 'Redeem voucher' }).click();
+  await expect(page).toHaveURL(captive + '/connect#voucher');
   await expect(page.getByRole('textbox', { name: 'Voucher code' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', account);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -117,4 +120,6 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
   await page.getByRole('link', { name: 'Continue fixture sign-in' }).click();
   await expect(page).toHaveURL(captive + '/connect#voucher');
   expect(completed).toBe(true);
+  await page.getByRole('button', { name: 'Close customer workspace' }).click();
+  await expect(page).toHaveURL(captive + '/connect');
 });

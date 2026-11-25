@@ -117,7 +117,8 @@ function App() {
   }, []);
   function setLocation(next: View, bundleId?: string | null, replace = false) {
     const selected = (next === 'checkout' || next === 'receipt') && bundleId && /^[a-z][a-z0-9-]{0,39}$/.test(bundleId) ? bundleId : null;
-    const path = next === 'connect' ? '/connect' : `${location.pathname === '/connect' || location.pathname === '/handoff' ? '/' : location.pathname}#${next}${selected ? `?bundle=${encodeURIComponent(selected)}` : ''}`;
+    const path = next === 'connect' ? '/connect' : hotspotPortal && next === 'voucher' ? '/connect#voucher'
+      : `${location.pathname === '/connect' || location.pathname === '/handoff' ? '/' : location.pathname}#${next}${selected ? `?bundle=${encodeURIComponent(selected)}` : ''}`;
     setRequestedBundleId(selected);
     if (`${location.pathname}${location.hash}` !== path) history[replace ? 'replaceState' : 'pushState'](null, '', path);
     setView(next);
@@ -151,7 +152,7 @@ function App() {
   }
   function closeWorkspace() {
     ++interactions.current; setPurchase(null); setWorkspace(null); setCheckoutBundle(null);
-    if (customerViews[view] || view === 'staff' || view === 'handoff') setLocation('home');
+    if (customerViews[view] || view === 'staff' || view === 'handoff') setLocation(hotspotPortal && view === 'voucher' ? 'connect' : 'home');
     requestAnimationFrame(() => { if (opener.current?.isConnected) opener.current.focus(); else focusScreen(); });
   }
   function openDemo(next: Product | 'access', button: HTMLButtonElement) {
@@ -185,14 +186,23 @@ function App() {
       {showWelcome && view === 'home' && <OnesaCustomerSignIn prominent/>}
       <ScreenBoundary screen={`${view}:${workspace ?? ''}:${purchase === 'recovery' ? 'recovery' : purchase ? 'purchase' : ''}:${catalogueAttempt}`} onBrowse={() => navigate('bundles')}>
       {showWelcome && view === 'connect' && <>
-        <div className="pf-page-intro"><div><span className="pf-eyebrow">WELCOME TO YOUR HOTSPOT</span><h1 tabIndex={-1}>Connect to PasoFi</h1><p>Check bundle prices and voucher availability at this hotspot.</p></div></div>
+        <div className="pf-page-intro"><h1 tabIndex={-1}>Connect to PasoFi</h1></div>
         <OnesaCustomerSignIn prominent/>
-        {view === 'connect' && <section className="pf-quick-actions" aria-label="Quick actions">{([
+        <section className="pf-hotspot-voucher" aria-labelledby="hotspot-voucher-heading">
+          <span className="pf-hotspot-voucher-icon" aria-hidden="true"><Icon name="ticket"/></span>
+          <div>
+            <h2 id="hotspot-voucher-heading">Have a voucher?</h2>
+            <p aria-live="polite">{capabilities?.vouchers ? 'Use the code from your receipt or SMS.' : capabilities?.vouchers === false
+              ? 'Voucher redemption is currently paused.' : capabilitiesError ? 'Voucher availability could not be checked.' : 'Checking voucher availability…'}</p>
+          </div>
+          {capabilities?.vouchers && <button className="pf-button pf-button-primary" onClick={event => openCustomer('voucher', event.currentTarget)}>Redeem voucher <Icon name="arrow"/></button>}
+        </section>
+        <section className="pf-quick-actions" aria-label="Quick actions">{([
           { label: 'View bundles', icon: 'plus' as IconName, action: (b: HTMLButtonElement) => navigate('bundles', b), disabled: false },
-          { label: capabilities?.vouchers === false ? 'Vouchers paused' : 'Redeem voucher', icon: 'ticket' as IconName, action: (b: HTMLButtonElement) => openCustomer('voucher', b), disabled: !capabilities?.vouchers },
+          { label: capabilities?.vouchers === false ? 'Vouchers paused' : 'Redeem voucher', icon: 'ticket' as IconName, action: (b: HTMLButtonElement) => openCustomer('voucher', b), disabled: !capabilities?.vouchers, className: 'pf-captive-voucher-quick-action' },
           { label: 'My WiFi', icon: 'wifi' as IconName, action: (b: HTMLButtonElement) => openCustomer('wifi', b), disabled: !capabilities },
           { label: 'Get help', icon: 'help' as IconName, action: (b: HTMLButtonElement) => navigate('help', b), disabled: false },
-        ]).map(action => <button key={action.label} disabled={action.disabled} onClick={event => action.action(event.currentTarget)}><span><Icon name={action.icon}/></span><strong>{action.label}</strong></button>)}</section>}
+        ]).map(action => <button key={action.label} className={action.className} disabled={action.disabled} onClick={event => action.action(event.currentTarget)}><span><Icon name={action.icon}/></span><strong>{action.label}</strong></button>)}</section>
       </>}
       {purchase && <Suspense fallback={<div className="pf-empty" role="status">Loading your account tools…</div>}>{purchase === 'recovery' ? <Recovery close={closeWorkspace} recovered={() => { setPurchase(null); if (recoveryTarget.current === 'customer' && capabilities) openCustomer(); else setPurchase('access'); }}/>: <DemoPurchase key={purchase === 'access' ? 'access' : purchase.id} bundle={purchase === 'access' ? null : purchase} close={closeWorkspace} signedOut={() => { closeWorkspace(); setNotice('Signed out of this device. Use Recover to return to your saved demo account.'); }}/>}</Suspense>}
       {workspace && <Suspense fallback={<div className="pf-workspace-loading" role="status"><span/><span/><span/>Loading your workspace…</div>}>{workspace === 'staff' ? <StaffWorkspace close={closeWorkspace} capabilities={capabilities}/> : workspace === 'handoff' ? <Handoff close={closeWorkspace} recovered={() => { if (capabilities) openCustomer(); else { setWorkspace(null); setPurchase('access'); } }}/> : capabilities ? <CustomerAccess close={closeWorkspace} capabilities={capabilities} selectedBundle={checkoutBundle} requestedBundleId={requestedBundleId} initialTab={customerTab} onNavigate={customerNavigate} onBuyData={() => navigate('bundles')} recovered={() => openRecovery(undefined, 'customer')}/> : <div className="pf-empty" role="status"><h2 tabIndex={-1}>Let’s check your service.</h2><p>{capabilitiesError ? 'Account tools are temporarily unavailable. Please retry the service status.' : 'Checking which account features are available…'}</p>{capabilitiesError && <><button className="pf-button pf-button-secondary" onClick={refreshCapabilities}>Retry account connection</button>{accountOwnsSignIn && <OnesaCustomerSignIn/>}</>}</div>}</Suspense>}
