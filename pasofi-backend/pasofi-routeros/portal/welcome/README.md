@@ -25,8 +25,15 @@ window closes, reopen **Sign in to network** or open the site's local HTTPS
 The intended owner-requested policy is 5 minutes per device every 24 hours,
 with 1 Mbps upload and 3 Mbps download. Verify each K0/G0 profile uses exactly `trial-uptime-limit=5m` and `trial-uptime-reset=1d` before publishing this copy. RouterOS trial eligibility is based on
 MAC address, not a verified person; it is a small welcome allowance, not paid
-entitlement or a tamper-proof identity quota. It must not create a cash sale
+entitlement or a tamper-proof identity quota. An authenticated account limit would require a server-side trial claim and a separate local guest rollout. It must not create a cash sale
 or paid ledger entry. Paid RADIUS accounting needs its own commissioning.
+
+To reproduce the existing trial on G0 and K0, copy [trial-policy.rsc](trial-policy.rsc)
+and set `profileName` to the inspected HotSpot profile. G0 and K0 own their trial
+profiles. K1 forwards the guest VLAN to K0. Review any shared trial user profiles,
+run the import dry run, and apply in Safe Mode. Compare the previous settings and
+the readback before saving. The script requires an existing trial-enabled hotspot
+and its dedicated trial user profile.
 
 Generate a private installer with:
 

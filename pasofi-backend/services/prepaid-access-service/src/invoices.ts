@@ -55,6 +55,22 @@ async function orderDelivery(client:PoolClient,orderId:string):Promise<InvoiceDe
  const keys=loadDeliveryKeys();if(!keys)throw new InvoiceError('invoice_delivery_unavailable');
  return decryptDelivery(row,keys,`invoice-intent:${orderId}`);
 }
+// The approved seller information lives in runtime configuration. Missing
+// or invalid production details leave a truthful payment receipt in place.
+export function invoiceIssuer(value:string|undefined,simulation:boolean):InvoiceSnapshot['operator']{
+ if(simulation)return {name:'Example PasoFi Merchant',brand:'Pasofi',address:'1 Example Street',supportPhone:'',issuerConfirmed:true};
+ const receipt={name:'PasoFi',brand:'Pasofi',address:'',supportPhone:'',issuerConfirmed:false};
+ if(!value||Buffer.byteLength(value)>3072)return receipt;
+ try{
+  const issuer=JSON.parse(value);
+  const field=(v:unknown,max:number)=>typeof v==='string'&&v.trim()===v&&v.length>0&&v.length<=max&&!/[\u0000-\u001f\u007f]/.test(v);
+  if(!issuer||typeof issuer!=='object'||Array.isArray(issuer)||Object.keys(issuer).some(key=>!['name','address','supportPhone','taxId'].includes(key))
+   ||!field(issuer.name,100)||!field(issuer.address,110)
+   ||(issuer.supportPhone!==undefined&&!field(issuer.supportPhone,35))
+   ||(issuer.taxId!==undefined&&!field(issuer.taxId,40)))return receipt;
+  return {name:issuer.name,brand:'Pasofi',address:issuer.address,supportPhone:issuer.supportPhone??'',issuerConfirmed:true,...(issuer.taxId?{taxId:issuer.taxId}:{})};
+ }catch{return receipt;}
+}
 type InvoiceSource={type:'cash'|'digital';id:string;customerId:string|null;agentId:string|null;siteId:string|null;siteName:string|null;paidAt:Date;priceMinor:number;currency:string;bundleId:string;byteLimit:string;validitySeconds:number;simulation:boolean;payment:InvoiceSnapshot['payment']};
 async function issue(client:PoolClient,source:InvoiceSource,delivery:InvoiceDelivery,keys:DeliveryKeys|null){
  const prior=(await client.query('SELECT id,number FROM paid_invoices WHERE sale_id=$1 OR order_id=$2',[source.type==='cash'?source.id:null,source.type==='digital'?source.id:null])).rows[0];
@@ -63,7 +79,7 @@ async function issue(client:PoolClient,source:InvoiceSource,delivery:InvoiceDeli
  const clock=(await client.query("SELECT nextval('paid_invoice_number_seq')::text AS serial,now() AS issued_at")).rows[0];
  const id=randomUUID(),number=`PFI-${clock.serial.padStart(10,'0')}`,issuedAt=(clock.issued_at as Date).toISOString();
  const snapshot:InvoiceSnapshot={schemaVersion:1,number,issuedAt,paidAt:source.paidAt.toISOString(),
-  operator:{name:'Onesa',brand:'Pasofi',address:'3964 98th Crescent Kuwadzana 5',supportPhone:'+263 715 092 221'},
+  operator:invoiceIssuer(process.env.PASOFI_INVOICE_ISSUER_JSON,source.simulation),
   source:{type:source.type,id:source.id,siteName:source.siteName},
   line:{bundleId:source.bundleId,description:'Prepaid Wi-Fi data',quantity:1,byteLimit:source.byteLimit,validitySeconds:source.validitySeconds,unitAmountMinor:source.priceMinor,totalMinor:source.priceMinor},
   payment:source.payment,currency:source.currency,totalMinor:source.priceMinor,simulation:source.simulation,notice:'Not a ZIMRA fiscal tax invoice.'};

@@ -47,9 +47,14 @@ export async function processDelivery(pool:Pool,demo:boolean,config=deliveryConf
  const adapter=config.mode==='mock'?mockAdapter(pool,job.id):new SendaiAdapter(process.env.SENDAI_API_KEY??'');
  try{
   if(job.state==='submitted'||job.state==='unknown'){
-   const attempt=(await pool.query("SELECT id,provider_id FROM delivery_attempts WHERE job_id=$1 AND state IN ('submitted','unknown') ORDER BY attempt_number DESC LIMIT 1",[job.id])).rows[0];
-   if(attempt?.provider_id)await pollAttempt(pool,attempt.id,adapter);
-   await pool.query("UPDATE delivery_jobs SET lease_token=NULL,lease_until=NULL,next_at=now()+make_interval(secs=>$3),last_error=$4 WHERE id=$1 AND lease_token=$2",[job.id,lease,attempt?.provider_id?30:3600,attempt?.provider_id?null:'manual_review_required']);return true;
+   const attempt=(await pool.query("SELECT id,provider_id,created_at<=now()-interval '24 hours' AS report_overdue FROM delivery_attempts WHERE job_id=$1 AND state IN ('submitted','unknown') ORDER BY attempt_number DESC LIMIT 1",[job.id])).rows[0];
+   if(attempt&&(attempt.provider_id||attempt.report_overdue)){
+    await pollAttempt(pool,attempt.id,adapter);
+    await pool.query("UPDATE delivery_jobs SET lease_token=NULL,lease_until=NULL,next_at=now()+interval '30 seconds' WHERE id=$1 AND lease_token=$2",[job.id,lease]);
+   }else{
+    await pool.query("UPDATE delivery_jobs SET lease_token=NULL,lease_until=NULL,next_at=COALESCE((SELECT created_at+interval '24 hours' FROM delivery_attempts WHERE id=$3),'infinity'),last_error='delivery_unconfirmed' WHERE id=$1 AND lease_token=$2",[job.id,lease,attempt?.id??null]);
+   }
+   return true;
   }
   const payload=await details(job.delivery_reference,demo,job.source_kind);
   if(payload.channel==='none'){await pool.query("UPDATE delivery_jobs SET state='canceled',lease_token=NULL,lease_until=NULL,last_error=$3 WHERE id=$1 AND lease_token=$2",[job.id,lease,job.source_kind==='ecocash_demo_credit'?'voucher_unavailable':'receipt_only']);return true;}

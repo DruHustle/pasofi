@@ -100,12 +100,13 @@ export async function markStaleInitiationsUnknown(pool:Pool,minimumAgeSeconds:nu
 // Only a direct server-to-server status check may reach the fulfillment transaction.
 // Callback and browser payloads must never be passed as payment evidence.
 export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapter:Adapter){
- const known=await pool.query(`SELECT a.provider,a.provider_reference,a.order_id,a.customer_id,a.site_id,a.method_code,o.price_minor,o.currency FROM provider_payment_attempts a JOIN purchase_orders o ON o.id=a.order_id WHERE a.id=$1`,[attemptId]);
+ const known=await pool.query(`SELECT a.provider,a.provider_reference,a.order_id,a.customer_id,a.site_id,a.method_code,o.price_minor,o.currency,c.state AS prior_charge_state,c.updated_at::text AS prior_charge_version
+  FROM provider_payment_attempts a JOIN purchase_orders o ON o.id=a.order_id LEFT JOIN verified_charges c ON c.attempt_id=a.id WHERE a.id=$1`,[attemptId]);
  if(!known.rowCount||!known.rows[0].provider_reference)throw new PaymentError('reference_unavailable');
  const initial=known.rows[0];
  if(initial.provider!==adapter.provider)throw new PaymentError('provider_mismatch');
  const status=await adapter.check({referenceNumber:initial.provider_reference,amountMinor:initial.price_minor,currency:initial.currency,
-  attemptId,orderId:initial.order_id,customerId:initial.customer_id,siteId:initial.site_id,methodCode:initial.method_code});
+  attemptId,orderId:initial.order_id,customerId:initial.customer_id,siteId:initial.site_id,methodCode:initial.method_code,verifyPriorReversal:initial.prior_charge_state==='reversed'});
  if(status.state==='unknown')return {state:'unable_to_verify'};
  if(status.state==='pending')return {state:'pending'};
  if(!['verified_success','failed','reversed'].includes(status.state))return {state:'unable_to_verify'};
@@ -115,13 +116,13 @@ export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapte
   if(!rows.rowCount)throw new PaymentError('reference_unavailable');
   const a=rows.rows[0];
   if(a.provider!==adapter.provider||a.provider_reference!==initial.provider_reference||a.price_minor!==initial.price_minor||a.currency!==initial.currency||a.order_id!==initial.order_id||a.customer_id!==initial.customer_id||a.site_id!==initial.site_id||a.method_code!==initial.method_code)throw new PaymentError('payment_changed');
-  const previous=await client.query('SELECT * FROM verified_charges WHERE attempt_id=$1 FOR UPDATE',[attemptId]);
+  const previous=await client.query('SELECT *,updated_at::text AS charge_version FROM verified_charges WHERE attempt_id=$1 FOR UPDATE',[attemptId]);
   // The fulfillment belongs to this exact charge, not merely to its order.
   // Preserve a review or reversal on retries and out-of-order provider replies.
   async function previousOutcome():Promise<'fulfilled'|'pending_review'|'reversed'> {
    const charge=previous.rows[0];
    if(charge.state==='reversed') {
-    const review=await client.query("SELECT 1 FROM payment_reviews WHERE charge_id=$1 AND reason='consumed_reversal' LIMIT 1",[charge.id]);
+    const review=await client.query("SELECT 1 FROM payment_reviews WHERE charge_id=$1 AND reason='consumed_reversal' AND resolved_at IS NULL LIMIT 1",[charge.id]);
     return review.rowCount?'pending_review':'reversed';
    }
    return charge.fulfilled_entitlement_id?'fulfilled':'pending_review';
@@ -140,7 +141,12 @@ export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapte
     return {state:'reversed'};
    }
    const charge=previous.rows[0];
-   if(charge.state==='reversed')return {state:await previousOutcome()};
+   if(charge.state==='reversed'){
+    if(a.provider==='stripe'||a.provider==='stripe_test'){
+     await client.query('UPDATE verified_charges SET updated_at=clock_timestamp() WHERE id=$1',[charge.id]);
+    }
+    return {state:await previousOutcome()};
+   }
    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[a.customer_id]);
    const entitlement=charge.fulfilled_entitlement_id?await client.query('SELECT * FROM purchase_entitlements WHERE id=$1 FOR UPDATE',[charge.fulfilled_entitlement_id]):{rowCount:0,rows:[]};
    const grants=entitlement.rowCount?await client.query("SELECT id FROM access_grants WHERE entitlement_id=$1 AND state <> 'closed'",[entitlement.rows[0].id]):{rowCount:0};
@@ -161,14 +167,38 @@ export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapte
          WHERE entitlement_id=$1 AND state<>'closed'`,[entitlement.rows[0].id]);
      }
    }
-   if(!safe && entitlement.rowCount)await client.query("INSERT INTO payment_reviews(id,order_id,charge_id,reason) VALUES ($1,$2,$3,'consumed_reversal') ON CONFLICT DO NOTHING",[randomUUID(),a.order_id,charge.id]);
+   if(!safe && entitlement.rowCount)await client.query("INSERT INTO payment_reviews(id,order_id,charge_id,reason) VALUES ($1,$2,$3,'consumed_reversal') ON CONFLICT(charge_id,reason) DO UPDATE SET resolved_at=NULL",[randomUUID(),a.order_id,charge.id]);
    await client.query("UPDATE verified_charges SET state='reversed',updated_at=now() WHERE id=$1",[charge.id]);
    await client.query("UPDATE provider_payment_attempts SET state='reversed',updated_at=now() WHERE id=$1",[attemptId]);
    return {state:safe||!entitlement.rowCount?'reversed':'pending_review'};
   }
-  if(previous.rowCount)return {state:await previousOutcome()};
-  const chargeId=randomUUID();
-  await client.query("INSERT INTO verified_charges(id,order_id,attempt_id,provider_reference,amount_minor,currency,state) VALUES ($1,$2,$3,$4,$5,$6,'succeeded')",[chargeId,a.order_id,attemptId,a.provider_reference,a.price_minor,a.currency]);
+  let chargeId:string;
+  if(previous.rowCount){
+   const charge=previous.rows[0];
+   const reinstated=(a.provider==='stripe'||a.provider==='stripe_test')&&charge.state==='reversed'&&
+    ['dispute_won','partially_refunded'].includes(status.providerStatus??'');
+   if(!reinstated)return {state:await previousOutcome()};
+   if(initial.prior_charge_version!==charge.charge_version)return {state:'unable_to_verify'};
+   chargeId=charge.id;
+   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[a.customer_id]);
+   if(charge.fulfilled_entitlement_id){
+    // The exact original Stripe entitlement is restored. Usage, validity
+    // and pending NAS accounting all retain their original state.
+    const restored=await client.query(`UPDATE purchase_entitlements SET revoked_at=NULL
+     WHERE id=$1 AND order_id=$2 AND customer_id=$3 AND source_voucher_id IS NULL RETURNING id`,
+     [charge.fulfilled_entitlement_id,a.order_id,a.customer_id]);
+    if(!restored.rowCount)throw new PaymentError('payment_changed');
+   }
+   await client.query("UPDATE payment_reviews SET resolved_at=now() WHERE charge_id=$1 AND reason='consumed_reversal' AND resolved_at IS NULL",[chargeId]);
+   await client.query("UPDATE verified_charges SET state='succeeded',updated_at=now() WHERE id=$1",[chargeId]);
+   if(charge.fulfilled_entitlement_id){
+    await client.query("UPDATE provider_payment_attempts SET state='succeeded',updated_at=now() WHERE id=$1",[attemptId]);
+    return {state:'fulfilled'};
+   }
+  }else{
+   chargeId=randomUUID();
+   await client.query("INSERT INTO verified_charges(id,order_id,attempt_id,provider_reference,amount_minor,currency,state) VALUES ($1,$2,$3,$4,$5,$6,'succeeded')",[chargeId,a.order_id,attemptId,a.provider_reference,a.price_minor,a.currency]);
+  }
   if(a.order_status==='payment_confirmed'){
    await client.query("INSERT INTO payment_reviews(id,order_id,charge_id,reason) VALUES ($1,$2,$3,'duplicate_charge') ON CONFLICT DO NOTHING",[randomUUID(),a.order_id,chargeId]);
    await client.query("UPDATE provider_payment_attempts SET state='review',updated_at=now() WHERE id=$1",[attemptId]);return {state:'pending_review'};

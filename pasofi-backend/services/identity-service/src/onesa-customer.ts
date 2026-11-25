@@ -194,6 +194,9 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
     const hotspotOrigin = pool && onesa?.hotspotCallback?.origin;
     return { origin, handoff: Boolean(origin), ...(hotspotOrigin ? { hotspotOrigin } : {}), ...(origin && managed ? { native: {
       issuer: onesa.config.issuer, audience: managed.audience, ios: nativeClient('ios'), android: nativeClient('android'),
+      ...(origin==='https://pasofi.mobile.onesa.eu' && process.env.PASOFI_ONESA_VERIFIED_NATIVE_CALLBACK==='true' ? {
+        verifiedCallback: 'https://pasofi.mobile.onesa.eu/native/onesa-callback.html',
+      } : {}),
     } } : {}) };
   });
   app.post<{Body:{accessToken:string;platform:'ios'|'android'}}>('/v1/onesa/native-session', {

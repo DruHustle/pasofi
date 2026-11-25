@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
     '^/api/session(?:\\?|$)': { target: identity, rewrite },
     '^/api/onesa/(?:availability|start|complete|native-session)(?:\\?|$)': { target: identity, rewrite },
     '^/api/orders(?:/[0-9a-fA-F-]+/(?:demo-confirm|checkout|status|mock-payment|expire-unused))?(?:\\?|$)': { target: prepaid, rewrite },
-    '^/api/(?:customer|staff)/invoices(?:/[0-9a-fA-F-]+(?:/pdf)?)?(?:\\?|$)': { target: prepaid, rewrite },
+    '^/api/(?:customer|staff)/invoices(?:/[0-9a-fA-F-]+(?:/(?:pdf|resend))?)?(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/invoice-downloads(?:\\?|$)': { target: prepaid, rewrite },
     '^/api/recovery(?:/(?:status|setup|rotate))?(?:\\?|$)': { target: identity, rewrite },
     '^/api/handoff(?:/redeem)?(?:\\?|$)': { target: identity, rewrite },
@@ -33,6 +33,30 @@ export default defineConfig(({ mode }) => {
   const allowed = Object.keys(routes).map(pattern => new RegExp(pattern));
   return {
     plugins: [react(), {
+      name: 'pasofi-native-link-associations',
+      generateBundle() {
+        if (portal === '1') return;
+        const ios = process.env.PASOFI_ASSOCIATED_IOS_APP_ID;
+        const android = process.env.PASOFI_ANDROID_APP_LINK_CERT_SHA256;
+        if (ios) {
+          if (!/^[A-Z0-9]{10}\.com\.onesa\.pasofi$/.test(ios)) throw Error('Invalid PasoFi iOS app identifier');
+          this.emitFile({ type: 'asset', fileName: '.well-known/apple-app-site-association', source: JSON.stringify({
+            applinks: { details: [{ appIDs: [ios], components: [{ '/': '/native/onesa-callback.html' }] }] },
+            webcredentials: { apps: [ios] },
+          }) });
+        }
+        if (android) {
+          const certificates = android.split(',').map(value => value.trim().toUpperCase());
+          if (certificates.length > 5 || new Set(certificates).size !== certificates.length ||
+              !certificates.every(value => /^(?:[0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(value))) throw Error('Invalid PasoFi Android app signing fingerprints');
+          this.emitFile({ type: 'asset', fileName: '.well-known/assetlinks.json', source: JSON.stringify([{
+            relation: ['delegate_permission/common.handle_all_urls'], target: {
+              namespace: 'android_app', package_name: 'com.onesa.pasofi', sha256_cert_fingerprints: certificates,
+            },
+          }]) });
+        }
+      },
+    }, {
       name: 'pasofi-hotspot-build-marker',
       generateBundle() {
         if (portal !== '1') return;

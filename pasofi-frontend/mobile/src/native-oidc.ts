@@ -4,8 +4,9 @@ import * as oidc from 'openid-client';
 import type { CustomerTab } from './CustomerAccess';
 
 export const callback = 'com.onesa.pasofi.identity://login/callback';
+export const verifiedCallback = 'https://pasofi.mobile.onesa.eu/native/onesa-callback.html';
 export const flowKey = 'pasofi-native-oidc-v1';
-export type NativeRegistration = { issuer: string; audience: string; ios: string | null; android: string | null };
+export type NativeRegistration = { issuer: string; audience: string; ios: string | null; android: string | null; verifiedCallback?: string };
 export type Platform = 'ios' | 'android';
 type Flow = {
   state: string;
@@ -15,6 +16,7 @@ type Flow = {
   destination: CustomerTab;
   clientId: string;
   issuer: string;
+  callback?: string;
 };
 const destinations = new Set<CustomerTab>([
   'access',
@@ -81,9 +83,10 @@ export async function startNativeSignIn(
     destination,
     clientId: registration[platform]!,
     issuer: registration.issuer,
+    callback: registration.verifiedCallback === verifiedCallback ? verifiedCallback : callback,
   };
   const url = oidc.buildAuthorizationUrl(client, {
-    redirect_uri: callback,
+    redirect_uri: flow.callback!,
     response_type: 'code',
     scope: 'openid',
     state: flow.state,
@@ -98,7 +101,7 @@ export async function startNativeSignIn(
 export function isNativeCallback(value: string) {
   try {
     const u = new URL(value);
-    return value.split('?')[0] === callback && !u.hash && !u.username && !u.password;
+    return [callback,verifiedCallback].includes(value.split('?')[0]) && !u.hash && !u.username && !u.password;
   } catch {
     return false;
   }
@@ -135,6 +138,7 @@ export async function finishNativeSignIn(
     !destination ||
     registration[platform] !== flow.clientId ||
     registration.issuer !== flow.issuer ||
+    value.split('?')[0] !== (flow.callback ?? callback) ||
     url.searchParams.getAll('state').length !== 1 ||
     url.searchParams.get('state') !== flow.state
   )

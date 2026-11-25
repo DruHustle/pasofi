@@ -9,7 +9,7 @@ interface CustomerApiPlugin {
   availability(options: { requestId: string }): Promise<{ requestId: string; configured: boolean; origin?: string; protocol: number }>;
   request(options: NativeRequest): Promise<NativeResponse>;
   cancel(options: { requestId: string }): Promise<{ requestId: string }>;
-  authenticate(options: { authorizationUrl: string }): Promise<{ callback: string }>;
+  authenticate(options: { authorizationUrl: string }): Promise<{ callback?: string; opened?: boolean }>;
   openSignIn(options: { requestId: string }): Promise<{ requestId: string; opened: boolean }>;
 }
 const bridge = registerPlugin<CustomerApiPlugin>('PasoFiCustomerApi');
@@ -69,9 +69,11 @@ export async function openNativeOnesaSignIn(origin: string): Promise<void> {
   } catch { throw new NativeApiError('request_failed'); }
 }
 
-export async function authenticateWithAppleBrowser(origin: string, authorizationUrl: string): Promise<string> {
+export async function authenticateWithAppleBrowser(origin: string, authorizationUrl: string): Promise<string | null> {
   await configured(origin);
   const result = await bridge.authenticate({ authorizationUrl });
+  if (result.opened === true) return null;
+  if (typeof result.callback !== 'string') throw new NativeApiError('request_failed');
   return result.callback;
 }
 

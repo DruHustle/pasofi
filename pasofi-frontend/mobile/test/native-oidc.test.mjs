@@ -1,16 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { callback, flowKey, finishNativeSignIn, isNativeCallback, startNativeSignIn } from '../src/native-oidc.ts';
+import { callback, flowKey, finishNativeSignIn, isNativeCallback, startNativeSignIn, verifiedCallback } from '../src/native-oidc.ts';
 
-for (const platform of ['ios', 'android'])
-  test(platform + ' uses public-client S256, exact callback and its saved customer screen', async () => {
+for (const [platform, redirect] of [['ios',callback],['android',callback],['ios',verifiedCallback],['android',verifiedCallback]])
+  test(platform + ' binds S256 and the saved customer screen to ' + redirect, async () => {
     const issuer = 'https://id.example.invalid/',
       registration = {
         issuer,
         audience: 'https://api.pasofi.example.invalid',
         ios: 'test_pasofi_ios_client',
         android: 'test_pasofi_android_client',
+        ...(redirect === verifiedCallback ? {verifiedCallback} : {}),
       };
     const db = new Map(),
       storage = {
@@ -44,7 +45,7 @@ for (const platform of ['ios', 'android'])
       assert.equal(String(url), issuer + 'token');
       const form = new URLSearchParams(init.body);
       assert.equal(form.get('grant_type'), 'authorization_code');
-      assert.equal(form.get('redirect_uri'), callback);
+      assert.equal(form.get('redirect_uri'), redirect);
       assert.equal(form.get('client_id'), registration[platform]);
       assert.ok(!form.has('client_secret'));
       assert.ok(!new Headers(init.headers).has('authorization'));
@@ -72,10 +73,10 @@ for (const platform of ['ios', 'android'])
     assert.equal(url.origin + '/', issuer);
     assert.equal(auth.get('code_challenge_method'), 'S256');
     assert.equal(auth.get('audience'), registration.audience);
-    assert.equal(auth.get('redirect_uri'), callback);
+    assert.equal(auth.get('redirect_uri'), redirect);
     assert.equal(auth.get('response_type'), 'code');
-    const deep = callback + '?code=public-code&state=' + auth.get('state');
-    for (const bad of [deep.replace('login', 'other'), deep.replace('callback', 'wrong'), deep + '#fragment'])
+    const deep = redirect + '?code=public-code&state=' + auth.get('state');
+    for (const bad of [deep.replace('://', '://other.'), deep.replace('callback', 'wrong'), deep + '#fragment'])
       assert.equal(isNativeCallback(bad), false);
     await assert.rejects(
       finishNativeSignIn(
@@ -87,6 +88,8 @@ for (const platform of ['ios', 'android'])
         fetch,
       ),
     );
+    const alternate=redirect===verifiedCallback?callback:verifiedCallback;
+    await assert.rejects(finishNativeSignIn(registration,platform,alternate+'?code=x&state='+auth.get('state'),storage,()=>assert.fail(),fetch));
     assert.equal(exchanges, 0);
     assert.ok(storage.getItem(flowKey));
     let received;

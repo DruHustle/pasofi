@@ -28,10 +28,10 @@ export function rememberRegistration(staff=false) {
   const path=staff?'/#staff':currentCustomerScreen();
   try { sessionStorage.setItem(storageKey,JSON.stringify({path:destination(path),expires:Date.now()+30*60*1000})); } catch {}
 }
-export async function startProductSignIn(staff:boolean,returnTo:string) {
+export async function startProductSignIn(staff:boolean,returnTo:string,reauthenticate=false) {
   if(staff)sessionStorage.removeItem('pasofi-onesa-customer');
   const flow=await api<{authorizationUrl:string}>(staff?'/api/staff/onesa/start':'/api/onesa/start',{
-    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(staff?{}:{returnTo}),
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(staff?(reauthenticate?{reauthenticate:true}:{}):{returnTo}),
   });
   const target=new URL(flow.authorizationUrl);
   if(target.protocol!=='https:' || target.username || target.password)throw Error('Invalid sign-in destination');

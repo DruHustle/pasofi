@@ -17,7 +17,7 @@ const preview = {targetKey: 'identity', expectedRevision: 'a'.repeat(64), values
 
 async function fixture(fn) {
   const saved = {...process.env}; const events = []; let networkBehavior;
-  let staff = {staffId: actorId, role: 'admin', siteIds: [], version: 7, mfaVerified: true};
+  let staff = {staffId: actorId, role: 'admin', siteIds: [], version: 7, mfaVerified: true, mfaVerifiedAt: new Date().toISOString()};
   let identityStatus = 200;
   const identity = createServer((request, response) => {
     response.writeHead(identityStatus, {'content-type': 'application/json'}); response.end(JSON.stringify(staff));

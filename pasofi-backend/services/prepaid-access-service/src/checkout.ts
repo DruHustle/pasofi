@@ -92,7 +92,7 @@ export function registerCheckout(app:FastifyInstance,pool:Pool|null,demo:boolean
    const attempts=(await pool.query('SELECT id,provider,state,created_at AS "createdAt",updated_at AS "updatedAt" FROM provider_payment_attempts WHERE order_id=$1 AND customer_id=$2 ORDER BY created_at DESC LIMIT 10',[order.id,id])).rows;
    const provenance=(await pool.query("SELECT COALESCE(bool_and(provider=ANY($3::text[])),false) AS simulated FROM provider_payment_attempts WHERE order_id=$1 AND customer_id=$2",[order.id,id,SIMULATED_PROVIDERS])).rows[0];
    const e=(await pool.query('SELECT id,revoked_at FROM purchase_entitlements WHERE order_id=$1 AND customer_id=$2',[order.id,id])).rows[0];
-   const review=(await pool.query('SELECT 1 FROM payment_reviews WHERE order_id=$1 LIMIT 1',[order.id])).rowCount;
+   const review=(await pool.query('SELECT 1 FROM payment_reviews WHERE order_id=$1 AND resolved_at IS NULL LIMIT 1',[order.id])).rowCount;
    const charges=(await pool.query('SELECT state,fulfilled_entitlement_id FROM verified_charges WHERE order_id=$1',[order.id])).rows;
    const fulfillmentState=review?'pending_review':e?.revoked_at?'reversed':charges.some(c=>c.state==='succeeded'&&c.fulfilled_entitlement_id===e?.id)?'fulfilled':charges.some(c=>c.state==='reversed')?'reversed':'unconfirmed';
    return {order,attempts,entitlementId:e&&!e.revoked_at?e.id:null,entitlementRevokedAt:e?.revoked_at??null,fulfillmentState,safeToRequote:!!order.expired_unused_at,simulation:order.purchase_mode==='demo'||provenance.simulated};

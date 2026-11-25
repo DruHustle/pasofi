@@ -27,7 +27,7 @@ export async function sendOnce(pool:Pool,jobId:string,adapter:Adapter,message:Me
   // Preserve a late provider response even if the stale monitor already marked
   // this attempt unknown; it may supply the only usable provider message ID.
   const attempt=await writer.query("UPDATE delivery_attempts SET state=$2,provider_id=$3,provider_status=$4,charge_amount=$5,charge_scale=$6,charge_currency=$7,delivered_at=$8,updated_at=now() WHERE id=$1 AND state IN ('submitting','unknown') RETURNING job_id,attempt_number",[attemptId,result.state,result.providerId,result.providerStatus,result.cost?.amount??null,result.cost?.scale??null,result.cost?.currency??null,result.deliveredAt]);
-  if(attempt.rowCount) await writer.query("UPDATE delivery_jobs SET state=$2 WHERE id=$1 AND state IN ('submitting','unknown') AND NOT EXISTS (SELECT 1 FROM delivery_attempts WHERE job_id=$1 AND attempt_number>$3)",[jobId,result.state,attempt.rows[0].attempt_number]);
+  if(attempt.rowCount) await writer.query("UPDATE delivery_jobs SET state=$2,next_at=now()+interval '30 seconds' WHERE id=$1 AND state IN ('submitting','unknown') AND NOT EXISTS (SELECT 1 FROM delivery_attempts WHERE job_id=$1 AND attempt_number>$3)",[jobId,result.state,attempt.rows[0].attempt_number]);
   await writer.query('COMMIT');
   return {attemptId,state:attempt.rowCount?result.state:'unknown'};
  }catch(error){await writer.query('ROLLBACK');throw error;}finally{writer.release();}
@@ -43,16 +43,22 @@ export async function markStaleSubmissionsUnknown(pool:Pool,minimumAgeSeconds:nu
  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
 }
 export async function pollAttempt(pool:Pool,attemptId:string,adapter:Adapter) {
- const found=await pool.query("SELECT id,job_id,provider_id,state FROM delivery_attempts WHERE id=$1 AND state IN ('submitted','unknown')",[attemptId]);
- if(!found.rowCount || !found.rows[0].provider_id) throw new DeliveryError('not_pollable');
- const row=found.rows[0], result=await adapter.retrieve(row.provider_id);
- if(result.providerId!==row.provider_id || result.state==='unknown') return {state:row.state};
+ const found=await pool.query("SELECT id,job_id,provider_id,state,created_at<=now()-interval '24 hours' AS report_overdue FROM delivery_attempts WHERE id=$1 AND state IN ('submitted','unknown')",[attemptId]);
+ if(!found.rowCount) throw new DeliveryError('not_pollable');
+ const row=found.rows[0];
+ if(!row.provider_id&&!row.report_overdue)throw new DeliveryError('not_pollable');
+ const result=row.provider_id?await adapter.retrieve(row.provider_id):null;
+ const verified=!!result&&result.providerId===row.provider_id;
+ const reportTimedOut=row.report_overdue&&(!verified||['submitted','unknown'].includes(result!.state));
+ if(!reportTimedOut&&(!verified||result!.state==='unknown')) return {state:row.state};
+ const state=reportTimedOut?'failed':result!.state;
+ const details=reportTimedOut?null:result;
  const client=await pool.connect();
  try{
   await client.query('BEGIN');
-  const updated=await client.query("UPDATE delivery_attempts SET state=$2,provider_status=$3,charge_amount=COALESCE($4,charge_amount),charge_scale=COALESCE($5,charge_scale),charge_currency=COALESCE($6,charge_currency),delivered_at=$7,updated_at=now() WHERE id=$1 AND state IN ('submitted','unknown') RETURNING job_id,attempt_number",[attemptId,result.state,result.providerStatus,result.cost?.amount??null,result.cost?.scale??null,result.cost?.currency??null,result.deliveredAt]);
-  if(updated.rowCount) await client.query("UPDATE delivery_jobs SET state=$2 WHERE id=$1 AND state IN ('submitted','unknown') AND NOT EXISTS (SELECT 1 FROM delivery_attempts WHERE job_id=$1 AND attempt_number>$3)",[row.job_id,result.state,updated.rows[0].attempt_number]);
-  const current=updated.rowCount ? result.state : (await client.query('SELECT state FROM delivery_attempts WHERE id=$1',[attemptId])).rows[0]?.state ?? 'unknown';
+  const updated=await client.query("UPDATE delivery_attempts SET state=$2,provider_status=$3,charge_amount=COALESCE($4,charge_amount),charge_scale=COALESCE($5,charge_scale),charge_currency=COALESCE($6,charge_currency),delivered_at=$7,updated_at=now() WHERE id=$1 AND state IN ('submitted','unknown') AND provider_id IS NOT DISTINCT FROM $8 RETURNING job_id,attempt_number",[attemptId,state,reportTimedOut?'delivery_report_timeout':result!.providerStatus,details?.cost?.amount??null,details?.cost?.scale??null,details?.cost?.currency??null,details?.deliveredAt??null,row.provider_id]);
+  if(updated.rowCount) await client.query("UPDATE delivery_jobs SET state=$2,last_error=$4 WHERE id=$1 AND state IN ('submitted','unknown') AND NOT EXISTS (SELECT 1 FROM delivery_attempts WHERE job_id=$1 AND attempt_number>$3)",[row.job_id,state,updated.rows[0].attempt_number,reportTimedOut?'delivery_report_timeout':null]);
+  const current=updated.rowCount ? state : (await client.query('SELECT state FROM delivery_attempts WHERE id=$1',[attemptId])).rows[0]?.state ?? 'unknown';
   await client.query('COMMIT');return {state:current};
  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
 }

@@ -6,7 +6,7 @@ export const SETTLEMENT_PROVIDERS:readonly PaymentProvider[]=['mock','pesepay','
 export const SIMULATED_PROVIDERS:readonly PaymentProvider[]=['mock','stripe_test','ecocash_test'];
 export type MethodEligibility={method:unknown;merchantEnabledCodes:Set<string>;siteQualifiedCodes:Set<string>};
 export type PaymentInput={attemptId:string;orderId:string;customerId:string;siteId:string;amountMinor:number;currency:string;methodCode:string;eligibility:MethodEligibility};
-export type PaymentTerms={referenceNumber:string;amountMinor:number;currency:string;attemptId?:string;orderId?:string;customerId?:string;siteId?:string;methodCode?:string};
+export type PaymentTerms={referenceNumber:string;amountMinor:number;currency:string;attemptId?:string;orderId?:string;customerId?:string;siteId?:string;methodCode?:string;verifyPriorReversal?:boolean};
 export type VerifiedStatus={state:'verified_success'|'pending'|'failed'|'reversed'|'unknown';providerStatus:string|null};
 export type InitiationResult={state:'initiated';referenceNumber:string;redirectUrl:string}|{state:'unknown';referenceNumber?:string}|{state:'failed';referenceNumber?:never};
 export interface PaymentAdapter {

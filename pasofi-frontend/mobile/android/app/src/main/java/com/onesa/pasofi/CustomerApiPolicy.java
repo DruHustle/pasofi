@@ -94,6 +94,7 @@ final class CustomerApiPolicy {
         if (!method.equals("POST")) return false;
         return path.matches("^/api/(orders|onesa/native-session|recovery(?:/(setup|rotate))?|handoff(?:/redeem)?|invoice-downloads|receipt-pairings|vouchers/redeem|network/credentials|network/disconnect)$") ||
             path.matches("^/api/orders/" + UUID + "/(checkout|mock-payment|expire-unused)$") ||
+            path.matches("^/api/customer/invoices/" + UUID + "/resend$") ||
             path.matches("^/api/receipt-pairings/" + UUID + "/cancel$");
     }
 

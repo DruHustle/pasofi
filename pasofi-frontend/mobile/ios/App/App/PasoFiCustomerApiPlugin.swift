@@ -125,20 +125,23 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
     private var authenticationPresentation: AuthenticationPresentation?
 
     @objc public func authenticate(_ call: CAPPluginCall) {
-        let callback = "com.onesa.pasofi.identity://login/callback"
+        let legacy = "com.onesa.pasofi.identity://login/callback"
+        let hostName = "pasofi.mobile.onesa.eu", path = "/native/onesa-callback.html"
+        let verified = "https://" + hostName + path
         guard configuredOrigin != nil, let issuer = getConfig().getString("identityOrigin"),
               Set(call.jsObjectRepresentation.keys) == ["authorizationUrl"],
               let raw = call.getString("authorizationUrl"), raw.utf8.count <= 8192,
               let url = URL(string: raw), let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
               url.scheme == "https", url.user == nil, url.password == nil, url.fragment == nil,
               let host = parts.host, url.port == nil, issuer == "https://" + host,
-              parts.queryItems?.filter({ $0.name == "redirect_uri" }).map({ $0.value }) == [callback]
+              let callbacks = parts.queryItems?.filter({ $0.name == "redirect_uri" }), callbacks.count == 1,
+              let callback = callbacks[0].value, [legacy, verified].contains(callback)
         else { reject(call, .request); return }
         DispatchQueue.main.async {
             guard self.authenticationSession == nil, let window = self.bridge?.viewController?.view.window
             else { self.reject(call, .unavailable); return }
             let anchor = AuthenticationPresentation(window)
-            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "com.onesa.pasofi.identity") { result, _ in
+            let finish: ASWebAuthenticationSession.CompletionHandler = { result, _ in
                 DispatchQueue.main.async {
                     self.authenticationSession = nil
                     self.authenticationPresentation = nil
@@ -147,6 +150,20 @@ public final class PasoFiCustomerApiPlugin: CAPPlugin, CAPBridgedPlugin, @unchec
                     else { self.reject(call, .network); return }
                     call.resolve(["callback": result.absoluteString])
                 }
+            }
+            let session: ASWebAuthenticationSession
+            if callback == verified {
+                if #available(iOS 17.4, *) {
+                    session = ASWebAuthenticationSession(url: url, callback: .https(host: hostName, path: path), completionHandler: finish)
+                } else {
+                    UIApplication.shared.open(url, options: [:]) { opened in
+                        if opened { call.resolve(["opened": true]) }
+                        else { self.reject(call, .network) }
+                    }
+                    return
+                }
+            } else {
+                session = ASWebAuthenticationSession(url: url, callbackURLScheme: "com.onesa.pasofi.identity", completionHandler: finish)
             }
             session.presentationContextProvider = anchor
             session.prefersEphemeralWebBrowserSession = false

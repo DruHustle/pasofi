@@ -96,7 +96,11 @@ test('admin decisions are scoped, optimistic, atomic, audited and revoke target 
   for (const [scope, issuer, status] of [['identity:resolve', undefined, 403], ['staff:resolve', 'notification', 401], ['staff:resolve', undefined, 200]]) {
     const response = await app.inject({ method: 'GET', url: '/internal/v1/staff/session', headers: { cookie: approvedCookie, authorization: `Bearer ${await token(scope, { issuer })}` } });
     assert.equal(response.statusCode, status);
-    if (status === 200) assert.deepEqual(response.json(), { staffId: staff.id, role: authorized.role, siteIds: [siteId], version: 2, mfaVerified: true });
+    if (status === 200) {
+      const {mfaVerifiedAt, ...principal}=response.json();
+      assert.deepEqual(principal, { staffId: staff.id, role: authorized.role, siteIds: [siteId], version: 2, mfaVerified: true });
+      assert.ok(Date.parse(mfaVerifiedAt) > Date.now()-60_000);
+    }
   }
   const target = await app.inject({ method: 'GET', url: `/internal/v1/staff/users/${staff.id}`, headers: { authorization: `Bearer ${await token('staff:read')}` } });
   assert.equal(target.statusCode, 200);

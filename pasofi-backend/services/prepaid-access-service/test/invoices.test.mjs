@@ -7,7 +7,7 @@ import {normalizeInvoiceDelivery,invoiceDeliveryDetails,invoiceTokenHash} from '
 import {seal} from '../dist/delivery-crypto.js';
 
 export const sampleInvoice={schemaVersion:1,number:'PFI-0000000042',issuedAt:'2026-11-06T12:30:00.000Z',paidAt:'2026-11-06T12:29:55.000Z',
- operator:{name:'Onesa',brand:'Pasofi',address:'3964 98th Crescent Kuwadzana 5',supportPhone:'+263 715 092 221'},
+ operator:{name:'Example PasoFi Merchant',brand:'Pasofi',address:'1 Example Street',supportPhone:'+263 771 000 000'},
  source:{type:'cash',id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',siteName:'Sample location'},
  line:{bundleId:'month-100gb-v2',description:'Prepaid Wi-Fi data',quantity:1,byteLimit:'100000000000',validitySeconds:2592000,unitAmountMinor:1000,totalMinor:1000},
  payment:{method:'cash',evidence:'agent_attestation',reference:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',provider:null},currency:'USD',totalMinor:1000,simulation:false,notice:'Not a ZIMRA fiscal tax invoice.'};
@@ -32,7 +32,7 @@ function renderedText(doc){
 test('invoice contacts are optional, bounded and normalized without allowing header injection',()=>{
  assert.deepEqual(normalizeInvoiceDelivery(undefined),{channel:'download'});
  assert.deepEqual(normalizeInvoiceDelivery({channel:'email',recipient:' person+receipt@EXAMPLE.COM '}),{channel:'email',recipient:'person+receipt@example.com'});
- for(const recipient of ['+263 715 092 221','0715092221','263715092221'])assert.deepEqual(normalizeInvoiceDelivery({channel:'sms',recipient}),{channel:'sms',recipient:'263715092221'});
+ for(const recipient of ['+263 771 000 000','0771000000','263771000000'])assert.deepEqual(normalizeInvoiceDelivery({channel:'sms',recipient}),{channel:'sms',recipient:'263771000000'});
  for(const input of [null,[],{},'email',{channel:'email',recipient:'x@example.com\r\nBcc:y@example.com'},{channel:'email',recipient:'x..y@example.com'},{channel:'email',recipient:'x@localhost'},{channel:'sms',recipient:'+15551234567'},{channel:'download',recipient:'person@example.com'},{channel:'email',recipient:'person@example.com',cc:'other@example.com'}])assert.throws(()=>normalizeInvoiceDelivery(input),{code:'invalid_invoice_delivery'});
 });
 test('PDF stores the invoice number, exact payment and allowance with fiscal and credential boundaries',async()=>{
@@ -40,20 +40,30 @@ test('PDF stores the invoice number, exact payment and allowance with fiscal and
  assert.equal(bytes.subarray(0,5).toString(),'%PDF-');assert.equal(doc.getPageCount(),1);assert.equal(doc.getTitle(),'PFI-0000000042 - Pasofi paid invoice');
  assert.equal(doc.getCreationDate().toISOString(),sampleInvoice.issuedAt);
  const {words,content}=renderedText(doc);
- for(const expected of ['PAID INVOICE','PFI-0000000042','Onesa','3964 98th Crescent Kuwadzana 5','USD 10.00','100 GB - 30 days','Cash received and confirmed','Not a ZIMRA fiscal tax invoice.'])assert.ok(words.includes(expected),expected);
+ for(const expected of ['PAID INVOICE','PFI-0000000042','Example PasoFi Merchant','1 Example Street','USD 10.00','100 GB - 30 days','Cash received and confirmed','Not a ZIMRA fiscal tax invoice.'])assert.ok(words.includes(expected),expected);
  assert.ok(!words.includes('VAT 0'));assert.ok(!content.includes('/JavaScript'));assert.ok(bytes.length<100000);
  const simulated=await renderInvoicePdf({...sampleInvoice,simulation:true,source:{...sampleInvoice.source,siteName:'Long unicode location 名'.repeat(4)}});assert.equal((await PDFDocument.load(simulated)).getPageCount(),1);
 });
 test('internal SMS details decrypt only the scoped token and reject expiry or corruption',()=>{
  const keys={activeId:'invoice-test',keys:{'invoice-test':randomBytes(32)}},id=randomUUID(),token=randomBytes(32).toString('base64url');
- const encrypted=seal(JSON.stringify({recipient:'263715092221',token}),keys,`invoice:${id}`);
+ const encrypted=seal(JSON.stringify({recipient:'263771000000',token}),keys,`invoice:${id}`);
  const env={VOUCHER_DELIVERY_ACTIVE_KEY_ID:keys.activeId,VOUCHER_DELIVERY_KEYS_JSON:JSON.stringify({[keys.activeId]:keys.keys[keys.activeId].toString('base64')}),PUBLIC_ORIGIN:'https://pasofi.example'};
  const saved=Object.fromEntries(Object.keys(env).map(key=>[key,process.env[key]]));Object.assign(process.env,env);
  try{
   const row={id,number:'PFI-42',simulation:false,channel:'sms',key_id:encrypted.keyId,payload_iv:encrypted.iv,payload_cipher:encrypted.cipher,payload_tag:encrypted.tag,download_token_hash:invoiceTokenHash(token),token_expires_at:new Date(Date.now()+10000)};
-  const result=invoiceDeliveryDetails(row,false);assert.equal(result.link,`https://pasofi.example/#invoice=${token}`);assert.equal(result.to,'263715092221');assert.equal(result.filename,'PFI-42.pdf');assert.equal(result.expiresAt,row.token_expires_at.toISOString());
+  const result=invoiceDeliveryDetails(row,false);assert.equal(result.link,`https://pasofi.example/#invoice=${token}`);assert.equal(result.to,'263771000000');assert.equal(result.filename,'PFI-42.pdf');assert.equal(result.expiresAt,row.token_expires_at.toISOString());
   assert.throws(()=>invoiceDeliveryDetails({...row,token_expires_at:new Date(0)},false),{code:'invoice_link_expired'});
   assert.throws(()=>invoiceDeliveryDetails({...row,download_token_hash:randomBytes(32)},false),{code:'invoice_delivery_unavailable'});
   assert.deepEqual(invoiceDeliveryDetails({...row,channel:'download'},false),{invoiceId:id,invoiceNumber:'PFI-42',simulation:false,filename:'PFI-42.pdf',contentType:'application/pdf',channel:'none'});
  }finally{for(const[key,value]of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}}
+});
+
+test('only approved runtime data identifies a legal invoice seller',async()=>{
+ const {invoiceIssuer}=await import('../dist/invoices.js');
+ const approved={name:'Example Seller Ltd',address:'2 Example Avenue',taxId:'EXAMPLE-001'};
+ assert.equal(invoiceIssuer(JSON.stringify(approved),false).taxId,'EXAMPLE-001');
+ assert.equal(invoiceIssuer(JSON.stringify(approved),false).issuerConfirmed,true);
+ assert.deepEqual(invoiceIssuer(undefined,false),{name:'PasoFi',brand:'Pasofi',address:'',supportPhone:'',issuerConfirmed:false});
+ assert.equal(invoiceIssuer(JSON.stringify({name:'Example Seller Ltd'}),false).issuerConfirmed,false);
+ assert.equal(invoiceIssuer(JSON.stringify(approved),true).name,'Example PasoFi Merchant');
 });

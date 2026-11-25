@@ -54,21 +54,17 @@ export async function watchNativeReturn(onSuccess: (destination: CustomerTab) =>
       completing = false;
     }
   }
-  if (platform === 'ios') {
-    const listener = (event: Event) => {
-      void finish((event as CustomEvent<string>).detail);
-    };
-    appleReturn.addEventListener('callback', listener);
-    return () => {
-      active = false;
-      appleReturn.removeEventListener('callback', listener);
-    };
-  }
-  if (!Capacitor.isPluginAvailable('App')) return () => {};
-  const handle = await App.addListener('appUrlOpen', (event) => {
-    void finish(event.url);
-  });
+  const appleListener = (event: Event) => {
+    void finish((event as CustomEvent<string>).detail);
+  };
+  if (platform === 'ios') appleReturn.addEventListener('callback', appleListener);
+  if (!Capacitor.isPluginAvailable('App')) return () => {
+    active = false;
+    appleReturn.removeEventListener('callback', appleListener);
+  };
+  let handle: Awaited<ReturnType<typeof App.addListener>> | undefined;
   try {
+    handle = await App.addListener('appUrlOpen', (event) => { void finish(event.url); });
     const launched = await App.getLaunchUrl();
     if (launched && isNativeCallback(launched.url)) void finish(launched.url);
   } catch (error) {
@@ -76,11 +72,13 @@ export async function watchNativeReturn(onSuccess: (destination: CustomerTab) =>
     // Disable and remove the already-registered listener before it falls back
     // to manual handoff, so a later callback cannot establish an unseen session.
     active = false;
-    await handle.remove().catch(() => {});
+    appleReturn.removeEventListener('callback', appleListener);
+    await handle?.remove().catch(() => {});
     throw error;
   }
   return () => {
     active = false;
-    void handle.remove();
+    appleReturn.removeEventListener('callback', appleListener);
+    void handle?.remove();
   };
 }
