@@ -84,6 +84,10 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   async function administrator(request: FastifyRequest, client: pg.Pool | pg.PoolClient = pool!, lock = false) {
     const actor = await current(request, client, lock);
     if (actor.status !== 'approved' || actor.role !== 'admin') return fail(403, 'admin_required');
+    if (lock) {
+      const age = Date.now() - Number(actor.mfa_verified_at);
+      if (!Number.isFinite(age) || age < -5000 || age >= 300000) return fail(428, 'staff_mfa_required');
+    }
     return actor;
   }
   async function challenge(request: FastifyRequest, client: pg.PoolClient) {

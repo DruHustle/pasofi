@@ -180,7 +180,12 @@ export class OnesaStaff {
       let tokens;
       try { tokens = await oidc.refreshTokenGrant(provider,saved); }
       catch(error) {
-        if(error instanceof oidc.ResponseBodyError && ['invalid_grant','access_denied'].includes(error.error))throw denied();
+        if(error instanceof oidc.ResponseBodyError && ['invalid_grant','access_denied'].includes(error.error)) {
+          // Remove the rejected provider credential, allowing any sibling
+          // handoff session to fail closed from the same revocation.
+          await store.query("UPDATE onesa_session_renewals SET expires_at=now(),refresh_ciphertext='' WHERE id=$1",[id]);
+          return null;
+        }
         throw new OnesaError(503,'onesa_unavailable');
       }
       if(tokens.token_type.toLowerCase()!=='bearer'||!tokens.access_token||tokens.access_token.length>16384||
@@ -191,16 +196,22 @@ export class OnesaStaff {
           this.protectAccess(tokens.refresh_token ?? saved,'onesa-refresh:' + id),checked.expires]);
       return checked;
     };
-    if (inTransaction) return renew(db);
+    if (inTransaction) {
+      const result = await renew(db);
+      if (!result) throw denied();
+      return result;
+    }
     const client = await (db as pg.Pool).connect();
+    let identity: Admin | null;
     try {
       await client.query('BEGIN');
       await client.query("SET LOCAL lock_timeout='5s'");
-      const identity = await renew(client);
+      identity = await renew(client);
       await client.query('COMMIT');
-      return identity;
     } catch(error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
+    if (!identity) throw denied();
+    return identity;
   }
 
   constructor(readonly config: Configuration, protected readonly key: Buffer) {
