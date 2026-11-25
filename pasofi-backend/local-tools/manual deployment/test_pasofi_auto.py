@@ -23,7 +23,7 @@ auto = module('pasofi-auto.py', 'automatic_test')
 post = module('deployment-postcheck.py', 'postcheck_automatic_test')
 COMMIT = 'a' * 40
 DATABASE_ID = '1234567890123456789'
-TARGET = {'schema': 1, 'frontend_origin': 'https://pasofi.mobile.onesa.eu', 'backend_origin': 'https://api.pasofi.onesa.eu'}
+TARGET = {'schema': 1, 'frontend_origin': 'https://pasofi.mobile.onesa.eu', 'backend_origin': 'https://api.pasofi.mobile.onesa.eu'}
 
 
 class AutomaticTests(unittest.TestCase):
