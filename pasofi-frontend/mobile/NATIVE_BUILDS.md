@@ -194,3 +194,22 @@ xcodebuild -project ios/App/App.xcodeproj -scheme App \
 ```
 
 Official requirements: [Capacitor 8 migration guide](https://capacitorjs.com/docs/updating/8-0) and [environment setup](https://capacitorjs.com/docs/getting-started/environment-setup). The official GitHub [macOS 26 runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-Readme.md) documents installed Xcode versions. Workflow actions are pinned to verified commits in the official `actions` repositories.
+
+### Verified Onesa sign-in return
+
+The signed apps support `https://pasofi.mobile.onesa.eu/native/onesa-callback.html`.
+Set `PASOFI_ASSOCIATED_IOS_APP_ID` to the production app's verified
+application identifier, including its Apple app ID prefix. Set
+`PASOFI_ANDROID_APP_LINK_CERT_SHA256` to the Android app-signing certificate
+fingerprints for the distributed builds, in colon-delimited SHA-256 notation.
+Use the Play app-signing certificate for Play distribution. Supply a comma
+separated list if more than one distribution signing certificate is approved.
+
+Build the canonical web app with those settings. Verify both association files
+at their HTTPS `/.well-known/` URLs, with no redirects. Register the exact
+return URL on both native Auth0 clients. Verify the signed iOS build has both
+`applinks` and `webcredentials` for the canonical host, and verify the Android
+App Link after installing the signed app. Set
+`PASOFI_ONESA_VERIFIED_NATIVE_CALLBACK=true` after both associations and
+Auth0 callbacks are qualified. The application binds each in-flight
+transaction to its original callback and still uses a one-time S256 verifier.

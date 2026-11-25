@@ -90,13 +90,23 @@ export class StripeAdapter implements PaymentAdapter {
   const intent=await this.retrieve(terms.referenceNumber);
   if(intent.id!==terms.referenceNumber||!this.matches(intent,terms))return {state:'unknown',providerStatus:null};
   const charge=intent.latest_charge;
-  if(charge&&typeof charge==='object'&&(charge.refunded||charge.amount_refunded>0||charge.disputed))return {state:'reversed',providerStatus:'reversed'};
   if(intent.status==='canceled')return {state:'failed',providerStatus:'canceled'};
   if(intent.status!=='succeeded')return {state:'pending',providerStatus:intent.status};
   if(intent.amount_received!==terms.amountMinor||!charge||typeof charge==='string'||charge.payment_intent!==intent.id
    ||charge.livemode!==this.config.live||!charge.paid||!charge.captured||charge.amount!==terms.amountMinor
    ||charge.currency!==terms.currency.toLowerCase())return {state:'unknown',providerStatus:null};
-  return {state:'verified_success',providerStatus:'succeeded'};
+  if(!Number.isSafeInteger(charge.amount_refunded)||charge.amount_refunded<0||charge.amount_refunded>charge.amount)return {state:'unknown',providerStatus:null};
+  if(charge.refunded||charge.amount_refunded===charge.amount)return {state:'reversed',providerStatus:'fully_refunded'};
+  if(charge.disputed||terms.verifyPriorReversal){
+   const disputes=await this.client.disputes.list({charge:charge.id,limit:100});
+   if(disputes.has_more||(charge.disputed&&!disputes.data.length)||
+    disputes.data.some(dispute=>dispute.charge!==charge.id||dispute.payment_intent!==intent.id||dispute.livemode!==this.config.live)){
+    return {state:'unknown',providerStatus:null};
+   }
+   if(disputes.data.some(dispute=>!['won','warning_closed','prevented'].includes(dispute.status)))return {state:'reversed',providerStatus:'disputed'};
+   if(disputes.data.some(dispute=>dispute.status==='won'))return {state:'verified_success',providerStatus:'dispute_won'};
+  }
+  return {state:'verified_success',providerStatus:charge.amount_refunded>0?'partially_refunded':'succeeded'};
  }
  async presentation(terms:PaymentTerms):Promise<StripePresentation|null> {
   const intent=await this.retrieve(terms.referenceNumber);

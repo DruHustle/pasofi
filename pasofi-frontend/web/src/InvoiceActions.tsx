@@ -32,15 +32,17 @@ export function InvoiceDeliveryFields({ value, onChange, disabled = false, email
 export function InvoiceDownload({ scope, ownerKey, verify, invoice, saleId, orderId, disabled = false }: {
   scope: InvoiceScope; ownerKey: string; verify: Verify; invoice?: Invoice; saleId?: string; orderId?: string; disabled?: boolean;
 }) {
-  const [action, setAction] = useState<'pdf' | 'status' | null>(null), [message, setMessage] = useState('');
+  const [action, setAction] = useState<'pdf' | 'status' | 'resend' | null>(null), [message, setMessage] = useState('');
   const [resolved, setResolved] = useState<Invoice | null>(null);
+  const [canResend, setCanResend] = useState(false);
+  const resendKey = useRef<string | null>(null);
   const active = useRef<AbortController | null>(null), busy = action !== null;
   const known = invoice ?? resolved, exportAction = invoiceExportAction();
   useEffect(() => {
-    setAction(null); setMessage(''); setResolved(null);
+    setAction(null); setMessage(''); setResolved(null); setCanResend(false); resendKey.current = null;
     return () => { active.current?.abort(); active.current = null; };
   }, [ownerKey, scope, invoice?.id, saleId, orderId]);
-  async function perform(next: 'pdf' | 'status') {
+  async function perform(next: 'pdf' | 'status' | 'resend') {
     if (disabled || active.current) return;
     const controller = new AbortController(); active.current = controller;
     const current = () => active.current === controller && !controller.signal.aborted;
@@ -58,11 +60,21 @@ export function InvoiceDownload({ scope, ownerKey, verify, invoice, saleId, orde
       if (!current()) return;
       if (!found) { setMessage('No invoice PDF is available for this purchase yet.'); return; }
       setResolved(found);
+      if (next === 'resend') {
+        resendKey.current ??= crypto.randomUUID();
+        const receipt = await api<{state:string}>(`/api/${scope}/invoices/${found.id}/resend`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': resendKey.current }, body: '{}', signal: controller.signal,
+        });
+        if (receipt.state !== 'queued') throw new Error('invalid_invoice_response');
+        if (current()) { setCanResend(false); resendKey.current = null; setMessage('Invoice resend queued to the original recipient.'); }
+        return;
+      }
       if (next === 'status') {
-        const result = await api<{ invoice: { id: string; requestedChannel: InvoiceDelivery['channel']; delivery?: { state?: string; channel?: string | null; deliveredAt?: string } } }>(`/api/${scope}/invoices/${found.id}`, { signal: controller.signal });
+        const result = await api<{ invoice: { id: string; requestedChannel: InvoiceDelivery['channel']; delivery?: { state?: string; channel?: string | null; deliveredAt?: string; resendAvailable?: boolean } } }>(`/api/${scope}/invoices/${found.id}`, { signal: controller.signal });
         if (result.invoice?.id !== found.id || result.invoice.requestedChannel !== found.requestedChannel) throw new Error('invalid_invoice_response');
         await verify(); if (!current()) return;
         const delivery = result.invoice.delivery, text = invoiceStatusText(found.requestedChannel, delivery);
+        setCanResend(delivery?.resendAvailable === true);
         const confirmedAt = found.requestedChannel !== 'download' && delivery?.state === 'delivered' && typeof delivery.deliveredAt === 'string' && Number.isFinite(Date.parse(delivery.deliveredAt))
           && (!delivery.channel || delivery.channel === found.requestedChannel) ? delivery.deliveredAt : null;
         setMessage(`${found.simulation ? 'Demo · ' : ''}${text}${confirmedAt ? ` Confirmed at ${localDate(confirmedAt)}.` : ''}`);
@@ -72,10 +84,10 @@ export function InvoiceDownload({ scope, ownerKey, verify, invoice, saleId, orde
       await verify(); if (!current()) return;
       const result = await exportInvoicePdf(blob, invoiceFilename(found.number), controller.signal);
       if (current()) setMessage(result === 'canceled' ? '' : result === 'shared' ? 'PDF opened in your device’s share controls.' : 'PDF download started.');
-    } catch (error) { if (current()) setMessage(next === 'status' && !(error instanceof ApiError && [401, 403].includes(error.status)) ? 'Delivery status is unavailable. The PDF is still available.' : invoiceFailure(error)); }
+    } catch (error) { if (current()) setMessage(next === 'status' && !(error instanceof ApiError && [401, 403].includes(error.status)) ? 'Delivery status is unavailable. The PDF is still available.' : next === 'resend' ? messageFor(error, 'Could not queue the invoice resend. Try again or download the PDF.') : invoiceFailure(error)); }
     finally { if (current()) { active.current = null; setAction(null); } }
   }
-  return <span className="invoice-action"><button type="button" className="secondary invoice-button" disabled={disabled || busy} onClick={() => perform('pdf')} aria-label={invoice ? `${exportAction} invoice ${invoice.number}` : undefined}>{action === 'pdf' ? 'Loading PDF…' : exportAction === 'Save or share' ? 'Save or share PDF' : invoice ? 'PDF' : 'Invoice PDF'}</button>{(!invoice || invoice.requestedChannel !== 'download') && <button type="button" className="text-button invoice-status-button" disabled={disabled || busy} onClick={() => perform('status')} aria-label={invoice ? `Delivery status for invoice ${invoice.number}` : 'Invoice delivery status'}>{action === 'status' ? 'Checking…' : 'Delivery status'}</button>}{message && <small className="invoice-status" role="status">{message}</small>}</span>;
+  return <span className="invoice-action"><button type="button" className="secondary invoice-button" disabled={disabled || busy} onClick={() => perform('pdf')} aria-label={invoice ? `${exportAction} invoice ${invoice.number}` : undefined}>{action === 'pdf' ? 'Loading PDF…' : exportAction === 'Save or share' ? 'Save or share PDF' : invoice ? 'PDF' : 'Invoice PDF'}</button>{(!invoice || invoice.requestedChannel !== 'download') && <button type="button" className="text-button invoice-status-button" disabled={disabled || busy} onClick={() => perform('status')} aria-label={invoice ? `Delivery status for invoice ${invoice.number}` : 'Invoice delivery status'}>{action === 'status' ? 'Checking…' : 'Delivery status'}</button>}{canResend && <button type="button" className="text-button" disabled={disabled || busy} onClick={() => perform('resend')}>Resend invoice</button>}{message && <small className="invoice-status" role="status">{message}</small>}</span>;
 }
 
 export function InvoiceHistory({ scope, ownerKey, verify, onRedeem, onViewReceipt, redeeming = false }: {

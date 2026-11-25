@@ -36,7 +36,11 @@ export default function OnesaSignIn({ enterCode, close, destination, managedRetu
     try {
       if (direct && native && platform) {
         const url = await startNativeSignIn(native, platform, destination, sessionStorage);
-        if (platform === 'ios') deliverAppleCallback(await authenticateWithAppleBrowser(mobileApiOrigin, url));
+        if (platform === 'ios') {
+          const result = await authenticateWithAppleBrowser(mobileApiOrigin, url);
+          if (result) deliverAppleCallback(result);
+          else setMessage('Complete sign-in in your browser to return to this screen.');
+        }
         else {
           await Browser.open({url});
           setMessage('Complete sign-in in your browser to return to this screen.');

@@ -73,3 +73,5 @@ Record the evidence for each test, then set `ECOCASH_PRODUCTION_QUALIFIED=true`.
 - `pasofi-frontend/web/tests/ecocash-checkout.spec.ts`: number entry, no PIN field, the approval state, and server-verified status only.
 
 All of these use synthetic responses. They are evidence level E2/E3 and don't prove EcoCash's real API behaves the same way.
+
+A definitively refused Online Payments initiation closes the original attempt and its approval prompt. A timeout or ambiguous provider response still requires verified lookup of the original reference before a retry or fulfilment.

@@ -43,6 +43,7 @@ services:
       RADIUS_SERVER_CERT_FILE: /run/secrets/radius_server_cert
       RADIUS_SERVER_KEY_FILE: /run/secrets/radius_server_key
       RADIUS_CLIENT_FINGERPRINT_FILE: /run/secrets/radius_client_fingerprint
+      PASOFI_PAID_RADIUS_RATE_LIMIT: ${PASOFI_PAID_RADIUS_RATE_LIMIT-5M/15M}
       RADIUS_LISTEN_HOST: 0.0.0.0
       RADIUS_LISTEN_PORT: '3443'
     secrets: [network_runtime_url, internal_network_secret, internal_ca, radius_ca, radius_server_cert, radius_server_key, radius_client_fingerprint]

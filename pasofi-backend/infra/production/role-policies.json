@@ -39,7 +39,7 @@
     "outbox_replay_audit": ["SELECT", "INSERT"],
     "provider_payment_attempts": ["SELECT", "INSERT", "UPDATE"],
     "verified_charges": ["SELECT", "INSERT", "UPDATE"],
-    "payment_reviews": ["SELECT", "INSERT"],
+    "payment_reviews": ["SELECT", "INSERT", "UPDATE"],
     "payment_reconciliation_jobs": ["SELECT", "INSERT", "UPDATE"],
     "stripe_webhook_events": ["SELECT", "INSERT"],
     "ecocash_checkout_contexts": ["SELECT", "INSERT", "UPDATE (ecocash_reference)"],

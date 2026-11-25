@@ -63,24 +63,32 @@ async function source(reference: string, suffix: '' | '/pdf', demo: boolean) {
   return data;
 }
 
-/** One durable send per invoice; ambiguous delivery is reconciled, never resubmitted. */
+/** One durable send per job. A new attempt requires an explicit authorized resend. */
 export async function processInvoiceDelivery(pool: Pool, demo: boolean, config = invoiceDeliveryConfiguration(demo)): Promise<boolean> {
   if (!config.enabled) return false;
   await pool.query("UPDATE invoice_jobs SET state='unknown',last_error='delivery_unconfirmed',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE state='submitting' AND attempted_at<now()-interval '60 seconds' AND (lease_until IS NULL OR lease_until<now())");
   const lease = randomUUID();
   const claimed = await pool.query(`UPDATE invoice_jobs SET lease_token=$1,lease_until=now()+interval '45 seconds'
     WHERE id=(SELECT id FROM invoice_jobs WHERE state IN ('queued','submitted','unknown') AND next_at<=now() AND (lease_until IS NULL OR lease_until<now()) ORDER BY next_at,id FOR UPDATE SKIP LOCKED LIMIT 1)
-    RETURNING *`, [lease]);
+    RETURNING *, COALESCE(attempted_at,created_at)<=now()-interval '24 hours' AS report_overdue`, [lease]);
   if (!claimed.rowCount) return false;
   const job = claimed.rows[0];
   const release = async (error: string | null, seconds: number) => pool.query("UPDATE invoice_jobs SET lease_token=NULL,lease_until=NULL,last_error=$3,next_at=now()+make_interval(secs=>$4),updated_at=now() WHERE id=$1 AND lease_token=$2", [job.id, lease, error, seconds]);
   try {
     if (job.state === 'submitted' || job.state === 'unknown') {
-      if (!job.provider_id) { await release('manual_review_required', 3600); return true; }
+      if (!job.provider_id && !job.report_overdue) {
+        await pool.query("UPDATE invoice_jobs SET lease_token=NULL,lease_until=NULL,next_at=COALESCE(attempted_at,created_at)+interval '24 hours',last_error='manual_review_required',updated_at=now() WHERE id=$1 AND lease_token=$2", [job.id, lease]);
+        return true;
+      }
       let result: InvoiceSendResult;
-      if (job.provider === 'resend' && config.email === 'resend') result = await new ResendInvoiceAdapter(process.env.RESEND_API_KEY!).retrieve(job.provider_id);
+      if (!job.provider_id) result = { state: 'failed', providerId: null, error: 'delivery_report_timeout' };
+      else if (job.provider === 'resend' && config.email === 'resend') result = await new ResendInvoiceAdapter(process.env.RESEND_API_KEY!).retrieve(job.provider_id);
       else if (job.provider === 'sendai' && config.sms === 'sendai') { const sms = await new SendaiAdapter(process.env.SENDAI_API_KEY!).retrieve(job.provider_id); result = { state: sms.state, providerId: sms.providerId, error: sms.state === 'unknown' ? 'delivery_unconfirmed' : sms.state === 'failed' ? 'provider_delivery_failed' : null }; }
+      else if (job.report_overdue) result = { state: 'failed', providerId: job.provider_id, error: 'delivery_report_timeout' };
       else { await release('provider_configuration_changed', 3600); return true; }
+      if (job.report_overdue && ['submitted', 'unknown'].includes(result.state)) {
+        result = { state: 'failed', providerId: job.provider_id, error: 'delivery_report_timeout' };
+      }
       await pool.query("UPDATE invoice_jobs SET state=$3,last_error=$4,delivered_at=CASE WHEN $3='delivered' THEN COALESCE(delivered_at,now()) ELSE delivered_at END,lease_token=NULL,lease_until=NULL,next_at=now()+interval '5 minutes',updated_at=now() WHERE id=$1 AND lease_token=$2", [job.id, lease, result.state, result.error]);
       return true;
     }
@@ -108,10 +116,10 @@ export async function processInvoiceDelivery(pool: Pool, demo: boolean, config =
 
 export function registerInvoiceDelivery(app: FastifyInstance, pool: Pool | null, demo: boolean) {
   const config = invoiceDeliveryConfiguration(demo);
-  async function authorize(request: FastifyRequest, reply: FastifyReply) {
+  async function authorize(request: FastifyRequest, reply: FastifyReply, scope='invoice:status') {
     const secret = process.env.INTERNAL_DELIVERY_SECRET ?? '';
     if (!pool || Buffer.byteLength(secret) < 32 || (!demo && secret.startsWith('DEMO_ONLY_'))) { reply.code(503).send({ error: 'unavailable' }); return false; }
-    try { const header = request.headers.authorization; if (!header?.startsWith('Bearer ')) throw Error(); const { payload } = await jwtVerify(header.slice(7), new TextEncoder().encode(secret), { algorithms: ['HS256'], issuer: 'prepaid-access', subject: 'prepaid-access', audience: 'notification', requiredClaims: ['iat', 'exp', 'sub'], maxTokenAge: '30s' }); if (payload.scope !== 'invoice:status') { reply.code(403).send({ error: 'forbidden' }); return false; } return true; }
+    try { const header = request.headers.authorization; if (!header?.startsWith('Bearer ')) throw Error(); const { payload } = await jwtVerify(header.slice(7), new TextEncoder().encode(secret), { algorithms: ['HS256'], issuer: 'prepaid-access', subject: 'prepaid-access', audience: 'notification', requiredClaims: ['iat', 'exp', 'sub'], maxTokenAge: '30s' }); if (payload.scope !== scope) { reply.code(403).send({ error: 'forbidden' }); return false; } return true; }
     catch { reply.code(401).send({ error: 'unauthorized' }); return false; }
   }
   app.get('/internal/v1/invoice-delivery/capabilities', async (request, reply) => { if (!await authorize(request, reply)) return; return { email: config.enabled && config.email !== 'disabled', sms: config.enabled && config.sms !== 'disabled', simulation: demo }; });
@@ -119,13 +127,48 @@ export function registerInvoiceDelivery(app: FastifyInstance, pool: Pool | null,
     if (!await authorize(request, reply)) return;
     if (!uuid.test(request.params.id)) return reply.code(404).send({ error: 'not_found' });
     try {
-      const row = (await pool!.query('SELECT state,channel,provider,provider_id AS "providerId",last_error AS "lastError",attempted_at AS "attemptedAt",delivered_at AS "deliveredAt" FROM invoice_jobs WHERE invoice_id=$1', [request.params.id])).rows[0];
+      const row = (await pool!.query(`SELECT state,channel,provider,provider_id AS "providerId",last_error AS "lastError",attempted_at AS "attemptedAt",delivered_at AS "deliveredAt",
+       state='failed' AND count(*) OVER ()<4 AS "resendAvailable" FROM invoice_jobs WHERE invoice_id=$1
+       ORDER BY created_at DESC,id DESC LIMIT 1`, [request.params.id])).rows[0];
       const { provider, ...status } = row ?? { state: 'queued', channel: null };
       // A retained mock result never becomes real delivery evidence after a
       // configuration change. The provider records the attempt's provenance.
       return { ...status, simulation: provider ? provider === 'mock' : demo };
     }
     catch { return reply.code(503).send({ error: 'unavailable' }); }
+  });
+  app.post<{Params:{id:string};Body:{requestId:string;actorId:string;actorScope:'staff'|'customer';channel:'email'|'sms'}}>('/internal/v1/invoices/:id/resend',async(request,reply)=>{
+    if(!await authorize(request,reply,'invoice:resend'))return;
+    const body=request.body,id=request.params.id;
+    if(!uuid.test(id)||!body||!uuid.test(body.requestId??'')||!uuid.test(body.actorId??'')||
+      !['staff','customer'].includes(body.actorScope)||!['email','sms'].includes(body.channel))return reply.code(400).send({error:'invalid_resend'});
+    if(!config.enabled||config[body.channel]==='disabled')return reply.code(409).send({error:'invoice_resend_unavailable'});
+    const client=await pool!.connect();
+    try{
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`invoice-resend:${id}`]);
+      const prior=(await client.query('SELECT id,invoice_id,resend_actor_id,resend_actor_scope,resend_channel FROM invoice_jobs WHERE resend_request_id=$1',[body.requestId])).rows[0];
+      if(prior){
+        await client.query('ROLLBACK');
+        if(prior.invoice_id!==id||prior.resend_actor_id!==body.actorId||prior.resend_actor_scope!==body.actorScope||prior.resend_channel!==body.channel)return reply.code(409).send({error:'idempotency_conflict'});
+        return {state:'queued'};
+      }
+      const jobs=(await client.query('SELECT state,channel,provider FROM invoice_jobs WHERE invoice_id=$1 ORDER BY created_at DESC,id DESC FOR UPDATE',[id])).rows;
+      const latest=jobs[0];
+      if(!latest||latest.state!=='failed'||jobs.length>=4||(latest.channel&&latest.channel!==body.channel)||
+        (latest.provider&&(latest.provider==='mock')!==demo)){
+        await client.query('ROLLBACK');
+        return reply.code(409).send({error:'invoice_resend_unavailable'});
+      }
+      const event=randomUUID();
+      await client.query("INSERT INTO event_inbox(id,producer,event_type,aggregate_id,aggregate_version,payload_hash) VALUES($1,'prepaid-access','invoice.delivery.resend',$2,1,$3)",
+        [event,body.requestId,createHash('sha256').update(JSON.stringify({id,...body})).digest()]);
+      await client.query('INSERT INTO invoice_jobs(id,event_id,invoice_id,resend_request_id,resend_actor_id,resend_actor_scope,resend_channel) VALUES($1,$2,$3,$4,$5,$6,$7)',
+        [randomUUID(),event,id,body.requestId,body.actorId,body.actorScope,body.channel]);
+      await client.query('COMMIT');
+      return reply.code(201).send({state:'queued'});
+    }catch{await client.query('ROLLBACK');return reply.code(503).send({error:'unavailable'});}
+    finally{client.release();}
   });
   let stopped = false, timer: NodeJS.Timeout | undefined, active: Promise<void> | undefined;
   const tick = () => {

@@ -310,9 +310,9 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'The saved order could not be confirmed. Your original purchase details are preserved. Try checking again; do not start another payment.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
-  async function checkPayment() {
-    if (!order) return; const revision = generation.current; await identity();
-    const result = await api<PaymentStatus>(`/api/orders/${order.id}/status`);
+  async function checkPayment(orderId = order?.id) {
+    if (!orderId) return; const revision = generation.current; await identity();
+    const result = await api<PaymentStatus>(`/api/orders/${orderId}/status`);
     if (isCurrent(revision)) {
       setOrder(result.order); setPayment(result);
       if (result.fulfillmentState === 'fulfilled' && result.entitlementId) setRecoveryReminder(true);
@@ -365,7 +365,12 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       }
       if (isCurrent(revision)) {
         setStripePayment(result.stripe??null); setEcocashPayment(result.ecocash ?? null);
-        setMessage(result.ecocash ? `Approve the EcoCash prompt on the phone ending ${result.ecocash.payerHint}. Enter your PIN only on your phone. Your bundle is queued only after EcoCash confirms the payment to PasoFi.` : result.stripe ? 'Your saved checkout is ready. Complete the secure payment below; your bundle is queued only after server verification.' : result.simulation ? 'Simulation checkout prepared. No real payment has been taken.' : 'Check the verified order status before paying again.');
+        if (result.ecocash && result.state === 'failed') {
+          setMessage('EcoCash declined this payment.');
+          await checkPayment(created.order.id);
+        } else {
+          setMessage(result.ecocash?.awaitingApproval ? `Approve the EcoCash prompt on the phone ending ${result.ecocash.payerHint}. Enter your PIN only on your phone. Your bundle is queued only after EcoCash confirms the payment to PasoFi.` : result.stripe ? 'Your saved checkout is ready. Complete the secure payment below; your bundle is queued only after server verification.' : result.simulation ? 'Simulation checkout prepared. No real payment has been taken.' : 'Check the verified order status before paying again.');
+        }
       }
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'Checkout could not be confirmed. Check the order before starting another payment. Retry uses the same saved request.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
@@ -503,7 +508,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
         </fieldset><label className="check-label"><input type="checkbox" required checked={agreed} onChange={event => setAgreed(event.target.checked)} disabled={busy} />I have reviewed the price, allowance, and validity. {capabilities.paymentMode === 'mock' ? 'This is a simulation.' : 'Payment confirmation does not mean I am connected.'}</label><button className="primary" disabled={busy || (!order && !checkoutPending && (catalogueLoading || catalogueError || !sites.some(site => site.id === siteId))) || !methodEligible || !agreed || (!!payment && (payment.fulfillmentState !== 'unconfirmed' || payment.safeToRequote === true))}>{order || checkoutPending ? 'Retry this checkout safely' : 'Prepare checkout'}</button></form>
         {!methodsLoading && methods.length === 0 && <p>No configured payment method is available for this bundle and site.</p>}
         {redirectUrl && <a className="primary button-link" href={redirectUrl} target="_blank" rel="noopener noreferrer">Continue to payment provider ↗</a>}
-        {ecocashPayment && order && <div className="notice customer-ecocash-approval" role="status"><h4>Approve on your phone</h4><p>EcoCash sent a payment prompt to the number ending {ecocashPayment.payerHint}. Approve it there, then check the verified status. Do not pay a second time while this is pending.</p></div>}
+        {ecocashPayment?.awaitingApproval && order && <div className="notice customer-ecocash-approval" role="status"><h4>Approve on your phone</h4><p>EcoCash sent a payment prompt to the number ending {ecocashPayment.payerHint}. Approve it there, then check the verified status. Do not pay a second time while this is pending.</p></div>}
         {stripePayment && owner && order && <StripeCheckout key={order.id} payment={stripePayment} owner={owner} amount={money(order.price_minor,order.currency)} disabled={busy} verify={identity} onBusy={value=>{if(ownerRef.current===owner)setBusy(value);}} onSubmitted={async()=>{if(ownerRef.current!==owner)return;setStripePayment(null);setMessage('Payment submitted. Waiting for verified confirmation; please do not start another purchase.');await checkPayment();}}/> }
       </>}
       {checkoutPending && !order && <div className="notice customer-saved-order"><h4>Check your saved purchase</h4><p>Its status can be checked even if the bundle or payment method is no longer offered. This check does not start a payment.</p><button className="secondary" disabled={busy} onClick={restoreOrder}>Check saved checkout status</button></div>}

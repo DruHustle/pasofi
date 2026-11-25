@@ -21,6 +21,7 @@ async function request<T>(path: string, init: RequestInit | undefined, read: (re
     const response = await fetch(endpoint, { ...init, credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
     if (!response.ok) {
       const body = await response.json().catch(() => null);
+      if (response.status === 428 && body?.error === 'staff_mfa_required') window.dispatchEvent(new Event('pasofi:staff-mfa-required'));
       const retryAfter = response.headers.get('Retry-After');
       const delay = retryAfter ? /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now() : NaN;
       throw new ApiError(response.status, typeof body?.error === 'string' ? body.error : 'request_failed', Number.isFinite(delay) && delay > 0 ? Math.min(delay, 300_000) : undefined);

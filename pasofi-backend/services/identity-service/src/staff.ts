@@ -74,7 +74,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     const token = request.cookies[sessionCookie];
     if (!isOpaque(token)) return fail(401, 'not_authenticated');
     if (!demo) return onesa ? onesa.principal(client, token, lock) : fail(401, 'not_authenticated');
-    const found = await client.query(`SELECT ${PUBLIC_COLUMNS.map(column => `u.${column}`).join(',')}, s.token_hash AS session_hash FROM staff_sessions s JOIN staff_users u ON u.id=s.staff_id
+    const found = await client.query(`SELECT ${PUBLIC_COLUMNS.map(column => `u.${column}`).join(',')}, s.token_hash AS session_hash, s.mfa_verified_at FROM staff_sessions s JOIN staff_users u ON u.id=s.staff_id
       WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now() AND s.staff_version=u.version
       ${lock ? 'FOR UPDATE OF u,s' : ''}`, [opaqueHash(token)]);
     if (!found.rowCount && onesa) return onesa.principal(client, token, lock);
@@ -261,10 +261,13 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   }
 
   app.get('/v1/staff/onesa/availability', { preHandler: publicGuard }, async () => ({ origin: onesa?.config.callback.origin ?? null }));
-  app.post('/v1/staff/onesa/start', { preHandler: publicGuard, config: { rateLimit: { max: 12, timeWindow: '1 minute' } } }, (request, reply) => execute(reply, async () => {
+  app.post<{Body:{reauthenticate?:boolean}}>('/v1/staff/onesa/start', {
+    preHandler: publicGuard, config: { rateLimit: { max: 12, timeWindow: '1 minute' } },
+    schema: { body: { type:'object', additionalProperties:false, properties:{reauthenticate:{type:'boolean'}} } }
+  }, (request, reply) => execute(reply, async () => {
     if (!onesa) return fail(503, 'onesa_unavailable');
     if (request.headers.origin !== onesa.config.callback.origin) return fail(403, 'origin_rejected');
-    const flow = await onesa.start(pool!);
+    const flow = await onesa.start(pool!, request.body?.reauthenticate === true);
     reply.setCookie(flowCookie, flow.browser, { ...attributes, maxAge: 300 });
     return { authorizationUrl: flow.authorizationUrl };
   }));
@@ -419,7 +422,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
   app.get('/internal/v1/staff/session', { preHandler: (request, reply) => serviceGuard(request, reply, 'staff:resolve') }, async (request, reply) => execute(reply, async () => {
     const user = await current(request);
     if (user.status !== 'approved') return fail(403, 'staff_not_approved');
-    return { staffId: user.id, role: user.role, siteIds: user.site_ids, version: user.version, mfaVerified: true };
+    return { staffId: user.id, role: user.role, siteIds: user.site_ids, version: user.version, mfaVerified: true, mfaVerifiedAt: user.mfa_verified_at?.toISOString() ?? null };
   }));
   app.get<{ Params: { id: string } }>('/internal/v1/staff/users/:id', { preHandler: (request, reply) => serviceGuard(request, reply, 'staff:read'), schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } } } }, async (request, reply) => execute(reply, async () => {
     const result = await pool!.query('SELECT id,status,role,site_ids,version FROM staff_users WHERE id=$1', [request.params.id]);

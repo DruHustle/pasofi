@@ -115,7 +115,7 @@ export class EcoCashOnlinePaymentsClient {
  }
  get merchantCode(){return this.#config.merchantCode;}
  #own(p:PreparedEcoCashPayment){validatePrepared(p);if(p.environment!==this.environment)throw Error('invalid_prepared_ecocash_payment');}
- async initiate(p:PreparedEcoCashPayment):Promise<{state:'lookup_required';clientCorrelator:string;referenceCode:string;providerReference?:string}>{
+ async initiate(p:PreparedEcoCashPayment):Promise<{state:'lookup_required';clientCorrelator:string;referenceCode:string;providerReference?:string}|{state:'declined'}>{
   this.#own(p);
   const recover={state:'lookup_required' as const,clientCorrelator:p.clientCorrelator,referenceCode:p.referenceCode};
   const c=this.#config,body={clientCorrelator:p.clientCorrelator,referenceCode:p.referenceCode,tranType:'MER',endUserId:p.endUserId,
@@ -128,6 +128,15 @@ export class EcoCashOnlinePaymentsClient {
   // customer's wallet PIN; merchantPin is private merchant sandbox configuration.
   try{
    const response=await this.#fetcher(`${this.#base}transactions/amount/`,{method:'POST',headers:{authorization:this.#authorization,'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(8000),redirect:'error'});
+   // Online Payments documents 422 as a terminal business-rule refusal.
+   // Require a provider error code and reject conflicting echoed references.
+   if(response.status===422){
+    const data=await boundedJson(response);
+    const echoes=Object.entries({clientCorrelator:p.clientCorrelator,referenceCode:p.referenceCode,endUserId:p.endUserId});
+    if(typeof data.responseCode==='string'&&/^[A-Z0-9_]{1,32}$/i.test(data.responseCode)&&data.responseCode!=='00'&&
+     data.transactionOperationStatus!=='Charged'&&echoes.every(([name,value])=>data[name]===undefined||data[name]===value))return {state:'declined'};
+    return recover;
+   }
    if(!response.ok)return recover;
    const data=await boundedJson(response);
    return matched(data,p)?{...recover,providerReference:data.ecocashReference}:recover;

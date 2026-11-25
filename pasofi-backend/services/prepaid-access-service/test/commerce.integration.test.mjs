@@ -17,6 +17,7 @@ const origin='http://localhost:5173';
 async function setup(options={}){
  const pool=new pg.Pool({connectionString:url,max:10}),site=randomUUID(),otherSite=randomUUID(),customer=randomUUID(),otherCustomer=randomUUID(),admin=randomUUID(),agent=randomUUID(),otherAgent=randomUUID(),support=randomUUID();
  const staff={admin:{staffId:admin,role:'admin',siteIds:[],version:1,mfaVerified:true},agent:{staffId:agent,role:'agent',siteIds:[site],version:1,mfaVerified:true},other:{staffId:otherAgent,role:'agent',siteIds:[site,otherSite],version:1,mfaVerified:true},support:{staffId:support,role:'support',siteIds:[site],version:1,mfaVerified:true}};
+ for(const principal of Object.values(staff))principal.mfaVerifiedAt=new Date().toISOString();
  const targetIdentity={response:null,requests:0};
  const server=createServer(async(req,res)=>{try{
   const {payload}=await jwtVerify((req.headers.authorization??'').replace(/^Bearer /,''),new TextEncoder().encode(identitySecret),{issuer:'prepaid-access',subject:'prepaid-access',audience:'identity'}),cookie=req.headers.cookie??'';let result;
@@ -88,6 +89,17 @@ test('a global sales pause preserves exact retries and private paid receipts wit
   } finally {await recovery.close();}
 
  }finally{if(paused)await paused.close();await f.cleanup();}
+});
+test('voucher mistakes are limited per customer on a shared network',{skip:!url},async()=>{
+ const f=await setup({shifts:false});
+ try {
+  const redeem=who=>f.call('POST','/v1/vouchers/redeem',{code:'ABCD-EFGH-JKLM-2345'},who);
+  for(let attempt=0;attempt<10;attempt++)assert.equal((await redeem('customer')).statusCode,409);
+  const limited=await redeem('customer');
+  assert.equal(limited.statusCode,429);
+  assert.ok(Number(limited.headers['retry-after'])>0);
+  assert.equal((await redeem('customer2')).statusCode,409);
+ }finally{await f.cleanup();}
 });
 test('configured migration origin reaches the authenticated guard and foreign origins remain blocked',{skip:!url},async()=>{
  const f=await setup({env:{PUBLIC_ORIGIN_ALIASES:JSON.stringify(['https://pasofi.onesa.eu'])}});
@@ -525,7 +537,7 @@ test('recorded cash issues one immutable private invoice and encrypted delivery 
   const {sale,invoice}=responses[0].json();assert.ok(invoice.id);assert.match(invoice.number,/^PFI-[0-9]+$/);assert.equal(new Set(responses.map(response=>response.json().invoice.id)).size,1);
   assert.equal((await f.call('POST','/v1/staff/sales',{...payload,invoiceDelivery:{channel:'email',recipient:'different@example.invalid'}},'agent',key)).statusCode,409);
   const rows=(await f.pool.query('SELECT * FROM paid_invoices WHERE sale_id=$1',[sale.id])).rows;assert.equal(rows.length,1);const saved=rows[0];
-  assert.equal(saved.snapshot.totalMinor,50);assert.equal(saved.snapshot.line.byteLimit,'2000000000');assert.equal(saved.snapshot.operator.address,'3964 98th Crescent Kuwadzana 5');assert.equal(saved.snapshot.payment.evidence,'agent_attestation');
+  assert.equal(saved.snapshot.totalMinor,50);assert.equal(saved.snapshot.line.byteLimit,'2000000000');assert.equal(saved.snapshot.operator.address,'1 Example Street');assert.equal(saved.snapshot.payment.evidence,'agent_attestation');
   assert.equal(JSON.stringify(saved.snapshot).includes('invoice@example.invalid'),false);
   const intent=(await f.pool.query('SELECT * FROM invoice_deliveries WHERE invoice_id=$1',[invoice.id])).rows[0];assert.equal(intent.channel,'email');assert.equal(intent.payload_cipher.toString().includes('invoice@example.invalid'),false);
   const events=(await f.pool.query("SELECT payload FROM event_outbox WHERE event_type='invoice.issued' AND aggregate_id=$1",[invoice.id])).rows;assert.deepEqual(events,[{payload:{invoiceId:invoice.id}}]);
@@ -544,10 +556,10 @@ test('recorded cash issues one immutable private invoice and encrypted delivery 
   assert.ok(!JSON.stringify(owned).includes(receipt.voucher.code));
   assert.equal((await f.call('POST','/v1/vouchers/redeem',{code:receipt.voucher.code},'customer')).statusCode,200);
   assert.equal((await f.call('GET',`/v1/customer/invoices?saleId=${sale.id}`,undefined,'customer')).json().invoices[0].pairingId,undefined);
-  const pdf=await f.call('GET',`${customerPath}/pdf`,undefined,'customer');assert.equal(pdf.statusCode,200);assert.match(pdf.headers['content-type'],/^application\/pdf/);assert.equal(pdf.headers['cache-control'],'no-store');assert.deepEqual(pdf.rawPayload,saved.pdf_bytes);
+  const pdf=await f.call('GET',`${customerPath}/pdf`,undefined,'customer');assert.equal(pdf.statusCode,200);assert.match(pdf.headers['content-type'],/^application\/pdf/);assert.equal(pdf.headers['cache-control'],'no-store');assert.equal(saved.pdf_bytes,null);assert.match(pdf.rawPayload.toString('ascii',0,8),/^%PDF-/);
   await assert.rejects(f.pool.query('UPDATE paid_invoices SET total_minor=1 WHERE id=$1',[invoice.id]),/immutable/);
   await f.pool.query('UPDATE sales_locations SET name=$2 WHERE id=$1',[f.site,'Renamed location after payment']);
-  assert.deepEqual((await f.call('GET',`${staffPath}/pdf`,undefined,'admin')).rawPayload,saved.pdf_bytes);
+  assert.deepEqual((await f.call('GET',`${staffPath}/pdf`,undefined,'admin')).rawPayload,pdf.rawPayload);
   // Reads are independent of the public selling gate, including the staff path.
   process.env.PAMOFI_COMMERCE_ENABLED='false';const paused=buildApp();
   try{assert.equal((await paused.inject({url:customerPath,headers:{cookie:'customer=main'}})).statusCode,200);assert.equal((await paused.inject({url:staffPath,headers:{cookie:'staff=agent'}})).statusCode,200);}finally{await paused.close();}
@@ -558,12 +570,12 @@ test('SMS invoice token is invoice-only, encrypted, origin-checked and expiring'
  try{
   await f.call('POST','/v1/admin/inventory/allocations',{agentId:f.agent,siteId:f.site,bundleId:'mini',quantity:1,reason:'Isolated SMS invoice acceptance stock'});
   const pair=(await f.call('POST','/v1/receipt-pairings',{bundleId:'mini',siteId:f.site},'customer')).json().pairing;
-  const sold=await f.call('POST','/v1/staff/sales',{siteId:f.site,bundleId:'mini',delivery:'receipt',pairingCode:pair.code,payment:{method:'cash',confirmed:true,amountMinor:50,currency:'USD'},invoiceDelivery:{channel:'sms',recipient:'+263 715 092 221'}},'agent');assert.equal(sold.statusCode,201);
+  const sold=await f.call('POST','/v1/staff/sales',{siteId:f.site,bundleId:'mini',delivery:'receipt',pairingCode:pair.code,payment:{method:'cash',confirmed:true,amountMinor:50,currency:'USD'},invoiceDelivery:{channel:'sms',recipient:'+263 771 000 000'}},'agent');assert.equal(sold.statusCode,201);
   const invoice=sold.json().invoice,path=`/internal/v1/invoices/${invoice.id}`;
   assert.equal((await f.app.inject({url:path})).statusCode,401);
   const tokenFor=scope=>new SignJWT({scope}).setProtectedHeader({alg:'HS256'}).setIssuer('notification').setSubject('notification').setAudience('prepaid-access').setIssuedAt().setExpirationTime('15s').sign(new TextEncoder().encode(deliverySecret));
   assert.equal((await f.app.inject({url:path,headers:{authorization:`Bearer ${await tokenFor('delivery:read')}`}})).statusCode,403);
-  const details=(await f.app.inject({url:path,headers:{authorization:`Bearer ${await tokenFor('invoice:read')}`}})).json();assert.equal(details.channel,'sms');assert.equal(details.to,'263715092221');
+  const details=(await f.app.inject({url:path,headers:{authorization:`Bearer ${await tokenFor('invoice:read')}`}})).json();assert.equal(details.channel,'sms');assert.equal(details.to,'263771000000');
   const link=new URL(details.link),token=link.hash.slice('#invoice='.length);assert.equal(link.origin,origin);assert.match(token,/^[A-Za-z0-9_-]{43}$/);
   const saved=(await f.pool.query('SELECT * FROM invoice_deliveries WHERE invoice_id=$1',[invoice.id])).rows[0];assert.equal(saved.download_token_hash.length,32);assert.equal(saved.payload_cipher.toString().includes(token),false);assert.equal(details.expiresAt,saved.token_expires_at.toISOString());
   const download=await f.app.inject({method:'POST',url:'/v1/invoice-downloads',headers:{origin},payload:{token}});assert.equal(download.statusCode,200);assert.equal(download.headers['cache-control'],'no-store');assert.equal(download.rawPayload.subarray(0,5).toString(),'%PDF-');
@@ -594,7 +606,8 @@ test('digital invoice is issued only on verified fulfillment and survives revers
   assert.equal((await f.call('GET',`/v1/customer/invoices/${invoice.id}/pdf`,undefined,'customer2')).statusCode,404);assert.equal((await f.call('GET',`/v1/staff/invoices/${invoice.id}/pdf`,undefined,'agent')).statusCode,404);
   assert.equal((await f.call('GET',`/v1/staff/invoices/${invoice.id}/pdf`,undefined,'admin')).statusCode,200);
   assert.equal((await f.call('POST',`/v1/orders/${order.id}/mock-payment`,{outcome:'reversed'},'customer')).json().state,'reversed');
-  assert.deepEqual((await f.call('GET',`/v1/customer/invoices/${invoice.id}/pdf`,undefined,'customer')).rawPayload,invoice.pdf_bytes);
+  assert.equal(invoice.pdf_bytes,null);
+  assert.match((await f.call('GET',`/v1/customer/invoices/${invoice.id}/pdf`,undefined,'customer')).rawPayload.toString('ascii',0,8),/^%PDF-/);
   const demo=(await f.call('POST','/v1/orders',{bundleId:'mini',mode:'demo'},'customer')).json().order;
   assert.equal((await f.call('POST',`/v1/orders/${demo.id}/demo-confirm`,{},'customer')).statusCode,200);
   assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM paid_invoices WHERE order_id=$1',[demo.id])).rows[0].n,0);
@@ -981,4 +994,17 @@ test('paused sales allow the issuing agent to settle approved refunds without re
   assert.equal(closed.refundsMinor,'50');
   assert.equal((await f.call('POST',shifts,refundShift,'agent')).json().error,'refund_not_approved');
  }finally{if(paused)await paused.close();await f.cleanup();}
+});
+
+test('a stale staff authenticator cannot change prices while read access remains available',{skip:!url},async()=>{
+ const f=await setup();
+ try{
+  f.staff.admin.mfaVerifiedAt=new Date(Date.now()-301_000).toISOString();
+  assert.equal((await f.call('GET','/v1/admin/bundles')).statusCode,200);
+  const change=await f.call('POST','/v1/admin/bundles',{});
+  assert.equal(change.statusCode,428);
+  assert.equal(change.json().error,'staff_mfa_required');
+  f.staff.admin.mfaVerifiedAt=new Date().toISOString();
+  assert.equal((await f.call('POST','/v1/admin/bundles',{})).statusCode,400);
+ }finally{await f.cleanup();}
 });

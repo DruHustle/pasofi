@@ -139,3 +139,28 @@ test('foreign or expired SMS links and simulation mismatch cannot reach a delive
     }
   } finally { globalThis.fetch = originalFetch; for (const f of fixtures) await cleanup(pool, f.invoice); await pool.end(); restore(); }
 });
+
+test('an unconfirmed invoice is bounded and an authorized resend creates one audited delivery job', { skip: !database }, async () => {
+  const restore=environment(), pool=new pg.Pool({connectionString:database}), app=buildApp(), entry=await fixture(pool);
+  try{
+    await pool.query("UPDATE invoice_jobs SET state='unknown',channel='email',attempted_at=now()-interval '25 hours' WHERE id=$1",[entry.job]);
+    assert.equal(await processInvoiceDelivery(pool,true),true);
+    const statusPath=`/internal/v1/invoices/${entry.invoice}/status`, resendPath=`/internal/v1/invoices/${entry.invoice}/resend`;
+    const statusToken=await jwt('invoice:status'), resendToken=await jwt('invoice:resend');
+    const getStatus=()=>app.inject({url:statusPath,headers:{authorization:`Bearer ${statusToken}`}});
+    const body={requestId:randomUUID(),actorId:randomUUID(),actorScope:'customer',channel:'email'};
+    const send=(payload=body,token=resendToken)=>app.inject({method:'POST',url:resendPath,payload,headers:{authorization:`Bearer ${token}`}});
+    const failed=(await getStatus()).json();
+    assert.equal(failed.state,'failed');
+    assert.equal(failed.lastError,'delivery_report_timeout');
+    assert.equal(failed.resendAvailable,true);
+    assert.equal((await send(body,statusToken)).statusCode,403);
+    const results=await Promise.all(Array.from({length:4},()=>send()));
+    assert.deepEqual(results.map(r=>r.statusCode).sort(),[200,200,200,201]);
+    assert.equal((await send({...body,actorId:randomUUID()})).statusCode,409);
+    assert.equal((await send({...body,requestId:randomUUID()})).statusCode,409);
+    assert.equal((await getStatus()).json().state,'queued');
+    const attempts=(await pool.query('SELECT resend_actor_id,state FROM invoice_jobs WHERE invoice_id=$1 ORDER BY created_at,id',[entry.invoice])).rows;
+    assert.deepEqual(attempts,[{resend_actor_id:null,state:'failed'},{resend_actor_id:body.actorId,state:'queued'}]);
+  }finally{await app.close();await cleanup(pool,entry.invoice);await pool.end();restore();}
+});

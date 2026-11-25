@@ -148,12 +148,13 @@ export class OnesaStaff {
     oidc.enableNonRepudiationChecks(this.legacyClient);
   }
 
-  async start(db: Store) {
+  async start(db: Store, reauthenticate = false) {
     const state = freshOpaque(), browser = freshOpaque(), verifier = oidc.randomPKCECodeVerifier(), nonce = freshOpaque();
     const authorization = oidc.buildAuthorizationUrl(await this.protocolClient(), {
       redirect_uri: this.config.callback.href, response_type: 'code', ...this.authorizationParameters,
       state, nonce, code_challenge_method: 'S256', code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
-      acr_values: this.config.managed ? mfaPolicy : 'urn:onesa:mfa', max_age: '300',
+      acr_values: this.config.managed ? mfaPolicy : 'urn:onesa:mfa', max_age: reauthenticate ? '0' : '300',
+      ...(reauthenticate ? {prompt:'login'} : {}),
     });
     await db.query('DELETE FROM staff_onesa_flows WHERE expires_at<=now()');
     await db.query('INSERT INTO staff_onesa_flows(state_hash,browser_hash,verifier,nonce) VALUES($1,$2,$3,$4)',
@@ -269,7 +270,7 @@ export class OnesaStaff {
         ${lock?'FOR UPDATE OF s':''}`,[hash]);
       if(!current.rowCount)throw new RejectedStaffSession(hash);
       return {id:assertion.subject,email:assertion.email,display_name:assertion.name,status:'pending',role:'admin',site_ids:[],
-        version:1,mfa_enrolled_at:new Date(assertion.authenticated*1000),created_at:row.created_at};
+        version:1,mfa_enrolled_at:new Date(assertion.authenticated*1000),mfa_verified_at:new Date(assertion.authenticated*1000),created_at:row.created_at};
     }
     if (Boolean(row.binding_id) !== Boolean(assertion.siteOperator)) throw new RejectedStaffSession(hash);
     if (assertion.siteOperator) {
@@ -279,12 +280,12 @@ export class OnesaStaff {
         WHERE s.token_hash=$1 AND s.expires_at>now() AND u.status='approved' AND (($2::text IS NULL AND u.role IN ('agent','support')) OR u.role=$2)
         ${lock ? 'FOR UPDATE OF u,s' : ''}`, [hash, assertion.localRole ?? null]);
       if (!operator.rowCount) throw new RejectedStaffSession(hash);
-      return { ...operator.rows[0], mfa_enrolled_at: new Date(assertion.authenticated * 1000) };
+      return { ...operator.rows[0], mfa_enrolled_at: new Date(assertion.authenticated * 1000), mfa_verified_at: new Date(assertion.authenticated * 1000) };
     }
     // Fence sign-out while the live Portal check was in flight.
     const current = await db.query('SELECT 1 FROM staff_onesa_sessions WHERE token_hash=$1 AND expires_at>now()' + (lock ? ' FOR UPDATE' : ''), [hash]);
     if (!current.rowCount) throw denied();
     return { id: assertion.subject, email: assertion.email, display_name: assertion.name, status: 'approved', role: 'admin', site_ids: [],
-      version: 1, mfa_enrolled_at: new Date(assertion.authenticated * 1000), created_at: row.created_at };
+      version: 1, mfa_enrolled_at: new Date(assertion.authenticated * 1000), mfa_verified_at: new Date(assertion.authenticated * 1000), created_at: row.created_at };
   }
 }

@@ -28,6 +28,7 @@ export function messageFor(error: unknown, fallback = 'This request could not be
   if (error.status === 403) return 'This action is not available for your account or assigned site. Refresh your account permissions.';
   if (error.status === 429) return 'Too many attempts. Wait a minute before trying again.';
   const messages: Record<string, string> = {
+    staff_mfa_required: 'Verify your staff sign-in again before making this change.',
     no_usable_entitlement: 'Your account has no bundle eligible for a new hotspot session. Check the remaining data and validity of your bundles.',
     accounting_review_required: 'Your previous connection needs an accounting review. Contact your PasoFi agent before reconnecting.',
     session_pending_or_active: 'A hotspot session is still open. Check its status before starting another connection.',

@@ -17,7 +17,7 @@ async function fixture(){
  const pool=new pg.Pool({connectionString:url,max:10}),customer=randomUUID(),site=randomUUID(),order=randomUUID(),key=randomUUID();
  await pool.query("INSERT INTO purchase_orders(id,customer_id,idempotency_key,bundle_id,price_minor,currency,byte_limit,validity_seconds,status,quote_expires_at,purchase_mode) VALUES($1,$2,$3,'flex',125,'USD',5000000000,604800,'awaiting_payment',now()+interval '15 minutes','checkout')",[order,customer,randomUUID()]);
  const config={client:merchant,live:false,siteIds:new Set([site]),newCheckout:true,keys:{activeId:'k1',keys:{k1:randomBytes(32)}}};
- const state={posts:[],gets:0,charged:false,lookup:{},loseResponse:false,contextAtPost:null};
+ const state={posts:[],gets:0,charged:false,lookup:{},loseResponse:false,contextAtPost:null,refusal:null};
  const fetcher=async(target,init)=>{
   const body=init.body?JSON.parse(init.body):null;
   if(init.method==='POST'){
@@ -25,6 +25,7 @@ async function fixture(){
    state.contextAtPost=(await pool.query('SELECT count(*)::int AS n FROM ecocash_checkout_contexts WHERE attempt_id=$1',[body.clientCorrelator])).rows[0].n;
    state.posts.push(body);
    if(state.loseResponse)throw Error('synthetic connection lost after EcoCash accepted the charge');
+   if(state.refusal)return json(state.refusal,422);
    return json({clientCorrelator:body.clientCorrelator,referenceCode:body.referenceCode,endUserId:body.endUserId,ecocashReference:'MP261123.0001.SYNTH01',transactionOperationStatus:'PENDING SUBSCRIBER VALIDATION'});
   }
   state.gets++;
@@ -84,6 +85,21 @@ test('ECO-006 a Charged lookup without matching provider amount, currency, merch
    assert.equal(await f.count('purchase_entitlements'),0);assert.equal(await f.count('verified_charges'),0);
   }finally{await f.cleanup();}
  }
+});
+
+test('a confirmed EcoCash refusal closes customer approval without scheduling a reconciliation job',{skip:!url},async()=>{
+ const f=await fixture();
+ try{
+  f.state.refusal={responseCode:'TEST_BUSINESS_DECLINE'};
+  const started=await f.start();
+  assert.equal(started.state,'failed');
+  assert.equal((await f.start()).state,'failed');
+  assert.equal(f.state.posts.length,1);
+  assert.deepEqual(await ecocashPresentation(f.pool,f.customer,started.attemptId),{provider:'ecocash',payerHint:'653',awaitingApproval:false});
+  assert.equal((await f.pool.query('SELECT 1 FROM payment_reconciliation_jobs WHERE attempt_id=$1',[started.attemptId])).rowCount,0);
+  assert.equal(await f.count('purchase_entitlements'),0);
+  assert.equal(await f.count('verified_charges'),0);
+ }finally{await f.cleanup();}
 });
 
 test('ECO-007 the EcoCash worker claims only EcoCash jobs and duplicate processing issues one bundle',{skip:!url},async()=>{

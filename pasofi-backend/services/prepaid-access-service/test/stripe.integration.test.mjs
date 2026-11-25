@@ -158,3 +158,34 @@ test('Stripe webhook term mismatch cannot bind, enqueue or fulfill an unknown at
   assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM purchase_entitlements WHERE order_id=$1',[f.order])).rows[0].n,0);
  }finally{await f.cleanup();}
 });
+
+test('partial refunds and a won Stripe dispute preserve the exact settled balance and invoice', {skip:!url}, async()=>{
+ const f=await fixture();
+ try{
+  const {attemptId}=await f.start(),intent=f.succeed();
+  const check=()=>reconcileProviderPayment(f.pool,attemptId,f.adapter);
+  const entitlement=async()=>(await f.pool.query('SELECT id,consumed_bytes::text,activated_at,validity_seconds,revoked_at FROM purchase_entitlements WHERE order_id=$1',[f.order])).rows[0];
+  assert.equal((await check()).state,'fulfilled');
+  await f.pool.query("UPDATE purchase_entitlements SET consumed_bytes=123,activated_at=now() WHERE order_id=$1",[f.order]);
+  const original=await entitlement();
+  intent.latest_charge.amount_refunded=100;
+  assert.equal((await check()).state,'fulfilled');
+  assert.deepEqual(await entitlement(),original);
+  intent.latest_charge.disputed=true;
+  const dispute={charge:intent.latest_charge.id,payment_intent:intent.id,livemode:false,status:'under_review'};
+  f.adapter.client.disputes={list:async()=>({data:[dispute],has_more:false})};
+  assert.equal((await check()).state,'pending_review');
+  assert.ok((await entitlement()).revoked_at);
+  dispute.status='won';
+  intent.latest_charge.disputed=false;
+  assert.equal((await check()).state,'fulfilled');
+  assert.deepEqual(await entitlement(),original);
+  assert.equal((await f.pool.query('SELECT resolved_at FROM payment_reviews WHERE order_id=$1',[f.order])).rows[0].resolved_at instanceof Date,true);
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM paid_invoices WHERE order_id=$1',[f.order])).rows[0].n,1);
+  intent.latest_charge.amount_refunded=intent.latest_charge.amount;
+  intent.latest_charge.refunded=true;
+  assert.equal((await check()).state,'pending_review');
+  assert.ok((await entitlement()).revoked_at);
+  assert.equal((await f.pool.query('SELECT resolved_at FROM payment_reviews WHERE order_id=$1',[f.order])).rows[0].resolved_at,null);
+ }finally{await f.cleanup();}
+});

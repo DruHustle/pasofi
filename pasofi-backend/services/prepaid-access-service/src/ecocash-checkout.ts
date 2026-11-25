@@ -90,6 +90,7 @@ export class EcoCashCheckoutAdapter implements PaymentAdapter {
   const prepared=await this.prepared(input.attemptId,input.orderId,input.amountMinor,input.currency);
   // The client never throws for transport/provider errors and never retries.
   const result=await this.client.initiate(prepared);
+  if(result.state==='declined')return {state:'failed' as const};
   if(result.providerReference)await this.pool.query('UPDATE ecocash_checkout_contexts SET ecocash_reference=$2 WHERE attempt_id=$1 AND ecocash_reference IS NULL',[input.attemptId,result.providerReference]);
   // The lookup identity is our own committed correlator, known even when the
   // response was lost, so the attempt always proceeds to read-only lookup.

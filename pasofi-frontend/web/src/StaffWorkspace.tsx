@@ -15,6 +15,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
   const [code, setCode] = useState(''), [secret, setSecret] = useState(''), [expiresAt, setExpiresAt] = useState(0);
   const [enrollmentUri, setEnrollmentUri] = useState(''), [passwordStrong, setPasswordStrong] = useState(false);
   const [onesaOrigin, setOnesaOrigin] = useState<string | null>();
+  const [reauthenticate, setReauthenticate] = useState(false);
   const [resetAvailable, setResetAvailable] = useState(false), [resetCode, setResetCode] = useState(''), [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
   const challengeOwner = useRef<string | null>(null), generation = useRef(0);
@@ -41,9 +42,11 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     void api<{ origin: string | null }>('/api/staff/onesa/availability').then(({ origin }) => {
       if (live.current) setOnesaOrigin(origin && new URL(origin).protocol === 'https:' ? origin : null);
     }).catch(() => { if (live.current) setOnesaOrigin(null); });
+    const requireMfa = () => setReauthenticate(true);
+    window.addEventListener('pasofi:staff-mfa-required', requireMfa);
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     const unsubscribe = onStaffSessionChange((kind, staffId) => { generation.current++; setBusy(false); setExpiresAt(0); setStaff(null); setSecret(''); setEnrollmentUri(''); setCode(''); setResetCode(''); setPassword(''); setPasswordConfirmation(''); challengeOwner.current = null; discardStaffDrafts(kind === 'signed_in' ? staffId : undefined); setStep('login'); setMessage('The staff account changed in another tab. Sign in again or refresh this workspace before continuing.'); });
-    return () => { generation.current++; live.current = false; clearInterval(timer); unsubscribe(); };
+    return () => { generation.current++; live.current = false; clearInterval(timer); window.removeEventListener('pasofi:staff-mfa-required', requireMfa); unsubscribe(); };
   }, []);
   useEffect(() => {
     if ((step === 'mfa_setup' || step === 'mfa_verify') && expiresAt && now >= expiresAt) {
@@ -62,12 +65,12 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     }, 250);
     return () => { active = false; clearTimeout(timer); };
   }, [password, email, displayName, step]);
-  async function startOnesa() {
+  async function startOnesa(fresh = false) {
     if (busy || !onesaOrigin) return;
     if (location.origin !== onesaOrigin) { location.assign(onesaOrigin + '/#staff'); return; }
     setBusy(true); setMessage('');
     try {
-      await startProductSignIn(true,'/#staff');
+      await startProductSignIn(true,'/#staff',fresh);
     } catch (error) { setBusy(false); setMessage(messageFor(error)); }
   }
   async function authenticate(event: React.FormEvent) {
@@ -155,7 +158,7 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     {message && <p className="feedback" role="status">{message}</p>}
     {step === 'loading' && <p role="status">Checking your staff session…</p>}
     {step === 'unavailable' && <button className="secondary" onClick={load} disabled={busy}>Retry staff connection</button>}
-    {(step === 'login' || step === 'unavailable') && onesaOrigin && <button className="secondary" disabled={busy} onClick={startOnesa}>Sign in with Onesa</button>}
+    {(step === 'login' || step === 'unavailable') && onesaOrigin && <button className="secondary" disabled={busy} onClick={() => startOnesa()}>Sign in with Onesa</button>}
     {!capabilities?.demo && (step === 'login' || step === 'register' || step === 'unavailable') && <div className="workspace-auth">
       <p>Use your Onesa Identity account. PasoFi staff actions require an approved PasoFi role and recent multifactor authentication.</p>
       {onesaOrigin === undefined && <p role="status">Checking Onesa Identity sign-in…</p>}
@@ -176,7 +179,12 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
       {step === 'mfa_setup' && <>{!secret ? <button className="secondary" disabled={busy} onClick={prepareMfa}>Create authenticator setup key</button> : <div className="private-value"><p>Scan this QR code with your authenticator. Keep the QR code and setup key private.</p>{enrollmentUri && <div className="staff-mfa-qr"><QRCodeSVG value={enrollmentUri} size={208} level="M" marginSize={4} title="Authenticator setup QR code" /></div>}<p>Or enter this setup key manually:</p><code data-testid="mfa-setup-key">{secret}</code></div>}</>}
       <form className="form-grid" onSubmit={verifyMfa}><label>Authenticator code<input inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label><button className="primary" disabled={busy || (step === 'mfa_setup' && !secret)}>Verify authenticator</button></form><button className="text-button" disabled={busy} onClick={logout}>Cancel sign-in</button>
     </div>}
-    {step === 'workspace' && staff && <><div className="workspace-account"><div><strong>{staff.displayName}</strong><span>{staff.email}</span></div><span className={`status-pill status-${staff.status}`}>{staff.status} {staff.role ? `· ${staff.role}` : ''}</span><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={load}>Refresh staff access</button><button className="secondary" disabled={busy} onClick={logout}>Sign out of staff</button></div></div>
+    {step === 'workspace' && staff && <>
+      {reauthenticate && <div className="workspace-auth" role="status"><p>Verify with your authenticator before making this change.</p><button className="secondary" disabled={busy} onClick={() => {
+        if (onesaOrigin) void startOnesa(true);
+        else { setReauthenticate(false); setStep('login'); }
+      }}>Verify staff sign-in</button></div>}
+      <div className="workspace-account"><div><strong>{staff.displayName}</strong><span>{staff.email}</span></div><span className={`status-pill status-${staff.status}`}>{staff.status} {staff.role ? `· ${staff.role}` : ''}</span><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={load}>Refresh staff access</button><button className="secondary" disabled={busy} onClick={logout}>Sign out of staff</button></div></div>
       {staff.status === 'pending' && <div className="empty"><h3>{staff.role==='admin'?'Administrator account signed in':'Waiting for administrator approval'}</h3><p>Your authenticator is ready. An administrator must review your application and assign a role and sites before you can work with customer sales.</p></div>}
       {(staff.status === 'disabled' || staff.status === 'rejected') && <div className="empty"><h3>Staff access is {staff.status}</h3><p>This account cannot perform staff actions. Contact your PasoFi administrator to resolve access.</p></div>}
       {staff.status === 'approved' && staff.role === 'agent' && <AgentWorkspace key={`${staff.staffId}:${staff.version}`} staff={staff} capabilities={capabilities} />}

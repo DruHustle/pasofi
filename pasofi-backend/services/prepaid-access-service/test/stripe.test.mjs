@@ -101,8 +101,9 @@ test('only fully captured exact bound terms count as verified money; declines re
   ['wrong customer',{metadata:{...intent(termsValue).metadata,pasofi_customer_id:randomUUID()}},'unknown'],
   ['wrong order',{metadata:{...intent(termsValue).metadata,pasofi_order_id:randomUUID()}},'unknown'],
   ['uncaptured',{latest_charge:{...intent(termsValue).latest_charge,captured:false}},'unknown'],
-  ['refund',{latest_charge:{...intent(termsValue).latest_charge,amount_refunded:100}},'reversed'],
-  ['disputed',{latest_charge:{...intent(termsValue).latest_charge,disputed:true}},'reversed'],
+  ['partial refund',{latest_charge:{...intent(termsValue).latest_charge,amount_refunded:100}},'verified_success'],
+  ['full refund',{latest_charge:{...intent(termsValue).latest_charge,amount_refunded:500,refunded:true}},'reversed'],
+
  ];
  for(const [name,changes,state]of cases)await t.test(name,async()=>{
   const adapter=new StripeAdapter(c,clientFor(c,termsValue,()=>changes));assert.equal((await adapter.check(termsValue)).state,state);
@@ -132,4 +133,20 @@ test('webhook uses original raw bytes, rejects invalid/stale signatures and leav
   }
   assert.deepEqual((await app.inject({method:'POST',url:'/ordinary',payload:{value:'json parser preserved'}})).json(),{parsed:'json parser preserved'});
  }finally{await app.close();}
+});
+
+test('Stripe distinguishes a won dispute from a current contest and rejects foreign dispute evidence',async()=>{
+ const c=config(),t=terms(),value=intent(t);
+ let dispute={charge:value.latest_charge.id,payment_intent:t.referenceNumber,livemode:false,status:'under_review'};
+ value.latest_charge.disputed=true;
+ const adapter=new StripeAdapter(c,{accounts:{retrieve:async()=>({id:c.accountId,country:c.country})},paymentIntents:{retrieve:async()=>value},
+  disputes:{list:async request=>{assert.equal(request.charge,value.latest_charge.id);return {has_more:false,data:[dispute]};}}
+ });
+ assert.equal((await adapter.check(t)).state,'reversed');
+ dispute.status='won';
+ assert.deepEqual(await adapter.check(t),{state:'verified_success',providerStatus:'dispute_won'});
+ value.latest_charge.disputed=false;
+ assert.equal((await adapter.check({...t,verifyPriorReversal:true})).providerStatus,'dispute_won');
+ dispute.charge='ch_Foreign';
+ assert.equal((await adapter.check({...t,verifyPriorReversal:true})).state,'unknown');
 });
