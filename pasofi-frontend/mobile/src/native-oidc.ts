@@ -71,10 +71,10 @@ export async function startNativeSignIn(
   platform: Platform,
   destination: CustomerTab,
   storage: Storage,
-  transport?: oidc.CustomFetch,
+  options: { transport?: oidc.CustomFetch; reauthenticate?: boolean } = {},
 ) {
   if (!destinations.has(destination)) throw Error('Invalid customer destination');
-  const client = await publicClient(registration, platform, transport);
+  const client = await publicClient(registration, platform, options.transport);
   const flow: Flow = {
     state: oidc.randomState(),
     nonce: oidc.randomNonce(),
@@ -88,7 +88,7 @@ export async function startNativeSignIn(
   const url = oidc.buildAuthorizationUrl(client, {
     redirect_uri: flow.callback!,
     response_type: 'code',
-    prompt: 'login',
+    ...(options.reauthenticate ? {prompt:'login'} : {}),
     scope: registration.renewal === true ? 'openid offline_access' : 'openid',
     state: flow.state,
     nonce: flow.nonce,

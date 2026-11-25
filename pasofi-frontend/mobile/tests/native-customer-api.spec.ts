@@ -210,7 +210,7 @@ for (const platform of ['ios', 'android'] as const) {
       }
       const url=new URL(value);expect(url.origin+'/').toBe(issuer);authorization=url.searchParams;
       expect(authorization.get('code_challenge_method')).toBe('S256');expect(authorization.get('redirect_uri')).toBe(callback);
-      expect(authorization.get('prompt')).toBe('login');
+      expect(authorization.get('prompt')).toBeNull();
       expect(authorization.get('scope')).toBe('openid offline_access');
       return callback+'?code=sample&state='+authorization.get('state');
     }});

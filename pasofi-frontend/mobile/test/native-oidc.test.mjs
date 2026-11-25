@@ -68,8 +68,9 @@ for (const [platform, redirect] of [['ios',callback],['android',callback],['ios'
         }),
       });
     };
-    const url = new URL(await startNativeSignIn(registration, platform, 'history', storage, fetch));
+    const url = new URL(await startNativeSignIn(registration, platform, 'history', storage, { transport: fetch, reauthenticate: true }));
     auth = url.searchParams;
+    assert.equal(auth.get('prompt'), 'login');
     assert.equal(url.origin + '/', issuer);
     assert.equal(auth.get('code_challenge_method'), 'S256');
     assert.equal(auth.get('audience'), registration.audience);
