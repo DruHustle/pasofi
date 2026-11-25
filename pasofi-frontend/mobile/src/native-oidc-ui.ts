@@ -32,12 +32,12 @@ export async function watchNativeReturn(onSuccess: (destination: CustomerTab) =>
         platform,
         value,
         sessionStorage,
-        async (accessToken, platform) => {
+        async (accessToken, platform, refreshToken) => {
           if (!active) throw Error('Sign-in screen closed');
           const { customerId } = await api<{ customerId: string }>('/api/onesa/native-session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accessToken, platform }),
+            body: JSON.stringify({ accessToken, platform, refreshToken }),
           });
           if (!customerId || (await currentSession()) !== customerId) throw Error('Unconfirmed native session');
           clearSessionSecrets();

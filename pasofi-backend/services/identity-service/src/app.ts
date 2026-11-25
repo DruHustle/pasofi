@@ -51,6 +51,12 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
     const federated = await pool.query('SELECT 1 FROM customer_onesa_identities WHERE customer_id=$1',[id]);
     return federated.rowCount ? null : id;
   }
+  async function previousOnesaSession(token: string | undefined) {
+    return !!token && /^[A-Za-z0-9_-]{43}$/.test(token) && !!(await pool!.query(
+      'SELECT 1 FROM customer_onesa_sessions WHERE token_hash=$1 UNION ALL SELECT 1 FROM customer_sessions s JOIN customer_onesa_identities i ON i.customer_id=s.customer_id WHERE s.token_hash=$1',
+      [tokenHash(token)],
+    )).rowCount;
+  }
   // Only the prepaid service may resolve its forwarded customer cookie. The
   // browser never supplies a customer ID to select the account.
   app.get('/internal/v1/session', async (request, reply) => {
@@ -74,7 +80,11 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
   app.get('/v1/session', async (request, reply) => {
     reply.header('Cache-Control','no-store');
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
-    try { const customerId = await current(request); return customerId ? { customerId } : reply.code(401).send({ error: 'not_authenticated' }); }
+    try {
+      const customerId = await current(request);
+      if (customerId) return { customerId, guest: !await previousOnesaSession(request.cookies[cookieName]) };
+      return reply.code(401).send({error: await previousOnesaSession(request.cookies[cookieName]) ? 'onesa_sign_in_required' : 'not_authenticated'});
+    }
     catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
   app.delete('/v1/session', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
@@ -89,15 +99,16 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
         // would let a retained first-response retry secret create an account
         // again after the user explicitly signed out.
         await pool.query('UPDATE customer_sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE token_hash = $1', [tokenHash(token)]);
-        const revoked = await pool.query(`UPDATE customer_onesa_sessions SET revoked_at=now()
-          WHERE token_hash=$1 AND revoked_at IS NULL
-          RETURNING expires_at>now() AND left(access_ciphertext,8)='managed.' AS managed`, [tokenHash(token)]);
+        const revoked = await pool.query(`UPDATE customer_onesa_sessions SET revoked_at=COALESCE(revoked_at,now())
+          WHERE token_hash=$1
+          RETURNING left(access_ciphertext,8)='managed.' AS managed`, [tokenHash(token)]);
         revokedManagedSession = revoked.rows[0]?.managed === true;
       }
       reply.clearCookie(cookieName, { path: '/', httpOnly: true, secure: !demo, sameSite: 'lax' });
       const endSessionUrl = managedBrowserLogoutUrl(onesaCustomer?.config, {
         preference: request.headers['x-pasofi-end-session'], publicOrigin: origin,
         requestOrigin: request.headers.origin, revokedManagedSession,
+        hotspotOrigin: onesaCustomer?.hotspotCallback?.origin,
       });
       if (endSessionUrl) return reply.send({ endSessionUrl });
       return reply.code(204).send();
@@ -169,8 +180,7 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
     try {
       const existing = await current(request);
       if (existing) return { customerId: existing };
-      const previousToken = request.cookies[cookieName];
-      if (previousToken && /^[A-Za-z0-9_-]{43}$/.test(previousToken) && (await pool.query('SELECT 1 FROM customer_onesa_sessions WHERE token_hash=$1 UNION ALL SELECT 1 FROM customer_sessions s JOIN customer_onesa_identities i ON i.customer_id=s.customer_id WHERE s.token_hash=$1',[tokenHash(previousToken)])).rowCount) return reply.code(401).send({error:'onesa_sign_in_required'});
+      if (await previousOnesaSession(request.cookies[cookieName])) return reply.code(401).send({error:'onesa_sign_in_required'});
       // An expired Portal session must not silently become a new guest account.
       const key = request.headers['idempotency-key'];
       if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(key) || Buffer.from(key,'base64url').toString('base64url') !== key) return reply.code(400).send({error:'invalid_idempotency_key'});

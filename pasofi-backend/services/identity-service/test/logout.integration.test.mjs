@@ -89,7 +89,7 @@ test('production logout clears the secure host-only cookie with matching attribu
   } finally { await app.close(); }
 });
 
-test('only canonical managed browser logout builds an exact Onesa URL and fixed return', () => {
+test('managed browser logout builds an exact Onesa URL for the canonical or configured hotspot return', () => {
   const publicOrigin = 'https://pasofi.example.test';
   const config = {
     issuer: 'https://auth.onesa.eu/', clientId: 'pasofi_fixture_client',
@@ -106,6 +106,9 @@ test('only canonical managed browser logout builds an exact Onesa URL and fixed 
   assert.equal(managedBrowserLogoutUrl({ ...config, managed: undefined }, request), undefined);
   assert.equal(managedBrowserLogoutUrl({ ...config, issuer: 'https://other.example.test/' }, request), undefined);
   assert.equal(managedBrowserLogoutUrl({ ...config, callback: new URL('https://alias.example.test/onesa-callback.html') }, request), undefined);
+  const hotspotOrigin='https://hotspot.example.test';
+  const hotspotUrl=new URL(managedBrowserLogoutUrl(config,{...request,requestOrigin:hotspotOrigin,hotspotOrigin}));
+  assert.equal(hotspotUrl.searchParams.get('returnTo'),hotspotOrigin+'/');
 });
 
 test('managed browser logout hands off to Onesa only after revoking the requested database session', { skip: !url }, async () => {
@@ -134,16 +137,16 @@ test('managed browser logout hands off to Onesa only after revoking the requeste
     for (const mode of ['customer', 'staff']) {
       const path = mode === 'customer' ? '/v1/session' : '/v1/staff/session';
       const cookieName = mode === 'customer' ? '__Host-pamofi_session' : '__Host-pamofi_staff_session';
-      const candidate = async (managed = true) => {
+      const candidate = async (managed = true, expired = false) => {
         const token = randomBytes(32).toString('base64url');
         const hash = createHash('sha256').update(token).digest();
         const envelope = managed ? 'managed.fixture' : 'legacy.fixture';
         if (mode === 'customer') {
-          await pool.query("INSERT INTO customer_onesa_sessions(token_hash,customer_id,access_ciphertext,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')",
-            [hash, customer, envelope]);
+          await pool.query("INSERT INTO customer_onesa_sessions(token_hash,customer_id,access_ciphertext,expires_at) VALUES($1,$2,$3,now()+make_interval(secs=>$4))",
+            [hash, customer, envelope, expired ? -1 : 3600]);
         } else {
-          await pool.query("INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at) VALUES($1,$2,$3,$4,now()+interval '1 hour')",
-            [hash, recordIssuer, staffSubject, envelope]);
+          await pool.query("INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at) VALUES($1,$2,$3,$4,now()+make_interval(secs=>$5))",
+            [hash, recordIssuer, staffSubject, envelope, expired ? -1 : 3600]);
         }
         return {
           cookie: cookieName + '=' + token,
@@ -174,7 +177,12 @@ test('managed browser logout hands off to Onesa only after revoking the requeste
       assert.equal(target.searchParams.get('client_id'), clientId);
       assert.equal(await current.active(), false);
       assert.equal(await unrelated.active(), true);
-      assert.equal((await request(current, origin)).statusCode, 204);
+      assert.equal((await request(current, origin)).statusCode, mode==='customer' ? 200 : 204);
+      const expired=await candidate(true,true);
+      const expiredLogout=await request(expired,origin);
+      assert.equal(expiredLogout.statusCode,200,expiredLogout.body);
+      assert.equal(new URL(expiredLogout.json().endSessionUrl).searchParams.get('returnTo'),origin+'/');
+      assert.equal(await expired.active(),false);
       assert.equal((await request(unrelated, origin, false)).statusCode, 204);
       assert.equal((await request(old, origin)).statusCode, 204);
       assert.equal((await request(aliasSession, alias)).statusCode, 204);

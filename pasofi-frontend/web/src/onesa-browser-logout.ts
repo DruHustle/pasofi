@@ -1,7 +1,7 @@
 export type LogoutResponse = { endSessionUrl?: unknown } | undefined;
 
 export function onesaLogoutHeaders(optIn = true): HeadersInit | undefined {
-  if (optIn && import.meta.env.VITE_PASOFI_HOTSPOT_PORTAL !== '1') return { 'X-PasoFi-End-Session': 'onesa' };
+  if (optIn) return { 'X-PasoFi-End-Session': 'onesa' };
 }
 
 export function followOnesaLogout(response: LogoutResponse, browser: Pick<Location, 'origin' | 'replace'> = location) {

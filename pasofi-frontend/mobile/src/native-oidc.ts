@@ -6,7 +6,7 @@ import type { CustomerTab } from './CustomerAccess';
 export const callback = 'com.onesa.pasofi.identity://login/callback';
 export const verifiedCallback = 'https://pasofi.mobile.onesa.eu/native/onesa-callback.html';
 export const flowKey = 'pasofi-native-oidc-v1';
-export type NativeRegistration = { issuer: string; audience: string; ios: string | null; android: string | null; verifiedCallback?: string };
+export type NativeRegistration = { issuer: string; audience: string; ios: string | null; android: string | null; verifiedCallback?: string; renewal?: boolean };
 export type Platform = 'ios' | 'android';
 type Flow = {
   state: string;
@@ -71,10 +71,10 @@ export async function startNativeSignIn(
   platform: Platform,
   destination: CustomerTab,
   storage: Storage,
-  transport?: oidc.CustomFetch,
+  options: { transport?: oidc.CustomFetch; reauthenticate?: boolean } = {},
 ) {
   if (!destinations.has(destination)) throw Error('Invalid customer destination');
-  const client = await publicClient(registration, platform, transport);
+  const client = await publicClient(registration, platform, options.transport);
   const flow: Flow = {
     state: oidc.randomState(),
     nonce: oidc.randomNonce(),
@@ -88,7 +88,8 @@ export async function startNativeSignIn(
   const url = oidc.buildAuthorizationUrl(client, {
     redirect_uri: flow.callback!,
     response_type: 'code',
-    scope: 'openid',
+    ...(options.reauthenticate ? {prompt:'login'} : {}),
+    scope: registration.renewal === true ? 'openid offline_access' : 'openid',
     state: flow.state,
     nonce: flow.nonce,
     audience: registration.audience,
@@ -126,7 +127,7 @@ export async function finishNativeSignIn(
   platform: Platform,
   value: string,
   storage: Storage,
-  establish: (accessToken: string, platform: Platform) => Promise<void>,
+  establish: (accessToken: string, platform: Platform, refreshToken?: string) => Promise<void>,
   transport?: oidc.CustomFetch,
 ) {
   if (!isNativeCallback(value)) throw Error('Wrong return address');
@@ -152,6 +153,6 @@ export async function finishNativeSignIn(
     idTokenExpected: true,
   });
   if (tokens.token_type.toLowerCase() !== 'bearer') throw Error('Unexpected token type');
-  await establish(tokens.access_token, platform);
+  await establish(tokens.access_token, platform, registration.renewal === true ? tokens.refresh_token : undefined);
   return destination;
 }

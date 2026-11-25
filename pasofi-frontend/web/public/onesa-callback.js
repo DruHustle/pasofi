@@ -64,6 +64,10 @@
     if (!result.ok || data.authenticated !== true) {
       if (data.error === 'session_already_exists') {
         failure('Another PasoFi session is open', 'Return to PasoFi to continue with your current session or switch accounts.');
+      } else if (data.error === 'guest_transfer_requires_review') {
+        failure('This Onesa account already has a PasoFi account', 'Your guest purchases are still available. Return to PasoFi to use them or save their recovery details.');
+      } else if (data.error === 'guest_session_changed') {
+        failure('Guest session changed', 'Return to the browser with your guest purchases before trying again.');
       } else if (result.status === 401 || result.status === 403) {
         failure(customer ? 'PasoFi sign-in could not finish' : 'Staff sign-in needs attention',
           customer ? 'Start a fresh sign-in from PasoFi using your verified Onesa account.'

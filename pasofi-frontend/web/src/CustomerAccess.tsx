@@ -49,6 +49,7 @@ function withUsage(item: Entitlement, snapshot: UsageSnapshot | null): Entitleme
 export default function CustomerAccess({ close, capabilities, selectedBundle = null, requestedBundleId = null, initialTab = 'access', recovered, onNavigate, onBuyData }: { close: () => void; capabilities: Capabilities; selectedBundle?: Product | null; requestedBundleId?: string | null; initialTab?: CustomerTab; recovered: () => void; onNavigate?: (tab: CustomerTab, bundleId?: string) => void; onBuyData?: () => void }) {
   const [tab, setTab] = useState<CustomerTab>(selectedBundle ? capabilities.staffSales && capabilities.receiptPairing ? 'receipt' : 'purchase' : initialTab), [owner, setOwner] = useState<string | null>(null);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
+  const [memberSignInRequired, setMemberSignInRequired] = useState(false);
   const [access, setAccess] = useState<Entitlement[]>([]), [nextOffset, setNextOffset] = useState<number | null>(null);
   const [voucherCode, setVoucherCode] = useState(''), [pairing, setPairing] = useState<Pairing | null>(null), [pairingState, setPairingState] = useState(''), [receipt, setReceipt] = useState<Receipt | null>(null);
   const [sites, setSites] = useState<Site[]>([]), [products, setProducts] = useState<Product[]>([]), [bundleId, setBundleId] = useState(selectedBundle?.id ?? requestedBundleId ?? ''), [siteId, setSiteId] = useState('');
@@ -97,7 +98,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     setAccess(previous => previous.map(item => withUsage(item, snapshot)));
   }
   const usage = useLiveUsage(owner, ['access', 'wifi', 'history'].includes(tab) && !leaving, visibleIds.length ? visibleIds : access.slice(0, 100).map(item => item.id), mergeUsage, invalidateAccount);
-  function remember(id: string) { ownerRef.current = id; if (live.current) setOwner(id); }
+  function remember(id: string) { ownerRef.current = id; if (live.current) { setOwner(id); setMemberSignInRequired(false); } }
   async function identity(create = false) {
     const revision = generation.current;
     const creating = create && !ownerRef.current;
@@ -107,8 +108,9 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       if (ownerRef.current && ownerRef.current !== id) throw new ApiError(401, 'session_changed');
       remember(id); return id;
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'onesa_sign_in_required' && isCurrent(revision)) setMemberSignInRequired(true);
       if (error instanceof ApiError && error.status === 401 && isCurrent(revision) && (!creating || ownerRef.current)) invalidateAccount();
-      if (creating && error instanceof ApiError && error.status === 401) throw new ApiError(400, 'cookie_not_kept');
+      if (creating && error instanceof ApiError && error.status === 401 && error.code !== 'onesa_sign_in_required') throw new ApiError(400, 'cookie_not_kept');
       throw error;
     }
   }
@@ -136,7 +138,11 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
         }
         await refreshAccess();
       }
-      catch (error) { if (!(error instanceof ApiError && error.status === 401) && isCurrent(revision)) setMessage(messageFor(error)); }
+      catch (error) {
+        if (!isCurrent(revision)) return;
+        if (error instanceof ApiError && error.code === 'onesa_sign_in_required') setMemberSignInRequired(true);
+        else if (!(error instanceof ApiError && error.status === 401)) setMessage(messageFor(error));
+      }
       finally { if (isCurrent(revision)) setLoading(false); }
     })();
     const timer = setInterval(() => setNow(Date.now()), 5_000);
@@ -430,18 +436,20 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const connectionPanel = owner && <NetworkAccess customerId={owner} capabilities={capabilities} usage={usage.snapshot} fresh={usage.fresh} refreshing={usage.refreshing} refresh={usage.refresh} />;
   return <section className="workspace customer-workspace" aria-labelledby="customer-heading" aria-busy={busy || loading} data-screen={tab}>
     <div className="purchase-head customer-page-heading"><div><div className="eyebrow">YOUR PASOFI</div><h2 id="customer-heading" tabIndex={-1} ref={heading}>{titles[tab]}</h2><p>{subtitles[tab]}</p></div><button className="close-button" onClick={close} aria-label="Close customer workspace">×</button></div>
-    {(tab === 'recovery' || (hotspotPortal && tab === 'voucher')) && !loading && !owner && <OnesaCustomerSignIn prominent />}
+    {(memberSignInRequired || tab === 'recovery' || (hotspotPortal && tab === 'voucher')) && !loading && !owner && <OnesaCustomerSignIn prominent />}
     {capabilities.demo && <p className="notice customer-demo-notice">Demonstration environment. These flows do not establish real customer payment, SMS delivery, or internet connectivity.</p>}
     {tab !== 'access' && sectionNavigation}
     <PolicyNotice/>
     {loading && <div className="customer-loading" role="status"><span className="customer-loading-dot" />Checking your account…</div>}
     {message && <p className="feedback" role="status">{message}</p>}
-    {!loading && !owner && <p className="notice customer-session-notice">
+    {!loading && !owner && (memberSignInRequired ? <p className="notice customer-session-notice">
+      Sign in again with Onesa to keep purchases with your existing PasoFi account. <button className="text-button" disabled={busy} onClick={logout}>Sign out on this device</button>
+    </p> : <p className="notice customer-session-notice">
       {tab === 'purchase' && capabilities.paymentCheckout || tab === 'receipt' && agentPurchaseAvailable
         ? 'You can continue as a guest. PasoFi saves the purchase in this browser. Save your recovery key to use it on another device. '
         : 'No account is active in this browser. Sign in with Onesa Identity to open your PasoFi account. '}
       <button className="text-button" onClick={recovered}>Recover an existing account</button>
-    </p>}
+    </p>)}
     {recoveryReminder && owner && tab !== 'recovery' && <aside className="notice customer-recovery-reminder"><strong>Keep access to your bundle.</strong><p>Save your account reference and recovery key before changing devices or clearing this browser.</p><button className="secondary" onClick={() => { setRecoveryReminder(false); selectTab('recovery'); }}>Review recovery & devices</button></aside>}
     {showPurchaseOptions && <>
       {catalogueLoading && <p role="status">Loading available bundles and locations…</p>}

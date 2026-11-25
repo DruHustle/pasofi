@@ -29,7 +29,7 @@ export function ensureSession(): Promise<string> {
   if (creating) return creating;
   creating = (async () => {
     try { const id = await currentSession(); clearCreationKey(); return id; }
-    catch (error) { if (!(error instanceof ApiError) || error.status !== 401) throw error; }
+    catch (error) { if (!(error instanceof ApiError) || error.status !== 401 || error.code === 'onesa_sign_in_required') throw error; }
     const created = validSession(await api<Session>('/api/session', { method: 'POST', headers: { 'Idempotency-Key': retryKey() } }));
     const confirmed = await currentSession();
     if (confirmed !== created) throw Error('session_changed');

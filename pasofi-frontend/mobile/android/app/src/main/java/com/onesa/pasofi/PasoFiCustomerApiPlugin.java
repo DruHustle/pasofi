@@ -311,7 +311,10 @@ public final class PasoFiCustomerApiPlugin extends Plugin {
             if (identitySuccess) commit(state.identityResult(pending.options, update, customerId(data), System.currentTimeMillis()));
             else if (pending.options.logout() && status == 204) commit(CustomerSessionState.empty());
             else if (pending.options.sessionRead() && status == 200) commit(state.confirmed(customerId(data), System.currentTimeMillis()));
-            else if (pending.options.sessionRead() && status == 401) commit(state.unauthenticated());
+            else if (pending.options.sessionRead() && status == 401 &&
+                    !(data instanceof JSONObject && "onesa_sign_in_required".equals(((JSONObject) data).optString("error")))) {
+                commit(state.unauthenticated());
+            }
             else if (pending.options.creation() && status == 409 && data instanceof JSONObject && "session_retry_expired".equals(((JSONObject) data).optString("error"))) commit(state.retryExpired());
             if (pending.logoutRecovery) {
                 if (status != 204) throw new Failure("logout_pending");

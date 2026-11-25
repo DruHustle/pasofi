@@ -106,7 +106,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       remember(id); return id;
     } catch (error) {
       if (error instanceof ApiError && error.status === 401 && isCurrent(revision) && (!creating || ownerRef.current)) invalidateAccount();
-      if (creating && error instanceof ApiError && error.status === 401) throw new ApiError(400, 'cookie_not_kept');
+      if (creating && error instanceof ApiError && error.status === 401 && error.code !== 'onesa_sign_in_required') throw new ApiError(400, 'cookie_not_kept');
       throw error;
     }
   }

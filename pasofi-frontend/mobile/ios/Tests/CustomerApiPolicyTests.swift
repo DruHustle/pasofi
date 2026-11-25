@@ -81,6 +81,8 @@ struct CustomerApiPolicyTests {
         try restored.accept(request(), status: 200, body: ["customerId": id], cookie: nil, now: now)
         check(restored.creationRetry == nil && restored.creationCustomerId == nil && restored.token == token, "Confirmed GET clears only creation retry")
         var rejectedSession = pending
+        try rejectedSession.accept(request(), status: 401, body: ["error": "onesa_sign_in_required"], cookie: nil, now: now)
+        check(rejectedSession.token == token, "An expired Onesa session retains its account marker until explicit sign-out")
         try rejectedSession.accept(request(), status: 401, body: ["error": "not_authenticated"], cookie: nil, now: now)
         let rejectedRestart = try JSONDecoder().decode(CustomerSessionState.self, from: JSONEncoder().encode(rejectedSession))
         check(rejectedRestart.token == nil && rejectedRestart.expiresAt == nil && rejectedRestart.creationRetry == nil && rejectedRestart.creationCustomerId == nil,

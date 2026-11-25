@@ -163,7 +163,7 @@ test('failed Android return setup leaves the qualified manual handoff available'
 for (const platform of ['ios', 'android'] as const) {
   test(`${platform} managed browser callback returns to protected history with the existing entitlement`, async ({page,configuredBaseURL})=>{
     const issuer='https://id.pasofi.test/', callback='com.onesa.pasofi.identity://login/callback';
-    const registrations={issuer,audience:'https://api.pasofi.test',ios:'pasofi_apple_test_client',android:'pasofi_android_test_client'};
+    const registrations={issuer,audience:'https://api.pasofi.test',ios:'pasofi_apple_test_client',android:'pasofi_android_test_client',renewal:true};
     const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
     const encode=(value:unknown)=>Buffer.from(JSON.stringify(value)).toString('base64url');
     let authorization: URLSearchParams | undefined, established=false, readHistory=false;
@@ -184,13 +184,15 @@ for (const platform of ['ios', 'android'] as const) {
       const now=Math.floor(Date.now()/1000), signable=encode({alg:'RS256',kid:'fixture'})+'.'+encode({
         iss:issuer,sub:'existing-account',aud:registrations[platform],iat:now,exp:now+300,nonce:authorization!.get('nonce')});
       const id_token=signable+'.'+sign('sha256',Buffer.from(signable),privateKey).toString('base64url');
-      return route.fulfill({headers,json:{token_type:'Bearer',access_token:'fixture-customer-token',id_token}});
+      return route.fulfill({headers,json:{token_type:'Bearer',access_token:'fixture-customer-token',refresh_token:'fixture-rotating-token',id_token}});
     });
     await nativeBridge(page,req=>{
       if(req.path==='/api/capabilities')return reply(capabilities);
       if(req.path==='/api/onesa/availability')return reply({origin:apiOrigin,handoff:true,native:registrations});
       if(req.path==='/api/onesa/native-session'){
-        expect(req.method).toBe('POST');expect(JSON.parse(req.data!)).toEqual({accessToken:'fixture-customer-token',platform});
+        expect(req.method).toBe('POST');expect(JSON.parse(req.data!)).toEqual({
+          accessToken:'fixture-customer-token',platform,refreshToken:'fixture-rotating-token',
+        });
         established=true;return reply({customerId});
       }
       if(req.path==='/api/session')return established?reply({customerId}):reply({error:'not_authenticated'},401);
@@ -209,6 +211,7 @@ for (const platform of ['ios', 'android'] as const) {
       const url=new URL(value);expect(url.origin+'/').toBe(issuer);authorization=url.searchParams;
       expect(authorization.get('code_challenge_method')).toBe('S256');expect(authorization.get('redirect_uri')).toBe(callback);
       expect(authorization.get('prompt')).toBeNull();
+      expect(authorization.get('scope')).toBe('openid offline_access');
       return callback+'?code=sample&state='+authorization.get('state');
     }});
     await page.goto(configuredBaseURL);
@@ -222,6 +225,7 @@ for (const platform of ['ios', 'android'] as const) {
     await expect(page.getByRole('heading',{name:'Your activity'})).toBeVisible();
     expect(readHistory).toBe(true);expect(established).toBe(true);
     expect(await page.evaluate(()=>JSON.stringify(sessionStorage))).not.toContain('fixture-customer-token');
+    expect(await page.evaluate(()=>JSON.stringify(sessionStorage))).not.toContain('fixture-rotating-token');
     expect(await page.evaluate(()=>(window as any).browserApiFetches)).toBe(0);
   });
 }

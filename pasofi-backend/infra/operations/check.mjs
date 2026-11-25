@@ -66,6 +66,36 @@ export async function checkHttpsOrigins({gatewayOrigin,frontendOrigin,fetcher=fe
   return {ok:true,split};
  }catch{return {ok:false,split,problem:'public_https:contract_unavailable'};}
 }
+
+function signingKeys(raw){
+ const keys=raw?.keys;
+ if(!Array.isArray(keys)||!keys.length||keys.length>16)throw Error('invalid_signing_keys');
+ const identities=new Map();
+ for(const key of keys){
+  if(key?.kty!=='RSA'||key.alg&&key.alg!=='RS256'||key.use&&key.use!=='sig')continue;
+  if(typeof key.kid!=='string'||!key.kid||identities.has(key.kid)||
+     !/^[A-Za-z0-9_-]{1,16384}$/.test(key.n||'')||!/^[A-Za-z0-9_-]{1,64}$/.test(key.e||'')||'d'in key)throw Error('invalid_signing_key');
+  identities.set(key.kid,JSON.stringify([key.n,key.e]));
+ }
+ if(!identities.size)throw Error('missing_signing_keys');
+ return identities;
+}
+
+export async function checkOnesaSigningKeys({configuration,fetcher=fetch}){
+ if(configuration?.mode!== 'managed')return {status:'not_managed'};
+ try{
+  const provider=monitorOrigin(configuration.issuer);
+  const pinned=signingKeys(JSON.parse(configuration.pinned));
+  const response=await fetcher(new URL('/.well-known/jwks.json',provider),{redirect:'error',signal:AbortSignal.timeout(5000)});
+  if(!response.ok){await response.body?.cancel();throw Error();}
+  const raw=await response.text();
+  if(raw.length>131072)throw Error();
+  const live=signingKeys(JSON.parse(raw));
+  if(live.size!==pinned.size||[...live].some(([id,key])=>pinned.get(id)!==key))
+   return {status:'drift',pinnedCount:pinned.size,liveCount:live.size,problem:'onesa:signing_key_drift'};
+  return {status:'current',pinnedCount:pinned.size,liveCount:live.size};
+ }catch{return {status:'unavailable',problem:'onesa:signing_keys_unavailable'};}
+}
 export function checkBackup(rows,{now=Date.now()/1000,maxAgeHours=30}={}){
  const stanza=rows.find(row=>row.name==='pamofi');
  if(!stanza||stanza.status?.code!==0||!Array.isArray(stanza.backup))return {ok:false,problem:'backup:repository_unavailable_or_empty'};
@@ -121,6 +151,12 @@ async function main(){
  const report={checkedAt:new Date().toISOString(),...checkContainers(parseRecords(docker(['ps','--all','--format','json'])),{radiusBind:process.env.PAMOFI_OPERATIONS_RADIUS_BIND||undefined}),publicHttps:false,queues:queues?{}:'not_checked',backup:backup?{}:'not_checked'};
  const https=await checkHttpsOrigins({gatewayOrigin:process.env.PAMOFI_MONITOR_ORIGIN||`https://${process.env.PAMOFI_PUBLIC_HOST||''}`,frontendOrigin:process.env.PAMOFI_MONITOR_FRONTEND_ORIGIN});
  report.publicHttps=https.ok;report.splitFrontend=https.split;if(!https.ok)report.problems.push(https.problem);
+ try{
+  const program="process.stdout.write(JSON.stringify({mode:process.env.PASOFI_ONESA_MODE,issuer:process.env.PASOFI_ONESA_ISSUER,pinned:process.env.PASOFI_ONESA_PUBLIC_JWKS}))";
+  const configuration=JSON.parse(docker(['exec','-T','identity','node','-e',program]));
+  report.onesaSigningKeys=await checkOnesaSigningKeys({configuration});
+ }catch{report.onesaSigningKeys={status:'unavailable',problem:'onesa:signing_keys_unavailable'};}
+ if(report.onesaSigningKeys.problem)report.problems.push(report.onesaSigningKeys.problem);
  if(queues)for(const [service,query]of Object.entries(queueQueries)){
   try{const result=JSON.parse(docker(['exec','-T',service,'node','--input-type=module','-e',aggregateProgram(query)]));
    if(!result||Object.values(result).some(value=>!Number.isSafeInteger(value)||value<0))throw Error();

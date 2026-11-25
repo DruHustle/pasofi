@@ -24,6 +24,7 @@ export const localDate = (value: string) => new Date(value).toLocaleString(undef
 export function messageFor(error: unknown, fallback = 'This request could not be completed. Please try again.', options: { readOnly?: boolean } = {}) {
   if (!(error instanceof ApiError)) return fallback;
   if (error.code === 'session_changed') return 'Your account changed. Close My PasoFi and reopen it before continuing.';
+  if (error.code === 'onesa_sign_in_required') return 'Sign in again with Onesa to keep this purchase with your PasoFi account.';
   if (error.status === 401) return 'Your session or verification has expired. Sign in again to continue.';
   if (error.status === 403) return 'This action is not available for your account or assigned site. Refresh your account permissions.';
   if (error.status === 429) return 'Too many attempts. Wait a minute before trying again.';

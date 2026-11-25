@@ -17,6 +17,11 @@ export class OnesaCustomer extends OnesaStaff {
   constructor(config: OnesaStaff['config'], key: Buffer, readonly hotspotCallback?: URL) { super(config, key); }
   protected get staffFlow() { return false; }
   protected assertion(input: unknown): Admin { return customerAssertion(input, this.config, Math.floor(Date.now() / 1000)); }
+  // Keep the opaque member locator after provider authorization expires. Its
+  // database privileges still end at expires_at and it cannot create a guest.
+  private cookieAge(expires: number) {
+    return this.config.managed ? 30 * 86400 : Math.max(1, expires - Math.floor(Date.now() / 1000));
+  }
   webCallback(origin: string | undefined) {
     if (origin === this.config.callback.origin) return this.config.callback;
     return origin && this.hotspotCallback?.origin === origin ? this.hotspotCallback : null;
@@ -26,43 +31,48 @@ export class OnesaCustomer extends OnesaStaff {
     // is bound to its exact callback even if a client replays it on another host.
     return opaqueHash(callback.href === this.config.callback.href ? browser : callback.href + '\0' + browser);
   }
-  async start(db: pg.Pool | pg.PoolClient, returnTo: unknown = '/#account', callback = this.config.callback) {
+  async start(db: pg.Pool | pg.PoolClient, returnTo: unknown = '/#account', callback = this.config.callback, guestToken?: string) {
     const state = freshOpaque(), browser = freshOpaque(), verifier = oidc.randomPKCECodeVerifier(), nonce = freshOpaque();
     const authorization = oidc.buildAuthorizationUrl(await this.protocolClient(), {
       redirect_uri: callback.href, response_type: 'code', ...this.authorizationParameters,
       state, nonce, code_challenge_method: 'S256', code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
+      ...(guestToken ? {prompt:'login',max_age:'0'} : {}),
     });
     await db.query('DELETE FROM customer_onesa_flows WHERE expires_at<=now()');
-    await db.query('INSERT INTO customer_onesa_flows(state_hash,browser_hash,verifier,nonce,return_to) VALUES($1,$2,$3,$4,$5)',
-      [opaqueHash(state), this.browserHash(browser, callback), verifier, nonce, customerReturnTo(returnTo, callback.href === this.hotspotCallback?.href)]);
+    await db.query('INSERT INTO customer_onesa_flows(state_hash,browser_hash,verifier,nonce,return_to,guest_session_hash) VALUES($1,$2,$3,$4,$5,$6)',
+      [opaqueHash(state), this.browserHash(browser, callback), verifier, nonce, customerReturnTo(returnTo, callback.href === this.hotspotCallback?.href),
+        guestToken ? opaqueHash(guestToken) : null]);
     return { browser, authorizationUrl: authorization.href };
   }
-  async finish(db: pg.Pool, browser: unknown, params: { state: string; code: string; iss?: string }, callback = this.config.callback) {
+  async finish(db: pg.Pool, browser: unknown, params: { state: string; code: string; iss?: string }, callback = this.config.callback, guestToken?: string) {
     if (!isOpaque(browser) || !isOpaque(params.state)) throw denied();
-    const result = await db.query('DELETE FROM customer_onesa_flows WHERE state_hash=$1 AND browser_hash=$2 AND expires_at>now() RETURNING verifier,nonce,return_to', [opaqueHash(params.state), this.browserHash(browser, callback)]);
+    const result = await db.query('DELETE FROM customer_onesa_flows WHERE state_hash=$1 AND browser_hash=$2 AND expires_at>now() RETURNING verifier,nonce,return_to,guest_session_hash', [opaqueHash(params.state), this.browserHash(browser, callback)]);
     if (!result.rowCount) throw denied();
+    const guestHash: Buffer | null = result.rows[0].guest_session_hash;
+    if (guestHash && (!isOpaque(guestToken) || !guestHash.equals(opaqueHash(guestToken)))) throw denied();
     const url = new URL(callback);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     const tokens = await oidc.authorizationCodeGrant(await this.protocolClient(), url, {
       pkceCodeVerifier: result.rows[0].verifier, expectedNonce: result.rows[0].nonce, expectedState: params.state, idTokenExpected: true,
+      ...(guestHash ? {maxAge:300} : {}),
     }).catch(() => { throw denied(); });
     if (tokens.token_type.toLowerCase() !== 'bearer' || !tokens.access_token || tokens.access_token.length > (this.config.managed ? 16384 : 2048)) throw denied();
     const identity = await this.inspect(tokens.access_token);
     if (tokens.claims()?.sub !== (identity.providerSubject ?? identity.subject)) throw denied();
     if (this.config.managed && identity.authorizedClient && identity.authorizedClient !== this.config.clientId) throw denied();
     return {
-      ...await this.saveCustomer(db, tokens.access_token, identity),
+      ...await this.saveCustomer(db, tokens.access_token, identity, undefined, tokens.refresh_token, guestHash),
       returnTo: customerReturnTo(result.rows[0].return_to, callback.href === this.hotspotCallback?.href),
     };
   }
-  async nativeSession(db: pg.Pool, access: string, platform: 'ios' | 'android', existingToken?: string) {
+  async nativeSession(db: pg.Pool, access: string, platform: 'ios' | 'android', existingToken?: string, refresh?: string) {
     const id = nativeClient(platform);
     if (!this.config.managed || !id) throw new OnesaError(503,'onesa_unavailable');
     const identity = await this.inspect(access);
     if (identity.authorizedClient !== id) throw denied();
-    return this.saveCustomer(db, access, identity, existingToken);
+    return this.saveCustomer(db, access, identity, existingToken, refresh);
   }
-  private async saveCustomer(db: pg.Pool, access: string, identity: Admin, existingToken?: string) {
+  private async saveCustomer(db: pg.Pool, access: string, identity: Admin, existingToken?: string, refresh?: string, guestHash?: Buffer | null) {
     const session = freshOpaque(), hash = opaqueHash(session);
     const envelope = this.protectAccess(access, 'onesa-customer:' + hash.toString('hex'));
     const transaction = await db.connect();
@@ -75,15 +85,30 @@ export class OnesaCustomer extends OnesaStaff {
       }
       await transaction.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [this.recordIssuer + ':' + identity.subject]);
       const existing = await transaction.query('SELECT customer_id FROM customer_onesa_identities WHERE issuer=$1 AND subject=$2', [this.recordIssuer,identity.subject]);
-      customerId = existing.rows[0]?.customer_id ?? randomUUID();
-      if (!existing.rowCount) {
-        await transaction.query('INSERT INTO customers(id) VALUES($1)',[customerId]);
-        await transaction.query('INSERT INTO customer_onesa_identities(issuer,subject,customer_id) VALUES($1,$2,$3)',[this.recordIssuer,identity.subject,customerId]);
+      let guestId: string | undefined;
+      if (guestHash) {
+        const presented = await transaction.query('SELECT customer_id FROM customer_sessions WHERE token_hash=$1',[guestHash]);
+        guestId = presented.rows[0]?.customer_id;
+        if (!guestId) throw new OnesaError(409,'guest_session_changed');
+        await transaction.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['onesa-guest-link:' + guestId]);
+        const guest = await transaction.query(`SELECT 1 FROM customer_sessions
+          WHERE token_hash=$1 AND customer_id=$2 AND revoked_at IS NULL AND expires_at>now() FOR UPDATE`, [guestHash,guestId]);
+        if (!guest.rowCount || (await transaction.query('SELECT 1 FROM customer_onesa_identities WHERE customer_id=$1',[guestId])).rowCount)
+          throw new OnesaError(409,'guest_session_changed');
+        if (existing.rowCount) throw new OnesaError(409,'guest_transfer_requires_review');
       }
-      await transaction.query('INSERT INTO customer_onesa_sessions(token_hash,customer_id,access_ciphertext,expires_at) VALUES($1,$2,$3,to_timestamp($4))',[hash,customerId,envelope,identity.expires]);
+      customerId = existing.rows[0]?.customer_id ?? guestId ?? randomUUID();
+      if (!existing.rowCount) {
+        if (!guestId) await transaction.query('INSERT INTO customers(id) VALUES($1)',[customerId]);
+        await transaction.query('INSERT INTO customer_onesa_identities(issuer,subject,customer_id) VALUES($1,$2,$3)',[this.recordIssuer,identity.subject,customerId]);
+        if (guestId) await transaction.query('UPDATE customer_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE customer_id=$1',[guestId]);
+      }
+      const renewal = await this.startRenewal(transaction,access,refresh,identity);
+      await transaction.query('INSERT INTO customer_onesa_sessions(token_hash,customer_id,access_ciphertext,expires_at,renewal_id) VALUES($1,$2,$3,to_timestamp($4),$5)',
+        [hash,customerId,envelope,renewal?.expires ?? identity.expires,renewal?.id ?? null]);
       await transaction.query('COMMIT');
     } catch(error) { await transaction.query('ROLLBACK'); throw error; } finally { transaction.release(); }
-    return { session, maxAge: Math.max(1, identity.expires - Math.floor(Date.now() / 1000)), customerId };
+    return { session, maxAge: this.cookieAge(identity.expires), customerId };
   }
 
   async issueHandoff(db: pg.Pool, token: string) {
@@ -108,17 +133,9 @@ export class OnesaCustomer extends OnesaStaff {
       JOIN customer_onesa_identities i ON i.customer_id=s.customer_id
       WHERE h.code_hash=$1 AND h.consumed_at IS NULL AND h.expires_at>now() AND s.revoked_at IS NULL AND s.expires_at>now()`,[codeHash])).rows[0];
     if (!source || source.issuer !== this.recordIssuer) throw denied();
-    let access: string;
-    let assertion: Admin;
-    try {
-      access = this.readAccess(source.access_ciphertext, 'onesa-customer:'+source.token_hash.toString('hex'));
-      assertion = await this.inspect(access);
-      if (assertion.subject !== source.subject) throw denied();
-    } catch(error) {
-      if (error instanceof OnesaError && error.status === 401) await db.query('UPDATE customer_onesa_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1',[source.token_hash]);
-      throw error;
-    }
-    const token=freshOpaque(),hash=opaqueHash(token),expires=Math.min(assertion.expires,Math.floor(source.expires_at.getTime()/1000));
+    if (await this.customerByHash(db,source.token_hash,source.customer_id) !== source.customer_id) throw denied();
+    const access = this.readAccess(source.access_ciphertext, 'onesa-customer:'+source.token_hash.toString('hex'));
+    const token=freshOpaque(),hash=opaqueHash(token),expires=Math.floor(source.expires_at.getTime()/1000);
     const client=await db.connect();
     try {
       await client.query('BEGIN');
@@ -130,30 +147,38 @@ export class OnesaCustomer extends OnesaStaff {
       const handoff=await client.query('SELECT customer_id,source_session_hash FROM customer_onesa_handoffs WHERE code_hash=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE',[codeHash]);
       if(!current.rowCount||!handoff.rowCount||current.rows[0].customer_id!==source.customer_id||handoff.rows[0].customer_id!==source.customer_id||!handoff.rows[0].source_session_hash.equals(source.token_hash)||expires<=Math.floor(Date.now()/1000))throw denied();
       await client.query('UPDATE customer_onesa_handoffs SET consumed_at=now() WHERE code_hash=$1',[codeHash]);
-      await client.query('INSERT INTO customer_onesa_sessions(token_hash,customer_id,access_ciphertext,expires_at) VALUES($1,$2,$3,to_timestamp($4))',[hash,source.customer_id,this.protectAccess(access,'onesa-customer:'+hash.toString('hex')),expires]);
+      await client.query('INSERT INTO customer_onesa_sessions(token_hash,customer_id,access_ciphertext,expires_at,renewal_id) VALUES($1,$2,$3,to_timestamp($4),$5)',
+        [hash,source.customer_id,this.protectAccess(access,'onesa-customer:'+hash.toString('hex')),expires,source.renewal_id]);
       await client.query('COMMIT');
-      return {customerId:source.customer_id as string,token,maxAge:Math.max(1,expires-Math.floor(Date.now()/1000))};
+      return {customerId:source.customer_id as string,token,maxAge:this.cookieAge(expires)};
     } catch(error) {await client.query('ROLLBACK');throw error;} finally {client.release();}
   }
   async customer(db: pg.Pool, token: string, customerId: string): Promise<string | null> {
-    const row = (await db.query(`SELECT i.issuer,i.subject,s.access_ciphertext FROM customer_onesa_identities i
-      LEFT JOIN customer_onesa_sessions s ON s.token_hash=$2 AND s.customer_id=i.customer_id WHERE i.customer_id=$1`, [customerId, opaqueHash(token)])).rows[0];
+    return this.customerByHash(db,opaqueHash(token),customerId);
+  }
+  private async customerByHash(db: pg.Pool, hash: Buffer, customerId: string): Promise<string | null> {
+    const row = (await db.query(`SELECT i.issuer,i.subject,s.access_ciphertext,s.renewal_id FROM customer_onesa_identities i
+      LEFT JOIN customer_onesa_sessions s ON s.token_hash=$2 AND s.customer_id=i.customer_id AND s.revoked_at IS NULL AND s.expires_at>now()
+      WHERE i.customer_id=$1`, [customerId, hash])).rows[0];
     if (!row) return customerId;
     if (row.issuer !== this.recordIssuer || !row.access_ciphertext) return null;
     let identity: Admin;
-    try { identity = await this.inspect(this.readAccess(row.access_ciphertext, 'onesa-customer:' + opaqueHash(token).toString('hex'))); }
+    try {
+      identity = row.renewal_id ? await this.renewalIdentity(db,row.renewal_id,false)
+        : await this.inspect(this.readAccess(row.access_ciphertext, 'onesa-customer:' + hash.toString('hex')));
+    }
     catch (error) {
       if (error instanceof OnesaError && error.status === 401) {
-        await db.query('UPDATE customer_onesa_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1 AND customer_id=$2',[opaqueHash(token),customerId]);
+        await db.query('UPDATE customer_onesa_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1 AND customer_id=$2',[hash,customerId]);
         return null;
       }
       throw error;
     }
     if (row.subject !== identity.subject) {
-      await db.query('UPDATE customer_onesa_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1 AND customer_id=$2',[opaqueHash(token),customerId]);
+      await db.query('UPDATE customer_onesa_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1 AND customer_id=$2',[hash,customerId]);
       return null;
     }
-    const current = await db.query('SELECT 1 FROM customer_onesa_sessions WHERE token_hash=$1 AND customer_id=$2 AND revoked_at IS NULL AND expires_at>now()', [opaqueHash(token), customerId]);
+    const current = await db.query('SELECT 1 FROM customer_onesa_sessions WHERE token_hash=$1 AND customer_id=$2 AND revoked_at IS NULL AND expires_at>now()', [hash, customerId]);
     return current.rowCount ? customerId : null;
   }
 }
@@ -194,27 +219,33 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
     const hotspotOrigin = pool && onesa?.hotspotCallback?.origin;
     return { origin, handoff: Boolean(origin), ...(hotspotOrigin ? { hotspotOrigin } : {}), ...(origin && managed ? { native: {
       issuer: onesa.config.issuer, audience: managed.audience, ios: nativeClient('ios'), android: nativeClient('android'),
+      ...(managed.renewal ? { renewal: true } : {}),
       ...(origin==='https://pasofi.mobile.onesa.eu' && process.env.PASOFI_ONESA_VERIFIED_NATIVE_CALLBACK==='true' ? {
         verifiedCallback: 'https://pasofi.mobile.onesa.eu/native/onesa-callback.html',
       } : {}),
     } } : {}) };
   });
-  app.post<{Body:{accessToken:string;platform:'ios'|'android'}}>('/v1/onesa/native-session', {
+  app.post<{Body:{accessToken:string;platform:'ios'|'android';refreshToken?:string}}>('/v1/onesa/native-session', {
     config:{rateLimit:{max:20,timeWindow:'1 minute'}}, schema:{body:{type:'object',additionalProperties:false,
-      required:['accessToken','platform'],properties:{platform:{enum:['ios','android']},accessToken:{type:'string',minLength:100,maxLength:12000}}}},
+      required:['accessToken','platform'],properties:{
+        platform:{enum:['ios','android']},accessToken:{type:'string',minLength:100,maxLength:12000},
+        refreshToken:{type:'string',minLength:1,maxLength:3000},
+      }}},
   }, async (request,reply)=>{
     reply.header('Cache-Control','no-store');
     if (!pool || !onesa?.config.managed) return reply.code(503).send({error:'onesa_unavailable'});
     if (request.headers.origin !== onesa.config.callback.origin) return reply.code(403).send({error:'origin_rejected'});
     try {
-      const issued = await onesa.nativeSession(pool, request.body.accessToken, request.body.platform, request.cookies[sessionCookie]);
+      const issued = await onesa.nativeSession(pool, request.body.accessToken, request.body.platform, request.cookies[sessionCookie], request.body.refreshToken);
       reply.setCookie(sessionCookie, issued.session, {...attributes,maxAge:issued.maxAge});
       return {customerId:issued.customerId};
     } catch(error) { return reply.code(error instanceof OnesaError ? error.status : 503).send({error:error instanceof OnesaError ? error.code : 'onesa_unavailable'}); }
   });
   for (const action of ['start', 'complete'] as const) app.post<{Body:Record<string,unknown>}>(`/v1/onesa/${action}`, {
     config: { rateLimit: { max: 240, timeWindow: '1 minute' } },
-    schema: { body: { type: 'object', additionalProperties: false, required: action === 'complete' ? ['code','state'] : [], properties: action === 'start' ? { returnTo: { type:'string',maxLength:100 } } : {
+    schema: { body: { type: 'object', additionalProperties: false, required: action === 'complete' ? ['code','state'] : [], properties: action === 'start' ? {
+      returnTo: { type:'string',maxLength:100 }, claimGuest: { type:'boolean' },
+    } : {
       state: { type:'string',minLength:43,maxLength:43 }, code:{ type:'string',minLength:1,maxLength:2048 }, iss:{ type:'string',maxLength:1024 }
     } } }
   }, async (request, reply) => {
@@ -233,13 +264,18 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
     }
     try {
       if (action === 'start') {
-        const flow = await onesa.start(pool, request.body.returnTo, callback);
+        const guest = request.cookies[sessionCookie];
+        if (request.body.claimGuest === true && (!isOpaque(guest) || !(await pool.query(`SELECT 1 FROM customer_sessions s
+          WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now()
+          AND NOT EXISTS (SELECT 1 FROM customer_onesa_identities i WHERE i.customer_id=s.customer_id)`, [opaqueHash(guest)])).rowCount))
+          return reply.code(409).send({error:'guest_session_changed'});
+        const flow = await onesa.start(pool, request.body.returnTo, callback, request.body.claimGuest === true ? guest : undefined);
         const id = validBrowser ? browserId : freshOpaque();
         const cookie = signingKey ? flow.browser + '.' + id + '.' + signature(id).toString('base64url') : flow.browser;
         reply.setCookie(flowCookie, cookie, {...attributes,maxAge:300});
         return {authorizationUrl:flow.authorizationUrl};
       }
-      const result = await onesa.finish(pool, validBrowser ? proof : presented, request.body as {state:string;code:string;iss?:string}, callback);
+      const result = await onesa.finish(pool, validBrowser ? proof : presented, request.body as {state:string;code:string;iss?:string}, callback,request.cookies[sessionCookie]);
       reply.clearCookie(flowCookie,attributes);
       reply.setCookie(sessionCookie,result.session,{...attributes,maxAge:result.maxAge});
       return {authenticated:true,customerId:result.customerId,returnTo:result.returnTo};
