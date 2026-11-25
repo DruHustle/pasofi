@@ -174,11 +174,13 @@ test('a gateway outage keeps customer and staff Identity access fail-closed', as
 
 test('a customer signing in at the hotspot welcome returns to the welcome screen', async ({ page, baseURL }) => {
   let returnTo: string | undefined;
+  const state = 'c'.repeat(43);
+  const authorize = 'https://portal.example.invalid/authorize?state=' + state;
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/onesa/start') {
       returnTo = route.request().postDataJSON().returnTo;
-      return route.fulfill({ json: { authorizationUrl: 'https://portal.example.invalid/authorize' } });
+      return route.fulfill({ json: { authorizationUrl: authorize } });
     }
     const customerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
     const body = path === '/api/onesa/complete' ? { authenticated: true, returnTo, customerId }
@@ -187,12 +189,33 @@ test('a customer signing in at the hotspot welcome returns to the welcome screen
       : path === '/api/capabilities' ? paused : path === '/api/help' ? { articles: [] } : { products: [] };
     return route.fulfill({ json: body });
   });
-  await page.route('https://portal.example.invalid/authorize', route =>
-    route.fulfill({contentType:'text/html',body:'<script>location.replace('+JSON.stringify(new URL('/onesa-callback.html?code=test&state=test',baseURL).href)+')</script>'}));
+  await page.route(authorize, route =>
+    route.fulfill({contentType:'text/html',body:'<script>location.replace('+JSON.stringify(new URL('/onesa-callback.html?code=test&state=' + state,baseURL).href)+')</script>'}));
   await page.goto('/connect');
   await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
   await page.getByRole('button', { name: 'Continue with Onesa', exact: true }).click();
   await expect.poll(() => returnTo).toBe('/#connect');
   await expect(page).toHaveURL(/\/#connect$/);
   await expect(page.getByRole('button', { name: 'My WiFi', exact: true })).toBeVisible();
+});
+
+test('a staff callback shows its own recovery page even after a customer sign-in starts', async ({ page }) => {
+  const state = 's'.repeat(43);
+  await page.addInitScript(state => {
+    sessionStorage.setItem('pasofi-onesa-flow:' + state, JSON.stringify({
+      staff: true, returnTo: '/#staff', expires: Date.now() + 300000,
+    }));
+    sessionStorage.setItem('pasofi-onesa-customer', '1');
+  }, state);
+  let endpoint: string | undefined;
+  await page.route('**/api/**', route => {
+    endpoint = new URL(route.request().url()).pathname;
+    return route.fulfill({ status: 401, json: { error: 'onesa_sign_in_rejected' } });
+  });
+  await page.goto('/onesa-callback.html?code=fixture&state=' + state);
+  await expect(page.getByRole('heading', { name: 'Staff sign-in needs attention' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Return to PasoFi Staff' })).toHaveAttribute('href', '/#staff');
+  await expect(page.getByRole('link', { name: 'Check your Onesa access' })).toBeVisible();
+  await expect(page).toHaveURL(/\/onesa-callback\.html$/);
+  expect(endpoint).toBe('/api/staff/onesa/complete');
 });

@@ -39,6 +39,13 @@ export async function startProductSignIn(staff:boolean,returnTo:string,reauthent
     (target.origin !== 'https://auth.onesa.eu' || target.pathname !== '/authorize' || target.hash)) {
     throw Error('Invalid hotspot sign-in destination');
   }
+  const state = target.searchParams.get('state');
+  if (state && /^[A-Za-z0-9_-]{43}$/.test(state)) {
+    sessionStorage.setItem('pasofi-onesa-flow:' + state, JSON.stringify({
+      staff, returnTo: staff ? '/#staff' : destination(returnTo), expires: Date.now() + 300000,
+    }));
+  }
+  // Older callback assets can still complete a customer sign-in during rollout.
   if(!staff && !hotspotPortal)sessionStorage.setItem('pasofi-onesa-customer','1');
   location.assign(target.href);
 }
