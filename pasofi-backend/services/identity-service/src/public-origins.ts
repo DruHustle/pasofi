@@ -3,7 +3,10 @@
 export function publicOrigins(primary: string | undefined, aliases: string | undefined, demo: boolean): ReadonlySet<string> | null {
   try {
     const extra: unknown = aliases === undefined || aliases === '' ? [] : JSON.parse(aliases);
-    if (!Array.isArray(extra) || extra.length > 3 || typeof primary !== 'string') return null;
+    if (!Array.isArray(extra) || typeof primary !== 'string') return null;
+    const dedicated = 'https://hotspot.pasofi.mobile.onesa.eu';
+    const dedicatedEntries = extra.filter(value => value === dedicated).length;
+    if (dedicatedEntries > 1 || extra.length - dedicatedEntries > 3) return null;
     const values: unknown[] = [primary, ...extra];
     for (const value of values) {
       if (typeof value !== 'string') return null;
