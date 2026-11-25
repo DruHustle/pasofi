@@ -2,3 +2,7 @@
 
 .hero a:focus-visible,.hero button:focus-visible{outline-color:#fff}
 .hero .button{background:var(--accent);color:var(--ink)}
+
+#expiry{width:min(90%,360px);border:0;border-radius:24px;padding:24px;color:var(--ink)}
+#expiry::backdrop{background:#142c49b3}
+#expiry form button{margin-top:12px;background:transparent;color:var(--ink)}
