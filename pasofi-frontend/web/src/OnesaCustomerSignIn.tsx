@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { registrationUrl, rememberRegistration, startProductSignIn } from './registration';
-import { api } from './api';
+import { currentCustomerScreen, registrationUrl, rememberRegistration, signInAvailable, startProductSignIn } from './registration';
+import { hotspotPortal } from './api';
 
 export default function OnesaCustomerSignIn({ prominent = false }: { prominent?: boolean }) {
   const [available, setAvailable] = useState<boolean | null>(null), [confirm, setConfirm] = useState(false);
@@ -11,8 +11,8 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
   useEffect(() => {
     const controller = new AbortController();
     setAvailable(null);
-    api<{origin:string|null}>('/api/onesa/availability', {signal:controller.signal})
-      .then(value => { if (!controller.signal.aborted) setAvailable(value.origin === location.origin); })
+    signInAvailable(false, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setAvailable(value); })
       .catch(() => { if (!controller.signal.aborted) setAvailable(false); });
     return () => controller.abort();
   }, [availabilityAttempt]);
@@ -20,8 +20,7 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     if (busy) return;
     setBusy(true); setError('');
     try {
-      const returnTo = location.pathname === '/connect' && !location.hash ? '/#connect' : '/' + location.hash;
-      await startProductSignIn(false,returnTo);
+      await startProductSignIn(false,currentCustomerScreen());
     } catch { setError('Onesa sign-in is temporarily unavailable. Please try again.'); setBusy(false); }
   }
   const signup = <a href={registrationUrl('user')} onClick={()=>rememberRegistration()}>Create an Onesa account</a>;
@@ -33,7 +32,13 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
   if (!available) return <nav className="pf-portal-links pf-onesa-sign-in-unavailable" aria-label="Onesa customer account">
     <span role="status">Onesa Identity unavailable</span>
     <button type="button" disabled={busy} onClick={() => setAvailabilityAttempt(attempt => attempt + 1)}>Retry Onesa sign-in</button>
-    {signup}
+    {!hotspotPortal && signup}
+  </nav>;
+  if (hotspotPortal) return <nav className="pf-onesa-sign-in pf-onesa-sign-in-prominent" aria-label="Onesa customer account">
+    <button type="button" className="pf-button pf-button-primary" disabled={busy} onClick={signIn}>{busy ? 'Opening Onesa…' : 'Sign in'}</button>
+    <a className="pf-button pf-button-secondary" href={registrationUrl('user')} onClick={()=>rememberRegistration()}>Sign up</a>
+    <p>Save your recovery details before signing in if you have guest purchases.</p>
+    {error && <p role="alert">{error}</p>}
   </nav>;
   return <div className={`pf-onesa-sign-in${prominent ? ' pf-onesa-sign-in-prominent' : ''}`}>
     {prominent && <div className="pf-onesa-sign-in-intro"><strong>Your Onesa account, here in PasoFi</strong><p>Sign in to open your customer account. Browsing bundles needs no account.</p></div>}

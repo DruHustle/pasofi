@@ -26,6 +26,10 @@ PROTECTED = ("postgres", "radius", "radius-api")
 LABEL = "com.docker.compose."
 NODE_IMAGE = "node:24.22.1-alpine"
 RETAINED_ID = Path("/home/ubuntu/pamofi/production/cluster-system-id")
+HOTSPOT_HOST = "hotspot.pasofi.mobile.onesa.eu"
+HOTSPOT_ORIGIN = "https://" + HOTSPOT_HOST
+HOTSPOT_CALLBACK = "PASOFI_ONESA_HOTSPOT_REDIRECT_URI"
+HOTSPOT_CALLBACK_URL = HOTSPOT_ORIGIN + "/onesa-callback.html"
 SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "UpdateHostKeys=no",
                "-o", "ConnectTimeout=15", "-o", "ConnectionAttempts=1", "-o", "ServerAliveInterval=10",
                "-o", "ServerAliveCountMax=2", "-o", "ClearAllForwardings=yes", "-o", "ForwardAgent=no",
@@ -351,6 +355,24 @@ def origin_record(container):
     if environment == "/dev/null":
         verify_explicit_empty_environment()
         env_files, mode = [], "explicit-empty-device"
+    elif environment and ".." in environment.split("/"):
+        # Compose can record the generated empty replay input relative to
+        # another Compose file, even when its label starts with a slash.
+        require(len(environment) <= 32768 and "," not in environment
+                and Path(environment).is_absolute()
+                and all(character.isprintable() for character in environment),
+                "A baseline service has invalid ordered file labels.")
+        canonical = Path(os.path.normpath(environment))
+        companions = {
+            Path(record["path"][:-len(".compose.json")] + ".empty.env")
+            for record in files
+            if record["path"].endswith(".compose.json")
+        }
+        require(canonical in companions and Path(environment).resolve() == canonical,
+                "A noncanonical environment label must resolve to its recorded baseline's empty companion.")
+        env_files, mode = paths(str(canonical)), "recorded-files"
+        require(env_files[0]["sha256"] == hashlib.sha256(b"").hexdigest(),
+                "A noncanonical baseline environment companion must be empty.")
     elif environment:
         env_files, mode = paths(environment), "recorded-files"
     else:
@@ -806,7 +828,37 @@ def database_identity(container, expected):
     require(match and match.group(1) == expected, "PostgreSQL system identifier does not match the retained installation record.")
 
 
-def plan_overlay(model, source, selected, commit, containers):
+def configure_hotspot_onesa(model, changes):
+    require({"identity", "prepaid-access", "gateway"} <= changes.keys(),
+            "The hosted Onesa callback requires identity, prepaid-access and the dedicated gateway.")
+    gateway = model["services"]["gateway"].get("environment", {})
+    identity = model["services"]["identity"].get("environment", {})
+    canonical = urlsplit(identity.get("PASOFI_ONESA_REDIRECT_URI") or "")
+    require(gateway.get("PASOFI_HOTSPOT_PORTAL") == "true"
+            and gateway.get("PASOFI_HOTSPOT_PUBLIC_HOST") in (None, "", HOTSPOT_HOST)
+            and gateway.get("PAMOFI_PUBLIC_HOST") not in (None, "", HOTSPOT_HOST)
+            and identity.get("PASOFI_ONESA_MODE") == "managed"
+            and identity.get("PASOFI_ONESA_ISSUER") == "https://auth.onesa.eu/"
+            and canonical.scheme == "https" and canonical.hostname
+            and canonical.hostname != HOTSPOT_HOST,
+            "The existing dedicated host and managed Onesa configuration must qualify for the hosted callback.")
+    require(all(env.get(HOTSPOT_CALLBACK) in (None, "", HOTSPOT_CALLBACK_URL)
+                for env in (gateway, identity)), "An existing hosted Onesa callback differs from the approved URL.")
+    changes["gateway"]["environment"] = {
+        "PASOFI_HOTSPOT_PUBLIC_HOST": HOTSPOT_HOST, HOTSPOT_CALLBACK: HOTSPOT_CALLBACK_URL,
+    }
+    for name in ("identity", "prepaid-access"):
+        environment = model["services"][name].get("environment", {})
+        aliases = json.loads(environment.get("PUBLIC_ORIGIN_ALIASES") or "[]")
+        require(isinstance(aliases, list) and all(isinstance(alias, str) for alias in aliases),
+                "The existing public origin aliases must be a JSON array of strings.")
+        if HOTSPOT_ORIGIN not in aliases:
+            aliases.append(HOTSPOT_ORIGIN)
+        changes[name]["environment"] = {"PUBLIC_ORIGIN_ALIASES": json.dumps(aliases, separators=(",", ":"))}
+    changes["identity"]["environment"][HOTSPOT_CALLBACK] = HOTSPOT_CALLBACK_URL
+
+
+def plan_overlay(model, source, selected, commit, containers, *, enable_hotspot_onesa=False):
     services = {}
     production = source / "pasofi-backend/infra/production"
     update_names = list(selected) + [name + "-migrate" for name in selected if name in APPS]
@@ -851,6 +903,9 @@ def plan_overlay(model, source, selected, commit, containers):
         if volumes:
             change["volumes"] = volumes
         services[name] = change
+    if enable_hotspot_onesa:
+        require(hotspot, "The hosted Onesa callback requires an existing dedicated captive portal.")
+        configure_hotspot_onesa(model, services)
     require(not (set(services) & set(PROTECTED)), "Protected service entered the upgrade plan.")
     return {"services": services}, hotspot
 
@@ -858,10 +913,20 @@ def plan_overlay(model, source, selected, commit, containers):
 def verify_delta(before, after, overlay):
     expected = copy.deepcopy(before)
     comparable = copy.deepcopy(after)
+    environment_changes = {name: change["environment"] for name, change in overlay["services"].items()
+                           if "environment" in change}
+    if environment_changes:
+        qualified = {name: {} for name in overlay["services"]}
+        configure_hotspot_onesa(before, qualified)
+        require(environment_changes == {name: change["environment"] for name, change in qualified.items()
+                                        if "environment" in change},
+                "Compose overlay contains environment changes outside the dedicated Onesa callback.")
     for name, change in overlay["services"].items():
         service = expected["services"][name]
         if "image" in change:
             service["image"] = change["image"]
+        if name in environment_changes:
+            service.setdefault("environment", {}).update(environment_changes[name])
         replacements = {v["target"]: v for v in change.get("volumes", [])}
         service["volumes"] = [replacements.get(v["target"], v) for v in service.get("volumes", [])]
         if not service["volumes"]:
@@ -879,7 +944,7 @@ def verify_delta(before, after, overlay):
                             "Compose changed managed bind path creation; rollout refused.")
                     bind.setdefault("create_host_path", False)
     require(expected == comparable,
-            "Compose merge changed more than selected images and approved configuration binds; rollout refused.")
+            "Compose merge changed more than the reviewed service overlay; rollout refused.")
 
 
 def protected_snapshot(containers):
@@ -1036,6 +1101,9 @@ def remote(args):
 def deploy(args):
     args = copy.copy(args)
     manifest = load_manifest(args.manifest, args.archive)
+    enable_hotspot_onesa = getattr(args, "enable_hotspot_onesa", False)
+    require(not enable_hotspot_onesa or getattr(args, "baseline", None),
+            "Enabling the hosted Onesa callback requires a verified per-service baseline.")
     require(getattr(args, "capture_baseline", None) or not getattr(args, "origin_env", []),
             "Supplemental origin environment selection belongs to baseline capture, not apply or other discovery modes.")
     service_baseline = bool(getattr(args, "baseline", None) or getattr(args, "capture_baseline", None))
@@ -1079,7 +1147,8 @@ def deploy(args):
     file_hashes = {str(path): hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in input_files}
     with tempfile.TemporaryDirectory(prefix="pasofi-preflight-") as temporary:
         source = extract_source(args.archive, temporary, manifest["commit"])
-        overlay, hotspot = plan_overlay(model, source, manifest["services"], manifest["commit"], containers)
+        overlay, hotspot = plan_overlay(model, source, manifest["services"], manifest["commit"], containers,
+                                        enable_hotspot_onesa=enable_hotspot_onesa)
         overlay_path = Path(temporary) / "upgrade.compose.json"
         write_compose(overlay_path, overlay)
         planned = resolved_compose(base + ["-f", str(overlay_path)])
@@ -1091,6 +1160,8 @@ def deploy(args):
           + ", ".join(manifest["migrations"]) + ("; existing captive portal assets." if hotspot else "."), flush=True)
     print("Runtime order: " + " -> ".join(", ".join(phase) for phase in rollout_phases(manifest["services"])) + ".", flush=True)
     print("Postgres and RADIUS containers are excluded; all current delivery and launch gates are retained.", flush=True)
+    if enable_hotspot_onesa:
+        print("Hosted Onesa callback: " + HOTSPOT_CALLBACK_URL + ".", flush=True)
     if not args.apply:
         print("No runtime changes made. Run the same command with --apply after reviewing this plan.")
         return
@@ -1115,7 +1186,8 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
     require(root.stat().st_mode & 0o077 == 0, "Release record root must be private (mode 0700).")
     release = Path(tempfile.mkdtemp(prefix=manifest["commit"] + "-", dir=root))
     source = extract_source(args.archive, release, manifest["commit"])
-    overlay, hotspot = plan_overlay(model, source, manifest["services"], manifest["commit"], containers)
+    overlay, hotspot = plan_overlay(model, source, manifest["services"], manifest["commit"], containers,
+                                    enable_hotspot_onesa=getattr(args, "enable_hotspot_onesa", False))
     overlay_path = release / "upgrade.compose.json"
     write_compose(overlay_path, overlay)
     upgrade = base + ["-f", str(overlay_path)]
@@ -1163,6 +1235,10 @@ def apply_release(args, manifest, project, containers, directory, files, env_fil
         _, after = inspect_project(project)
         require(protected_snapshot(after) == old_protected, "Protected container state changed; investigate using the private record.")
         verify_rollout_phase(after, completed, phase, expected_images, log)
+        for name in phase:
+            expected_environment = overlay["services"][name].get("environment", {})
+            require(expected_environment.items() <= runtime_env(after[name]).items(),
+                    "A service did not receive the reviewed hosted Onesa configuration.")
         database_identity(after["postgres"], args.expected_database_id)
     write_private(release / "completed.json", {"commit": manifest["commit"], "completed_at_unix": int(time.time()),
                   "images": {name: after[name]["Image"] for name in targets}})
@@ -1178,6 +1254,8 @@ def main():
                         help="Read complete ordered environment-file labels and the retained installation database record on the server")
     parser.add_argument("--capture-baseline", help="Verify mixed service origins and write a new private baseline; no runtime changes")
     parser.add_argument("--baseline", help="Use a previously captured per-service baseline on the existing Docker host")
+    parser.add_argument("--enable-hotspot-onesa", action="store_true",
+                        help="With --baseline, bind the existing dedicated captive portal to its approved Onesa callback")
     parser.add_argument("--migration-origin", action="append", default=[],
                         help="Capture only: owned-service=observed-service whose original model contains that migration")
     parser.add_argument("--origin-env", action="append", default=[],

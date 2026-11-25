@@ -340,6 +340,45 @@ class ServiceBaselineTests(unittest.TestCase):
         self.build.assert_not_called()
         self.assertFalse(self.mutating_commands())
 
+    def test_compose_replay_accepts_only_the_recorded_empty_environment_companion(self):
+        container = self.fixture.containers["prepaid-access"]
+        labels = container["Config"]["Labels"]
+        directory = self.fixture.root / "baseline-review"
+        nested = directory / "release" / "runtime"
+        nested.mkdir(parents=True)
+        compose = directory / "baseline.json.compose.json"
+        compose.write_text("{}")
+        companion = directory / "baseline.json.empty.env"
+        companion.touch(mode=0o600)
+        label = self.engine.LABEL + "project.environment_file"
+        labels[self.engine.LABEL + "project.config_files"] = str(compose)
+        labels[label] = str(nested / ".." / ".." / companion.name)
+
+        origin = self.engine.origin_record(container)
+        self.assertEqual(origin["environment_files"], [
+            {"path": str(companion), "sha256": self.engine.file_digest(companion)}
+        ])
+        self.assertEqual(origin["environment_mode"], "recorded-files")
+
+        companion.write_text("SYNTHETIC_INPUT=unexpected")
+        with self.assertRaisesRegex(self.engine.Refusal, "must be empty"):
+            self.engine.origin_record(container)
+        companion.write_text("")
+
+        unrelated = directory / "unrelated.empty.env"
+        unrelated.touch(mode=0o600)
+        labels[label] = str(nested / ".." / ".." / unrelated.name)
+        with self.assertRaisesRegex(self.engine.Refusal, "recorded baseline's empty companion"):
+            self.engine.origin_record(container)
+        labels[label] = str(nested / ".." / ".." / companion.name) + "," + str(unrelated)
+        with self.assertRaisesRegex(self.engine.Refusal, "invalid ordered file labels"):
+            self.engine.origin_record(container)
+        companion.unlink()
+        companion.symlink_to(unrelated)
+        labels[label] = str(nested / ".." / ".." / companion.name)
+        with self.assertRaisesRegex(self.engine.Refusal, "recorded baseline's empty companion"):
+            self.engine.origin_record(container)
+
     def test_missing_env_labels_on_yaml_and_unrecorded_json_env_files_are_refused(self):
         labels = self.fixture.containers["network"]["Config"]["Labels"]
         environment = labels.pop(self.engine.LABEL + "project.environment_file")

@@ -1,0 +1,7 @@
+# Optional cash-only overlay for a reviewed, site-scoped commissioning decision.
+# See ../../docs/CASH_HOTSPOT_LAUNCH.md before selecting it.
+services:
+  prepaid-access:
+    environment:
+      PAMOFI_CASH_CUSTOMER_GO: '${PAMOFI_CASH_CUSTOMER_GO:-false}'
+      PAMOFI_CASH_APPROVED_SITE_IDS_JSON: '${PAMOFI_CASH_APPROVED_SITE_IDS_JSON:-[]}'

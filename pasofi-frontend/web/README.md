@@ -120,13 +120,13 @@ The default sign-in flow links to the registered HTTPS hotspot page and lets the
 
 The qualified router page must use HTTPS credential login and produce the RADIUS `User-Password` (PAP) contract that Pasofi implements, with RADIUS carried inside the private encrypted site tunnel. The optional form below sends the same username/password fields over HTTPS; it does not perform CHAP. RouterOS's default `http-chap,cookie` profile is therefore not a supported setup. Prepare the trusted-certificate `login-by=https` profile and verify its actual request attributes before enabling customer sign-in; plaintext `http-pap`, CHAP, EAP and MSCHAP are outside the supported flow. See the [RouterOS preparation contract](../../pasofi-backend/pasofi-routeros/README.md#hotspot-authentication-contract).
 
-Optional form POST is disabled unless the build provides an exact JSON array of qualified HTTPS origins, for example:
+The web build allows form POST to the registered PasoFi router HTTPS origins by default. To override the list, provide an exact JSON array of qualified HTTPS origins, for example:
 
 ```sh
 VITE_PAMOFI_ROUTER_FORM_ORIGINS='["https://hotspot.example.invalid"]' npm run build
 ```
 
-The returned login URL must match the selected registered site's URL, and its origin must match the array before a form appears. The deployment's CSP `form-action` must separately permit the same exact origin. The checked-in Nginx and Vercel CSPs permit `'self'` and the registered PasoFi hotspot origin `https://login.pasofi.mobile.onesa.eu`; they do not allow arbitrary `https:` form targets. That origin is also the UI default. A single registered site is displayed without asking the customer to select it again, and the main connection action posts the temporary credentials over HTTPS. Manual copying remains inside a collapsed fallback. This is a public origin allowlist, never a place for a router password or service secret.
+The returned login URL must match the selected registered site's URL, and its origin must match the array before a form appears. The deployment's CSP `form-action` must separately permit the same exact origin. The checked-in Nginx and Vercel CSPs permit `'self'`, `https://login.pasofi.mobile.onesa.eu`, and `https://wifi.pasofi.mobile.onesa.eu`. Both router origins are UI defaults. A single registered site is displayed without asking the customer to select it again, and the main connection action posts the temporary credentials over HTTPS. Manual copying remains inside a collapsed fallback. Keep router passwords and service secrets outside this public allowlist.
 
 ## Verification
 

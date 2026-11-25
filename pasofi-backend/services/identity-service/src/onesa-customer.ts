@@ -6,30 +6,42 @@ import { OnesaStaff, OnesaError, customerAssertion, configuredOnesaStaff, type A
 import { freshOpaque, isOpaque, mfaKey, opaqueHash } from './staff-crypto.js';
 
 const denied = () => new OnesaError(401, 'onesa_sign_in_rejected');
+const managedIssuer = 'https://auth.onesa.eu/';
 export { customerAssertion };
-export function customerReturnTo(value: unknown): string {
-  if (value === '/#connect') return value;
-  return typeof value === 'string' && /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
+export function customerReturnTo(value: unknown, hotspot = false): string {
+  if (typeof value !== 'string') return '/#account';
+  if (value === '/#connect' || (hotspot && ['/connect', '/connect#bundles', '/connect#voucher'].includes(value))) return value;
+  return /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
 }
 export class OnesaCustomer extends OnesaStaff {
+  constructor(config: OnesaStaff['config'], key: Buffer, readonly hotspotCallback?: URL) { super(config, key); }
   protected get staffFlow() { return false; }
   protected assertion(input: unknown): Admin { return customerAssertion(input, this.config, Math.floor(Date.now() / 1000)); }
-  async start(db: pg.Pool | pg.PoolClient, returnTo: unknown = '/#account') {
+  webCallback(origin: string | undefined) {
+    if (origin === this.config.callback.origin) return this.config.callback;
+    return origin && this.hotspotCallback?.origin === origin ? this.hotspotCallback : null;
+  }
+  private browserHash(browser: string, callback: URL) {
+    // Retain existing canonical in-flight flows. A captive flow's cookie proof
+    // is bound to its exact callback even if a client replays it on another host.
+    return opaqueHash(callback.href === this.config.callback.href ? browser : callback.href + '\0' + browser);
+  }
+  async start(db: pg.Pool | pg.PoolClient, returnTo: unknown = '/#account', callback = this.config.callback) {
     const state = freshOpaque(), browser = freshOpaque(), verifier = oidc.randomPKCECodeVerifier(), nonce = freshOpaque();
     const authorization = oidc.buildAuthorizationUrl(await this.protocolClient(), {
-      redirect_uri: this.config.callback.href, response_type: 'code', ...this.authorizationParameters,
+      redirect_uri: callback.href, response_type: 'code', ...this.authorizationParameters,
       state, nonce, code_challenge_method: 'S256', code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
     });
     await db.query('DELETE FROM customer_onesa_flows WHERE expires_at<=now()');
     await db.query('INSERT INTO customer_onesa_flows(state_hash,browser_hash,verifier,nonce,return_to) VALUES($1,$2,$3,$4,$5)',
-      [opaqueHash(state), opaqueHash(browser), verifier, nonce, customerReturnTo(returnTo)]);
+      [opaqueHash(state), this.browserHash(browser, callback), verifier, nonce, customerReturnTo(returnTo, callback.href === this.hotspotCallback?.href)]);
     return { browser, authorizationUrl: authorization.href };
   }
-  async finish(db: pg.Pool, browser: unknown, params: { state: string; code: string; iss?: string }) {
+  async finish(db: pg.Pool, browser: unknown, params: { state: string; code: string; iss?: string }, callback = this.config.callback) {
     if (!isOpaque(browser) || !isOpaque(params.state)) throw denied();
-    const result = await db.query('DELETE FROM customer_onesa_flows WHERE state_hash=$1 AND browser_hash=$2 AND expires_at>now() RETURNING verifier,nonce,return_to', [opaqueHash(params.state), opaqueHash(browser)]);
+    const result = await db.query('DELETE FROM customer_onesa_flows WHERE state_hash=$1 AND browser_hash=$2 AND expires_at>now() RETURNING verifier,nonce,return_to', [opaqueHash(params.state), this.browserHash(browser, callback)]);
     if (!result.rowCount) throw denied();
-    const url = new URL(this.config.callback);
+    const url = new URL(callback);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     const tokens = await oidc.authorizationCodeGrant(await this.protocolClient(), url, {
       pkceCodeVerifier: result.rows[0].verifier, expectedNonce: result.rows[0].nonce, expectedState: params.state, idTokenExpected: true,
@@ -38,7 +50,10 @@ export class OnesaCustomer extends OnesaStaff {
     const identity = await this.inspect(tokens.access_token);
     if (tokens.claims()?.sub !== (identity.providerSubject ?? identity.subject)) throw denied();
     if (this.config.managed && identity.authorizedClient && identity.authorizedClient !== this.config.clientId) throw denied();
-    return { ...await this.saveCustomer(db, tokens.access_token, identity), returnTo: customerReturnTo(result.rows[0].return_to) };
+    return {
+      ...await this.saveCustomer(db, tokens.access_token, identity),
+      returnTo: customerReturnTo(result.rows[0].return_to, callback.href === this.hotspotCallback?.href),
+    };
   }
   async nativeSession(db: pg.Pool, access: string, platform: 'ios' | 'android', existingToken?: string) {
     const id = nativeClient(platform);
@@ -144,7 +159,17 @@ export class OnesaCustomer extends OnesaStaff {
 }
 export function configureOnesaCustomer(demo: boolean, allowed: (value: string | undefined) => boolean) {
   const key = mfaKey(demo), config = configuredOnesaStaff(key, allowed);
-  return key && config ? new OnesaCustomer(config.config, key) : null;
+  if (!key || !config) return null;
+  let hotspotCallback: URL | undefined;
+  const uri = process.env.PASOFI_ONESA_HOTSPOT_REDIRECT_URI;
+  if (uri && config.config.managed && config.config.issuer === managedIssuer) {
+    try {
+      const callback = new URL(uri);
+      if (callback.protocol === 'https:' && uri === callback.origin + '/onesa-callback.html' &&
+          callback.origin !== config.config.callback.origin && allowed(callback.origin)) hotspotCallback = callback;
+    } catch { /* An invalid optional binding leaves the canonical flow available. */ }
+  }
+  return new OnesaCustomer(config.config, key, hotspotCallback);
 }
 function nativeClient(platform: 'ios' | 'android') {
   const id = platform === 'ios' ? process.env.PASOFI_ONESA_IOS_CLIENT_ID : process.env.PASOFI_ONESA_ANDROID_CLIENT_ID;
@@ -159,7 +184,8 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
     reply.header('Cache-Control','no-store');
     const origin = pool && onesa ? onesa.config.callback.origin : null;
     const managed = onesa?.config.managed;
-    return { origin, handoff: Boolean(origin), ...(origin && managed ? { native: {
+    const hotspotOrigin = pool && onesa?.hotspotCallback?.origin;
+    return { origin, handoff: Boolean(origin), ...(hotspotOrigin ? { hotspotOrigin } : {}), ...(origin && managed ? { native: {
       issuer: onesa.config.issuer, audience: managed.audience, ios: nativeClient('ios'), android: nativeClient('android'),
     } } : {}) };
   });
@@ -184,14 +210,15 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
   }, async (request, reply) => {
     reply.header('Cache-Control','no-store');
     if (!pool || !onesa) return reply.code(503).send({error:'onesa_unavailable'});
-    if (request.headers.origin !== onesa.config.callback.origin) return reply.code(403).send({error:'origin_rejected'});
+    const callback = onesa.webCallback(request.headers.origin);
+    if (!callback) return reply.code(403).send({error:'origin_rejected'});
     try {
       if (action === 'start') {
-        const flow = await onesa.start(pool, request.body.returnTo);
+        const flow = await onesa.start(pool, request.body.returnTo, callback);
         reply.setCookie(flowCookie, flow.browser, {...attributes,maxAge:300});
         return {authorizationUrl:flow.authorizationUrl};
       }
-      const result = await onesa.finish(pool, request.cookies[flowCookie], request.body as {state:string;code:string;iss?:string});
+      const result = await onesa.finish(pool, request.cookies[flowCookie], request.body as {state:string;code:string;iss?:string}, callback);
       reply.clearCookie(flowCookie,attributes);
       reply.setCookie(sessionCookie,result.session,{...attributes,maxAge:result.maxAge});
       return {authenticated:true,customerId:result.customerId,returnTo:result.returnTo};

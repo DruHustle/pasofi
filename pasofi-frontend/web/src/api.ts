@@ -2,6 +2,8 @@ export class ApiError extends Error {
   constructor(public status: number, public code: string, public retryAfterMs?: number) { super(code); }
 }
 
+export const hotspotPortal = import.meta.env.VITE_PASOFI_HOTSPOT_PORTAL === '1';
+
 // Captive browsers and older WebViews may lack AbortSignal.any/timeout.
 // Compose cancellation explicitly and retain the timeout through response parsing.
 async function request<T>(path: string, init: RequestInit | undefined, read: (response: Response) => Promise<T>): Promise<T> {
@@ -14,7 +16,7 @@ async function request<T>(path: string, init: RequestInit | undefined, read: (re
   try {
     // The dedicated hotspot build stays on the gateway's own HTTPS origin.
     // No browser credential or arbitrary upstream is added to this public path.
-    const endpoint = import.meta.env.VITE_PASOFI_HOTSPOT_PORTAL === '1' && path.startsWith('/api/')
+    const endpoint = hotspotPortal && path.startsWith('/api/')
       ? '/portal-api/' + path.slice(5) : path;
     const response = await fetch(endpoint, { ...init, credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
     if (!response.ok) {

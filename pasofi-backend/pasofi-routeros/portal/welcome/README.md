@@ -7,12 +7,20 @@ POSTs the standard trial identity to the exact HTTPS hotspot origin. A button
 works without JavaScript. Login errors stop automatic retries. Device identity
 and paid credentials are never added to external URLs.
 
-`status.html` displays the router's remaining time. Its countdown returns to the
-login page after expiry, including when a backgrounded browser resumes. The
-router, not JavaScript, must enforce all time/rate limits. After the welcome
-period, the normal screen offers Pasofi; technical login is a collapsed
-fallback. `alogin.html` uses a fixed status destination, avoiding arbitrary
-incoming redirect destinations. The same styling covers logout.
+`status.html` displays the remaining welcome time reported by RouterOS. When
+a timed connection expires, the open status page shows an expiry dialog with
+bundle and voucher links. A backgrounded status page shows it on return.
+Browsers without modal support still show the expiry message and actions on
+the page. The login and logout pages offer the same links. An unauthenticated
+HTTP probe, status request or logout request goes to that site's fixed HTTPS
+login. RouterOS enforces the trial duration and rate limits.
+
+The installer writes the RouterOS `api.json` template. With a valid HotSpot DNS
+name and certificate, RouterOS advertises its HTTPS `/api` endpoint through DHCP.
+It reports the active session's remaining time and directs a captive client to
+the local login. The phone controls its system captive-portal window. If that
+window closes, reopen **Sign in to network** or open the site's local HTTPS
+`/login` from a normal browser.
 
 The intended owner-requested policy is 5 minutes per device every 24 hours,
 with 1 Mbps upload and 3 Mbps download. Verify each K0/G0 profile uses exactly `trial-uptime-limit=5m` and `trial-uptime-reset=1d` before publishing this copy. RouterOS trial eligibility is based on
@@ -65,17 +73,20 @@ profile's actual DNS name before copying files. Source and destination router
 directories must be distinct and non-overlapping, without path traversal. The
 local output is a new mode-0600 file; an existing file is not overwritten.
 
-The installer copies the complete current portal folder, verifies each write,
-then changes only the supplied profile's HTML directory. It refuses an existing
-target. Preserve the original folder for rollback. It does not enable trial,
-forwarding, a walled garden, or sales. Deploy the matching bounded trial profile
-and authenticated-only public forwarding separately, retaining private-network,
-IPv6 and client isolation. Run the import dry run and use Safe Mode on the router.
+The installer copies the complete current portal folder and verifies each write
+before switching the supplied profile's HTML directory. Read back the exact
+guest HotSpot profile and active directory on each router. The installer
+requires a fresh target and an empty HTML override. Preserve the source folder
+and restore the profile's original `html-directory` to roll back. Run the import
+dry run and use Safe Mode on the router. Retain the site's trial limits,
+guest isolation, walled garden and sales controls.
 
-Before release, physically verify HTTPS/captive discovery, automatic trial login,
-actual Internet transfers, router time expiry, repeat-login denial, rate limits,
-private-network isolation, and the customer app after expiry. The customer app
-must be reachable through a scoped walled garden even after the welcome expires;
-do not interpret the link existing on the page as evidence that this works.
-Native iOS captive windows can close automatically when Internet becomes
-available; the countdown is always available at the hotspot's HTTPS `/status`.
+Run the physical check on K1 through K0 and on the confirmed guest path through
+G0 with mobile data off. Check `/api` for `captive: false` and decreasing
+`seconds-remaining` during the first trial, then `captive: true` at expiry.
+Check the visible expiry prompt with the status page open and the local login
+with the phone's captive window closed. Open **View bundles** and **Redeem a
+voucher**, verify that the dedicated portal and its same-origin API remain
+reachable through the scoped walled garden, and confirm ordinary Internet
+access stops. Verify repeat-login denial, rate limits and private-network
+isolation independently on both sites.

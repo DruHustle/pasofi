@@ -1,15 +1,31 @@
-import { api } from './api';
+import { api, hotspotPortal } from './api';
 
 const storageKey = 'pasofi.registration';
+const hotspotScreens = ['/connect', '/connect#bundles', '/connect#voucher'];
 export const registrationUrl = (audience:'user'|'admin') =>
-  'https://account.onesa.eu/register?audience='+audience+'&product=pasofi&platform=web';
+  'https://account.onesa.eu/register?audience='+audience+'&product=pasofi&platform=web'+
+  (hotspotPortal && audience === 'user' ? '&entry=pasofi-hotspot' : '');
+
+type Availability = { origin: string | null; hotspotOrigin?: string };
+
+export async function signInAvailable(staff = false, signal?: AbortSignal) {
+  const value = await api<Availability>(staff ? '/api/staff/onesa/availability' : '/api/onesa/availability', {signal});
+  const expectedOrigin = hotspotPortal && !staff ? value.hotspotOrigin : value.origin;
+  return expectedOrigin === location.origin;
+}
+
+export function currentCustomerScreen() {
+  const path = location.pathname + location.hash;
+  if (hotspotPortal && hotspotScreens.includes(path)) return path;
+  return path === '/connect' ? '/#connect' : '/' + location.hash;
+}
 
 function destination(value:string) {
-  if(value==='/#staff' || value==='/#connect')return value;
+  if(value==='/#staff' || value==='/#connect' || (hotspotPortal && hotspotScreens.includes(value)))return value;
   return /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
 }
 export function rememberRegistration(staff=false) {
-  const path=staff?'/#staff':location.pathname==='/connect'&&!location.hash?'/#connect':'/'+location.hash;
+  const path=staff?'/#staff':currentCustomerScreen();
   try { sessionStorage.setItem(storageKey,JSON.stringify({path:destination(path),expires:Date.now()+30*60*1000})); } catch {}
 }
 export async function startProductSignIn(staff:boolean,returnTo:string) {
@@ -19,12 +35,16 @@ export async function startProductSignIn(staff:boolean,returnTo:string) {
   });
   const target=new URL(flow.authorizationUrl);
   if(target.protocol!=='https:' || target.username || target.password)throw Error('Invalid sign-in destination');
-  if(!staff)sessionStorage.setItem('pasofi-onesa-customer','1');
+  if(hotspotPortal && !staff &&
+    (target.origin !== 'https://auth.onesa.eu' || target.pathname !== '/authorize' || target.hash)) {
+    throw Error('Invalid hotspot sign-in destination');
+  }
+  if(!staff && !hotspotPortal)sessionStorage.setItem('pasofi-onesa-customer','1');
   location.assign(target.href);
 }
 export function resumeRegistration() {
   if(location.pathname!=='/' || location.search!=='?registration=complete')return;
-  let path='/#account', valid=false;
+  let path=hotspotPortal ? '/connect' : '/#account', valid=false;
   try {
     const raw=sessionStorage.getItem(storageKey);
     sessionStorage.removeItem(storageKey);
@@ -43,7 +63,7 @@ export function resumeRegistration() {
   history.replaceState(null,'',path);
   if(!valid)return;
   const staff=path==='/#staff';
-  void api<{origin:string|null}>(staff?'/api/staff/onesa/availability':'/api/onesa/availability')
-    .then(value=>{if(value.origin===location.origin)return startProductSignIn(staff,path);})
+  void signInAvailable(staff)
+    .then(available=>{if(available)return startProductSignIn(staff,path);})
     .catch(()=>{}); // The restored screen retains its ordinary sign-in and retry controls.
 }

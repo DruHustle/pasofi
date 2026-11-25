@@ -6,11 +6,12 @@ export default defineConfig(({ mode }) => {
   try { const url = new URL(env.VITE_PAMOFI_API_BASE_URL || ''); if (url.protocol === 'https:' && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash) apiOrigin = url.origin; } catch { /* The UI stays in preview when no valid gateway is configured. */ }
   const formOrigins: string[] = [];
   try {
-    const values: unknown = JSON.parse(env.VITE_PAMOFI_ROUTER_FORM_ORIGINS || '["https://login.pasofi.mobile.onesa.eu"]');
+    const values: unknown = JSON.parse(env.VITE_PAMOFI_ROUTER_FORM_ORIGINS ||
+      '["https://login.pasofi.mobile.onesa.eu","https://wifi.pasofi.mobile.onesa.eu"]');
     if (Array.isArray(values) && values.length <= 20 && values.every(value => {
       if (typeof value !== 'string') return false;
       const url = new URL(value);
-      return url.protocol === 'https:' && url.origin === value &&
+      return url.protocol === 'https:' && url.origin === value && !url.hostname.includes('*') &&
         !['hotspot.pamofi.onesa.eu', 'hotspot.pasofi.onesa.eu'].includes(url.hostname);
     })) formOrigins.push(...values as string[]);
   } catch { /* Invalid lists do not permit cross-origin form submission. */ }

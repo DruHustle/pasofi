@@ -82,6 +82,15 @@ test('offline preflight checks token, certificate hostname/key and reports prepa
   await writeFile(join(assets, 'hotspot-build.json'), '{"apiPrefix":"/portal-api"}\n');
   const portalEnv = { ...env, PASOFI_HOTSPOT_PORTAL: 'true', PASOFI_HOTSPOT_PUBLIC_HOST: 'api.pamofi.test', PASOFI_HOTSPOT_PUBLIC_ORIGIN: 'https://api.pamofi.test', PASOFI_PUBLIC_ORIGIN_ALIASES: '["https://api.pamofi.test"]', PASOFI_HOTSPOT_WEB_DIR: assets };
   assert.equal((await inspectVercelConfiguration(portalEnv)).hotspotPortal.origin, 'https://api.pamofi.test');
+  const hotspotCallback = 'https://api.pamofi.test/onesa-callback.html';
+  const managedPortal = { ...portalEnv, PASOFI_ONESA_HOTSPOT_REDIRECT_URI: hotspotCallback };
+  await assert.rejects(inspectVercelConfiguration(managedPortal));
+  await writeFile(join(assets, 'hotspot-onesa-callback.html'), '<script src="/onesa-callback.js" data-api-prefix="/portal-api"></script>');
+  await writeFile(join(assets, 'onesa-callback.js'), '/* isolated fixture */');
+  assert.equal((await inspectVercelConfiguration(managedPortal)).hotspotPortal.customerCallback, hotspotCallback);
+  await assert.rejects(inspectVercelConfiguration({ ...managedPortal, PASOFI_ONESA_HOTSPOT_REDIRECT_URI: 'https://wrong.pamofi.test/onesa-callback.html' }));
+  await assert.rejects(inspectVercelConfiguration({ ...managedPortal, PASOFI_ONESA_MODE: 'portal' }));
+  await assert.rejects(inspectVercelConfiguration({ ...managedPortal, PASOFI_HOTSPOT_PORTAL: 'false' }));
   for (const change of [
     { PASOFI_HOTSPOT_PORTAL: 'yes' }, { PASOFI_PUBLIC_ORIGIN_ALIASES: '[]' },
     { PASOFI_PUBLIC_ORIGIN_ALIASES: '["https://api.pamofi.test","http://insecure.test"]' },

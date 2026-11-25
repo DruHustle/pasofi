@@ -599,8 +599,9 @@ test('an approved agent can inspect assigned stock before sales are enabled', as
   expect(writes).toEqual([]);
 });
 
-test('registered PasoFi hotspot connects by HTTPS POST without retyping a network name or exposing secrets in URLs', async ({ page }) => {
-  const loginUrl = 'https://login.pasofi.mobile.onesa.eu/login';
+for (const hostname of ['login.pasofi.mobile.onesa.eu', 'wifi.pasofi.mobile.onesa.eu'])
+test(`registered PasoFi hotspot ${hostname} connects by HTTPS POST without exposing secrets in URLs`, async ({ page }) => {
+  const loginUrl = `https://${hostname}/login`;
   await mock(page, async (route, path) => {
     if (path === '/api/capabilities') { await json(route, { ...capabilities, networkAccess: true }); return true; }
     if (path === '/api/usage') { await json(route, usageSnapshot('0', { queuedBytes: '5000000000' })); return true; }

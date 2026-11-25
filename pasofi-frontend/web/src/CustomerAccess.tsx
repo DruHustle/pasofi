@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError } from './api';
+import { api, ApiError, hotspotPortal } from './api';
 import { currentSession, ensureSession, announceSessionChange, clearSessionSecrets } from './session';
 import { type Capabilities, type Product, type Site, type CashEvidence, cashDescription, finishMutation, localDate, messageFor, money, mutationIntent } from './business';
 import { RecoverySetup } from './Recovery';
@@ -425,7 +425,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const connectionPanel = owner && <NetworkAccess customerId={owner} capabilities={capabilities} usage={usage.snapshot} fresh={usage.fresh} refreshing={usage.refreshing} refresh={usage.refresh} />;
   return <section className="workspace customer-workspace" aria-labelledby="customer-heading" aria-busy={busy || loading} data-screen={tab}>
     <div className="purchase-head customer-page-heading"><div><div className="eyebrow">YOUR PASOFI</div><h2 id="customer-heading" tabIndex={-1} ref={heading}>{titles[tab]}</h2><p>{subtitles[tab]}</p></div><button className="close-button" onClick={close} aria-label="Close customer workspace">×</button></div>
-    {tab === 'recovery' && !loading && !owner && <OnesaCustomerSignIn prominent />}
+    {(tab === 'recovery' || (hotspotPortal && tab === 'voucher')) && !loading && !owner && <OnesaCustomerSignIn prominent />}
     {capabilities.demo && <p className="notice customer-demo-notice">Demonstration environment. These flows do not establish real customer payment, SMS delivery, or internet connectivity.</p>}
     {tab !== 'access' && sectionNavigation}
     <PolicyNotice/>
