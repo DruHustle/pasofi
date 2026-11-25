@@ -49,31 +49,69 @@ test('welcome auto-connects only when trial is eligible, with manual fallback an
   for (const label of ['View bundles', 'Redeem a voucher']) assert.match(render(source, { trial: 'no' }), new RegExp(label));
   assert.doesNotMatch(source, /\$\((?:link-orig|error|username)\)/);
 });
-test('countdown keeps the voucher prompt on screen when the trial expires in the background', async () => {
-  const source = render(await read('status.html'), { 'login-by': 'trial', 'session-time-left-secs': '300' });
+function statusPage(template, vars, supportsModal = true) {
+  const source = render(template, vars);
   const script = /<script>([\s\S]*?)<\/script>/.exec(source)[1];
-  let now = 0, tick, onResume, cancelled;
-  const elements = Object.fromEntries(['remaining', 'trial-clock', 'connection-title', 'connection-message'].map(id => [id, {}]));
+  const page = { now: 0, opened: 0, events: {}, elements: { 'connection-title': {}, 'connection-message': {}, expiry: {} } };
+  const { elements } = page;
+  if (vars['login-by'] === 'trial') {
+    elements.remaining = {};
+    elements['trial-clock'] = {};
+  }
+  if (supportsModal) elements.expiry.showModal = () => page.opened++;
+  page.document = { getElementById: id => elements[id] ?? null,
+    addEventListener: (event, callback) => { page.events[event] = callback; } };
   vm.runInNewContext(script, {
-    Date: { now: () => now },
-    document: {
-      getElementById: id => elements[id],
-      addEventListener: (event, callback) => { assert.equal(event, 'visibilitychange'); onResume = callback; },
-    },
-    setInterval: callback => { tick = callback; return 42; },
-    clearInterval: timer => { cancelled = timer; },
+    Date: { now: () => page.now },
+    document: page.document,
+    window: { addEventListener: (event, callback) => { page.events[event] = callback; } },
+    setInterval: callback => { page.tick = callback; return 42; },
+    clearInterval: timer => { page.cancelled = timer; },
   });
+  return Object.assign(page, { source });
+}
+
+test('the expiry dialog opens once when the trial status page returns to the foreground', async () => {
+  const state = statusPage(await read('status.html'),
+    { 'login-by': 'trial', 'session-time-left-secs': '300' });
+  const { source, elements } = state;
+  const dialog = /<dialog[^>]*>([\s\S]*?)<\/dialog>/.exec(source)[1];
+  assert.match(dialog, /#bundles" autofocus>View bundles/);
+  assert.match(dialog, /#voucher">Redeem a voucher/);
+  assert.match(dialog, /method="dialog"><button>Dismiss/);
   assert.equal(elements.remaining.textContent, '5:00');
-  now = 65_000;
-  tick();
+  state.now = 65_000;
+  state.tick();
   assert.equal(elements.remaining.textContent, '3:55');
-  now = 330_000;
-  onResume();
+  assert.equal(state.opened, 0);
+  state.document.hidden = true;
+  state.now = 330_000;
+  state.tick();
+  assert.equal(state.opened, 0);
+  state.document.hidden = false;
+  state.events.visibilitychange();
+  state.events.pageshow();
   assert.equal(elements['connection-title'].textContent, 'Your welcome time has ended.');
   assert.match(elements['connection-message'].textContent, /redeem a voucher/);
   assert.equal(elements['trial-clock'].hidden, true);
-  assert.equal(cancelled, 42);
-  assert.doesNotMatch(render(await read('status.html'), { 'login-by': 'https' }), /<script>/);
+  assert.equal(state.cancelled, 42);
+  assert.equal(state.opened, 1);
+});
+
+test('timed sessions prompt while open and untimed sessions stay online', async () => {
+  const template = await read('status.html');
+  const timed = statusPage(template, { 'login-by': 'https', 'session-time-left-secs': '2' });
+  timed.now = 2000;
+  timed.tick();
+  assert.equal(timed.opened, 1);
+  assert.equal(timed.elements['connection-title'].textContent, 'Your PasoFi session has ended.');
+  const fallback = statusPage(template, { 'login-by': 'trial', 'session-time-left-secs': '0' }, false);
+  assert.match(fallback.elements['connection-message'].textContent, /redeem a voucher/);
+  for (const duration of ['', '0', 'invalid']) {
+    const untimed = statusPage(template, { 'login-by': 'https', 'session-time-left-secs': duration });
+    assert.equal(untimed.tick, undefined);
+    assert.equal(untimed.opened, 0);
+  }
 });
 test('installer escapes templates, preserves the original folder, and changes no access controls', async () => {
   assert.equal(routerString('$x"\\\n'), '"\\$x\\"\\\\\\n"');

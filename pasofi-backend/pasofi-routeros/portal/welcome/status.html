@@ -24,7 +24,7 @@ $(if http-header == "Cache-Control")no-store$(endif)
         <div class="time" id="remaining" aria-label="Welcome time remaining">$(session-time-left)</div>
       </div>
       $(else)
-      <p>Your hotspot connection is active.</p>
+      <p id="connection-message" role="status">Your hotspot connection is active.</p>
       $(endif)
     </section>
     <section class="card">
@@ -41,36 +41,43 @@ $(if http-header == "Cache-Control")no-store$(endif)
       Need a hand? <a href="tel:+263715092221">Call PasoFi</a>
     </footer>
   </main>
-  $(if login-by == 'trial')
+  <dialog id="expiry" aria-labelledby="expiry-title">
+    <h2 id="expiry-title">Internet access has ended.</h2>
+    <a class="button" href="https://hotspot.pasofi.mobile.onesa.eu/connect#bundles" autofocus>View bundles</a>
+    <a class="button secondary" href="https://hotspot.pasofi.mobile.onesa.eu/connect#voucher">Redeem a voucher</a>
+    <form method="dialog"><button>Dismiss</button></form>
+  </dialog>
   <script>
     (function () {
       const duration = '$(session-time-left-secs)';
       const seconds = Number(duration);
-      if (!duration || !Number.isSafeInteger(seconds) || seconds < 0) return;
+      const remaining = document.getElementById('remaining');
+      if (!duration || !Number.isSafeInteger(seconds) || seconds < 0 || (!seconds && !remaining)) return;
 
       const deadline = Date.now() + seconds * 1000;
-      const remaining = document.getElementById('remaining');
       let timer;
       let expired = false;
 
       function update() {
-        if (expired) return;
+        if (expired || document.hidden) return;
         const secondsLeft = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
-        remaining.textContent = Math.floor(secondsLeft / 60) + ':' + String(secondsLeft % 60).padStart(2, '0');
+        if (remaining) remaining.textContent = Math.floor(secondsLeft / 60) + ':' + String(secondsLeft % 60).padStart(2, '0');
         if (secondsLeft === 0) {
           expired = true;
           clearInterval(timer);
-          document.getElementById('trial-clock').hidden = true;
-          document.getElementById('connection-title').textContent = 'Your welcome time has ended.';
+          if (remaining) document.getElementById('trial-clock').hidden = true;
+          document.getElementById('connection-title').textContent = remaining ? 'Your welcome time has ended.' : 'Your PasoFi session has ended.';
           document.getElementById('connection-message').textContent = 'View bundles or redeem a voucher to get back online.';
+          const dialog = document.getElementById('expiry');
+          if (typeof dialog.showModal === 'function') dialog.showModal();
         }
       }
 
       if (seconds > 0) timer = setInterval(update, 1000);
       document.addEventListener('visibilitychange', update);
+      window.addEventListener('pageshow', update);
       update();
     })();
   </script>
-  $(endif)
 </body>
 </html>
