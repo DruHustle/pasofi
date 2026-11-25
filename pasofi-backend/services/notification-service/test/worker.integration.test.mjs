@@ -29,6 +29,15 @@ test('secure delivery lookup sends one mock SMS and authorized idempotent resend
   await pool.query("UPDATE delivery_jobs SET state='unknown',next_at=now() WHERE id=$1",[job]);await pool.query("UPDATE delivery_attempts SET state='unknown',provider_id=NULL WHERE job_id=$1",[job]);
   assert.equal(await processDelivery(pool,true),true);assert.equal(lookups,2);assert.equal((await pool.query('SELECT last_error FROM delivery_jobs WHERE id=$1',[job])).rows[0].last_error,'manual_review_required');
   assert.equal((await app.inject({method:'POST',url:`/internal/v1/deliveries/${reference}/resend`,headers,payload:{...request,requestId:randomUUID()}})).json().error,'delivery_unresolved');
+  await pool.query("UPDATE delivery_attempts SET created_at=now()-interval '25 hours' WHERE job_id=$1",[job]);
+  await pool.query("UPDATE delivery_jobs SET next_at=now() WHERE id=$1",[job]);
+  assert.equal(await processDelivery(pool,true),true);
+  const expired=(await pool.query('SELECT state,last_error FROM delivery_jobs WHERE id=$1',[job])).rows[0];
+  assert.deepEqual(expired,{state:'failed',last_error:'delivery_report_timeout'});
+  const resend=await app.inject({method:'POST',url:`/internal/v1/deliveries/${reference}/resend`,headers,payload:{...request,requestId:randomUUID()}});
+  assert.equal(resend.statusCode,201);
+  assert.equal(lookups,2);
+
  }finally{await app.close();await new Promise(resolve=>source.close(resolve));await cleanup(pool,reference);await pool.end();for(const [k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
 });
 test('provider delivery is disabled by default and demo settings cannot activate live Sendai',()=>{const keys=['DELIVERY_WORKER_ENABLED','NOTIFICATION_DELIVERY_MODE','SENDAI_LIVE_ENABLED','SENDAI_QUALIFIED','SENDAI_API_KEY','APP_ENV','NODE_ENV'],saved=Object.fromEntries(keys.map(k=>[k,process.env[k]]));try{for(const k of keys)delete process.env[k];assert.equal(deliveryConfiguration(true).enabled,false);Object.assign(process.env,{DELIVERY_WORKER_ENABLED:'true',NOTIFICATION_DELIVERY_MODE:'sendai',SENDAI_LIVE_ENABLED:'true',SENDAI_QUALIFIED:'true',SENDAI_API_KEY:'synthetic',APP_ENV:'demo',NODE_ENV:'development'});assert.equal(deliveryConfiguration(true).enabled,false);}finally{for(const [k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}});

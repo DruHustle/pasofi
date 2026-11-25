@@ -52,7 +52,7 @@ export async function processDelivery(pool:Pool,demo:boolean,config=deliveryConf
     await pollAttempt(pool,attempt.id,adapter);
     await pool.query("UPDATE delivery_jobs SET lease_token=NULL,lease_until=NULL,next_at=now()+interval '30 seconds' WHERE id=$1 AND lease_token=$2",[job.id,lease]);
    }else{
-    await pool.query("UPDATE delivery_jobs SET lease_token=NULL,lease_until=NULL,next_at=COALESCE((SELECT created_at+interval '24 hours' FROM delivery_attempts WHERE id=$3),'infinity'),last_error='delivery_unconfirmed' WHERE id=$1 AND lease_token=$2",[job.id,lease,attempt?.id??null]);
+    await pool.query("UPDATE delivery_jobs SET lease_token=NULL,lease_until=NULL,next_at=COALESCE((SELECT created_at+interval '24 hours' FROM delivery_attempts WHERE id=$3),'infinity'),last_error='manual_review_required' WHERE id=$1 AND lease_token=$2",[job.id,lease,attempt?.id??null]);
    }
    return true;
   }
