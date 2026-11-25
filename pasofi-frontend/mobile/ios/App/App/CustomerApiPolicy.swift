@@ -183,6 +183,7 @@ struct CustomerSessionState: Codable, Equatable {
         let logout = request.method == "DELETE" && request.path == "/api/session" && status == 204
         guard cookie == nil || create || recover || logout else { throw CustomerApiFailure.response }
         if request.method == "GET" && request.path == "/api/session" && status == 401 && token != nil {
+            if (body as? [String: Any])?["error"] as? String == "onesa_sign_in_required" { return }
             // A definitive rejection retires a previously accepted credential.
             // With no token, retain any unresolved account-creation retry so a
             // lost create response cannot accidentally start another account.

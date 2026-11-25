@@ -295,7 +295,7 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
         const hash = opaqueHash(session);
         await client.query('UPDATE staff_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1', [hash]);
         const revoked = await client.query(`DELETE FROM staff_onesa_sessions WHERE token_hash=$1
-          RETURNING expires_at>now() AND left(access_ciphertext,8)='managed.' AS managed`, [hash]);
+          RETURNING left(access_ciphertext,8)='managed.' AS managed`, [hash]);
         managed = revoked.rows[0]?.managed === true;
       }
       const flow = request.cookies[flowCookie];

@@ -21,6 +21,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     PASOFI_ONESA_RECORD_ISSUER:legacy,PASOFI_ONESA_CLIENT_ID:clientId,PASOFI_ONESA_CLIENT_SECRET:randomBytes(48).toString('hex'),
     PASOFI_ONESA_IOS_CLIENT_ID:'pasofi_synthetic_ios',PASOFI_ONESA_ANDROID_CLIENT_ID:'pasofi_synthetic_android',
     PASOFI_ONESA_REDIRECT_URI:origin+'/onesa-callback.html',PASOFI_ONESA_AUDIENCE:audience,PASOFI_ONESA_PUBLIC_JWKS:JSON.stringify(jwks),
+    PASOFI_ONESA_SESSION_RENEWAL:'true',
   });
   const db = new pg.Pool({ connectionString:process.env.PAMOFI_TEST_DATABASE_URL });
   t.after(()=>db.end());
@@ -31,6 +32,8 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   await db.query('INSERT INTO staff_onesa_bindings(issuer,subject,staff_id) VALUES($1,$2,$3)',[legacy,stable,operator]);
   let app = buildApp(), outage = false, role = 'customer', extraRoles = [], globalRoles = [], products = ['pasofi'], aud = audience, factor = now(), query, lifetime = 300;
   let accessSubject = providerSubject, accountId=stable;
+  let offerRefresh=false, refreshCalls=0, rejectRefresh=false;
+  const refreshTokens=new Map();
   t.after(()=>app.close());
   const ns = 'https://onesa.eu/claims/';
   const order = randomUUID();
@@ -63,12 +66,23 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     if(String(url)===issuer+'keys') return Response.json(jwks);
     assert.equal(String(url),issuer+'oauth/token');
     const form=new URLSearchParams(init.body);
-    assert.equal(createHash('sha256').update(form.get('code_verifier')).digest('base64url'),query.get('code_challenge'));
     const sign=(claims,target,subject,ttl)=>new SignJWT(claims).setIssuer(issuer).setAudience(target).setSubject(subject)
       .setProtectedHeader({alg:'RS256',kid:'one'}).setIssuedAt(now()).setExpirationTime(now()+ttl).sign(privateKey);
+    if(form.get('grant_type')==='refresh_token'){
+      refreshCalls++;
+      const used=form.get('refresh_token'), saved=refreshTokens.get(used);
+      if(!saved||rejectRefresh)return Response.json({error:'invalid_grant'},{status:400});
+      refreshTokens.delete(used);
+      const rotated=randomUUID();refreshTokens.set(rotated,saved);
+      return Response.json({token_type:'Bearer',access_token:await sign(saved,audience,providerSubject,300),refresh_token:rotated});
+    }
+    assert.equal(createHash('sha256').update(form.get('code_verifier')).digest('base64url'),query.get('code_challenge'));
+    const claims={azp:clientId,[ns+'user_id']:accountId,[ns+'products']:products,[ns+'roles']:[role,...extraRoles],onesa_roles:globalRoles};
+    const refresh = offerRefresh ? randomUUID() : undefined;
+    if(refresh)refreshTokens.set(refresh,claims);
     return Response.json({token_type:'Bearer',access_token:await sign({
-      [ns+'user_id']:accountId,[ns+'products']:products,[ns+'roles']:[role,...extraRoles],[ns+'mfa_time']:factor,onesa_roles:globalRoles,
-    },aud,accessSubject,lifetime),id_token:await sign({nonce:query.get('nonce'),auth_time:now()},clientId,providerSubject,300)});
+      ...claims,[ns+'mfa_time']:factor,
+    },aud,accessSubject,lifetime),id_token:await sign({nonce:query.get('nonce'),auth_time:now()},clientId,providerSubject,300),refresh_token:refresh});
   });
   const request=(method,path,payload,cookie)=>app.inject({method,url:'/v1/'+path,headers:{origin,...(cookie?{cookie}:{})},...(payload?{payload}:{})});
   const cookie=(response,part)=>{ const c=response.cookies.find(c=>c.name.endsWith(part)); return c.name+'='+c.value; };
@@ -167,7 +181,60 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   assert.equal((await request('GET','staff/users',undefined,staffCookie)).statusCode,403);
   aud='https://other.example.invalid';assert.equal((await login()).statusCode,401);aud=audience;
   accessSubject='auth0|different';assert.equal((await login()).statusCode,401);accessSubject=providerSubject;
-  lifetime=301;assert.equal((await login()).statusCode,401);lifetime=300;
+  role='customer';lifetime=1200;
+  assert.equal((await login()).statusCode,200,'a longer provider TTL still gets a five-minute local authorization window');
+  lifetime=300;offerRefresh=true;
+  const member=await login();
+  assert.equal(member.statusCode,200,member.body);
+  assert.match(query.get('scope'),/\boffline_access\b/);
+  const memberCookie=cookie(member,'demo_session');
+  const freshHandoff=await request('POST','handoff',{},memberCookie);
+  const secondBrowser=await request('POST','handoff/redeem',{handoffCode:freshHandoff.json().handoffCode});
+  assert.equal(secondBrowser.statusCode,200,secondBrowser.body);
+  const secondCookie=cookie(secondBrowser,'demo_session');
+  const hash = browserCookie => createHash('sha256').update(browserCookie.split('=')[1]).digest();
+  await db.query("UPDATE onesa_session_renewals SET access_expires_at=now()-interval '1 second' WHERE id=(SELECT renewal_id FROM customer_onesa_sessions WHERE token_hash=$1)",[hash(memberCookie)]);
+  const concurrent=await Promise.all([memberCookie,secondCookie,memberCookie].map(proof=>request('GET','session',undefined,proof)));
+  assert.ok(concurrent.every(result=>result.statusCode===200&&result.json().customerId===customer));
+  assert.equal(refreshCalls,1,'a handoff and a browser share one rotating token');
+  await db.query("UPDATE onesa_session_renewals SET access_expires_at=now()-interval '1 second' WHERE id=(SELECT renewal_id FROM customer_onesa_sessions WHERE token_hash=$1)",[hash(memberCookie)]);
+  rejectRefresh=true;
+  const expired=await request('GET','session',undefined,memberCookie);
+  assert.equal(expired.json().error,'onesa_sign_in_required');
+  assert.equal((await request('POST','session',undefined,memberCookie)).json().error,'onesa_sign_in_required');
+  rejectRefresh=false;role='agent';factor=now();
+  const operatorLogin=await login(true);
+  assert.equal(operatorLogin.statusCode,200,operatorLogin.body);
+  const operatorCookie=cookie(operatorLogin,'staff_session');
+  await db.query("UPDATE onesa_session_renewals SET access_expires_at=now()-interval '1 second',staff_mfa_at=now()-interval '6 minutes' WHERE id=(SELECT renewal_id FROM staff_onesa_sessions WHERE token_hash=$1)",[hash(operatorCookie)]);
+  const operationCredential=await new SignJWT({scope:'staff:resolve'}).setProtectedHeader({alg:'HS256'})
+    .setIssuer('prepaid-access').setSubject('prepaid-access').setAudience('identity').setIssuedAt().setExpirationTime('15s').sign(new TextEncoder().encode(process.env.INTERNAL_IDENTITY_SECRET || 'fixture-secret-identity-scope-123456789'));
+  process.env.INTERNAL_IDENTITY_SECRET ??= 'fixture-secret-identity-scope-123456789';
+  const currentStaff=await app.inject({url:'/internal/v1/staff/session',headers:{cookie:operatorCookie,authorization:'Bearer '+operationCredential}});
+  assert.equal(currentStaff.statusCode,200,currentStaff.body);
+  assert.ok(Date.now()-Date.parse(currentStaff.json().mfaVerifiedAt)>300000,'token renewal does not make the operator MFA fresh again');
+  offerRefresh=false;
+  process.env.SESSION_CREATION_SECRET='DEMO_ONLY_isolated_guest_claim_secret_123456789';
+  const guestRequest=await app.inject({method:'POST',url:'/v1/session',headers:{origin,'idempotency-key':randomBytes(32).toString('base64url')}});
+  assert.equal(guestRequest.statusCode,201,guestRequest.body);
+  const guestCookie=cookie(guestRequest,'demo_session'), guestId=guestRequest.json().customerId;
+  const claimGuest = async () => {
+    const started=await request('POST','onesa/start',{claimGuest:true,returnTo:'/#history'},guestCookie);
+    assert.equal(started.statusCode,200,started.body);
+    query=new URL(started.json().authorizationUrl).searchParams;
+    return request('POST','onesa/complete',{code:'claim',state:query.get('state')},
+      [guestCookie,cookie(started,'onesa_customer_flow')].join('; '));
+  };
+  role='customer';accountId=stable;
+  assert.equal((await claimGuest()).json().error,'guest_transfer_requires_review');
+  assert.equal((await request('GET','session',undefined,guestCookie)).json().customerId,guestId);
+  accountId=randomUUID();
+  const mergedGuest=await claimGuest();
+  assert.equal(mergedGuest.statusCode,200,mergedGuest.body);
+  assert.equal(mergedGuest.json().customerId,guestId);
+  assert.equal((await request('GET','session',undefined,guestCookie)).statusCode,401);
+  assert.equal((await request('GET','session',undefined,cookie(mergedGuest,'demo_session'))).json().guest,false);
+  accountId=stable;
   await app.close();app=buildApp();outage=true;
   assert.equal((await request('GET','session',undefined,browser)).json().customerId,customer);
   assert.equal((await request('GET','staff/session',undefined,staffCookie)).json().staffId,operator);

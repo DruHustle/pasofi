@@ -8,6 +8,7 @@
     "customer_onesa_flows": ["SELECT", "INSERT", "DELETE"],
     "customer_onesa_handoffs": ["SELECT", "INSERT", "UPDATE"],
     "customer_onesa_sessions": ["SELECT", "INSERT", "UPDATE"],
+    "onesa_session_renewals": ["SELECT", "INSERT", "UPDATE", "DELETE"],
     "customer_handoffs": ["SELECT", "INSERT", "UPDATE"],
     "staff_users": ["SELECT", "INSERT", "UPDATE"],
     "staff_auth_challenges": ["SELECT", "INSERT", "UPDATE"],

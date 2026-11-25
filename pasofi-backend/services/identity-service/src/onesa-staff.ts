@@ -1,10 +1,11 @@
 import * as oidc from 'openid-client';
+import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { createLocalJWKSet, jwtVerify, type JSONWebKeySet } from 'jose';
 import { decryptMfa, encryptMfa, freshOpaque, isOpaque, opaqueHash } from './staff-crypto.js';
 
 type Store = pg.Pool | pg.PoolClient;
-export type Configuration = { issuer: string; clientId: string; clientSecret: string; callback: URL; managed?: { audience: string; recordIssuer: string; keys: JSONWebKeySet } };
+export type Configuration = { issuer: string; clientId: string; clientSecret: string; callback: URL; managed?: { audience: string; recordIssuer: string; keys: JSONWebKeySet; renewal?: boolean } };
 export type Admin = { subject: string; email: string; name: string; expires: number; authenticated: number; siteOperator?: true; providerSubject?: string; authorizedClient?: string; localRole?: string };
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
@@ -89,7 +90,10 @@ export function configuredOnesaStaff(key: Buffer | null, allowed: (origin: strin
       const resource = new URL(audience);
       if (legacy.protocol !== 'https:' || recordIssuer !== legacy.origin + '/api/v1/identity' ||
           resource.protocol !== 'https:' || resource.origin !== audience) return null;
-      config.managed = { audience, recordIssuer, keys: publicKeys(process.env.PASOFI_ONESA_PUBLIC_JWKS || '') };
+      config.managed = {
+        audience, recordIssuer, keys: publicKeys(process.env.PASOFI_ONESA_PUBLIC_JWKS || ''),
+        renewal: process.env.PASOFI_ONESA_SESSION_RENEWAL === 'true',
+      };
     }
     return new OnesaStaff(config, key);
   } catch { return null; }
@@ -102,7 +106,7 @@ export class OnesaStaff {
   get recordIssuer() { return this.config.managed?.recordIssuer ?? this.config.issuer; }
   protected get authorizationParameters(): Record<string, string> {
     return this.config.managed
-      ? { scope: 'openid email profile', audience: this.config.managed.audience }
+      ? { scope: 'openid email profile' + (this.config.managed.renewal ? ' offline_access' : ''), audience: this.config.managed.audience }
       : { scope: 'openid email profile onesa' };
   }
   protected async protocolClient() {
@@ -131,6 +135,72 @@ export class OnesaStaff {
     const isManaged = envelope.startsWith('managed.');
     if (isManaged !== Boolean(this.config.managed)) throw denied();
     return decryptMfa(isManaged ? envelope.slice(8) : envelope, this.key, context);
+  }
+
+  protected async startRenewal(db: Store, access: string, refresh: unknown, identity: Admin) {
+    if (!this.config.managed?.renewal || !identity.providerSubject || !identity.authorizedClient ||
+        typeof refresh !== 'string' || !refresh || refresh.length > 16384) return null;
+    const id = randomUUID(), expires = Math.floor(Date.now() / 1000) + 8 * 3600;
+    await db.query("DELETE FROM onesa_session_renewals WHERE expires_at<now()-interval '10 minutes'");
+    await db.query(`INSERT INTO onesa_session_renewals
+        (id,subject,provider_subject,client_id,access_ciphertext,refresh_ciphertext,access_expires_at,expires_at,staff_mfa_at)
+      VALUES($1,$2,$3,$4,$5,$6,to_timestamp($7),to_timestamp($8),to_timestamp($9))`,
+    [id, identity.subject, identity.providerSubject, identity.authorizedClient, this.protectAccess(access, 'onesa-access:' + id),
+      this.protectAccess(refresh, 'onesa-refresh:' + id), identity.expires, expires, this.staffFlow ? identity.authenticated : null]);
+    return { id, expires };
+  }
+
+  protected async renewalIdentity(db: Store, id: string, staff: boolean, inTransaction = false): Promise<Admin> {
+    const load = async (store: Store, lock: boolean) => (await store.query(`SELECT * FROM onesa_session_renewals
+      WHERE id=$1 AND expires_at>now() AND (staff_mfa_at IS NOT NULL)=$2 ${lock ? 'FOR UPDATE' : ''}`, [id, staff])).rows[0];
+    const check = async (row: { subject: string; provider_subject: string; client_id: string; staff_mfa_at?: Date }, access: string) => {
+      const identity = await this.inspect(access, true);
+      if(identity.subject!==row.subject || identity.providerSubject!==row.provider_subject || identity.authorizedClient!==row.client_id)throw denied();
+      return staff && row.staff_mfa_at ? {...identity, authenticated: Math.floor(row.staff_mfa_at.getTime()/1000)} : identity;
+    };
+    const existing = await load(db,false);
+    if (!existing) throw denied();
+    if (existing.access_expires_at.getTime() > Date.now() + 20000) {
+      return check(existing,this.readAccess(existing.access_ciphertext,'onesa-access:' + id));
+    }
+    const renew = async (store: Store) => {
+      const row = await load(store,true);
+      if (!row) throw denied();
+      if (row.access_expires_at.getTime() > Date.now() + 20000)
+        return check(row,this.readAccess(row.access_ciphertext,'onesa-access:' + id));
+      const confidential = await this.protocolClient();
+      let provider = confidential;
+      if(row.client_id!==this.config.clientId){
+        if(staff || ![process.env.PASOFI_ONESA_IOS_CLIENT_ID,process.env.PASOFI_ONESA_ANDROID_CLIENT_ID].includes(row.client_id))throw denied();
+        provider = new oidc.Configuration(confidential.serverMetadata(),row.client_id,undefined,oidc.None());
+        provider.timeout=5;
+        provider[oidc.customFetch]=(url, init)=>fetch(url,{...init,redirect:'error'} as RequestInit);
+      }
+      const saved = this.readAccess(row.refresh_ciphertext,'onesa-refresh:' + id);
+      let tokens;
+      try { tokens = await oidc.refreshTokenGrant(provider,saved); }
+      catch(error) {
+        if(error instanceof oidc.ResponseBodyError && ['invalid_grant','access_denied'].includes(error.error))throw denied();
+        throw new OnesaError(503,'onesa_unavailable');
+      }
+      if(tokens.token_type.toLowerCase()!=='bearer'||!tokens.access_token||tokens.access_token.length>16384||
+          tokens.refresh_token!==undefined&&(!tokens.refresh_token||tokens.refresh_token.length>16384))throw denied();
+      const checked = await check(row,tokens.access_token);
+      await store.query(`UPDATE onesa_session_renewals SET access_ciphertext=$2,refresh_ciphertext=$3,access_expires_at=to_timestamp($4) WHERE id=$1`,
+        [id,this.protectAccess(tokens.access_token,'onesa-access:' + id),
+          this.protectAccess(tokens.refresh_token ?? saved,'onesa-refresh:' + id),checked.expires]);
+      return checked;
+    };
+    if (inTransaction) return renew(db);
+    const client = await (db as pg.Pool).connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SET LOCAL lock_timeout='5s'");
+      const identity = await renew(client);
+      await client.query('COMMIT');
+      return identity;
+    } catch(error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
   }
 
   constructor(readonly config: Configuration, protected readonly key: Buffer) {
@@ -168,7 +238,7 @@ export class OnesaStaff {
 
   protected get staffFlow() { return true; }
 
-  async inspect(token: string) {
+  async inspect(token: string, renewal = false) {
     const managed = this.config.managed;
     if (managed && this.verificationKeys) {
       const now = Math.floor(Date.now() / 1000);
@@ -178,27 +248,26 @@ export class OnesaStaff {
       const stable = payload[ns + 'user_id'], products = payload[ns + 'products'], roles = payload[ns + 'roles'];
       if (typeof stable !== 'string' || !uuid.test(stable) || typeof payload.sub !== 'string' || !payload.sub || !Number.isSafeInteger(payload.iat) || !payload.iat ||
           !Number.isSafeInteger(payload.exp) || !payload.exp ||
-          payload.exp <= payload.iat || payload.exp - payload.iat > 300 || !Array.isArray(products) ||
+          payload.exp <= payload.iat || !Array.isArray(products) ||
           products.length !== 1 || products[0] !== 'pasofi' || !Array.isArray(roles)) throw denied();
       const identity: Admin = { subject: stable.toLowerCase(), providerSubject: payload.sub, authorizedClient: typeof payload.azp === 'string' ? payload.azp : undefined, email: '', name: '',
-        authenticated: payload.iat, expires: payload.exp };
+        authenticated: payload.iat, expires: Math.min(payload.exp,payload.iat + 300) };
       const mfa = payload[ns + 'mfa_time'];
       const freshMfa = typeof mfa === 'number' && Number.isSafeInteger(mfa) && mfa <= now && mfa + 300 > now;
       if (!this.staffFlow) {
         // Customer access requires its own product grant. Legacy global roles
         // are outside the managed resource-token contract.
         if (roles.includes('customer')) return identity;
-        if (roles.length===1 && (roles[0]==='admin' || roles[0]==='administrator') && freshMfa)
-          return {...identity,authenticated:mfa as number,expires:Math.min(identity.expires,(mfa as number)+300)};
+        if (roles.length===1 && (roles[0]==='admin' || roles[0]==='administrator') && (freshMfa || renewal)) return identity;
         throw denied();
       }
       // Every managed staff role, including administrator, needs its matching
       // approved local binding. Multiple staff roles cannot select a weaker
       // binding based on claim order or bypass product-owned approval.
       const localRoles = roles.filter(role => role === 'admin' || role === 'administrator' || role === 'agent' || role === 'support');
-      if (localRoles.length !== 1 || !freshMfa) throw denied();
+      if (localRoles.length !== 1 || (!freshMfa && !renewal)) throw denied();
       return { ...identity, localRole: (localRoles[0] === 'administrator' ? 'admin' : localRoles[0]) as 'admin' | 'agent' | 'support', siteOperator: true as const,
-        authenticated: mfa as number, expires: Math.min(payload.exp, (mfa as number) + 300) };
+        authenticated: freshMfa ? mfa as number : 0, expires: identity.expires };
     }
     const { clientId, clientSecret, issuer } = this.config;
     const encode = (value: string) => new URLSearchParams({ c: value }).toString().slice(2);
@@ -228,36 +297,40 @@ export class OnesaStaff {
     if (this.config.managed && staff.authorizedClient && staff.authorizedClient !== this.config.clientId) throw denied();
     const session = freshOpaque(), hash = opaqueHash(session);
     const envelope = this.protectAccess(tokens.access_token, 'onesa-session:' + hash.toString('hex'));
-    await db.query('DELETE FROM staff_onesa_sessions WHERE expires_at<=now()');
-    const values = [hash, this.recordIssuer, staff.subject, envelope, staff.expires];
+    const renewal = await this.startRenewal(db,tokens.access_token,tokens.refresh_token,staff);
+    // Keep recently expired managed session records available for explicit SSO
+    // logout. Principal lookup still checks the database expiry independently.
+    await db.query("DELETE FROM staff_onesa_sessions WHERE expires_at<=now() AND (left(access_ciphertext,8)<>'managed.' OR expires_at<now()-interval '30 days')");
+    const values = [hash, this.recordIssuer, staff.subject, envelope, renewal?.expires ?? staff.expires, renewal?.id ?? null];
     if (staff.siteOperator) {
-      const inserted = await db.query(`INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at,binding_id,staff_version)
-        SELECT $1,$2,$3,$4,to_timestamp($5),b.id,u.version FROM staff_onesa_bindings b JOIN staff_users u ON u.id=b.staff_id
-        WHERE b.issuer=$2 AND b.subject=$3::uuid AND u.status='approved' AND (($6::text IS NULL AND u.role IN ('agent','support')) OR u.role=$6)`, [...values, staff.localRole ?? null]);
+      const inserted = await db.query(`INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at,renewal_id,binding_id,staff_version)
+        SELECT $1,$2,$3,$4,to_timestamp($5),$6,b.id,u.version FROM staff_onesa_bindings b JOIN staff_users u ON u.id=b.staff_id
+        WHERE b.issuer=$2 AND b.subject=$3::uuid AND u.status='approved' AND (($7::text IS NULL AND u.role IN ('agent','support')) OR u.role=$7)`, [...values, staff.localRole ?? null]);
       if (!inserted.rowCount) {
         if (!this.config.managed || staff.localRole!=='admin') throw denied();
         // A central administrator can enter PasoFi without a site grant. Never
         // replace an existing, conflicting or disabled local staff binding.
-        const pending=await db.query(`INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at)
-          SELECT $1,$2,$3::uuid,$4,to_timestamp($5) WHERE NOT EXISTS
+        const pending=await db.query(`INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at,renewal_id)
+          SELECT $1,$2,$3::uuid,$4,to_timestamp($5),$6 WHERE NOT EXISTS
           (SELECT 1 FROM staff_onesa_bindings WHERE issuer=$2 AND subject=$3::uuid)`,values);
         if(!pending.rowCount)throw denied();
       }
     } else {
-      await db.query('INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at) VALUES($1,$2,$3,$4,to_timestamp($5))', values);
+      await db.query('INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at,renewal_id) VALUES($1,$2,$3,$4,to_timestamp($5),$6)', values);
     }
-    return { session, maxAge: Math.max(1, staff.expires - Math.floor(Date.now() / 1000)) };
+    return { session, maxAge: this.config.managed ? 30 * 86400 : Math.max(1, staff.expires - Math.floor(Date.now() / 1000)) };
   }
 
   async principal(db: Store, session: string, lock: boolean) {
     const hash = opaqueHash(session);
-    const result = await db.query('SELECT subject,access_ciphertext,created_at,binding_id FROM staff_onesa_sessions WHERE token_hash=$1 AND issuer=$2 AND expires_at>now()',
+    const result = await db.query('SELECT subject,access_ciphertext,created_at,binding_id,renewal_id FROM staff_onesa_sessions WHERE token_hash=$1 AND issuer=$2 AND expires_at>now()',
       [hash, this.recordIssuer]);
     if (!result.rowCount) throw denied();
     const row = result.rows[0];
     let assertion: Admin;
     try {
-      assertion = await this.inspect(this.readAccess(row.access_ciphertext, 'onesa-session:' + hash.toString('hex')));
+      assertion = row.renewal_id ? await this.renewalIdentity(db,row.renewal_id,true,lock)
+        : await this.inspect(this.readAccess(row.access_ciphertext, 'onesa-session:' + hash.toString('hex')));
     } catch (error) {
       if (error instanceof OnesaError && error.status === 401) throw new RejectedStaffSession(hash);
       throw error;

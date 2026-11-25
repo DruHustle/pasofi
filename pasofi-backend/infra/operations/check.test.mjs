@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseRecords,checkContainers,checkBackup,queueQueries,aggregateProgram,checkHttpsOrigins} from './check.mjs';
+import {parseRecords,checkContainers,checkBackup,queueQueries,aggregateProgram,checkHttpsOrigins,checkOnesaSigningKeys} from './check.mjs';
 const services=['postgres','identity','prepaid-access','network','notification','assistant','web','gateway','internal-gateway'];
 const healthy=()=>services.map(Service=>({Service,State:'running',Health:'healthy',Publishers:Service==='gateway'?[{Protocol:'tcp',TargetPort:443,PublishedPort:443}]:null}));
 
@@ -94,4 +94,21 @@ test('monitor refuses credentialed, insecure or non-origin URLs before network a
   await assert.rejects(checkHttpsOrigins({gatewayOrigin:'https://api.pamofi.test',frontendOrigin:value,fetcher}));
  }
  assert.equal(calls,0);
+});
+
+test('Onesa signing-key monitoring compares key material and membership without printing keys',async()=>{
+ const first={kty:'RSA',alg:'RS256',kid:'old',n:'oldmodulus',e:'AQAB'};
+ const next={kty:'RSA',kid:'next',n:'nextmodulus',e:'AQAB'};
+ const configuration={mode:'managed',issuer:'https://auth.onesa.eu/',pinned:JSON.stringify({keys:[first,next]})};
+ const probe=keys=>checkOnesaSigningKeys({configuration,fetcher:async(url,opts)=>{
+  assert.equal(url.href,'https://auth.onesa.eu/.well-known/jwks.json');
+  assert.equal(opts.redirect,'error');
+  assert.equal(opts.headers,undefined);
+  return Response.json({keys});
+ }});
+ assert.deepEqual(await probe([next,first]),{status:'current',pinnedCount:2,liveCount:2});
+ assert.equal((await probe([first])).problem,'onesa:signing_key_drift');
+ assert.equal((await probe([first,{...next,n:'rotatedmodulus'}])).problem,'onesa:signing_key_drift');
+ assert.equal((await probe([first,{...next,d:'private'}])).problem,'onesa:signing_keys_unavailable');
+ assert.deepEqual(await checkOnesaSigningKeys({configuration:{mode:'portal'}}),{status:'not_managed'});
 });
