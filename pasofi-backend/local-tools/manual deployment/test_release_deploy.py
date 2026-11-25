@@ -117,7 +117,7 @@ class ReleaseSafetyTests(unittest.TestCase):
 
     def compose_result(self, argv):
         model = copy.deepcopy(self.model)
-        # Simulate Compose's volume-by-target merge, while keeping all original services/settings.
+        # Simulate Compose's environment and volume-by-target merges.
         for index, argument in enumerate(argv):
             if argument == "-f" and argv[index + 1].endswith(".json"):
                 overlay = json.loads(Path(argv[index + 1]).read_text())
@@ -125,6 +125,8 @@ class ReleaseSafetyTests(unittest.TestCase):
                     service = model["services"][name]
                     if "image" in change:
                         service["image"] = change["image"]
+                    if "environment" in change:
+                        service.setdefault("environment", {}).update(change["environment"])
                     if "volumes" in change:
                         replacements = {v["target"]: v for v in change["volumes"]}
                         service["volumes"] = [replacements.get(v["target"], v) for v in service.get("volumes", [])]
@@ -255,6 +257,58 @@ class ReleaseSafetyTests(unittest.TestCase):
         after["services"]["radius-api"]["image"] = NEW_IMAGE
         with self.assertRaises(DEPLOY.Refusal):
             DEPLOY.verify_delta(self.model, after, overlay)
+
+    def test_hosted_onesa_overlay_keeps_all_existing_gates_and_aliases(self):
+        source = DEPLOY.extract_source(self.archive, self.root / "source", COMMIT)
+        gateway = self.model["services"]["gateway"]
+        gateway["environment"].update(PASOFI_HOTSPOT_PORTAL="true", PAMOFI_PUBLIC_HOST="oracle.example.com")
+        gateway["volumes"].append({"type": "bind", "source": str(self.root / "old-hotspot-web"),
+                                    "target": "/opt/pasofi/hotspot-web", "read_only": True})
+        identity = copy.deepcopy(self.model["services"]["notification"])
+        identity["environment"].update(PASOFI_ONESA_MODE="managed", PASOFI_ONESA_ISSUER="https://auth.onesa.eu/",
+                                        PASOFI_ONESA_REDIRECT_URI="https://pasofi.mobile.onesa.eu/onesa-callback.html")
+        identity["environment"]["PUBLIC_ORIGIN_ALIASES"] = '["https://existing.example.com"]'
+        self.model["services"].update(identity=identity, **{"identity-migrate": copy.deepcopy(identity)})
+        services = [*self.manifest["services"], "identity"]
+        overlay, hotspot = DEPLOY.plan_overlay(self.model, source, services, COMMIT, self.containers)
+        self.assertTrue(hotspot)
+        self.assertFalse(any("environment" in change for change in overlay["services"].values()))
+
+        overlay, _ = DEPLOY.plan_overlay(self.model, source, services, COMMIT, self.containers,
+                                         enable_hotspot_onesa=True)
+        overrides = {name: change["environment"] for name, change in overlay["services"].items()
+                     if "environment" in change}
+        self.assertEqual(set(overrides), {"gateway", "identity", "prepaid-access"})
+        self.assertEqual(overrides["gateway"]["PASOFI_HOTSPOT_PUBLIC_HOST"], DEPLOY.HOTSPOT_HOST)
+        self.assertEqual(overrides["gateway"][DEPLOY.HOTSPOT_CALLBACK], DEPLOY.HOTSPOT_CALLBACK_URL)
+        self.assertEqual(overrides["identity"][DEPLOY.HOTSPOT_CALLBACK], DEPLOY.HOTSPOT_CALLBACK_URL)
+        self.assertEqual(json.loads(overrides["identity"]["PUBLIC_ORIGIN_ALIASES"]),
+                         ["https://existing.example.com", DEPLOY.HOTSPOT_ORIGIN])
+        self.assertEqual(json.loads(overrides["prepaid-access"]["PUBLIC_ORIGIN_ALIASES"]), [DEPLOY.HOTSPOT_ORIGIN])
+        path = self.root / "hotspot-upgrade.json"
+        path.write_text(json.dumps(overlay))
+        after = json.loads(self.compose_result(["-f", str(path)]))
+        DEPLOY.verify_delta(self.model, after, overlay)
+
+        with self.subTest("Unrelated change even if encoded in the overlay"):
+            overrides["identity"]["EXISTING_GATE"] = "true"
+            after["services"]["identity"]["environment"]["EXISTING_GATE"] = "true"
+            with self.assertRaisesRegex(DEPLOY.Refusal, "outside the dedicated Onesa callback"):
+                DEPLOY.verify_delta(self.model, after, overlay)
+
+        with self.subTest("Conflicting existing callback is preserved"):
+            identity["environment"][DEPLOY.HOTSPOT_CALLBACK] = "https://elsewhere.example.com/onesa-callback.html"
+            with self.assertRaisesRegex(DEPLOY.Refusal, "differs from the approved URL"):
+                DEPLOY.plan_overlay(self.model, source, services, COMMIT, self.containers, enable_hotspot_onesa=True)
+        with self.subTest("No activation on an ordinary gateway"):
+            gateway["volumes"].pop()
+            with self.assertRaisesRegex(DEPLOY.Refusal, "existing dedicated captive portal"):
+                DEPLOY.plan_overlay(self.model, source, services, COMMIT, self.containers, enable_hotspot_onesa=True)
+
+    def test_hosted_onesa_requires_a_captured_baseline(self):
+        self.args.enable_hotspot_onesa = True
+        with self.assertRaisesRegex(DEPLOY.Refusal, "requires a verified per-service baseline"):
+            self.run_plan()
 
     def test_apply_only_migrates_owned_services_and_updates_explicit_unprotected_targets(self):
         self.run_plan(apply=True)
