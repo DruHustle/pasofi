@@ -77,9 +77,10 @@ export async function inspectVercelConfiguration(environment = process.env) {
     const value = environment.PASOFI_HOTSPOT_PUBLIC_ORIGIN;
     const portal = new URL(value);
     const aliases = JSON.parse(environment.PASOFI_PUBLIC_ORIGIN_ALIASES || '[]');
+    const dedicatedEntries = Array.isArray(aliases) ? aliases.filter(alias => alias === 'https://hotspot.pasofi.mobile.onesa.eu').length : 0;
     if (portal.protocol !== 'https:' || portal.origin !== value || portal.port || !allowedHostname(portal.hostname) ||
         environment.PASOFI_HOTSPOT_PUBLIC_HOST !== portal.hostname ||
-        !Array.isArray(aliases) || aliases.length > 3 || !aliases.includes(value) ||
+        !Array.isArray(aliases) || dedicatedEntries > 1 || aliases.length - dedicatedEntries > 3 || !aliases.includes(value) ||
         !certificate.checkHost(portal.hostname, { wildcards: false })) throw Error('Qualify the exact portal origin, aliases and certificate.');
     for (const alias of aliases) {
       const url = new URL(alias);
