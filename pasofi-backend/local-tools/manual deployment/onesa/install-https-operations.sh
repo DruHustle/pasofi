@@ -19,8 +19,8 @@ cat > "$tmp/pamofi-cert-renew" <<'EOF'
 set -euo pipefail
 umask 077
 root=/home/ubuntu/pamofi/production
-hosts=(api.pasofi.onesa.eu hotspot.pasofi.mobile.onesa.eu)
-cert_name=pamofi-api-onesaeu
+hosts=(api.pasofi.mobile.onesa.eu hotspot.pasofi.mobile.onesa.eu)
+cert_name=pasofi-public
 image=pamofi-certbot:5.9.0-arm64
 dry=false
 case "${1:-}" in '') ;; --dry-run) dry=true;; *) echo 'Invalid renewal option' >&2; exit 2;; esac

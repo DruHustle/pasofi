@@ -1,10 +1,17 @@
 #!/bin/sh
 set -eu
 
-# This checks the host copy only. A deployed router certificate must be
-# checked independently, and renewed material must be installed there.
-cert=${1:-/home/ubuntu/pamofi/production/acme/config/live/pamofi-hotspot-onesaeu/fullchain.pem}
-[ "$#" -le 1 ] && [ -r "$cert" ] || { echo 'Hotspot certificate unavailable' >&2; exit 1; }
-openssl x509 -in "$cert" -noout -checkhost hotspot.pamofi.onesa.eu | grep -q 'does match' || { echo 'Hotspot certificate hostname mismatch' >&2; exit 1; }
-openssl x509 -in "$cert" -noout -checkend 2592000 >/dev/null || { echo 'Hotspot certificate expires within 30 days' >&2; exit 1; }
-echo 'Hotspot certificate host copy has the expected hostname and more than 30 days remaining.'
+# Checks the Oracle host copies of the router-local HotSpot login certificates
+# (login.pasofi.mobile.onesa.eu). Each router keeps its own private key; this does
+# not check what a router serves. Renew with router-login-sign.sh, then import the
+# new chain on that router. Pass one certificate path to check only that file.
+host=login.pasofi.mobile.onesa.eu
+base=/home/ubuntu/pamofi/production/acme/router-login
+[ "$#" -le 1 ] || { echo 'Usage: check.sh [certificate]' >&2; exit 2; }
+if [ "$#" -eq 0 ]; then set -- "$base/g0/g0.crt" "$base/k0/k0.crt"; fi
+for cert do
+  [ -r "$cert" ] || { echo "Hotspot certificate unavailable: $cert" >&2; exit 1; }
+  openssl x509 -in "$cert" -noout -checkhost "$host" | grep -q 'does match' || { echo "Hotspot certificate hostname mismatch: $cert" >&2; exit 1; }
+  openssl x509 -in "$cert" -noout -checkend 2592000 >/dev/null || { echo "Hotspot certificate expires within 30 days: $cert" >&2; exit 1; }
+done
+echo 'Router login certificate host copies have the expected hostname and more than 30 days remaining.'
