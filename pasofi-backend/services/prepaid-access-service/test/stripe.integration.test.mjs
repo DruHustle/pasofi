@@ -164,9 +164,9 @@ test('partial refunds and a won Stripe dispute preserve the exact settled balanc
  try{
   const {attemptId}=await f.start(),intent=f.succeed();
   const check=()=>reconcileProviderPayment(f.pool,attemptId,f.adapter);
-  const entitlement=async()=>(await f.pool.query('SELECT id,consumed_bytes::text,expires_at,revoked_at FROM purchase_entitlements WHERE order_id=$1',[f.order])).rows[0];
+  const entitlement=async()=>(await f.pool.query('SELECT id,consumed_bytes::text,activated_at,validity_seconds,revoked_at FROM purchase_entitlements WHERE order_id=$1',[f.order])).rows[0];
   assert.equal((await check()).state,'fulfilled');
-  await f.pool.query("UPDATE purchase_entitlements SET consumed_bytes=123,activated_at=now(),expires_at=now()+interval '7 days' WHERE order_id=$1",[f.order]);
+  await f.pool.query("UPDATE purchase_entitlements SET consumed_bytes=123,activated_at=now() WHERE order_id=$1",[f.order]);
   const original=await entitlement();
   intent.latest_charge.amount_refunded=100;
   assert.equal((await check()).state,'fulfilled');
