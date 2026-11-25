@@ -153,10 +153,15 @@ test.describe('narrow hotspot catalogue', () => {
 });
 
 test('wide hotspot screens retain the full comparison controls and existing availability state', async ({ page }) => {
-  await fixture(page);
+  const { mutations } = await fixture(page);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${origin}/#bundles`);
+  await page.goto(`${origin}/connect`);
+  const voucher = page.getByRole('region', { name: 'Have a voucher?' });
+  await expect(voucher.getByText('Voucher redemption is currently paused.')).toBeVisible();
+  await expect(voucher.getByRole('button', { name: 'Redeem voucher' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'View bundles', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Find your fit.', exact: true })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Sort bundles', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'mini-v1 purchasing is not available' })).toBeDisabled();
+  expect(mutations).toEqual([]);
 });

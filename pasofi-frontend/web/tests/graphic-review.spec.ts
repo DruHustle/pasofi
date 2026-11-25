@@ -37,7 +37,7 @@ for (const width of [320, 390, 1280]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     const last = await page.locator('.pf-bundle-card').last().boundingBox();
     expect(last!.y + last!.height).toBeLessThan(width >= 1000 ? 900 : 1100);
-    for (const button of await page.locator('.pf-bundle-card button, .pf-quick-actions button').all()) {
+    for (const button of await page.locator('.pf-bundle-card button:visible, .pf-quick-actions button:visible, .pf-hotspot-voucher button:visible').all()) {
       const box = await button.boundingBox(); expect(box!.height).toBeGreaterThanOrEqual(44); expect(box!.width).toBeGreaterThanOrEqual(44);
     }
     await page.screenshot({ path: testInfo.outputPath(`connect-${width}.png`), fullPage: true });

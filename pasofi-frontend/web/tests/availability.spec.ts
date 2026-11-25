@@ -100,7 +100,7 @@ for (const width of [320, 390]) {
     await test.step('Captive empty-state refresh updates availability and focuses the catalogue in place', async () => {
       await page.goto('/connect');
       await expect(page.getByText(emptyMessage, { exact: true })).toBeVisible();
-      await expect(page.getByText('Check bundle prices and voucher availability at this hotspot.', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Connect to PasoFi', exact: true })).toBeVisible();
       await expect(page.getByText('SERVICE IN PREPARATION', { exact: true })).toBeVisible();
       const before = { ...state.reads };
       await page.getByRole('button', { name: 'Refresh availability', exact: true }).click();

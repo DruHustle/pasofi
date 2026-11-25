@@ -323,3 +323,35 @@ html{scroll-padding-bottom:100px}body{min-width:280px}button,a,input,select,text
 .pf-catalogue--hotspot .pf-bundle-price { gap: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .pf-catalogue--hotspot .pf-bundle-price strong { font-size: 17px; letter-spacing: 0; }
 .pf-catalogue--hotspot .pf-bundle-card > .pf-button { min-width: 60px; padding: 6px; }
+
+.pf-hotspot-voucher {
+  display: none;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid #afcbbb;
+  border-radius: 16px;
+  background: #e9f7ef;
+  color: var(--pf-forest);
+}
+
+.pf-hotspot-voucher-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.pf-hotspot-voucher h2 { margin: 0 0 3px; font-size: 18px; line-height: 1.25; }
+.pf-hotspot-voucher p { margin: 0; color: #35584d; font-size: 14px; line-height: 1.4; }
+.pf-hotspot-voucher > .pf-button { justify-self: end; }
+
+@media (min-width: 700px) {
+  .pf-hotspot-voucher { display: grid; }
+  .pf-captive .pf-quick-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pf-captive .pf-quick-actions > .pf-captive-voucher-quick-action { display: none; }
+}
