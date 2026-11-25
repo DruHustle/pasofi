@@ -7,12 +7,13 @@ POSTs the standard trial identity to the exact HTTPS hotspot origin. A button
 works without JavaScript. Login errors stop automatic retries. Device identity
 and paid credentials are never added to external URLs.
 
-`status.html` displays the remaining time reported by RouterOS. At expiry, or
-when the open status page resumes after expiry, it shows that the welcome time
-has ended and keeps the bundle and voucher links visible. The login and logout
-pages offer the same links. An unauthenticated HTTP probe, status request or
-logout request goes to that site's fixed HTTPS login. RouterOS enforces the
-trial duration and rate limits.
+`status.html` displays the remaining welcome time reported by RouterOS. When
+a timed connection expires, the open status page shows an expiry dialog with
+bundle and voucher links. A backgrounded status page shows it on return.
+Browsers without modal support still show the expiry message and actions on
+the page. The login and logout pages offer the same links. An unauthenticated
+HTTP probe, status request or logout request goes to that site's fixed HTTPS
+login. RouterOS enforces the trial duration and rate limits.
 
 The installer writes the RouterOS `api.json` template. With a valid HotSpot DNS
 name and certificate, RouterOS advertises its HTTPS `/api` endpoint through DHCP.
