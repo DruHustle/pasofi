@@ -73,7 +73,7 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
         return route.fulfill({ response: await page.request.get(fixture + url.pathname) });
     }
   });
-  await page.route(authorize, route => route.fulfill({ contentType: 'text/html',
+  await page.route(url => url.origin === 'https://auth.onesa.eu' && url.pathname === '/authorize', route => route.fulfill({ contentType: 'text/html',
     body: '<a href="' + captive + '/onesa-callback.html?code=isolated-code&amp;state=' + state + '">Continue fixture sign-in</a>' }));
   await page.route(account, route => route.fulfill({ contentType: 'text/html',
     body: '<a href="' + captive + '/?registration=complete">Return after fixture registration</a>' }));
@@ -123,4 +123,17 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
   expect(completed).toBe(true);
   await page.getByRole('button', { name: 'Close customer workspace' }).click();
   await expect(page).toHaveURL(captive + '/connect');
+
+  completed = false;
+  await page.goto(captive + '/onesa-callback.html?error=access_denied&state=' + state);
+  await expect(page.getByRole('heading', { name: 'Check your PasoFi access' })).toBeVisible();
+  await expect(page).toHaveURL(captive + '/onesa-callback.html');
+  await page.getByRole('link', { name: 'Return to PasoFi Wi-Fi' }).click();
+  await expect(page.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', account);
+  await page.getByRole('button', { name: 'Sign in with a different account' }).click();
+  await expect(page).toHaveURL(authorize + '&prompt=login');
+  expect(returns.at(-1)).toBe('/connect');
+  await page.getByRole('link', { name: 'Continue fixture sign-in' }).click();
+  await expect(page).toHaveURL(captive + '/connect');
+  expect(completed).toBe(true);
 });

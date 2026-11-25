@@ -44,6 +44,12 @@
   if (query.has('error')) {
     if (!customer && query.get('error') === 'access_denied') {
       failure('Staff sign-in needs attention', 'Check that your PasoFi staff access is approved. Sign in again and complete the authenticator prompt.', true);
+    } else if (hotspot && query.get('error') === 'access_denied') {
+      failure('Check your PasoFi access', 'Use an Onesa account with PasoFi access. If you’re new to PasoFi, choose Sign up on the Wi-Fi page.');
+      if (back) {
+        back.href = '/connect?onesa=retry';
+        back.textContent = 'Return to PasoFi Wi-Fi';
+      }
     } else {
       failure('Sign-in interrupted', 'Return to where you started and try again.');
     }

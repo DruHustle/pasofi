@@ -7,6 +7,7 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
   const [guest, setGuest] = useState(false);
+  const retryAccount = hotspotPortal && new URLSearchParams(location.search).get('onesa') === 'retry';
   const opener = useRef<HTMLButtonElement>(null), confirmation = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (confirm) confirmation.current?.focus(); }, [confirm]);
   useEffect(() => {
@@ -29,7 +30,7 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     if (busy) return;
     setBusy(true); setError('');
     try {
-      await startProductSignIn(false,currentCustomerScreen(),false,claimGuest);
+      await startProductSignIn(false,currentCustomerScreen(),retryAccount,claimGuest);
     } catch { setError('Onesa sign-in is temporarily unavailable. Please try again.'); setBusy(false); }
   }
   const signup = <a href={registrationUrl('user')} onClick={()=>rememberRegistration()}>Create an Onesa account</a>;
@@ -44,7 +45,7 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
     {!hotspotPortal && signup}
   </nav>;
   if (hotspotPortal) return <nav className="pf-onesa-sign-in pf-onesa-sign-in-prominent" aria-label="Onesa customer account">
-    <button type="button" className="pf-button pf-button-primary" disabled={busy} onClick={() => signIn()}>{busy ? 'Opening Onesa…' : 'Sign in'}</button>
+    <button type="button" className="pf-button pf-button-primary" disabled={busy} onClick={() => signIn()}>{busy ? 'Opening Onesa…' : retryAccount ? 'Sign in with a different account' : 'Sign in'}</button>
     <a className="pf-button pf-button-secondary" href={registrationUrl('user')} onClick={()=>rememberRegistration()}>Sign up</a>
     <p>Save your recovery details before signing in if you have guest purchases.</p>
     {guest && <button type="button" disabled={busy} onClick={() => signIn(true)}>Keep guest purchases with Onesa</button>}
