@@ -1,4 +1,4 @@
-import { registrationUrl, rememberRegistration, startProductSignIn } from './registration';
+import { registrationUrl, rememberRegistration, staffEntry, startProductSignIn } from './registration';
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, ApiError } from './api';
@@ -67,10 +67,10 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
   }, [password, email, displayName, step]);
   async function startOnesa(fresh = false) {
     if (busy || !onesaOrigin) return;
-    if (location.origin !== onesaOrigin) { location.assign(onesaOrigin + '/#staff'); return; }
+    if (location.origin !== onesaOrigin) { location.assign(onesaOrigin + staffEntry); return; }
     setBusy(true); setMessage('');
     try {
-      await startProductSignIn(true,'/#staff',fresh);
+      await startProductSignIn(true,staffEntry,fresh);
     } catch (error) { setBusy(false); setMessage(messageFor(error)); }
   }
   async function authenticate(event: React.FormEvent) {

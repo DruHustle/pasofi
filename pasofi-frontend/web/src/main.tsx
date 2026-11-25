@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { resumeRegistration } from './registration';
+import { resumeRegistration, staffEntry } from './registration';
 import { createRoot } from 'react-dom/client';
 import { InvoiceLink } from './InvoiceActions';
 import type { Capabilities, Product } from './business';
@@ -33,7 +33,11 @@ const navItems: { view: View; label: string; icon: IconName }[] = [
   { view: 'home', label: 'Home', icon: 'home' }, { view: 'bundles', label: 'Bundles', icon: 'grid' },
   { view: 'history', label: 'History', icon: 'history' }, { view: 'account', label: 'Account', icon: 'user' },
 ];
+function mainPath() {
+  return ['/connect', '/handoff', staffEntry].includes(location.pathname) ? '/' : location.pathname;
+}
 function locationView(): View {
+  if (!hotspotPortal && location.pathname === staffEntry) return 'staff';
   const hash = location.hash.slice(1).split('?')[0];
   if (views.includes(hash as View)) return hash as View;
   return location.pathname === '/connect' ? 'connect' : location.pathname === '/handoff' ? 'handoff' : 'home';
@@ -99,7 +103,7 @@ function App() {
   }, [capabilities?.demo, view]);
   useEffect(() => onSessionChange(change => {
     ++interactions.current; allowHomeRestore.current = false; setPurchase(null); setWorkspace(null); setCheckoutBundle(null); setRequestedBundleId(null);
-    history.replaceState(null, '', `${location.pathname === '/handoff' || location.pathname === '/connect' ? '/' : location.pathname}#home`); setView('home'); setCustomerTab('access');
+    history.replaceState(null, '', `${mainPath()}#home`); setView('home'); setCustomerTab('access');
     setNotice(change === 'signed_out' ? 'Signed out in another tab. Account details have been cleared from this view.' : 'Your account changed in another tab. Reopen your account tools to load the current account.');
   }), []);
   useEffect(() => {
@@ -117,8 +121,9 @@ function App() {
   }, []);
   function setLocation(next: View, bundleId?: string | null, replace = false) {
     const selected = (next === 'checkout' || next === 'receipt') && bundleId && /^[a-z][a-z0-9-]{0,39}$/.test(bundleId) ? bundleId : null;
-    const path = next === 'connect' ? '/connect' : hotspotPortal && next === 'voucher' ? '/connect#voucher'
-      : `${location.pathname === '/connect' || location.pathname === '/handoff' ? '/' : location.pathname}#${next}${selected ? `?bundle=${encodeURIComponent(selected)}` : ''}`;
+    const path = next === 'staff' && !hotspotPortal ? staffEntry
+      : next === 'connect' ? '/connect' : hotspotPortal && next === 'voucher' ? '/connect#voucher'
+      : `${mainPath()}#${next}${selected ? `?bundle=${encodeURIComponent(selected)}` : ''}`;
     setRequestedBundleId(selected);
     if (`${location.pathname}${location.hash}` !== path) history[replace ? 'replaceState' : 'pushState'](null, '', path);
     setView(next);
