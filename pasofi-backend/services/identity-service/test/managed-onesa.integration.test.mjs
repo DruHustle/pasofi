@@ -222,6 +222,8 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     const started=await request('POST','onesa/start',{claimGuest:true,returnTo:'/#history'},guestCookie);
     assert.equal(started.statusCode,200,started.body);
     query=new URL(started.json().authorizationUrl).searchParams;
+    assert.equal(query.get('prompt'),'login');
+    assert.equal(query.get('max_age'),'0');
     return request('POST','onesa/complete',{code:'claim',state:query.get('state')},
       [guestCookie,cookie(started,'onesa_customer_flow')].join('; '));
   };

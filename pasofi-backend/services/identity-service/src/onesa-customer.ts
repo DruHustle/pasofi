@@ -36,6 +36,7 @@ export class OnesaCustomer extends OnesaStaff {
     const authorization = oidc.buildAuthorizationUrl(await this.protocolClient(), {
       redirect_uri: callback.href, response_type: 'code', ...this.authorizationParameters,
       state, nonce, code_challenge_method: 'S256', code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
+      ...(guestToken ? {prompt:'login',max_age:'0'} : {}),
     });
     await db.query('DELETE FROM customer_onesa_flows WHERE expires_at<=now()');
     await db.query('INSERT INTO customer_onesa_flows(state_hash,browser_hash,verifier,nonce,return_to,guest_session_hash) VALUES($1,$2,$3,$4,$5,$6)',
@@ -53,6 +54,7 @@ export class OnesaCustomer extends OnesaStaff {
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     const tokens = await oidc.authorizationCodeGrant(await this.protocolClient(), url, {
       pkceCodeVerifier: result.rows[0].verifier, expectedNonce: result.rows[0].nonce, expectedState: params.state, idTokenExpected: true,
+      ...(guestHash ? {maxAge:300} : {}),
     }).catch(() => { throw denied(); });
     if (tokens.token_type.toLowerCase() !== 'bearer' || !tokens.access_token || tokens.access_token.length > (this.config.managed ? 16384 : 2048)) throw denied();
     const identity = await this.inspect(tokens.access_token);
