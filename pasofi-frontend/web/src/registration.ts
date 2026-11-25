@@ -40,6 +40,7 @@ export async function startProductSignIn(staff:boolean,returnTo:string,reauthent
     (target.origin !== 'https://auth.onesa.eu' || target.pathname !== '/authorize' || target.hash)) {
     throw Error('Invalid hotspot sign-in destination');
   }
+  if (hotspotPortal && !staff && reauthenticate) target.searchParams.set('prompt', 'login');
   const state = target.searchParams.get('state');
   if (!hotspotPortal && state && /^[A-Za-z0-9_-]{43}$/.test(state)) {
     sessionStorage.setItem('pasofi-onesa-flow:' + state, JSON.stringify({
