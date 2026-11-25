@@ -59,16 +59,17 @@ async function orderDelivery(client:PoolClient,orderId:string):Promise<InvoiceDe
 // or invalid production details leave a truthful payment receipt in place.
 export function invoiceIssuer(value:string|undefined,simulation:boolean):InvoiceSnapshot['operator']{
  if(simulation)return {name:'Example PasoFi Merchant',brand:'Pasofi',address:'1 Example Street',supportPhone:'',issuerConfirmed:true};
- const receipt={name:'PasoFi',brand:'Pasofi',address:'',supportPhone:'',issuerConfirmed:false};
- if(!value||Buffer.byteLength(value)>3072)return receipt;
+ const receipt={name:'PasoFi',brand:'PasoFi',address:'',supportPhone:'',issuerConfirmed:false};
+ if(!value)return {...receipt,issuerConfirmed:true};
+ if(Buffer.byteLength(value)>3072)return receipt;
  try{
   const issuer=JSON.parse(value);
   const field=(v:unknown,max:number)=>typeof v==='string'&&v.trim()===v&&v.length>0&&v.length<=max&&!/[\u0000-\u001f\u007f]/.test(v);
   if(!issuer||typeof issuer!=='object'||Array.isArray(issuer)||Object.keys(issuer).some(key=>!['name','address','supportPhone','taxId'].includes(key))
-   ||!field(issuer.name,100)||!field(issuer.address,110)
+   ||!field(issuer.name,100)||(issuer.address!==undefined&&!field(issuer.address,110))
    ||(issuer.supportPhone!==undefined&&!field(issuer.supportPhone,35))
    ||(issuer.taxId!==undefined&&!field(issuer.taxId,40)))return receipt;
-  return {name:issuer.name,brand:'Pasofi',address:issuer.address,supportPhone:issuer.supportPhone??'',issuerConfirmed:true,...(issuer.taxId?{taxId:issuer.taxId}:{})};
+  return {name:issuer.name,brand:'PasoFi',address:issuer.address??'',supportPhone:issuer.supportPhone??'',issuerConfirmed:true,...(issuer.taxId?{taxId:issuer.taxId}:{})};
  }catch{return receipt;}
 }
 type InvoiceSource={type:'cash'|'digital';id:string;customerId:string|null;agentId:string|null;siteId:string|null;siteName:string|null;paidAt:Date;priceMinor:number;currency:string;bundleId:string;byteLimit:string;validitySeconds:number;simulation:boolean;payment:InvoiceSnapshot['payment']};

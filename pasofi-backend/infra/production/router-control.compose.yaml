@@ -15,7 +15,7 @@ services:
     # this same SAN on K0's private owner tunnel; the resolver validates the
     # hostname and pins the HTTPS request to this RFC1918 endpoint.
     extra_hosts:
-      - "hotspot.pasofi.onesa.eu:10.78.254.4"
+      - "login.pasofi.mobile.onesa.eu:10.78.254.4"
     secrets:
       - routeros_routers
     volumes:

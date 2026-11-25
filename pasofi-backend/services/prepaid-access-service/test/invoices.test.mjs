@@ -63,7 +63,8 @@ test('only approved runtime data identifies a legal invoice seller',async()=>{
  const approved={name:'Example Seller Ltd',address:'2 Example Avenue',taxId:'EXAMPLE-001'};
  assert.equal(invoiceIssuer(JSON.stringify(approved),false).taxId,'EXAMPLE-001');
  assert.equal(invoiceIssuer(JSON.stringify(approved),false).issuerConfirmed,true);
- assert.deepEqual(invoiceIssuer(undefined,false),{name:'PasoFi',brand:'Pasofi',address:'',supportPhone:'',issuerConfirmed:false});
- assert.equal(invoiceIssuer(JSON.stringify({name:'Example Seller Ltd'}),false).issuerConfirmed,false);
+ assert.deepEqual(invoiceIssuer(undefined,false),{name:'PasoFi',brand:'PasoFi',address:'',supportPhone:'',issuerConfirmed:true});
+ assert.equal(invoiceIssuer(JSON.stringify({name:'Example Seller Ltd'}),false).issuerConfirmed,true);
+ assert.equal(invoiceIssuer('malformed',false).issuerConfirmed,false);
  assert.equal(invoiceIssuer(JSON.stringify(approved),true).name,'Example PasoFi Merchant');
 });

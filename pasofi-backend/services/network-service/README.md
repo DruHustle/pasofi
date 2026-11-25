@@ -198,4 +198,4 @@ Authorization rechecks the current credential verifier, expiry/revocation and NA
 
 ### Paid session speed
 
-Set `PASOFI_PAID_RADIUS_RATE_LIMIT` in the production RADIUS overlay to the approved upload/download rate (for example `5M/20M`) or to `router-profile` to omit the RADIUS speed attribute and use the receiving HotSpot user profile. The default preserves the current `1M/3M` cap. Confirm the paid profile and both sites' capacity before delegating the limit to RouterOS. The router's separate trial profile controls free trial speed.
+Set `PASOFI_PAID_RADIUS_RATE_LIMIT` in the production RADIUS overlay to the approved upload/download rate (for example `5M/20M`) or to `router-profile` to omit the RADIUS speed attribute and use the receiving HotSpot user profile. The default paid cap is `5M/15M`. Confirm the paid profile and both sites' capacity before delegating the limit to RouterOS. The router's separate trial profile uses `1M/3M` for the anonymous welcome session.

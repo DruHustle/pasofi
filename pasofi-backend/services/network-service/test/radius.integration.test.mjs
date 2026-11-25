@@ -49,7 +49,7 @@ test('mutual TLS and two registered NASes share one authoritative reservation', 
   assert.equal((await post(`${base}/radius/authorize`,c['ca.crt'],other,access(0),'nas_0')).status,401);
   assert.equal((await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(0),'unregistered')).status,401);
   assert.equal((await post(`${base}/radius/authorize`,c['ca.crt'],radius,{...access(0),'User-Password':attr('x'.repeat(43))},'nas_0')).status,401);
-  const first=await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(0),'nas_0');assert.equal(first.status,200);assert.equal(first.body['reply:Mikrotik-Total-Limit'],705032704);assert.equal(first.body['reply:Mikrotik-Total-Limit-Gigawords'],1);assert.equal(first.body['reply:Mikrotik-Rate-Limit'],'1M/3M');
+  const first=await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(0),'nas_0');assert.equal(first.status,200);assert.equal(first.body['reply:Mikrotik-Total-Limit'],705032704);assert.equal(first.body['reply:Mikrotik-Total-Limit-Gigawords'],1);assert.equal(first.body['reply:Mikrotik-Rate-Limit'],'5M/15M');
   const repeat=await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(0),'nas_0');assert.equal(repeat.status,200);assert.deepEqual(repeat.body['reply:Class'],first.body['reply:Class']);assert.ok(repeat.body['reply:Session-Timeout']<=first.body['reply:Session-Timeout']);
   process.env.PAMOFI_CUSTOMER_NETWORK_ENABLED='false';
   assert.equal((await post(`${base}/radius/authorize`,c['ca.crt'],radius,access(0),'nas_0')).status,401,'paused customer network rejects even an unexpired credential');

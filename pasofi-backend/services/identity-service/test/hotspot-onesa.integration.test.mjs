@@ -9,7 +9,7 @@ test('a configured hotspot customer flow retains its own callback and host-only 
 }, async t => {
   const issuer = 'https://auth.onesa.eu/';
   const origin = 'https://pasofi.example.invalid';
-  const hotspot = 'https://hotspot.pasofi.example.invalid';
+  const hotspot = 'https://hotspot.pasofi.mobile.onesa.eu';
   const unboundAlias = 'https://other.pasofi.example.invalid';
   const audience = 'https://api.pasofi.example.invalid';
   const clientId = 'pasofi_isolated_web_client';
@@ -19,7 +19,7 @@ test('a configured hotspot customer flow retains its own callback and host-only 
   const jwks = { keys: [{ ...await exportJWK(publicKey), alg: 'RS256', use: 'sig', kid: 'isolated' }] };
   Object.assign(process.env, {
     APP_ENV: 'production', NODE_ENV: 'production', PUBLIC_ORIGIN: origin,
-    PUBLIC_ORIGIN_ALIASES: JSON.stringify([hotspot, unboundAlias]),
+    PUBLIC_ORIGIN_ALIASES: JSON.stringify([unboundAlias, 'https://legacy.pasofi.example.invalid', 'https://api.pasofi.example.invalid', hotspot]),
     DATABASE_URL: process.env.PAMOFI_TEST_DATABASE_URL,
     STAFF_MFA_ENCRYPTION_KEY: randomBytes(32).toString('hex'),
     PASOFI_ONESA_MODE: 'managed', PASOFI_ONESA_ISSUER: issuer,

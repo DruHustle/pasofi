@@ -6,7 +6,7 @@ Every new recorded cash payment and every fulfilled, provider-verified digital p
 
 The PDF records the invoice number, issuer, issue/payment time, bundle, currency and exact paid amount, payment method/evidence and source reference. A demo invoice is conspicuously marked as a simulation. The sale commits the immutable source snapshot and invoice number. Existing stored PDFs are served byte for byte. New PDFs render on demand from the snapshot, independently of sale fulfilment. Refunds and reversals remain separate records. Number allocation can have gaps after rolled-back transactions and must never be reset.
 
-Configure `PASOFI_INVOICE_ISSUER_JSON` in the production runtime with the approved legal seller `name` and `address`, plus authorized `supportPhone` and `taxId` when applicable. The fallback is a payment receipt without unconfirmed seller details. Demo invoices use a synthetic issuer.
+Configure `PASOFI_INVOICE_ISSUER_JSON` in the production runtime with the approved issuer `name` and any approved `address`, `supportPhone` or `taxId`. New production documents default to the PasoFi issuer name without an address or tax identifier. Invalid issuer configuration falls back to a payment receipt. Demo invoices use a synthetic issuer.
 
 This is an ordinary commercial payment record, labelled **not a ZIMRA fiscal tax invoice**. A configured tax identifier identifies the seller. The PDF adds no tax rate, fiscal signature or FDMS QR code. Zimbabwe fiscalisation obligations must be handled through the business's qualified fiscal device/FDMS integration; a PDF generator alone does not meet them. See [ZIMRA fiscalisation guidance](https://www.zimra.co.zw/domestic-taxes/corporate/fiscalisation-explained).
 

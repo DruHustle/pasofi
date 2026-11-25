@@ -34,7 +34,7 @@ function parseClass(body:RadiusInput) {
  if(parts.length!==3 || parts[0]!=='pamofi' || !uuid.test(parts[1]) || !uuid.test(parts[2])) throw new RadiusInvalid();
  return {grantId:parts[1],generation:parts[2]};
 }
-export function paidRateReply(policy='1M/3M'):Record<string,string> {
+export function paidRateReply(policy='5M/15M'):Record<string,string> {
  if(policy==='router-profile')return {};
  if(!/^[1-9][0-9]{0,8}[kM]?\/[1-9][0-9]{0,8}[kM]?$/.test(policy))throw new Error('invalid_paid_radius_rate_limit');
  return {'reply:Mikrotik-Rate-Limit':policy};
