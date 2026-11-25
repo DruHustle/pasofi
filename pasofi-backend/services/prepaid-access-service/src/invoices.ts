@@ -2,7 +2,7 @@ import {SIMULATED_PROVIDERS} from './payment-provider.js';
 import {createHash,randomBytes,randomUUID,timingSafeEqual} from 'node:crypto';
 import type {PoolClient} from 'pg';
 import {loadDeliveryKeys,seal,unseal,type DeliveryKeys} from './delivery-crypto.js';
-import {renderInvoicePdf,type InvoiceSnapshot} from './invoice-pdf.js';
+import type {InvoiceSnapshot} from './invoice-pdf.js';
 
 export class InvoiceError extends Error{constructor(public readonly code:string){super(code);}}
 export type InvoiceDelivery={channel:'download'}|{channel:'email'|'sms';recipient:string};
@@ -67,9 +67,8 @@ async function issue(client:PoolClient,source:InvoiceSource,delivery:InvoiceDeli
   source:{type:source.type,id:source.id,siteName:source.siteName},
   line:{bundleId:source.bundleId,description:'Prepaid Wi-Fi data',quantity:1,byteLimit:source.byteLimit,validitySeconds:source.validitySeconds,unitAmountMinor:source.priceMinor,totalMinor:source.priceMinor},
   payment:source.payment,currency:source.currency,totalMinor:source.priceMinor,simulation:source.simulation,notice:'Not a ZIMRA fiscal tax invoice.'};
- const pdf=await renderInvoicePdf(snapshot);
- await client.query(`INSERT INTO paid_invoices(id,number,source_type,sale_id,order_id,customer_id,agent_id,site_id,issued_at,paid_at,currency,total_minor,simulation,snapshot,pdf_bytes,pdf_sha256)
-  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,[id,number,source.type,source.type==='cash'?source.id:null,source.type==='digital'?source.id:null,source.customerId,source.agentId,source.siteId,issuedAt,source.paidAt,source.currency,source.priceMinor,source.simulation,JSON.stringify(snapshot),pdf,hash(pdf)]);
+ await client.query(`INSERT INTO paid_invoices(id,number,source_type,sale_id,order_id,customer_id,agent_id,site_id,issued_at,paid_at,currency,total_minor,simulation,snapshot)
+  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,[id,number,source.type,source.type==='cash'?source.id:null,source.type==='digital'?source.id:null,source.customerId,source.agentId,source.siteId,issuedAt,source.paidAt,source.currency,source.priceMinor,source.simulation,JSON.stringify(snapshot)]);
  const token=delivery.channel==='sms'?randomBytes(32).toString('base64url'):null;
  const encrypted=delivery.channel==='download'?null:seal(JSON.stringify({recipient:delivery.recipient,...(token?{token}:{})}),keys!,`invoice:${id}`);
  await client.query(`INSERT INTO invoice_deliveries(invoice_id,channel,key_id,payload_cipher,payload_iv,payload_tag,download_token_hash,token_expires_at)

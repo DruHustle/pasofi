@@ -89,6 +89,17 @@ test('a global sales pause preserves exact retries and private paid receipts wit
 
  }finally{if(paused)await paused.close();await f.cleanup();}
 });
+test('voucher mistakes are limited per customer on a shared network',{skip:!url},async()=>{
+ const f=await setup({shifts:false});
+ try {
+  const redeem=who=>f.call('POST','/v1/vouchers/redeem',{code:'ABCD-EFGH-JKLM-2345'},who);
+  for(let attempt=0;attempt<10;attempt++)assert.equal((await redeem('customer')).statusCode,404);
+  const limited=await redeem('customer');
+  assert.equal(limited.statusCode,429);
+  assert.ok(Number(limited.headers['retry-after'])>0);
+  assert.equal((await redeem('customer2')).statusCode,404);
+ }finally{await f.cleanup();}
+});
 test('configured migration origin reaches the authenticated guard and foreign origins remain blocked',{skip:!url},async()=>{
  const f=await setup({env:{PUBLIC_ORIGIN_ALIASES:JSON.stringify(['https://pasofi.onesa.eu'])}});
  try{
@@ -544,10 +555,10 @@ test('recorded cash issues one immutable private invoice and encrypted delivery 
   assert.ok(!JSON.stringify(owned).includes(receipt.voucher.code));
   assert.equal((await f.call('POST','/v1/vouchers/redeem',{code:receipt.voucher.code},'customer')).statusCode,200);
   assert.equal((await f.call('GET',`/v1/customer/invoices?saleId=${sale.id}`,undefined,'customer')).json().invoices[0].pairingId,undefined);
-  const pdf=await f.call('GET',`${customerPath}/pdf`,undefined,'customer');assert.equal(pdf.statusCode,200);assert.match(pdf.headers['content-type'],/^application\/pdf/);assert.equal(pdf.headers['cache-control'],'no-store');assert.deepEqual(pdf.rawPayload,saved.pdf_bytes);
+  const pdf=await f.call('GET',`${customerPath}/pdf`,undefined,'customer');assert.equal(pdf.statusCode,200);assert.match(pdf.headers['content-type'],/^application\/pdf/);assert.equal(pdf.headers['cache-control'],'no-store');assert.equal(saved.pdf_bytes,null);assert.match(pdf.rawPayload.toString('ascii',0,8),/^%PDF-/);
   await assert.rejects(f.pool.query('UPDATE paid_invoices SET total_minor=1 WHERE id=$1',[invoice.id]),/immutable/);
   await f.pool.query('UPDATE sales_locations SET name=$2 WHERE id=$1',[f.site,'Renamed location after payment']);
-  assert.deepEqual((await f.call('GET',`${staffPath}/pdf`,undefined,'admin')).rawPayload,saved.pdf_bytes);
+  assert.deepEqual((await f.call('GET',`${staffPath}/pdf`,undefined,'admin')).rawPayload,pdf.rawPayload);
   // Reads are independent of the public selling gate, including the staff path.
   process.env.PAMOFI_COMMERCE_ENABLED='false';const paused=buildApp();
   try{assert.equal((await paused.inject({url:customerPath,headers:{cookie:'customer=main'}})).statusCode,200);assert.equal((await paused.inject({url:staffPath,headers:{cookie:'staff=agent'}})).statusCode,200);}finally{await paused.close();}
@@ -594,7 +605,8 @@ test('digital invoice is issued only on verified fulfillment and survives revers
   assert.equal((await f.call('GET',`/v1/customer/invoices/${invoice.id}/pdf`,undefined,'customer2')).statusCode,404);assert.equal((await f.call('GET',`/v1/staff/invoices/${invoice.id}/pdf`,undefined,'agent')).statusCode,404);
   assert.equal((await f.call('GET',`/v1/staff/invoices/${invoice.id}/pdf`,undefined,'admin')).statusCode,200);
   assert.equal((await f.call('POST',`/v1/orders/${order.id}/mock-payment`,{outcome:'reversed'},'customer')).json().state,'reversed');
-  assert.deepEqual((await f.call('GET',`/v1/customer/invoices/${invoice.id}/pdf`,undefined,'customer')).rawPayload,invoice.pdf_bytes);
+  assert.equal(invoice.pdf_bytes,null);
+  assert.match((await f.call('GET',`/v1/customer/invoices/${invoice.id}/pdf`,undefined,'customer')).rawPayload.toString('ascii',0,8),/^%PDF-/);
   const demo=(await f.call('POST','/v1/orders',{bundleId:'mini',mode:'demo'},'customer')).json().order;
   assert.equal((await f.call('POST',`/v1/orders/${demo.id}/demo-confirm`,{},'customer')).statusCode,200);
   assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM paid_invoices WHERE order_id=$1',[demo.id])).rows[0].n,0);

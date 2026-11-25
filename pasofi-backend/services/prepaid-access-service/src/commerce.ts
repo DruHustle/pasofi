@@ -65,6 +65,11 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
  // Existing paid vouchers may be redeemed during a sales outage only via an
  // independently approved recovery switch. No new sale or pairing is unlocked.
  const redemptionEnabled=!!pool&&!!keys&&(enabled||process.env.PAMOFI_VOUCHER_REDEMPTION_WHILE_SALES_PAUSED==='true');
+ const redemptionAccounts=new WeakMap<FastifyRequest,string>();
+ let checkRedemptionRate:ReturnType<typeof app.createRateLimit>;
+ app.addHook('onReady',async()=>{
+  checkRedemptionRate=app.createRateLimit({max:10,timeWindow:'1 minute',keyGenerator:request=>redemptionAccounts.get(request)!});
+ });
  const eventSecret=process.env.INTERNAL_EVENTS_SECRET??'';
  const deliverySms=enabled&&process.env.PAMOFI_SMS_DELIVERY_ENABLED==='true'&&process.env.OUTBOX_DISPATCH_ENABLED==='true'&&Buffer.byteLength(eventSecret)>=32&&(demo||!eventSecret.startsWith('DEMO_ONLY_'))&&!!process.env.NOTIFICATION_URL&&Buffer.byteLength(process.env.INTERNAL_DELIVERY_SECRET??'')>=32;
  const allowedSite=(staff:Staff,id:string)=>staff.role==='admin'||staff.siteIds.includes(id);
@@ -183,7 +188,15 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
   try{const result=await cancelCashReference(pool!,id,request.params.id);return result??reply.code(404).send({error:'not_found'});}catch(error){return errors(reply,error);}
  });
  app.get<{Params:{id:string}}>('/v1/receipt-pairings/:id',async(request,reply)=>{if(!keys)return reply.code(404).send({error:'commerce_disabled'});const id=await account(request,reply,false);if(!id)return;if(!uuid.test(request.params.id))return reply.code(404).send({error:'not_found'});try{const row=(await pool!.query('SELECT * FROM receipt_pairings WHERE id=$1 AND customer_id=$2',[request.params.id,id])).rows[0];if(!row)return reply.code(404).send({error:'not_found'});const reference={status:referenceStatus(row),quote:referenceQuote(row),expiresAt:row.expires_at};if(!row.sale_id)return reference;const sale=(await pool!.query('SELECT * FROM agent_sales WHERE id=$1',[row.sale_id])).rows[0];return {...reference,receipt:{sale:saleDto(sale),voucher:await readVoucher(pool!,sale.id,keys!)}};}catch(error){return errors(reply,error);}});
- app.post('/v1/vouchers/redeem',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(request,reply)=>{if(!redemptionEnabled)return reply.code(404).send({error:'voucher_redemption_disabled'});const id=await account(request,reply,false);if(!id)return;const b=record(request.body);if(typeof b.code!=='string'||b.code.length>64)return reply.code(400).send({error:'invalid_or_used'});try{return await redeemVoucher(pool!,id,b.code,demo);}catch(error){return errors(reply,error);}});
+ app.post('/v1/vouchers/redeem',{config:{rateLimit:{max:240,timeWindow:'1 minute'}}},async(request,reply)=>{
+  if(!redemptionEnabled)return reply.code(404).send({error:'voucher_redemption_disabled'});
+  const id=await account(request,reply,false);if(!id)return;
+  redemptionAccounts.set(request,id);
+  const limit=await checkRedemptionRate(request);
+  if(!limit.isAllowed&&limit.isExceeded)return reply.header('Retry-After',limit.ttlInSeconds).code(429).send({error:'voucher_redemption_rate_limited'});
+  const b=record(request.body);if(typeof b.code!=='string'||b.code.length>64)return reply.code(400).send({error:'invalid_or_used'});
+  try{return await redeemVoucher(pool!,id,b.code,demo);}catch(error){return errors(reply,error);}
+ });
  async function internal(request:FastifyRequest,reply:FastifyReply,scope:string){const secret=process.env.INTERNAL_DELIVERY_SECRET;if(!enabled||!pool||!secret||Buffer.byteLength(secret)<32||(!demo&&secret.startsWith('DEMO_ONLY_'))){reply.code(503).send({error:'unavailable'});return false;}try{const header=request.headers.authorization;if(!header?.startsWith('Bearer '))throw Error();const {payload}=await jwtVerify(header.slice(7),new TextEncoder().encode(secret),{algorithms:['HS256'],issuer:'notification',subject:'notification',audience:'prepaid-access',requiredClaims:['iat','exp','sub'],maxTokenAge:'30s'});if(payload.scope!==scope){reply.code(403).send({error:'forbidden'});return false;}return true;}catch{reply.code(401).send({error:'unauthorized'});return false;}}
  app.get<{Params:{id:string}}>('/internal/v1/deliveries/:id',async(request,reply)=>{
   if(!await internal(request,reply,'delivery:read'))return;

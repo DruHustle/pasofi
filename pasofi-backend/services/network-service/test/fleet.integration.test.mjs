@@ -5,6 +5,7 @@ import {writeFileSync} from 'node:fs';
 import pg from 'pg';
 import {SignJWT} from 'jose';
 import {buildApp} from '../dist/app.js';
+import {issueRadiusCredential} from '../dist/credentials.js';
 import {fleetFixture} from './fleet-fixture.mjs';
 
 const database=process.env.PAMOFI_TEST_NETWORK_DATABASE_URL;
@@ -50,6 +51,33 @@ test('fleet preview/apply/rollback has durable authorization, idempotency, drift
   assert.equal((await read(`/internal/v1/router-fleet/routers/${unconfigured}`)).json().error,'router_not_configured');
   const calls=fixture.state.requests.length;
   assert.equal((await read(`/internal/v1/router-fleet/routers/${randomUUID()}`)).statusCode,404);assert.equal(fixture.state.requests.length,calls);
+  const credentialPool=new pg.Pool({connectionString:database,statement_timeout:1500});
+  const customerId=randomUUID(),credentialKey={version:1,key:randomBytes(32)};
+  const credential={customerId,nasId:nas,requestKey:randomUUID()};
+  const requestSeen=Promise.withResolvers(),finishRead=Promise.withResolvers();
+  await pool.query('UPDATE radius_nas SET enabled=true WHERE id=$1',[nas]);
+  try {
+   const existing=await issueRadiusCredential(credentialPool,credential,credentialKey);
+   const target=(await detail()).targets.find(t=>t.key==='identity');
+   fixture.state.pendingCompletion=finishRead.promise;
+   fixture.state.onRequest=requestSeen.resolve;
+   const pending=post(`${base}/changes`,{targetKey:target.key,expectedRevision:target.revision,values:{name:'Concurrent preview'},reason:'Verify credential lock compatibility',requestKey:randomUUID()});
+   try {
+    await Promise.race([requestSeen.promise,pending.then(()=>{throw Error('Preview returned before its RouterOS read');})]);
+    assert.deepEqual(await issueRadiusCredential(credentialPool,credential,credentialKey),existing);
+    const fresh=await issueRadiusCredential(credentialPool,{...credential,requestKey:randomUUID()},credentialKey);
+    assert.notEqual(fresh.username,existing.username);
+   } finally {
+    finishRead.resolve();
+    fixture.state.pendingCompletion=null;
+    fixture.state.onRequest=undefined;
+    assert.equal((await pending).statusCode,200);
+   }
+  } finally {
+   await credentialPool.end();
+   await pool.query('DELETE FROM radius_credentials WHERE customer_id=$1',[customerId]);
+   await pool.query('UPDATE radius_nas SET enabled=false WHERE id=$1',[nas]);
+  }
   const first=await preview('Pasofi changed');assert.equal(first.change.status,'prepared');assert.equal(fixture.state.writes,0);
   assert.equal(first.change.before.name,'Pasofi test');assert.equal(first.change.after.name,'Pasofi changed');
   assert.ok(Date.parse(first.change.expiresAt)-Date.parse(first.change.createdAt)>=599000);

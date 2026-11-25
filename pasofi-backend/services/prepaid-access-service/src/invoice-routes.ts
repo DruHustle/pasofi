@@ -3,6 +3,7 @@ import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import type {Pool} from 'pg';
 import {InvoiceError,invoiceDeliveryDetails,invoiceDto,invoiceTokenHash} from './invoices.js';
 import {loadDeliveryKeys} from './delivery-crypto.js';
+import {renderInvoicePdf} from './invoice-pdf.js';
 
 type Staff={staffId:string;role:'admin'|'agent'|'support';siteIds:string[]};
 type StaffGuard=(request:FastifyRequest,reply:FastifyReply)=>Promise<Staff|null>;
@@ -36,7 +37,10 @@ async function deliveryStatus(id:string,demo:boolean){
    ...(typeof result.attemptedAt==='string'&&Number.isFinite(Date.parse(result.attemptedAt))?{attemptedAt:result.attemptedAt}:{}),...(result.state==='delivered'?{deliveredAt}:{})};
  }catch{return {state:'unavailable'};}
 }
-function sendPdf(reply:FastifyReply,row:Record<string,any>){return reply.header('Cache-Control','no-store').header('Referrer-Policy','no-referrer').header('X-Content-Type-Options','nosniff').header('Content-Disposition',`attachment; filename="${row.number}.pdf"`).type('application/pdf').send(row.pdf_bytes);}
+async function sendPdf(reply:FastifyReply,row:Record<string,any>){
+ const pdf=row.pdf_bytes??await renderInvoicePdf(row.snapshot);
+ return reply.header('Cache-Control','no-store').header('Referrer-Policy','no-referrer').header('X-Content-Type-Options','nosniff').header('Content-Disposition',`attachment; filename="${row.number}.pdf"`).type('application/pdf').send(pdf);
+}
 export function registerInvoices(app:FastifyInstance,pool:Pool|null,demo:boolean,customer:(request:FastifyRequest)=>Promise<string|null>,staff:StaffGuard,originAllowed:(request:FastifyRequest)=>boolean){
  const unavailable=(reply:FastifyReply)=>reply.code(503).send({error:'invoices_unavailable'});
  for(const audience of ['customer','staff'] as const){
@@ -70,7 +74,7 @@ export function registerInvoices(app:FastifyInstance,pool:Pool|null,demo:boolean
     const actor=await principal(request,reply);if(!actor)return;if(!uuid.test(request.params.id))return reply.code(404).send({error:'not_found'});
     const row=(await pool!.query(`SELECT i.*,d.channel FROM paid_invoices i JOIN invoice_deliveries d ON d.invoice_id=i.id WHERE ${actor.where} AND i.id=$${actor.values.length+1}`,[...actor.values,request.params.id])).rows[0];
     if(!row)return reply.code(404).send({error:'not_found'});
-    if(pdf)return sendPdf(reply,row);
+    if(pdf)return await sendPdf(reply,row);
     return {invoice:{...invoiceDto(row),snapshot:row.snapshot,downloadPath:`${base}/${row.id}/pdf`,delivery:row.channel==='download'?{state:'download'}:await deliveryStatus(row.id,demo)}};
    }catch{return unavailable(reply);}
   });
@@ -88,7 +92,7 @@ export function registerInvoices(app:FastifyInstance,pool:Pool|null,demo:boolean
   if(!await internal(request,reply))return;if(!uuid.test(request.params.id))return reply.code(404).send({error:'not_found'});
   try{
    const row=(await pool!.query('SELECT i.*,d.channel,d.key_id,d.payload_cipher,d.payload_iv,d.payload_tag,d.download_token_hash,d.token_expires_at FROM paid_invoices i JOIN invoice_deliveries d ON d.invoice_id=i.id WHERE i.id=$1',[request.params.id])).rows[0];
-   if(!row)return reply.code(404).send({error:'not_found'});if(pdf)return sendPdf(reply,row);return invoiceDeliveryDetails(row,demo);
+   if(!row)return reply.code(404).send({error:'not_found'});if(pdf)return await sendPdf(reply,row);return invoiceDeliveryDetails(row,demo);
   }catch(error){return error instanceof InvoiceError&&error.code==='invoice_link_expired'?reply.code(410).send({error:error.code}):unavailable(reply);}
  });
  // Only a 256-bit, expiring, invoice-scoped token authorizes this anonymous
@@ -96,9 +100,9 @@ export function registerInvoices(app:FastifyInstance,pool:Pool|null,demo:boolean
  // in an access-log URL, and grants no voucher/account/network capability.
  app.post<{Body:{token:string}}>('/v1/invoice-downloads',{config:{rateLimit:{max:10,timeWindow:'1 minute'}},schema:{body:{type:'object',additionalProperties:false,required:['token'],properties:{token:{type:'string',pattern:'^[A-Za-z0-9_-]{43}$'}}}}},async(request,reply)=>{
   if(!pool)return unavailable(reply);if(!originAllowed(request))return reply.code(403).send({error:'origin_rejected'});
-  try{const row=(await pool.query(`SELECT i.number,i.pdf_bytes FROM invoice_deliveries d JOIN paid_invoices i ON i.id=d.invoice_id
+  try{const row=(await pool.query(`SELECT i.number,i.pdf_bytes,i.snapshot FROM invoice_deliveries d JOIN paid_invoices i ON i.id=d.invoice_id
    WHERE d.download_token_hash=$1 AND d.channel='sms' AND d.token_expires_at>clock_timestamp()`,[invoiceTokenHash(request.body.token)])).rows[0];
-   return row?sendPdf(reply,row):reply.code(404).send({error:'invoice_link_unavailable'});
+   return row?await sendPdf(reply,row):reply.code(404).send({error:'invoice_link_unavailable'});
   }catch{return unavailable(reply);}
  });
 }

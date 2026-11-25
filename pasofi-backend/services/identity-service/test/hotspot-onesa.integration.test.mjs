@@ -99,6 +99,17 @@ test('a configured hotspot customer flow retains its own callback and host-only 
   assert.equal((await request(hotspot, 'GET', 'session', undefined, session)).json().customerId, complete.json().customerId);
   assert.equal((await request(hotspot, 'POST', 'onesa/complete', callback, flow)).statusCode, 401);
 
+  let repeated = flow;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const retry = await request(hotspot, 'POST', 'onesa/start', { returnTo: '/connect' }, repeated);
+    assert.equal(retry.statusCode, 200, retry.body);
+    repeated = cookieValue(retry, '__Host-pasofi_onesa_customer_flow');
+  }
+  const limited = await request(hotspot, 'POST', 'onesa/start', {}, repeated);
+  assert.equal(limited.statusCode, 429);
+  assert.ok(Number(limited.headers['retry-after']) > 0);
+  assert.equal((await request(hotspot, 'POST', 'onesa/start', {})).statusCode, 200);
+
   // Optional binding absent or invalid: the ordinary web flow keeps serving.
   for (const value of ['', origin + '/onesa-callback.html', hotspot + '/other.html',
     'https://outside.example.invalid/onesa-callback.html']) {

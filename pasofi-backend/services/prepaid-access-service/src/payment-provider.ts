@@ -8,7 +8,7 @@ export type MethodEligibility={method:unknown;merchantEnabledCodes:Set<string>;s
 export type PaymentInput={attemptId:string;orderId:string;customerId:string;siteId:string;amountMinor:number;currency:string;methodCode:string;eligibility:MethodEligibility};
 export type PaymentTerms={referenceNumber:string;amountMinor:number;currency:string;attemptId?:string;orderId?:string;customerId?:string;siteId?:string;methodCode?:string};
 export type VerifiedStatus={state:'verified_success'|'pending'|'failed'|'reversed'|'unknown';providerStatus:string|null};
-export type InitiationResult={state:'initiated';referenceNumber:string;redirectUrl:string}|{state:'unknown';referenceNumber?:string};
+export type InitiationResult={state:'initiated';referenceNumber:string;redirectUrl:string}|{state:'unknown';referenceNumber?:string}|{state:'failed';referenceNumber?:never};
 export interface PaymentAdapter {
  readonly provider:PaymentProvider;
  // Only providers with an independently documented idempotency retention may

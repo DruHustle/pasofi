@@ -38,7 +38,7 @@ export async function issueRadiusCredential(pool:Pool,input:{customerId:string;n
  return transaction(pool,async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`radius-credential:${customerId}`]);
   const previous=await client.query(`SELECT c.id,c.username,c.nas_id,c.encrypted_secret,c.secret_key_version,c.revoked_at,c.expires_at,n.enabled,n.site_id,n.login_url
-    FROM radius_credentials c JOIN radius_nas n ON n.id=c.nas_id WHERE c.customer_id=$1 AND c.request_key=$2 FOR UPDATE OF c,n`,[customerId,requestKey]);
+    FROM radius_credentials c JOIN radius_nas n ON n.id=c.nas_id WHERE c.customer_id=$1 AND c.request_key=$2 FOR UPDATE OF c FOR SHARE OF n`,[customerId,requestKey]);
   if(previous.rowCount){
    const row=previous.rows[0];
    if(replayCredentialId!==undefined&&row.id!==replayCredentialId)throw new CredentialError('credential_not_replayable');

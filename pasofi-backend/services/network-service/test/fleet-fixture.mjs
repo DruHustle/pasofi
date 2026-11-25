@@ -12,6 +12,7 @@ export async function fleetFixture(nasId='11111111-1111-4111-8111-111111111111')
  const server=https.createServer({key:readFileSync(file('key')),cert:readFileSync(file('cert'))},async(request,response)=>{
   const path=new URL(request.url,'https://router.invalid');
   const entry={method:request.method,path:path.pathname,query:Object.fromEntries(path.searchParams),authorization:request.headers.authorization,body:null};state.requests.push(entry);
+  state.onRequest?.(entry);
   // The supported RouterOS contract serializes this account's commands.
   // A later GET cannot overtake an abandoned but still executing setter.
   if(state.pendingCompletion)await state.pendingCompletion;

@@ -34,6 +34,11 @@ function parseClass(body:RadiusInput) {
  if(parts.length!==3 || parts[0]!=='pamofi' || !uuid.test(parts[1]) || !uuid.test(parts[2])) throw new RadiusInvalid();
  return {grantId:parts[1],generation:parts[2]};
 }
+export function paidRateReply(policy='1M/3M'):Record<string,string> {
+ if(policy==='router-profile')return {};
+ if(!/^[1-9][0-9]{0,8}[kM]?\/[1-9][0-9]{0,8}[kM]?$/.test(policy))throw new Error('invalid_paid_radius_rate_limit');
+ return {'reply:Mikrotik-Rate-Limit':policy};
+}
 export function buildRadiusApp(options:Options) {
  const demo=process.env.APP_ENV==='demo'&&process.env.NODE_ENV==='development';
  if(demo?process.env.INTERNAL_RADIUS_ENABLED!=='true':process.env.PAMOFI_RADIUS_QUALIFIED!=='true') throw new Error('radius_not_qualified');
@@ -42,6 +47,7 @@ export function buildRadiusApp(options:Options) {
  const normalized=options.clientFingerprint.replaceAll(':','').toLowerCase();
  if(!/^[a-f0-9]{64}$/.test(normalized)) throw new Error('invalid_radius_client_fingerprint');
  const expectedFingerprint=Buffer.from(normalized,'hex');
+ const rateReply=paidRateReply(process.env.PASOFI_PAID_RADIUS_RATE_LIMIT);
  const app=Fastify({logger:false,bodyLimit:16384,https:{...options.tls,requestCert:true,rejectUnauthorized:true}});
  async function registeredNas(request:import('fastify').FastifyRequest) {
   const socket=request.raw.socket;
@@ -89,7 +95,7 @@ export function buildRadiusApp(options:Options) {
    const bytes=BigInt(grant.reservedBytes),deadline=Date.parse(grant.deadline),remaining=Math.floor((deadline-Date.now())/1000)-30;
    if(bytes>maximum || !Number.isFinite(deadline) || !Number.isSafeInteger(remaining) || remaining<=0 || remaining>86400) throw new RadiusInvalid();
    const correlation=Buffer.from(`pamofi:${grant.grantId}:${grant.generation}`,'utf8').toString('hex');
-   return {'reply:Class':{value:[`0x${correlation}`],do_xlat:false},'reply:Session-Timeout':remaining,'reply:Acct-Interim-Interval':60,'reply:Mikrotik-Total-Limit':Number(bytes&0xffffffffn),'reply:Mikrotik-Total-Limit-Gigawords':Number(bytes>>32n),'reply:Mikrotik-Rate-Limit':'1M/3M'};
+   return {'reply:Class':{value:[`0x${correlation}`],do_xlat:false},'reply:Session-Timeout':remaining,'reply:Acct-Interim-Interval':60,'reply:Mikrotik-Total-Limit':Number(bytes&0xffffffffn),'reply:Mikrotik-Total-Limit-Gigawords':Number(bytes>>32n),...rateReply};
   } catch(error){return reply.code(error instanceof RadiusInvalid?401:503).send({error:error instanceof RadiusInvalid?'rejected':'unavailable'});}
  });
  app.post<{Body:RadiusInput}>('/radius/accounting',async(request,reply)=>{

@@ -63,7 +63,10 @@ export function registerRouterFleet(app:FastifyInstance,pool:Pool|null){
  }
  async function nas(client:Pool|PoolClient,id:string,lock=false){
   if(!UUID.test(id))throw new FleetError('not_found',404);
-  const result=await client.query('SELECT id,site_id,site_name,client_name,enabled FROM radius_nas WHERE id=$1'+(lock?' FOR UPDATE':''),[id]);
+  // Fleet operations serialize with each other. A shared registry lock keeps
+  // the NAS binding stable during router I/O while credential readers proceed.
+  if(lock)await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`router-fleet:${id.toLowerCase()}`]);
+  const result=await client.query('SELECT id,site_id,site_name,client_name,enabled FROM radius_nas WHERE id=$1'+(lock?' FOR SHARE':''),[id]);
   if(!result.rowCount)throw new FleetError('not_found',404);return result.rows[0];
  }
  async function change(client:Pool|PoolClient,nasId:string,id:string,lock=false):Promise<ChangeRow>{

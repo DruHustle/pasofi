@@ -54,7 +54,7 @@ export async function beginProviderPayment(pool:Pool,customerId:string,orderId:s
    ), scheduled AS (
     INSERT INTO payment_reconciliation_jobs(attempt_id) SELECT id FROM updated WHERE provider_reference IS NOT NULL
     ON CONFLICT (attempt_id) DO NOTHING
-   ) SELECT state,redirect_url FROM updated`,[attempt.row.id,initiated.state==='initiated'?'pending':'unknown',initiated.referenceNumber??null,initiated.state==='initiated'?initiated.redirectUrl:null]);
+   ) SELECT state,redirect_url FROM updated`,[attempt.row.id,initiated.state==='initiated'?'pending':initiated.state,initiated.referenceNumber??null,initiated.state==='initiated'?initiated.redirectUrl:null]);
   // A webhook or a simultaneous retry can bind the intent before this response arrives.
   // Read the committed outcome in a new statement, after the conditional update has waited.
   const saved = row.rows[0] ?? (await pool.query(

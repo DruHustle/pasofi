@@ -1,5 +1,5 @@
 import * as oidc from 'openid-client';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type pg from 'pg';
 import type { FastifyInstance } from 'fastify';
 import { OnesaStaff, OnesaError, customerAssertion, configuredOnesaStaff, type Admin } from './onesa-staff.js';
@@ -180,6 +180,13 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
   const flowCookie = demo ? 'pasofi_demo_onesa_customer_flow' : '__Host-pasofi_onesa_customer_flow';
   const sessionCookie = demo ? 'pamofi_demo_session' : '__Host-pamofi_session';
   const attributes = { path: '/', httpOnly: true, secure: !demo, sameSite: 'lax' as const };
+  const signingKey = mfaKey(demo);
+  const signature = (id:string) => createHmac('sha256', signingKey!).update('pasofi-onesa-browser-rate:'+id).digest();
+  const browserKeys = new WeakMap<object,string>();
+  let checkBrowserRate:ReturnType<typeof app.createRateLimit>;
+  app.addHook('onReady', async () => {
+    checkBrowserRate = app.createRateLimit({ max: 12, timeWindow: '1 minute', keyGenerator: request => browserKeys.get(request)! });
+  });
   app.get('/v1/onesa/availability', async (_request, reply) => {
     reply.header('Cache-Control','no-store');
     const origin = pool && onesa ? onesa.config.callback.origin : null;
@@ -203,7 +210,7 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
     } catch(error) { return reply.code(error instanceof OnesaError ? error.status : 503).send({error:error instanceof OnesaError ? error.code : 'onesa_unavailable'}); }
   });
   for (const action of ['start', 'complete'] as const) app.post<{Body:Record<string,unknown>}>(`/v1/onesa/${action}`, {
-    config: { rateLimit: { max: 12, timeWindow: '1 minute' } },
+    config: { rateLimit: { max: 240, timeWindow: '1 minute' } },
     schema: { body: { type: 'object', additionalProperties: false, required: action === 'complete' ? ['code','state'] : [], properties: action === 'start' ? { returnTo: { type:'string',maxLength:100 } } : {
       state: { type:'string',minLength:43,maxLength:43 }, code:{ type:'string',minLength:1,maxLength:2048 }, iss:{ type:'string',maxLength:1024 }
     } } }
@@ -212,13 +219,24 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
     if (!pool || !onesa) return reply.code(503).send({error:'onesa_unavailable'});
     const callback = onesa.webCallback(request.headers.origin);
     if (!callback) return reply.code(403).send({error:'origin_rejected'});
+    const presented = request.cookies[flowCookie];
+    const [proof, browserId, mac, extra] = (presented ?? '').split('.');
+    const validBrowser = !!signingKey && isOpaque(proof) && isOpaque(browserId) && isOpaque(mac) && extra === undefined &&
+      timingSafeEqual(signature(browserId), Buffer.from(mac,'base64url'));
+    if (validBrowser) {
+      browserKeys.set(request, action + ':' + browserId);
+      const limit = await checkBrowserRate(request);
+      if (!limit.isAllowed && limit.isExceeded) return reply.header('Retry-After',limit.ttlInSeconds).code(429).send({error:'onesa_rate_limited'});
+    }
     try {
       if (action === 'start') {
         const flow = await onesa.start(pool, request.body.returnTo, callback);
-        reply.setCookie(flowCookie, flow.browser, {...attributes,maxAge:300});
+        const id = validBrowser ? browserId : freshOpaque();
+        const cookie = signingKey ? flow.browser + '.' + id + '.' + signature(id).toString('base64url') : flow.browser;
+        reply.setCookie(flowCookie, cookie, {...attributes,maxAge:300});
         return {authorizationUrl:flow.authorizationUrl};
       }
-      const result = await onesa.finish(pool, request.cookies[flowCookie], request.body as {state:string;code:string;iss?:string}, callback);
+      const result = await onesa.finish(pool, validBrowser ? proof : presented, request.body as {state:string;code:string;iss?:string}, callback);
       reply.clearCookie(flowCookie,attributes);
       reply.setCookie(sessionCookie,result.session,{...attributes,maxAge:result.maxAge});
       return {authenticated:true,customerId:result.customerId,returnTo:result.returnTo};

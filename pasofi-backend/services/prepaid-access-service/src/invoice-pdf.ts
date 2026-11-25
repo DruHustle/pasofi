@@ -12,8 +12,7 @@ export type InvoiceSnapshot={
 };
 
 // Embedded licensed fonts remove viewer substitution. Replace unsupported values
-// deterministically instead of allowing user-supplied site names to break a
-// payment transaction. The complete original strings remain in the snapshot.
+// deterministically. The complete original strings remain in the snapshot.
 const characterSets=new WeakMap<PDFFont,Set<number>>();
 function printable(value:string,font:PDFFont){let characters=characterSets.get(font);if(!characters){characters=new Set(font.getCharacterSet());characterSets.set(font,characters);}return [...value.replace(/[\r\n\t]/g,' ')].map(character=>characters!.has(character.codePointAt(0)!)?character:'?').join('');}
 let fontFiles:Promise<Buffer[]>|undefined;
@@ -29,7 +28,10 @@ function lines(value:string,font:PDFFont,size:number,width:number){
 }
 export async function renderInvoicePdf(snapshot:InvoiceSnapshot):Promise<Buffer>{
  const document=await PDFDocument.create();document.registerFontkit(fontkit);
- const [regularBytes,boldBytes]=await (fontFiles??=Promise.all([readFile(new URL('../assets/invoice-fonts/LiberationSans-Regular.ttf',import.meta.url)),readFile(new URL('../assets/invoice-fonts/LiberationSans-Bold.ttf',import.meta.url))]));
+ const [regularBytes,boldBytes]=await (fontFiles??=Promise.all([
+  readFile(new URL('../assets/invoice-fonts/LiberationSans-Regular.ttf',import.meta.url)),
+  readFile(new URL('../assets/invoice-fonts/LiberationSans-Bold.ttf',import.meta.url)),
+ ]).catch(error=>{fontFiles=undefined;throw error;}));
  const font=await document.embedFont(regularBytes,{subset:true}),bold=await document.embedFont(boldBytes,{subset:true});
  const blue=rgb(0.08,0.22,0.87),ink=rgb(0.10,0.15,0.23),muted=rgb(0.33,0.39,0.48),pale=rgb(0.94,0.96,1),lime=rgb(0.83,0.98,0.28);
  const page=document.addPage([595.28,841.89]),left=44,right=551.28,width=right-left;
