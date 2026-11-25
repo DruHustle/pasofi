@@ -15,9 +15,10 @@ const otherCustomer = randomUUID(),
   agent = randomUUID();
 const origin = 'http://localhost:5173',
   identitySecret = randomBytes(48).toString('hex');
+const mfaVerifiedAt = new Date().toISOString();
 const people = {
-  agent: { staffId: agent, role: 'agent', siteIds: [site], version: 1, mfaVerified: true },
-  admin: { staffId: admin, role: 'admin', siteIds: [], version: 1, mfaVerified: true },
+  agent: { staffId: agent, role: 'agent', siteIds: [site], version: 1, mfaVerified: true, mfaVerifiedAt },
+  admin: { staffId: admin, role: 'admin', siteIds: [], version: 1, mfaVerified: true, mfaVerifiedAt },
 };
 const identity = createServer(async (req, res) => {
   try {
