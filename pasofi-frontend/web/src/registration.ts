@@ -17,7 +17,7 @@ export async function signInAvailable(staff = false, signal?: AbortSignal) {
 export function currentCustomerScreen() {
   const path = location.pathname + location.hash;
   if (hotspotPortal && hotspotScreens.includes(path)) return path;
-  return path === '/connect' ? '/#connect' : '/' + location.hash;
+  return path === '/connect' ? '/#connect' : '/' + (location.hash || '#home');
 }
 
 function destination(value:string) {

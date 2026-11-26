@@ -90,6 +90,7 @@ export async function startNativeSignIn(
     response_type: 'code',
     ...(options.reauthenticate ? {prompt:'login'} : {}),
     scope: registration.renewal === true ? 'openid offline_access' : 'openid',
+    acr_values: 'urn:onesa:authentication:pasofi-customer',
     state: flow.state,
     nonce: flow.nonce,
     audience: registration.audience,

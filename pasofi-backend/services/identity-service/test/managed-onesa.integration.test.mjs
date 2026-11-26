@@ -92,7 +92,9 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     assert.equal(start.statusCode,200,start.body);
     query=new URL(start.json().authorizationUrl).searchParams;
     assert.equal(query.get('audience'),audience); assert.equal(query.get('code_challenge_method'),'S256');
-    if(staff) assert.equal(query.get('acr_values'),'http://schemas.openid.net/pape/policies/2007/06/multi-factor');
+    assert.equal(query.get('acr_values'), staff
+      ? 'http://schemas.openid.net/pape/policies/2007/06/multi-factor'
+      : 'urn:onesa:authentication:pasofi-customer');
     return request('POST',prefix+'complete',{code:'synthetic',state:query.get('state')},cookie(start,staff?'onesa_flow':'onesa_customer_flow'));
   }
   const nativeToken = (azp) => new SignJWT({azp,[ns+'user_id']:accountId,[ns+'products']:products,[ns+'roles']:[role,...extraRoles],onesa_roles:globalRoles,[ns+'mfa_time']:factor})

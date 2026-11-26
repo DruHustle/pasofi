@@ -22,7 +22,7 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
     let mounted=true;
     const listener=watchNativeReturn(destination=>{
       if(mounted){setActiveTab(destination);setScreen('account');setAttempt(n=>n+1);}
-    },()=>{if(mounted)setMessage('Onesa sign-in could not finish. Your existing account is available; try sign-in again.');})
+    },()=>{if(mounted)setMessage('Sign-in could not finish. Please try again.');})
       .then(stop=>{if(mounted)setNativeReturnReady(true);return stop;})
       .catch(()=>{if(mounted){setNativeReturnFailed(true);setNativeReturnReady(true);setMessage('Secure browser return is unavailable. Use the one-time account handoff instead.');}return ()=>{};});
     return ()=>{mounted=false;void listener.then(stop=>stop()).catch(()=>{});};
@@ -56,7 +56,7 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
     {!loading && <RegistrationLink tab={activeTab}/>}
     {!loading && (!capabilities || !usesNativeCustomerApi) && <a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">Continue to PasoFi account on the web</a>}
     {capabilities && <>
-      {usesNativeCustomerApi && <button onClick={() => setScreen('onesa')}>Sign in with Onesa</button>}
+      {usesNativeCustomerApi && <button onClick={() => setScreen('onesa')}>Sign in</button>}
       <button onClick={() => setScreen('account')}>My account</button>
       <button onClick={() => setScreen('recover')}>Recover</button>
       <button onClick={() => setScreen('handoff')}>Accept handoff</button>

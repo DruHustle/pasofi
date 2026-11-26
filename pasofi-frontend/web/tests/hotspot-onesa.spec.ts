@@ -79,12 +79,12 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
     body: '<a href="' + captive + '/?registration=complete">Return after fixture registration</a>' }));
 
   await page.goto(captive + '/connect');
-  await expect(page.getByRole('button', { name: 'Retry Onesa sign-in' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry sign-in' })).toBeVisible();
   expect(returns).toEqual([]);
   enabled = true;
-  await page.getByRole('button', { name: 'Retry Onesa sign-in' }).click();
+  await page.getByRole('button', { name: 'Retry sign-in' }).click();
   await expect(page.getByRole('heading', { name: 'Connect to PasoFi' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', account);
+  await expect(page.getByRole('link', { name: 'Create account' })).toHaveAttribute('href', account);
   await expect(page.getByRole('button', { name: 'View bundles' })).toBeVisible();
   await expect(page.getByText('You appear to be offline.', { exact: false })).toHaveCount(0);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -99,7 +99,7 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
   await expect(page.getByRole('heading', { name: 'Find your fit.' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
   await expect(page.getByText('You appear to be offline.', { exact: false })).toHaveCount(0);
-  await page.getByRole('link', { name: 'Sign up' }).click();
+  await page.getByRole('link', { name: 'Create account' }).click();
   await expect(page).toHaveURL(account);
   await page.getByRole('link', { name: 'Return after fixture registration' }).click();
   await expect(page).toHaveURL(authorize);
@@ -114,7 +114,7 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
   await page.getByRole('region', { name: 'Have a voucher?' }).getByRole('button', { name: 'Redeem voucher' }).click();
   await expect(page).toHaveURL(captive + '/connect#voucher');
   await expect(page.getByRole('textbox', { name: 'Voucher code' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', account);
+  await expect(page.getByRole('link', { name: 'Create account' })).toHaveAttribute('href', account);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page).toHaveURL(authorize);
   expect(returns).toEqual(['/connect', '/connect#bundles', '/connect#voucher']);
@@ -129,7 +129,7 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
   await expect(page.getByRole('heading', { name: 'Check your PasoFi access' })).toBeVisible();
   await expect(page).toHaveURL(captive + '/onesa-callback.html');
   await page.getByRole('link', { name: 'Return to PasoFi Wi-Fi' }).click();
-  await expect(page.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', account);
+  await expect(page.getByRole('link', { name: 'Create account' })).toHaveAttribute('href', account);
   await page.getByRole('button', { name: 'Sign in with a different account' }).click();
   await expect(page).toHaveURL(authorize + '&prompt=login');
   expect(returns.at(-1)).toBe('/connect');
