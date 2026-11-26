@@ -10,7 +10,6 @@ type Props = {
   browse: (button?: HTMLButtonElement) => void;
   account: (tab: CustomerTab, button: HTMLButtonElement) => void;
   help: (button?: HTMLButtonElement) => void;
-  recover: (button: HTMLButtonElement) => void;
 };
 function readLocations(value: unknown): Site[] {
   if (!value || typeof value !== 'object' || !('sites' in value) || !Array.isArray(value.sites) || value.sites.length > 1000) throw Error('invalid_locations');
@@ -23,7 +22,7 @@ function readLocations(value: unknown): Site[] {
   return locations;
 }
 
-export default function Home({ capabilities, children, onInteract, browse, account, help, recover }: Props) {
+export default function Home({ capabilities, children, onInteract, browse, account, help }: Props) {
   const [locationsOpen, setLocationsOpen] = useState(false), [locations, setLocations] = useState<Site[] | null>(null);
   const [locationsError, setLocationsError] = useState(false), [locationsAttempt, setLocationsAttempt] = useState(0), [locationQuery, setLocationQuery] = useState('');
   const locationPanel = useRef<HTMLDetailsElement>(null), locationSearch = useRef<HTMLInputElement>(null);
@@ -54,17 +53,6 @@ export default function Home({ capabilities, children, onInteract, browse, accou
     </section>
 
     {children}
-
-    <div className="pasofi-home-more">
-      <section className="pasofi-home-story" aria-labelledby="home-study-heading"><img src="/images/pasofi-study-together.webp" alt="Two adults working together on a laptop at a shared table" width={1536} height={1024} loading="lazy" decoding="async"/>
-        <div><span className="pasofi-home-kicker">MAKE ROOM FOR YOUR NEXT IDEA</span><h2 id="home-study-heading">A little data. <br/>So many possibilities.</h2><p>Study together, keep work moving, or catch up with someone you love. Choose the bundle that fits your day.</p><button className="pf-text-link" onClick={event => browse(event.currentTarget)}>Compare bundles <Icon name="arrow"/></button></div>
-      </section>
-      <section className="pasofi-home-account" aria-labelledby="home-account-heading"><span className="pasofi-home-account-icon"><Icon name="shield"/></span><span className="pasofi-home-kicker">ALREADY WITH PASOFI?</span><h2 id="home-account-heading">Your connection.<br/>In your hands.</h2><p>{capabilities?.vouchers ? 'Use a voucher, check your Wi-Fi or recover your existing account.' : 'Check your Wi-Fi or recover your existing account.'}</p><div>
-        <button disabled={!capabilities?.vouchers} onClick={event => account('voucher', event.currentTarget)}><Icon name="ticket"/><span>{capabilities?.vouchers === false ? 'Vouchers paused' : 'Redeem voucher'}</span><Icon name="chevron"/></button>
-        <button disabled={!capabilities} onClick={event => account('wifi', event.currentTarget)}><Icon name="wifi"/><span>My WiFi</span><Icon name="chevron"/></button>
-        <button onClick={event => recover(event.currentTarget)}><Icon name="user"/><span>Recover my account</span><Icon name="chevron"/></button>
-      </div></section>
-    </div>
 
     <details className="pasofi-home-locations" ref={locationPanel} open={locationsOpen} onToggle={event => setLocationsOpen(event.currentTarget.open)}>
       <summary><span className="pasofi-home-section-icon"><Icon name="location"/></span><span><strong>Find a PasoFi location</strong><small>Check listed locations before you visit.</small></span><Icon name="plus"/></summary>
