@@ -69,3 +69,32 @@ test('fleet registry and values reject arbitrary endpoints, targets, scripts, ex
   process.env.ROUTEROS_FLEET_FILE=fixture.registry;writeFileSync(fixture.registry,'not-json');assert.throws(()=>configuredFleet(),{message:'unavailable'});
  }finally{for(const [name,value] of Object.entries(saved)){if(value===undefined)delete process.env[name];else process.env[name]=value;}await fixture.close();}
 });
+
+test('device whitelist writes one exact MAC on one hotspot and preserves manual bindings',async()=>{
+ const fixture=await fleetFixture();
+ try {
+  const target={key:'devices',kind:'device-whitelist',name:'pasofi-customer'};
+  const router=new FleetRouter({...fixture.config,targets:[target]});
+  const manual={'.id':'*10',server:'all','mac-address':'02:00:00:00:00:01',type:'bypassed',disabled:'false'};
+  fixture.state.bindings=[manual];
+  const current=async()=>(await router.snapshot()).targets[0];
+  const initial=await current();
+  assert.deepEqual(initial.target.values,{devices:''});
+  assert.throws(()=>normalizeValues(target,{devices:'FF:FF:FF:FF:FF:FF'}),{message:'invalid_values'});
+  assert.throws(()=>validateFleetRows([{...fixture.row,targets:[{...target,name:'all'}]}],true),{message:'unavailable'});
+  await assert.rejects(router.write(initial,{devices:manual['mac-address']}),{message:'device_binding_conflict'});
+  await assert.rejects(router.write(initial,{devices:'02:00:00:00:00:02,02:00:00:00:00:03'}),{message:'one_device_per_change'});
+  assert.equal(fixture.state.writes,0);
+  await router.write(initial,{devices:'02:00:00:00:00:0a'});
+  assert.deepEqual(fixture.state.requests.at(-1).body,{
+   server:'pasofi-customer','mac-address':'02:00:00:00:00:0A',type:'bypassed',comment:'PasoFi admin device whitelist',
+  });
+  const applied=await current();
+  assert.equal(applied.target.values.devices,'02:00:00:00:00:0A');
+  assert.equal(applied.target.revision,router.withValues(initial,{devices:'02:00:00:00:00:0A'}).target.revision);
+  assert.equal(Object.hasOwn(applied.target,'bindings'),false);
+  await router.write(applied,{devices:''});
+  assert.deepEqual(fixture.state.bindings,[manual]);
+  assert.equal((await current()).target.revision,initial.target.revision);
+ }finally{await fixture.close();}
+});

@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import type {Pool,PoolClient,QueryResultRow} from 'pg';
 import {jwtVerify} from 'jose';
-import {configuredFleet,exactObject,FleetError,FleetRouter,fingerprint,normalizeValues,REVISION,sameValues,TARGET_KEY,UUID,type FleetConfig,type FleetTarget,type InternalSnapshot,type Values} from './fleet-routeros.js';
+import {configuredFleet,exactObject,FleetError,FleetRouter,fingerprint,normalizeValues,REVISION,sameValues,TARGET_KEY,UUID,whitelistChange,type FleetConfig,type FleetTarget,type InternalSnapshot,type Values} from './fleet-routeros.js';
 
 type Actor={id:string;version:string;expiresAt:number};
 type Params={id:string;changeId?:string};
@@ -143,6 +143,7 @@ export function registerRouterFleet(app:FastifyInstance,pool:Pool|null){
    const current=await snapshot(config,plan.targetKey);
    if(current.snapshot.target.revision!==plan.expectedRevision)throw new FleetError('revision_conflict',409);
    const after=current.router.withValues(current.snapshot,{...current.snapshot.target.values,...plan.values});
+   if(after.target.kind==='device-whitelist')whitelistChange(current.snapshot,after.target.values);
    if(sameValues(current.snapshot.target.values,after.target.values))throw new FleetError('invalid_values',400);
    return prepare(client,actor,config,{reason:plan.reason,requestKey:plan.requestKey,hash},current.snapshot,after);
   });
@@ -172,6 +173,7 @@ export function registerRouterFleet(app:FastifyInstance,pool:Pool|null){
    current=await snapshot(config,row.target_key);
    if(current.router.configRevision!==row.config_revision)throw new FleetError('configuration_changed',409);
    if(current.snapshot.target.revision!==row.before_revision)return {change:publicChange(await finish(row.nas_id,row.id,attempt,actor,'diverged','revision_conflict'))};
+   if(current.snapshot.target.kind==='device-whitelist')whitelistChange(current.snapshot,row.after_values);
    // Honour a locally revoked qualification/configuration before sending.
    const fresh=selectedConfig(row.nas_id);requireWrites(fresh);
    const freshRouter=new FleetRouter(fresh);
@@ -228,6 +230,7 @@ export function registerRouterFleet(app:FastifyInstance,pool:Pool|null){
    const current=await snapshot(config,parent.target_key);
    if(current.router.configRevision!==parent.config_revision||current.snapshot.target.revision!==parent.after_revision)throw new FleetError('revision_conflict',409);
    const inverse=current.router.withValues(current.snapshot,parent.before_values);
+   if(inverse.target.kind==='device-whitelist')whitelistChange(current.snapshot,inverse.target.values);
    return prepare(client,actor,config,{...input,hash,parentId:parent.id},current.snapshot,inverse);
   });
   return {change:publicChange(result)};

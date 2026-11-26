@@ -4,14 +4,14 @@ import type {FastifyInstance, FastifyReply, FastifyRequest} from 'fastify';
 type Staff = {staffId: string; role: 'admin'|'agent'|'support'; version: number; mfaVerified: boolean};
 type StaffGuard = (request: FastifyRequest, reply: FastifyReply, roles: Staff['role'][]) => Promise<Staff|null>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const KEYS = new Set(['name', 'comment', 'ssid', 'configuration.ssid', 'disabled', 'rate-limit', 'idle-timeout', 'keepalive-timeout']);
+const KEYS = new Set(['name', 'comment', 'ssid', 'configuration.ssid', 'disabled', 'rate-limit', 'idle-timeout', 'keepalive-timeout', 'devices']);
 const ERROR_CODES = new Set([
   'not_found', 'fleet_disabled', 'writes_disabled', 'router_not_configured', 'router_unavailable',
   'target_unavailable', 'device_mismatch', 'invalid_request', 'invalid_values', 'stale_revision',
   'idempotency_conflict', 'change_expired', 'change_not_prepared', 'change_not_applied',
   'actor_mismatch', 'router_busy', 'reconcile_too_soon', 'configuration_changed', 'no_changes',
   'rollback_not_available', 'unavailable', 'rate_limited', 'fleet_writes_disabled',
-  'revision_conflict', 'change_not_ready', 'reconciliation_pending',
+  'revision_conflict', 'change_not_ready', 'reconciliation_pending', 'one_device_per_change', 'device_binding_conflict',
 ]);
 function object(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -129,7 +129,7 @@ export function registerRouterFleet(app: FastifyInstance, demo: boolean, guard: 
               typeof input.targetKey !== 'string' || !/^[a-z][a-z0-9_-]{0,47}$/.test(input.targetKey) ||
               typeof input.expectedRevision !== 'string' || !/^[0-9a-f]{64}$/.test(input.expectedRevision) || !reason(input.reason) ||
               !object(input.values) || !Object.keys(input.values).length || Object.keys(input.values).length > 8 ||
-              Object.entries(input.values).some(([key, value]) => !KEYS.has(key) || (typeof value !== 'boolean' && (typeof value !== 'string' || Buffer.byteLength(value) > 160 || /[\u0000-\u001f\u007f]/.test(value))))) return reply.code(400).send({error: 'invalid_request'});
+              Object.entries(input.values).some(([key, value]) => !KEYS.has(key) || (typeof value !== 'boolean' && (typeof value !== 'string' || Buffer.byteLength(value) > (key === 'devices' ? 575 : 160) || /[\u0000-\u001f\u007f]/.test(value))))) return reply.code(400).send({error: 'invalid_request'});
           body = {...input, reason: input.reason.trim(), requestKey: key};
         } else if (action === 'rollback') {
           const input = request.body, key = requestKey(request);

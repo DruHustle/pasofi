@@ -5,7 +5,7 @@ import {protectedDirectory, protectedFile} from './vercel-config.mjs';
 import {validateRouterControlRows} from './router-control-config.mjs';
 
 const fields = ['nasId', 'url', 'username', 'password', 'caFile', 'expectedSerial', 'allowWrites', 'targets'];
-const kinds = ['identity', 'interface', 'wireless', 'wifi', 'hotspot-profile'];
+const kinds = ['identity', 'interface', 'wireless', 'wifi', 'hotspot-profile', 'device-whitelist'];
 const plain = value => !!value && typeof value === 'object' && !Array.isArray(value);
 const text = (value, max) => typeof value === 'string' && Buffer.byteLength(value) >= 1 && Buffer.byteLength(value) <= max && !/[\u0000-\u001f\u007f]/.test(value);
 
@@ -25,7 +25,8 @@ export function validateRouterFleetRows(rows) {
     for (const target of row.targets) {
       if (!plain(target) || Object.keys(target).some(key => !['key', 'kind', 'name'].includes(key)) ||
           typeof target.key !== 'string' || !/^[a-z][a-z0-9_-]{0,47}$/.test(target.key) || !kinds.includes(target.kind) ||
-          (target.kind === 'identity' ? target.name !== undefined : !text(target.name, 64))) throw Error('A managed target must name exactly one supported existing resource.');
+          (target.kind === 'identity' ? target.name !== undefined : !text(target.name, 64)) ||
+          (target.kind === 'device-whitelist' && target.name === 'all')) throw Error('A managed target must name exactly one supported existing resource.');
       const resource = `${target.kind}:${target.name ?? ''}`;
       if (keys.has(target.key) || resources.has(resource)) throw Error('Managed target keys and resources must be unique per router.');
       keys.add(target.key); resources.add(resource);

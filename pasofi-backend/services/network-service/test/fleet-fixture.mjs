@@ -9,6 +9,7 @@ export async function fleetFixture(nasId='11111111-1111-4111-8111-111111111111')
  const dir=mkdtempSync(join(tmpdir(),'pasofi-fleet-')),file=name=>join(dir,name);
  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',file('key'),'-out',file('cert'),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=IP:127.0.0.1'],{stdio:'ignore'});
  const state={serial:'TEST-SERIAL-123',identity:'Pasofi test',model:'hAP lite',version:'7.25.1',comment:'Customer access point',ssid:'Pasofi',wifiSsid:'Pasofi modern',disabled:false,rate:'5M/5M',idle:'5m',keepalive:'2m',mode:'normal',pending:null,pendingCompletion:null,cancelPending:null,requests:[],writes:0};
+ state.bindings=[];
  const server=https.createServer({key:readFileSync(file('key')),cert:readFileSync(file('cert'))},async(request,response)=>{
   const path=new URL(request.url,'https://router.invalid');
   const entry={method:request.method,path:path.pathname,query:Object.fromEntries(path.searchParams),authorization:request.headers.authorization,body:null};state.requests.push(entry);
@@ -20,7 +21,7 @@ export async function fleetFixture(nasId='11111111-1111-4111-8111-111111111111')
   if(state.mode==='redirect'){response.writeHead(302,{location:'https://public.example/'});response.end();return;}
   if(state.mode==='oversize'){response.end(JSON.stringify({data:'x'.repeat(300000)}));return;}
   if(request.method!=='GET'){
-   let data='';for await(const chunk of request)data+=chunk;entry.body=JSON.parse(data);state.writes++;
+   let data='';for await(const chunk of request)data+=chunk;entry.body=data?JSON.parse(data):null;state.writes++;
    const mutate=()=>{
     switch(path.pathname){
      case '/rest/system/identity/set':state.identity=entry.body.name;break;
@@ -28,7 +29,13 @@ export async function fleetFixture(nasId='11111111-1111-4111-8111-111111111111')
      case '/rest/interface/wireless/*B':state.ssid=entry.body.ssid;state.disabled=entry.body.disabled;break;
      case '/rest/interface/wifi/*C':state.wifiSsid=entry.body['configuration.ssid'];state.disabled=entry.body.disabled;break;
      case '/rest/ip/hotspot/user/profile/*D':state.rate=entry.body['rate-limit'];state.idle=entry.body['idle-timeout'];state.keepalive=entry.body['keepalive-timeout'];break;
-     default:throw Error('Unexpected mutating fixture path');
+     case '/rest/ip/hotspot/ip-binding':
+      if(request.method!=='PUT')throw Error('Unexpected binding method');
+      state.bindings.push({...entry.body,'.id':`*${(100+state.writes).toString(16)}`,disabled:'false'});
+      break;
+     default:
+      if(request.method!=='DELETE'||!path.pathname.startsWith('/rest/ip/hotspot/ip-binding/'))throw Error('Unexpected mutating fixture path');
+      state.bindings=state.bindings.filter(row=>row['.id']!==path.pathname.split('/').at(-1));
     }
    };
    if(state.mode==='late'){
@@ -57,6 +64,8 @@ export async function fleetFixture(nasId='11111111-1111-4111-8111-111111111111')
    case '/rest/interface/wireless':value=[{'.id':'*B',name:'wlan1',ssid:state.ssid,disabled:String(state.disabled)}];break;
    case '/rest/interface/wifi':value=[{'.id':'*C',name:'wifi1','configuration.ssid':state.wifiSsid,disabled:String(state.disabled)}];break;
    case '/rest/ip/hotspot/user/profile':value=[{'.id':'*D',name:'pasofi-customer','rate-limit':state.rate,'idle-timeout':state.idle,'keepalive-timeout':state.keepalive}];break;
+   case '/rest/ip/hotspot':value=[{'.id':'*E',name:'pasofi-customer',disabled:'false',invalid:'false'}];break;
+   case '/rest/ip/hotspot/ip-binding':value=state.bindings;break;
    default:response.writeHead(404);response.end('{}');return;
   }
   if(state.mode==='foreign'&&Array.isArray(value))value[0].name='management';

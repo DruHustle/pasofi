@@ -121,6 +121,41 @@ test('one admin session previews, confirms and verifies a revision-bound change 
   await expect(page.locator('.router-fleet')).not.toContainText('password');
 });
 
+test('a whitelist addition is reviewed for the selected hotspot and uses a MAC only', async ({ page }) => {
+  const base = `/api/admin/routers/${routerId}`;
+  const existing = '02:00:00:00:00:04';
+  const next = '02:00:00:00:00:06';
+  const state = await mock(page, async (route, path, method) => {
+    if (path === base) {
+      await json(route, { ...snapshot(), targets: [{
+        key: 'guest-devices', kind: 'device-whitelist', name: 'guest-hotspot', values: { devices: existing },
+        revision, fields: [{ key: 'devices', label: 'Whitelisted MAC addresses', type: 'text', maxLength: 575 }],
+      }] });
+      return true;
+    }
+    if (path === `${base}/changes` && method === 'POST') {
+      await json(route, { change: change({ targetKey: 'guest-devices', targetKind: 'device-whitelist', targetName: 'guest-hotspot',
+        before: { devices: existing }, after: route.request().postDataJSON().values }) });
+      return true;
+    }
+    return false;
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page);
+  await page.getByRole('button', { name: 'Manage Market router at Market Square' }).click();
+  await expect(page.getByRole('list', { name: 'Whitelisted devices' })).toContainText(existing);
+  await page.getByLabel('Device MAC address').fill('ff:ff:ff:ff:ff:ff');
+  await expect(page.getByRole('button', { name: 'Add device for review' })).toBeDisabled();
+  await page.getByLabel('Device MAC address').fill(next.replaceAll(':', '-'));
+  await page.getByRole('button', { name: 'Add device for review' }).click();
+  await page.getByLabel('Change reason').fill('Provision the approved test device.');
+  await page.getByRole('button', { name: 'Review change', exact: true }).click();
+  await expect(page.getByTestId('router-change-review')).toContainText('Device whitelist · guest-hotspot');
+  expect(state.posts[0].body).toEqual({ targetKey: 'guest-devices', expectedRevision: revision,
+    values: { devices: `${existing},${next}` }, reason: 'Provision the approved test device.' });
+  await expect(page.getByRole('button', { name: 'Apply reviewed change' })).toBeDisabled();
+});
+
 test('old services remain discoverable and read-only qualification is independent of customer access', async ({ page }) => {
   const state = await mock(page); delete state.caps.routerFleet; delete state.caps.routerFleetWrite;
   await open(page); await expect(page.getByText('Router management needs the service update.')).toBeVisible();
