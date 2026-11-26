@@ -8,13 +8,14 @@ import {isAbsolute} from 'node:path';
 export const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const REVISION=/^[0-9a-f]{64}$/;
 export const TARGET_KEY=/^[a-z][a-z0-9_-]{0,47}$/;
-export type TargetKind='identity'|'interface'|'wireless'|'wifi'|'hotspot-profile';
+export type TargetKind='identity'|'interface'|'wireless'|'wifi'|'hotspot-profile'|'device-whitelist';
 export type Values=Record<string,string|boolean>;
 export type FleetTarget={key:string;kind:TargetKind;name?:string};
 export type FleetConfig={nasId:string;url:string;username:string;password:string;caFile:string;expectedSerial:string;allowWrites:boolean;targets:FleetTarget[];demo?:boolean};
 export type Field={key:string;label:string;type:'text'|'boolean';maxLength?:number;help?:string};
 export type TargetSnapshot=FleetTarget&{values:Values;revision:string;fields:Field[]};
-export type InternalSnapshot={target:TargetSnapshot;recordId:string|null;configRevision:string};
+type WhitelistBinding={id:string;mac:string;managed:boolean};
+export type InternalSnapshot={target:TargetSnapshot;recordId:string|null;configRevision:string;bindings?:WhitelistBinding[]};
 export type Device={identity:string;model:string;version:string;serial:string};
 export class FleetError extends Error {
  constructor(public code:string,public status=409){super(code);}
@@ -37,7 +38,30 @@ function safeEndpoint(value:unknown,demo:boolean):value is string {
   return u.hostname.length<=253&&u.hostname.includes('.')&&u.hostname!=='localhost'&&/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(u.hostname)&&!u.hostname.endsWith('.localhost');
  }catch{return false;}
 }
-const kinds:TargetKind[]=['identity','interface','wireless','wifi','hotspot-profile'];
+const kinds:TargetKind[]=['identity','interface','wireless','wifi','hotspot-profile','device-whitelist'];
+const bindingMenu='ip/hotspot/ip-binding';
+const bindingComment='PasoFi admin device whitelist';
+const recordIdPattern=/^\*[0-9A-Fa-f]{1,16}$/;
+const maxDevices=32;
+function unicastMac(value:string){
+ return /^(?:[\dA-F]{2}:){5}[\dA-F]{2}$/.test(value) && !(parseInt(value.slice(0,2),16)&1) && value!=='00:00:00:00:00:00';
+}
+function deviceValues(value:unknown){
+ if(typeof value!=='string'||value.length>maxDevices*18-1)throw new FleetError('invalid_values',400);
+ const devices=value===''?[]:value.toUpperCase().split(',');
+ if(devices.some(mac=>!unicastMac(mac))||new Set(devices).size!==devices.length)throw new FleetError('invalid_values',400);
+ return devices.sort().join(',');
+}
+export function whitelistChange(before:InternalSnapshot,after:Values){
+ const previous=new Set(String(before.target.values.devices).split(',').filter(Boolean));
+ const next=new Set(String(after.devices).split(',').filter(Boolean));
+ const added=[...next].filter(mac=>!previous.has(mac));
+ const removed=[...previous].filter(mac=>!next.has(mac));
+ if(added.length+removed.length!==1)throw new FleetError('one_device_per_change',400);
+ const binding=before.bindings?.find(item=>item.mac===(added[0]??removed[0]));
+ if((added.length&&binding)||(removed.length&&!binding?.managed))throw new FleetError('device_binding_conflict',409);
+ return {added:added[0],binding};
+}
 export function validateFleetRows(input:unknown,demo=false):FleetConfig[] {
  if(!Array.isArray(input)||input.length<1||input.length>100)throw new FleetError('unavailable',503);
  const ids=new Set<string>(),serials=new Set<string>(),endpoints=new Set<string>();
@@ -49,6 +73,7 @@ export function validateFleetRows(input:unknown,demo=false):FleetConfig[] {
   const keys=new Set<string>(),resources=new Set<string>();
   const targets=row.targets.map(target=>{
    if(!exactObject(target,['key','kind','name'])||typeof target.key!=='string'||!TARGET_KEY.test(target.key)||typeof target.kind!=='string'||!kinds.includes(target.kind as TargetKind)||(target.kind==='identity'?target.name!==undefined:!textValue(target.name,1,64)))throw new FleetError('unavailable',503);
+   if(target.kind==='device-whitelist'&&target.name==='all')throw new FleetError('unavailable',503);
    const resource=`${target.kind}:${target.name??''}`;
    if(keys.has(target.key)||resources.has(resource))throw new FleetError('unavailable',503);keys.add(target.key);resources.add(resource);
    return {key:target.key,kind:target.kind as TargetKind,...(target.name===undefined?{}:{name:target.name as string})};
@@ -68,6 +93,7 @@ export function configuredFleet():Map<string,FleetConfig> {
 }
 export function fieldsFor(kind:TargetKind):Field[] {
  switch(kind){
+  case 'device-whitelist':return [{key:'devices',label:'Whitelisted MAC addresses',type:'text',maxLength:maxDevices*18-1,help:'Add or remove one device at a time. Whitelisted devices can go online without the captive portal.'}];
   case 'identity':return [{key:'name',label:'Router name',type:'text',maxLength:64,help:'1–64 UTF-8 bytes. This does not change router addressing.'}];
   case 'interface':return [{key:'comment',label:'Interface comment',type:'text',maxLength:160,help:'Up to 160 UTF-8 bytes. Interface name and networking stay unchanged.'}];
   case 'wireless':return [{key:'ssid',label:'Customer Wi-Fi name',type:'text',maxLength:32,help:'1–32 UTF-8 bytes. Connected customers may need to reconnect.'},{key:'disabled',label:'Disable customer radio',type:'boolean'}];
@@ -87,6 +113,7 @@ function rateLimit(value:string){
 export function normalizeValues(target:FleetTarget,input:unknown,partial=false):Values {
  const fields=fieldsFor(target.kind);
  if(!exactObject(input,fields.map(f=>f.key))||!Object.keys(input).length||(!partial&&Object.keys(input).length!==fields.length))throw new FleetError('invalid_values',400);
+ if(target.kind==='device-whitelist')return {devices:deviceValues(input.devices)};
  const result:Values={};
  for(const field of fields){
   if(!Object.hasOwn(input,field.key))continue;
@@ -104,7 +131,7 @@ export function normalizeValues(target:FleetTarget,input:unknown,partial=false):
 }
 export function fingerprint(value:unknown){return createHash('sha256').update(JSON.stringify(value)).digest('hex');}
 export function sameValues(a:Values,b:Values){const keys=Object.keys(a).sort();return keys.length===Object.keys(b).length&&keys.every(key=>a[key]===b[key]);}
-function menu(target:FleetTarget){switch(target.kind){case 'identity':return 'system/identity';case 'interface':return 'interface';case 'wireless':return 'interface/wireless';case 'wifi':return 'interface/wifi';case 'hotspot-profile':return 'ip/hotspot/user/profile';}}
+function menu(target:FleetTarget){switch(target.kind){case 'identity':return 'system/identity';case 'interface':return 'interface';case 'wireless':return 'interface/wireless';case 'wifi':return 'interface/wifi';case 'hotspot-profile':return 'ip/hotspot/user/profile';case 'device-whitelist':return 'ip/hotspot';}}
 function singleton(value:unknown):Record<string,unknown>{
  const row=Array.isArray(value)&&value.length===1?value[0]:value;
  if(!plain(row))throw new FleetError('router_unavailable',503);return row;
@@ -124,7 +151,7 @@ export class FleetRouter {
    this.configRevision=fingerprint({nasId:config.nasId,url:config.url,username:config.username,expectedSerial:config.expectedSerial,targets:config.targets,ca:fingerprint(this.ca.toString('utf8'))});
   }catch{throw new FleetError('unavailable',503);}
  }
- private call(path:string,method:'GET'|'POST'|'PATCH',signal:AbortSignal,body?:Values):Promise<unknown>{
+ private call(path:string,method:'GET'|'POST'|'PATCH'|'PUT'|'DELETE',signal:AbortSignal,body?:Values):Promise<unknown>{
   return new Promise((resolve,reject)=>{
    const fail=()=>new FleetError('router_unavailable',503),data=body===undefined?undefined:JSON.stringify(body);
    const req=httpsRequest(new URL(path,this.base),{method,ca:this.ca,rejectUnauthorized:true,auth:`${this.config.username}:${this.config.password}`,headers:{accept:'application/json',...(data===undefined?{}:{'content-type':'application/json','content-length':Buffer.byteLength(data)})},timeout:5000,signal:AbortSignal.any([signal,AbortSignal.timeout(5000)]),lookup:(hostname,options,callback)=>{
@@ -158,6 +185,7 @@ export class FleetRouter {
   return {...snapshot,target:{...snapshot.target,values:normalized,revision:this.revision(this.config.targets.find(t=>t.key===snapshot.target.key)!,snapshot.recordId,normalized)}};
  }
  async readTarget(target:FleetTarget,signal=AbortSignal.timeout(7000)):Promise<InternalSnapshot>{
+  if(target.kind==='device-whitelist')return this.readWhitelist(target,signal);
   const fields=fieldsFor(target.kind),params=new URLSearchParams({'.proplist':[...(target.kind==='identity'?[]:['.id','name']),...fields.map(f=>f.key)].join(',')});
   if(target.name)params.set('name',target.name);
   const response=await this.call(`${menu(target)}?${params}`,'GET',signal);
@@ -166,7 +194,7 @@ export class FleetRouter {
   else {
    if(!Array.isArray(response)||response.length!==1||!plain(response[0]))throw new FleetError('target_unavailable',409);
    row=response[0];
-   if(row.name!==target.name||typeof row['.id']!=='string'||!/^\*[0-9A-Fa-f]{1,16}$/.test(row['.id']))throw new FleetError('target_unavailable',409);
+   if(row.name!==target.name||typeof row['.id']!=='string'||!recordIdPattern.test(row['.id']))throw new FleetError('target_unavailable',409);
    recordId=row['.id'];
   }
   const raw:Record<string,unknown>={};
@@ -180,6 +208,35 @@ export class FleetRouter {
   let values:Values;try{values=normalizeValues(target,raw);}catch{throw new FleetError('target_unavailable',409);}
   return {target:{...target,fields,values,revision:this.revision(target,recordId,values)},recordId,configRevision:this.configRevision};
  }
+ private async readWhitelist(target:FleetTarget,signal:AbortSignal):Promise<InternalSnapshot>{
+  if(!target.name||target.name==='all')throw new FleetError('target_unavailable',409);
+  const params=new URLSearchParams({'.proplist':'.id,name,disabled,invalid',name:target.name});
+  const [servers,rows]=await Promise.all([
+   this.call(`ip/hotspot?${params}`,'GET',signal),
+   this.call(`${bindingMenu}?.proplist=.id,server,mac-address,type,disabled,comment,address,to-address`,'GET',signal),
+  ]);
+  if(!Array.isArray(servers)||servers.length!==1||!plain(servers[0])||servers[0].name!==target.name||
+     typeof servers[0]['.id']!=='string'||!recordIdPattern.test(servers[0]['.id'])||
+     (servers[0].disabled!==false&&servers[0].disabled!=='false')||
+     (servers[0].invalid!==undefined&&servers[0].invalid!==false&&servers[0].invalid!=='false')||
+     !Array.isArray(rows))throw new FleetError('target_unavailable',409);
+  const recordId=servers[0]['.id'],bindings:WhitelistBinding[]=[];
+  for(const row of rows){
+   if(!plain(row))throw new FleetError('target_unavailable',409);
+   if(row.server!==target.name&&row.server!=='all')continue;
+   const mac=typeof row['mac-address']==='string'?row['mac-address'].toUpperCase():'';
+   if(!unicastMac(mac))continue;
+   if(typeof row['.id']!=='string'||!recordIdPattern.test(row['.id']))throw new FleetError('target_unavailable',409);
+   const tagged=row.server===target.name&&row.comment===bindingComment;
+   const managed=tagged&&row.type==='bypassed'&&(row.disabled===false||row.disabled==='false')&&!row.address&&!row['to-address'];
+   if(tagged&&!managed)throw new FleetError('device_binding_conflict',409);
+   const prior=bindings.find(binding=>binding.mac===mac);
+   if(prior&&(prior.managed||managed))throw new FleetError('device_binding_conflict',409);
+   bindings.push({id:row['.id'],mac,managed});
+  }
+  const values=normalizeValues(target,{devices:bindings.filter(row=>row.managed).map(row=>row.mac).join(',')});
+  return {target:{...target,fields:fieldsFor(target.kind),values,revision:this.revision(target,recordId,values)},recordId,configRevision:this.configRevision,bindings};
+ }
  async snapshot(targetKeys?:string[]){
   const signal=AbortSignal.timeout(7000),device=await this.device(signal),targets:InternalSnapshot[]=[];
   for(const target of this.config.targets){if(!targetKeys||targetKeys.includes(target.key))targets.push(await this.readTarget(target,signal));}
@@ -189,7 +246,12 @@ export class FleetRouter {
   const target=this.config.targets.find(t=>t.key===snapshot.target.key);
   if(!target||this.configRevision!==snapshot.configRevision||!this.config.allowWrites)throw new FleetError('fleet_writes_disabled',403);
   const normalized=normalizeValues(target,values),record=snapshot.recordId;
-  if(target.kind!=='identity'&&(!record||!/^\*[0-9A-Fa-f]{1,16}$/.test(record)))throw new FleetError('target_unavailable',409);
+  if(target.kind!=='identity'&&(!record||!recordIdPattern.test(record)))throw new FleetError('target_unavailable',409);
+  if(target.kind==='device-whitelist'){
+   const edit=whitelistChange(snapshot,normalized),signal=AbortSignal.timeout(5000);
+   if(edit.added)return this.call(bindingMenu,'PUT',signal,{server:target.name!,'mac-address':edit.added,type:'bypassed',comment:bindingComment});
+   return this.call(`${bindingMenu}/${edit.binding!.id}`,'DELETE',signal);
+  }
   // Settings menus have no record ID; RouterOS requires POST .../set. Keep
   // the leading * in record IDs literal: RouterOS does not decode %2A here.
   return this.call(target.kind==='identity'?`${menu(target)}/set`:`${menu(target)}/${record}`,target.kind==='identity'?'POST':'PATCH',AbortSignal.timeout(5000),normalized);

@@ -16,6 +16,35 @@ const jsonHeaders = { 'Content-Type': 'application/json' };
 const knownRejection = (error: unknown) => error instanceof ApiError && error.status >= 400 && error.status < 500 && error.code !== 'idempotency_conflict';
 const at = (value: string | null) => value ? localDate(value) : 'Not recorded';
 
+function DeviceWhitelist({ current, proposed, onChoose }: { current: string; proposed: string; onChoose: (devices: string) => void }) {
+  const [address, setAddress] = useState('');
+  const existing = current ? current.split(',') : [];
+  const next = proposed ? proposed.split(',') : [];
+  const mac = address.trim().toUpperCase().replaceAll('-', ':');
+  const valid = /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac)
+    && (parseInt(mac.slice(0, 2), 16) & 1) === 0 && mac !== '00:00:00:00:00:00';
+  const staged = current !== proposed;
+  return <div className="router-config-fields">
+    <p>Whitelisted devices can use this network without signing in to the captive portal.</p>
+    {existing.length > 0 ? <ul aria-label="Whitelisted devices">
+      {existing.map(device => <li key={device}><code>{device}</code>{' '}
+        {!next.includes(device) ? <span>Removal ready for review</span>
+          : <button className="secondary" type="button" aria-label={`Remove ${device}`} disabled={staged}
+              onClick={() => onChoose(existing.filter(value => value !== device).join(','))}>Remove</button>}
+      </li>)}
+    </ul> : <p>No devices are whitelisted here.</p>}
+    {staged ? <div>
+      {next.filter(device => !existing.includes(device)).map(device => <p key={device}><code>{device}</code> ready for review</p>)}
+      <button type="button" className="secondary" onClick={() => onChoose(current)}>Undo selection</button>
+    </div> : <>
+      <label>Device MAC address<input autoComplete="off" autoCapitalize="characters" spellCheck={false} maxLength={17}
+        placeholder="02:00:00:00:00:01" value={address} onChange={event => setAddress(event.target.value)} /></label>
+      <button type="button" className="secondary" disabled={!valid || existing.includes(mac) || existing.length >= 32}
+        onClick={() => { onChoose([...existing, mac].sort().join(',')); setAddress(''); }}>Add device for review</button>
+    </>}
+  </div>;
+}
+
 export default function RouterFleet({ staff, capabilities }: { staff: Staff; capabilities: Capabilities | null }) {
   const [service, setService] = useState({ known: capabilities?.routerFleet !== undefined, available: capabilities?.routerFleet === true, write: capabilities?.routerFleetWrite === true });
   const [routers, setRouters] = useState<RouterSummary[]>([]), [observations, setObservations] = useState<Record<string, Observation>>({});
@@ -343,7 +372,9 @@ export default function RouterFleet({ staff, capabilities }: { staff: Staff; cap
               <label>Configuration area<select disabled={busy || previewSaved || unresolved} value={targetKey} onChange={event => { setTargetKey(event.target.value); setReason(''); setFeedback(''); }}>
                 {snapshot.targets.map(value => <option key={value.key} value={value.key}>{value.name ? `${routerKindLabel[value.kind]} · ${value.name}` : routerKindLabel[value.kind]}</option>)}</select></label>
               <fieldset disabled={busy || previewSaved || !writable || unresolved}>
-                {target && <div className="router-config-fields">{target.fields.map(field => field.type === 'boolean'
+                {target?.kind === 'device-whitelist' ? <DeviceWhitelist key={target.key + target.revision}
+                  current={String(target.values.devices)} proposed={String(draft.devices ?? target.values.devices)}
+                  onChoose={devices => setDraft({ devices })} /> : target && <div className="router-config-fields">{target.fields.map(field => field.type === 'boolean'
                   ? <label className="router-check" key={field.key}><input type="checkbox" checked={draft[field.key] === true} onChange={event => setDraft(previous => ({ ...previous, [field.key]: event.target.checked }))} /><span>{field.label}{field.help && <small>{field.help}</small>}</span></label>
                   : <label key={field.key}>{field.label}<input type="text" required={!['comment', 'rate-limit'].includes(field.key)} maxLength={field.maxLength} value={typeof draft[field.key] === 'string' ? draft[field.key] as string : ''}
                     autoComplete="off" onChange={event => setDraft(previous => ({ ...previous, [field.key]: event.target.value }))} />{field.help && <small>{field.help}</small>}</label>)}</div>}

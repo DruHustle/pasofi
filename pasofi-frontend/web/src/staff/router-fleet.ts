@@ -5,7 +5,7 @@ export type RouterSummary = {
   id: string; siteId: string; siteName: string; clientName: string;
   customerNetworkEnabled: boolean; configured: boolean; writesEnabled: boolean;
 };
-export type RouterTargetKind = 'identity' | 'interface' | 'wireless' | 'wifi' | 'hotspot-profile';
+export type RouterTargetKind = 'identity' | 'interface' | 'wireless' | 'wifi' | 'hotspot-profile' | 'device-whitelist';
 export type RouterValues = Record<string, string | boolean>;
 export type RouterField = { key: string; label: string; type: 'text' | 'boolean'; maxLength?: number; help?: string };
 export type RouterTarget = {
@@ -32,6 +32,7 @@ const allowedKeys: Record<RouterTargetKind, Record<string, 'text' | 'boolean'>> 
   identity: { name: 'text' }, interface: { comment: 'text' },
   wireless: { ssid: 'text', disabled: 'boolean' }, wifi: { 'configuration.ssid': 'text', disabled: 'boolean' },
   'hotspot-profile': { 'rate-limit': 'text', 'idle-timeout': 'text', 'keepalive-timeout': 'text' },
+  'device-whitelist': { devices: 'text' },
 };
 const statuses = new Set<RouterChangeStatus>(['prepared', 'applying', 'applied', 'unchanged', 'diverged', 'uncertain', 'expired', 'failed']);
 const invalid = () => new ApiError(502, 'invalid_router_response');
@@ -135,6 +136,7 @@ export async function verifyRouterAdministrator(staff: Staff, signal?: AbortSign
 }
 export const routerKindLabel: Record<RouterTargetKind, string> = {
   identity: 'Router identity', interface: 'Interface note', wireless: 'Guest Wi-Fi', wifi: 'Guest Wi-Fi', 'hotspot-profile': 'Hotspot profile',
+  'device-whitelist': 'Device whitelist',
 };
 export const routerChangeLabel: Record<RouterChangeStatus, string> = {
   prepared: 'Ready for review', applying: 'Applying', applied: 'Applied and verified', unchanged: 'No change observed',
@@ -150,7 +152,7 @@ export function routerFieldError(target: RouterTarget, draft: RouterValues): str
     if (field.type === 'boolean') { if (typeof value !== 'boolean') return `Check ${field.label.toLowerCase()}.`; }
     else if (typeof value !== 'string' || /[\u0000-\u001f\u007f]/u.test(value)) return `Check ${field.label.toLowerCase()}.`;
     else if (field.maxLength !== undefined && new TextEncoder().encode(value).length > field.maxLength) return `${field.label} is too long. Use a shorter value.`;
-    else if (!['comment', 'rate-limit'].includes(field.key) && !value.trim()) return `Enter ${field.label.toLowerCase()}.`;
+    else if (!['comment', 'rate-limit', 'devices'].includes(field.key) && !value.trim()) return `Enter ${field.label.toLowerCase()}.`;
   }
   if (target.fields.every(field => draft[field.key] === target.values[field.key])) return 'Change at least one setting before reviewing it.';
   return null;
@@ -175,6 +177,8 @@ export function routerMessage(error: unknown, fallback?: string): string {
     change_not_ready: 'This change cannot be applied in its current state. Check its recorded outcome.',
     actor_mismatch: 'Only the administrator who prepared this change can apply it. Refresh your staff access.',
     invalid_values: 'Check the proposed values and the field guidance before reviewing again.',
+    one_device_per_change: 'Review one device addition or removal at a time.',
+    device_binding_conflict: 'An existing router rule already controls this device. Review it before changing the whitelist.',
     invalid_request: 'Check the proposed values and reason before reviewing again.',
     reconciliation_pending: 'The router operation is still inside its verification window. Refresh its recorded status after the displayed time.',
     invalid_router_response: 'The router response could not be verified. Refresh before making a change.',
