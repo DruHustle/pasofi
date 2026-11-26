@@ -48,8 +48,8 @@ export function bundleDuration(seconds: number) {
   const amount = seconds / (unit === 'day' ? 86400 : unit === 'hour' ? 3600 : 60);
   return `${Number(amount.toFixed(2))} ${unit}${amount === 1 ? '' : 's'}`;
 }
-export default function BundleCatalogue({ bundles, demo, capabilities, error, retry, refreshAvailability, choose, help, headingLevel = 2, compact = false, accountEntry }: {
-  bundles: Product[] | null; demo: boolean; capabilities: Capabilities | null; error: boolean;
+export default function BundleCatalogue({ bundles, demo, capabilities, checkingAvailability, error, retry, refreshAvailability, choose, help, headingLevel = 2, compact = false, accountEntry }: {
+  bundles: Product[] | null; demo: boolean; capabilities: Capabilities | null; checkingAvailability: boolean; error: boolean;
   retry: () => void; refreshAvailability: () => void; choose: (bundle: Product, button: HTMLButtonElement) => void; help: () => void;
   headingLevel?: 1 | 2; compact?: boolean; accountEntry?: ReactNode;
 }) {
@@ -76,7 +76,7 @@ export default function BundleCatalogue({ bundles, demo, capabilities, error, re
   const selected = available.find(f => f.id === filter) ?? filters[0];
   const visible = (bundles?.filter(selected.matches) ?? []).sort((left, right) => compareBundles(left, right, sort));
   const multipleCurrencies = new Set(visible.map(bundle => bundle.currency)).size > 1;
-  const availableToBuy = Boolean(demo || capabilities?.staffSales || capabilities?.paymentCheckout);
+  const availableToBuy = !checkingAvailability && Boolean(demo || capabilities?.staffSales || capabilities?.paymentCheckout);
   const purchaseGuidance = narrowHotspotCatalogue ? 'Check before paying.' : capabilities === null
     ? 'You can compare these bundles. Check service availability before making a payment.'
     : 'You can compare published prices. Check again before visiting an agent or making a payment.';
@@ -93,20 +93,20 @@ export default function BundleCatalogue({ bundles, demo, capabilities, error, re
     {accountEntry}
     {compact || narrowHotspotCatalogue ? <details className="pf-catalogue-options"><summary>{narrowHotspotCatalogue ? 'Filter & sort' : 'Filter & sort bundles'}</summary>{controls}</details> : controls}
     {sort.startsWith('price-') && multipleCurrencies && <p className="pf-sort-note">Prices are grouped by currency, then sorted within each currency.</p>}
-    {!demo && bundles !== null && bundles.length > 0 && !error && !availableToBuy && <div className="pf-purchase-availability" role="status"><div><strong>{capabilities === null ? 'Purchase availability is not confirmed' : narrowHotspotCatalogue ? 'Purchases paused' : 'Purchases are paused'}</strong><p>{purchaseGuidance}</p></div><button className="pf-button pf-button-secondary" onClick={refreshAvailability}>Refresh availability</button></div>}
+    {!demo && bundles !== null && bundles.length > 0 && !error && !availableToBuy && <div className="pf-purchase-availability" role="status"><div><strong>{checkingAvailability ? 'Checking purchase availability…' : capabilities === null ? 'Purchase availability is not confirmed' : narrowHotspotCatalogue ? 'Purchases paused' : 'Purchases are paused'}</strong><p>{purchaseGuidance}</p></div><button className="pf-button pf-button-secondary" onClick={refreshAvailability}>Refresh availability</button></div>}
     {error ? <div className="pf-empty" role="status"><span className="pf-empty-icon"><Icon name="wifi"/></span><h3>Let’s try that again.</h3><p>Bundle information is temporarily unavailable.</p><button className="pf-button pf-button-secondary" onClick={retry}>Retry bundles</button></div>
       : bundles === null ? <div className="pf-bundle-grid" role="status" aria-label="Loading bundle information"><span className="pf-sr-only">Loading bundle information…</span>{[1, 2, 3].map(i => <div key={i} className="pf-bundle-skeleton" aria-hidden="true"><span/><span/><span/></div>)}</div>
       : bundles.length === 0 ? <div className="pf-empty"><span className="pf-empty-icon"><Icon name="grid"/></span><h3>More connection is on the way.</h3><p role="status">No bundles are published yet. Check back when PasoFi launches.</p><div className="purchase-actions"><button className="pf-button pf-button-secondary" onClick={refreshAvailability}>Refresh availability</button><button className="pf-button pf-button-secondary" onClick={help}>Explore help <Icon name="arrow"/></button></div></div>
       : <div className="pf-bundle-grid" data-purchasable={availableToBuy}>{visible.map(bundle => {
         const data = bundleData(bundle.byte_limit);
-        const label = demo ? `Try ${bundle.id} demo bundle` : capabilities?.staffSales ? `Buy ${bundle.id} from an agent` : capabilities?.paymentCheckout ? `Review ${bundle.id} bundle` : `${bundle.id} purchasing is not available`;
+        const label = checkingAvailability ? `Checking ${bundle.id} purchase availability` : demo ? `Try ${bundle.id} demo bundle` : capabilities?.staffSales ? `Buy ${bundle.id} from an agent` : capabilities?.paymentCheckout ? `Review ${bundle.id} bundle` : `${bundle.id} purchasing is not available`;
         const nameId = `bundle-name-${bundle.id}`;
         return <article className="pf-bundle-card" key={bundle.id} aria-labelledby={nameId}>
           <div className="pf-bundle-top"><span className="pf-plan-name" id={nameId}>{bundle.id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ')}</span><Icon name="wifi"/></div>
           <h3>{data.amount}<span>{data.unit}</span></h3>
           <p className="pf-validity"><Icon name="clock"/>{bundleDuration(bundle.validity_seconds)}</p>
           <div className="pf-bundle-price"><strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: bundle.currency }).format(bundle.price_minor / 100)}</strong><span>{bundle.currency}</span></div>
-          {(!narrowHotspotCatalogue || availableToBuy) && <button className="pf-button pf-button-primary" disabled={!availableToBuy} aria-label={label} onClick={event => choose(bundle, event.currentTarget)}>{demo ? 'Try demo' : availableToBuy ? 'Choose' : capabilities === null ? 'Check status' : 'Paused'}<Icon name="arrow"/></button>}
+          {(!narrowHotspotCatalogue || availableToBuy) && <button className="pf-button pf-button-primary" disabled={!availableToBuy} aria-label={label} onClick={event => choose(bundle, event.currentTarget)}>{checkingAvailability ? 'Checking…' : demo ? 'Try demo' : availableToBuy ? 'Choose' : capabilities === null ? 'Check status' : 'Paused'}<Icon name="arrow"/></button>}
         </article>;
       })}</div>}
     <div className="pf-bundle-terms"><Icon name="shield"/><p><strong>Simple, upfront terms.</strong> One-off prices. Time starts on your first successful connection. Uploads and downloads count. One active connection per customer. Start within 30 days; your bundle ends when its time or data runs out.</p></div>

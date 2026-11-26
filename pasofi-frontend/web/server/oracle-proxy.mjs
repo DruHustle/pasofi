@@ -36,7 +36,7 @@ const rules = [
   [/^\/api\/invoice-downloads$/, ['POST']],
   [/^\/api\/admin\/(sites|inventory\/allocations)$/, ['POST']],
   [new RegExp(`^/api/admin/sites/${UUID}$`), ['PATCH']],
-  [/^\/api\/admin\/network\/reviews$/, ['GET']],
+  [/^\/api\/admin\/network\/(?:connections|reviews)$/, ['GET']],
   [new RegExp(`^/api/admin/network/reviews/${UUID}/resolve$`), ['POST']],
   [/^\/api\/admin\/routers$/, ['GET']],
   [new RegExp(`^/api/admin/routers/${UUID}$`), ['GET']],

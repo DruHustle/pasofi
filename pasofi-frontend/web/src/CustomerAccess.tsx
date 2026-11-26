@@ -3,7 +3,6 @@ import { api, ApiError, hotspotPortal } from './api';
 import { currentSession, ensureSession, announceSessionChange, clearSessionSecrets } from './session';
 import { type Capabilities, type Product, type Site, type CashEvidence, cashDescription, finishMutation, localDate, messageFor, money, mutationIntent } from './business';
 import { RecoverySetup } from './Recovery';
-import { CreateHandoff } from './Handoff';
 import NetworkAccess from './NetworkAccess';
 import { PolicyNotice } from './Policies';
 import { InvoiceDeliveryFields, InvoiceDownload, InvoiceHistory } from './InvoiceActions';
@@ -536,7 +535,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
 
     {tab === 'recovery' && <>
       <section className="customer-profile-card"><span className="customer-profile-avatar"><CustomerGlyph name="user" /></span><div><span className="eyebrow">YOUR EVERYDAY CONNECTION</span><h3>{owner ? 'Your PasoFi account' : 'Welcome to PasoFi'}</h3><p>{owner ? 'Your account is available in this browser.' : 'Start with a bundle, or bring back your saved account.'}</p></div><span className="customer-profile-language">English</span></section>
-      {owner ? <><div className="customer-account-grid"><RecoverySetup /><CreateHandoff customerId={owner} /></div><section className="workspace-card customer-signout-card"><h3>Sign out of this browser</h3>{signout ? <><p>Save your recovery details before you leave. This can also sign you out of Onesa in this browser. Use the connection controls to end an active hotspot session.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of customer account</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></> : <button className="secondary" onClick={() => setSignout(true)}>Prepare to sign out</button>}</section></> : <section className="workspace-card"><h3>Save or restore access</h3><p>Use your saved reference and recovery key to restore a guest purchase. Choose Sign in with Onesa to create an account.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button></div></section>}
+      {owner ? <><div className="customer-account-grid"><RecoverySetup /></div><section className="workspace-card customer-signout-card"><h3>Sign out of this browser</h3>{signout ? <><p>Save your recovery details before you leave. This can also sign you out of Onesa in this browser. Use the connection controls to end an active hotspot session.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of customer account</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></> : <button className="secondary" onClick={() => setSignout(true)}>Prepare to sign out</button>}</section></> : <section className="workspace-card"><h3>Save or restore access</h3><p>Use your saved reference and recovery key to restore a guest purchase. Choose Sign in with Onesa to create an account.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button></div></section>}
     </>}
   </section>;
 }

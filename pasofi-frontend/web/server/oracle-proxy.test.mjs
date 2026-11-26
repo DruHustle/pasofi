@@ -329,6 +329,7 @@ test('cash workflow, recovery, staff and network routes are available through or
     ['GET','/api/staff/cash-refunds'], ['POST','/api/staff/cash-refunds'], ['POST',`/api/staff/cash-refunds/${id}/payout`], ['POST',`/api/staff/cash-refunds/${id}/prepare-payout`], ['POST',`/api/admin/cash-refunds/${id}/decision`], ['GET', '/api/staff/cash-shifts'], ['POST', '/api/staff/cash-shifts'], ['POST', `/api/staff/cash-shifts/${id}/close`], ['POST', '/api/staff/cash-references/lookup'], ['POST', `/api/receipt-pairings/${id}/cancel`], ['POST', '/api/receipt-pairings'], ['GET', `/api/receipt-pairings/${id}`], ['POST', '/api/vouchers/redeem'],
     ['POST', '/api/recovery/rotate'], ['POST', '/api/handoff/redeem'], ['POST', '/api/network/credentials'],
     ['POST', '/api/network/disconnect'], ['PATCH', '/api/admin/bundles/day-1'], ['POST', `/api/admin/network/reviews/${id}/resolve`],
+    ['GET', '/api/admin/network/connections'],
     ['GET', '/api/admin/routers'], ['GET', `/api/admin/routers/${id}`],
     ['GET', `/api/admin/routers/${id}/changes`], ['POST', `/api/admin/routers/${id}/changes`],
     ['GET', `/api/admin/routers/${id}/changes/${id}`], ['POST', `/api/admin/routers/${id}/changes/${id}/apply`],

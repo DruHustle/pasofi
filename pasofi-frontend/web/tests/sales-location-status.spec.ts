@@ -33,6 +33,19 @@ async function setup(page:Page,{capable=true,version='1',role='admin',patch}:{ca
 }
 async function openSites(page:Page){await page.goto('/');await page.getByRole('button',{name:'Staff',exact:true}).click();await page.getByRole('button',{name:'Sites',exact:true}).click();await expect(page.getByRole('heading',{name:'Sales locations',exact:true})).toBeVisible();}
 
+test('PasoFi Admin offers purchase status and sales-location controls together',async({page})=>{
+ const state=await setup(page);
+ await page.setViewportSize({width:390,height:844});
+ await page.goto('/admin');
+ await page.getByRole('button',{name:'Purchases',exact:true}).click();
+ const availability=page.getByRole('region',{name:'Purchase availability'});
+ await expect(availability.getByText('Cash vouchers',{exact:true})).toBeVisible();
+ await expect(availability.getByText('Paused',{exact:true})).toHaveCount(5);
+ await expect(page.getByRole('button',{name:'Review sales status for Reviewed sales location'})).toBeEnabled();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+ expect(state.patches).toHaveLength(0);
+});
+
 for(const mode of ['older backend','missing version'] as const)test(`sales location action is hidden for ${mode}`,async({page})=>{
  const state=await setup(page,{capable:mode!=='older backend',version:mode==='missing version'?'':'1'});await openSites(page);
  await expect(page.getByRole('button',{name:'Review sales status for Reviewed sales location'})).toHaveCount(0);

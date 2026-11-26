@@ -138,6 +138,27 @@ test('administrators can reconcile recorded commission with the agent and sale r
   await expect(page.getByLabel('Publication reason')).toHaveAccessibleDescription('Enter a reason of at least 10 characters to enable the publication buttons.');
 });
 
+test('administrator can refresh, view and clear reported hotspot connections', async ({ page }) => {
+  let connected = true;
+  await mock(page, async (route, path) => {
+    if (path === '/api/staff/session') { await json(route, staff('admin')); return true; }
+    if (path === '/api/admin/network/reviews') { await json(route, { reviews: [], hasMore: false }); return true; }
+    if (path !== '/api/admin/network/connections') return false;
+    const at = new Date().toISOString();
+    await json(route, { connections: connected ? [{ id: saleId, siteName: site.name, startedAt: at, lastAccountingAt: at, chargedBytes: '300', recent: true }] : [], truncated: false });
+    return true;
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/admin');
+  await page.getByRole('button', { name: 'Network reviews', exact: true }).click();
+  const connections = page.getByRole('region', { name: 'Hotspot connections' });
+  await expect(connections.getByRole('list', { name: 'Open hotspot connections' })).toContainText(site.name);
+  await expect(connections.getByText('Recent accounting', { exact: true })).toBeVisible();
+  connected = false;
+  await connections.getByRole('button', { name: 'Refresh connections' }).click();
+  await expect(connections.getByText('No open hotspot connections have been reported.')).toBeVisible();
+});
+
 test('administrator approval uses the reviewed version and allocation excludes unpublished bundles', async ({ page }) => {
   let applicant = staff('agent', 'pending', agentId); let allocation: unknown, decision: unknown;
   await mock(page, async (route, path, method) => {
@@ -209,6 +230,28 @@ test('network credentials are private and prepared access stays unconnected unti
   await expect(page.getByText('Connected · recent router report', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Disconnect this hotspot session' }).click(); await expect(page.getByText('Disconnect awaiting confirmation', { exact: true })).toBeVisible(); await expect(page.getByText('No active hotspot session', { exact: true })).toHaveCount(0);
+});
+
+test('the customer account omits device transfer but keeps the explicit app sign-in fallback', async ({ page }) => {
+  const code = 'p'.repeat(43); let created = 0;
+  await mock(page, async (route, path) => {
+    if (path !== '/api/handoff') return false;
+    created++;
+    await json(route, { handoffCode: code, expiresIn: 120 });
+    return true;
+  });
+  await page.goto('/#account');
+  await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Continue on another device', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Create one-time handoff code', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Accept handoff', exact: true }).click();
+  await page.getByRole('button', { name: 'Create a code for the PasoFi app', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'App sign-in code', exact: true })).toBeVisible();
+  expect(created).toBe(0);
+  await page.getByRole('button', { name: 'Create one-time handoff code', exact: true }).click();
+  await expect(page.getByLabel('One-time handoff code')).toHaveValue(code);
+  expect(created).toBe(1);
+  expect(page.url()).not.toContain(code);
 });
 
 test('handoff requires explicit consent and refuses a mismatched or blocked resulting cookie', async ({ page }) => {

@@ -156,7 +156,16 @@ test('refresh availability and returning to Bundles fetch both published offers 
   await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toBeVisible();
   const publishedReads = { ...state.reads };
   state.products = []; state.capabilities = { ...disabledCapabilities };
+  state.holdNext.add('/api/bundles'); state.holdNext.add('/api/capabilities');
   await navigation(page).getByRole('button', { name: 'Bundles', exact: true }).click();
+  await expect.poll(() => state.held.length).toBe(2);
+  await expect(catalogueHeading(page)).toBeVisible();
+  await expect(page.getByRole('article', { name: 'flex', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Checking flex purchase availability' })).toBeDisabled();
+  await expect(page.getByRole('status', { name: 'Loading bundle information' })).toHaveCount(0);
+  await navigation(page).getByRole('button', { name: 'Bundles', exact: true }).click();
+  expect(state.reads).toEqual({ capabilities: publishedReads.capabilities + 1, bundles: publishedReads.bundles + 1 });
+  await Promise.all(state.held.splice(0).map(({ route, body }) => json(route, body)));
   await expectEmptyBundles(page);
   expect(state.reads).toEqual({ capabilities: publishedReads.capabilities + 1, bundles: publishedReads.bundles + 1 });
   expect(state.mutations).toEqual([]); expect(state.unexpected).toEqual([]);
@@ -209,7 +218,7 @@ test('late older availability responses cannot replace a newer published catalog
   await expect.poll(() => state.held.length).toBe(2);
   state.products = [flex]; state.capabilities = { ...cashCapabilities };
   try {
-    await navigation(page).getByRole('button', { name: 'Bundles', exact: true }).click();
+    await page.getByRole('button', { name: 'Refresh availability', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Buy flex from an agent', exact: true })).toBeEnabled();
     await expect(page.getByText('PASOFI CUSTOMER SERVICE', { exact: true })).toBeVisible();
     const released = state.held.splice(0);

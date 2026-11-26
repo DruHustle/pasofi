@@ -622,6 +622,15 @@ paths:
         '202': {description: state disconnect_pending}
         '200': {description: state closed}
         '404': {description: Grant not owned by this customer}
+  /v1/admin/network/connections:
+    get:
+      security: [{StaffSession: []}]
+      summary: List open sessions reported by hotspot accounting for MFA-verified administrators
+      responses:
+        '200': {description: 'Up to 100 connections with grant ID, location, accounting timestamps, charged byte count and accounting freshness, plus a truncated flag'}
+        '401': {description: Staff session required}
+        '403': {description: Administrator role required}
+        '503': {description: Connection data unavailable}
   /v1/admin/network/reviews:
     get:
       security: [{StaffSession: []}]
