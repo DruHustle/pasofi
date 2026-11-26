@@ -24,7 +24,7 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
       if(mounted){setActiveTab(destination);setScreen('account');setAttempt(n=>n+1);}
     },()=>{if(mounted)setMessage('Sign-in could not finish. Please try again.');})
       .then(stop=>{if(mounted)setNativeReturnReady(true);return stop;})
-      .catch(()=>{if(mounted){setNativeReturnFailed(true);setNativeReturnReady(true);setMessage('Secure browser return is unavailable. Use the one-time account handoff instead.');}return ()=>{};});
+      .catch(()=>{if(mounted){setNativeReturnFailed(true);setNativeReturnReady(true);}return ()=>{};});
     return ()=>{mounted=false;void listener.then(stop=>stop()).catch(()=>{});};
   },[]);
   useEffect(()=>{if(registrationTab){setActiveTab(registrationTab);setScreen('onesa');}},[registrationTab]);
@@ -56,16 +56,15 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
     {!loading && <RegistrationLink tab={activeTab}/>}
     {!loading && (!capabilities || !usesNativeCustomerApi) && <a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">Continue to PasoFi account on the web</a>}
     {capabilities && <>
-      {usesNativeCustomerApi && <button onClick={() => setScreen('onesa')}>Sign in</button>}
-      <button onClick={() => setScreen('account')}>My account</button>
+      {usesNativeCustomerApi && screen !== 'onesa' && <button onClick={() => setScreen('onesa')}>Sign in</button>}
+      <button onClick={() => { setActiveTab('recovery'); setScreen('account'); }}>My account</button>
       <button onClick={() => setScreen('recover')}>Recover</button>
-      <button onClick={() => setScreen('handoff')}>Accept handoff</button>
     </>}
   </div>
     {loading && <p className="mobile-notice" role="status">Checking the configured PasoFi service…</p>}
     {message && <div className="mobile-notice"><div><p role="status">{message}</p><button className="mobile-primary" onClick={() => setAttempt(value => value + 1)}>Retry service connection</button></div></div>}
     {capabilities && (screen === 'onesa' ? nativeReturnReady
-      ? <OnesaSignIn resumeRegistration={Boolean(registrationTab)} usedRegistration={usedRegistration} destination={activeTab} close={() => setScreen('account')} enterCode={() => setScreen('handoff')} managedReturnReady={!nativeReturnFailed} />
+      ? <OnesaSignIn resumeRegistration={Boolean(registrationTab)} usedRegistration={usedRegistration} destination={activeTab} close={() => setScreen('account')} managedReturnReady={!nativeReturnFailed} />
       : <p role="status">Preparing the secure sign-in return…</p>
       : screen === 'account' ? <CustomerAccess key={`account-${attempt}`} capabilities={capabilities} initialTab={activeTab} onNavigate={setActiveTab} close={close} recovered={() => setScreen('recover')} /> : screen === 'recover' ? <Recovery close={() => setScreen('account')} recovered={() => setScreen('account')} /> : <Handoff close={() => setScreen('account')} recovered={() => setScreen('account')} />)}
     {capabilities && <nav className="mobile-nav" aria-label="Account navigation">
