@@ -447,7 +447,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     </p> : <p className="notice customer-session-notice">
       {tab === 'purchase' && capabilities.paymentCheckout || tab === 'receipt' && agentPurchaseAvailable
         ? 'You can continue as a guest. PasoFi saves the purchase in this browser. Save your recovery key to use it on another device. '
-        : 'Sign in to open your PasoFi account. '}
+        : 'No account is active in this browser. Sign in to open your PasoFi account. '}
       <button className="text-button" onClick={recovered}>Recover an existing account</button>
     </p>)}
     {recoveryReminder && owner && tab !== 'recovery' && <aside className="notice customer-recovery-reminder"><strong>Keep access to your bundle.</strong><p>Save your account reference and recovery key before changing devices or clearing this browser.</p><button className="secondary" onClick={() => { setRecoveryReminder(false); selectTab('recovery'); }}>Review recovery & devices</button></aside>}
