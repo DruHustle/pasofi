@@ -199,6 +199,45 @@ test('authenticated empty Home explains unavailable purchases without directing 
   expect(state.mutations).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
+test('returning Home opens the signed-in dashboard while the fresh session check is pending', async ({ page }) => {
+  const state = await guestAvailability(page);
+  let holdSession = false, accessReads = 0, pendingSessionReads = 0;
+  let releaseSession!: () => void;
+  const sessionPending = new Promise<void>(resolve => { releaseSession = resolve; });
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() !== 'GET') return route.fallback();
+    if (path === '/api/session') {
+      if (holdSession) { pendingSessionReads++; await sessionPending; }
+      return json(route, { customerId, guest: false });
+    }
+    if (path === '/api/access') { accessReads++; return json(route, { customerId, entitlements: [], hasMore: false, nextOffset: null }); }
+    if (path === '/api/usage') return json(route, { ...usageSnapshot('0', { allowanceBytes: '0' }), entitlementUpdates: [] });
+    return route.fallback();
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const home = page.getByRole('heading', { name: 'Your internet', exact: true });
+  await expect(home).toBeVisible();
+  await expect.poll(() => accessReads).toBe(1);
+  holdSession = true;
+  try {
+    await navigation(page).getByRole('button', { name: 'Bundles', exact: true }).click();
+    await expect(catalogueHeading(page)).toBeVisible();
+    await navigation(page).getByRole('button', { name: 'Home', exact: true }).click();
+    await expect(home).toBeVisible();
+    await expect(home).toBeFocused();
+    await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toHaveCount(0);
+    await expect(page.getByText(/checking.*sign.in/i)).toHaveCount(0);
+    await expect.poll(() => pendingSessionReads).toBe(1);
+    expect(accessReads).toBe(1);
+  } finally { releaseSession(); }
+  await expect.poll(() => accessReads).toBe(2);
+  expect(pendingSessionReads).toBe(1);
+  expect(state.mutations).toEqual([]);
+});
+
 test('late older availability responses cannot replace a newer published catalogue and sales state', async ({ page }) => {
   // Deliver old responses even after transport cancellation. This makes the
   // visible stale-response regression deterministic instead of relying on timing.

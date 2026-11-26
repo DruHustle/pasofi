@@ -79,10 +79,10 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
     body: '<a href="' + captive + '/?registration=complete">Return after fixture registration</a>' }));
 
   await page.goto(captive + '/connect');
-  await expect(page.getByRole('button', { name: 'Retry Onesa sign-in' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry sign-in' })).toBeVisible();
   expect(returns).toEqual([]);
   enabled = true;
-  await page.getByRole('button', { name: 'Retry Onesa sign-in' }).click();
+  await page.getByRole('button', { name: 'Retry sign-in' }).click();
   await expect(page.getByRole('heading', { name: 'Connect to PasoFi' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', account);
   await expect(page.getByRole('button', { name: 'View bundles' })).toBeVisible();

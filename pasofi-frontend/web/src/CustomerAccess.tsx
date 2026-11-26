@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, hotspotPortal } from './api';
-import { currentSession, ensureSession, announceSessionChange, clearSessionSecrets } from './session';
+import { inspectBrowserSession, readCustomerSession, ensureSession, announceSessionChange, clearSessionSecrets, type CustomerSessionStatus } from './session';
 import { type Capabilities, type Product, type Site, type CashEvidence, cashDescription, finishMutation, localDate, messageFor, money, mutationIntent } from './business';
 import { RecoverySetup } from './Recovery';
 import NetworkAccess from './NetworkAccess';
@@ -45,7 +45,7 @@ function withUsage(item: Entitlement, snapshot: UsageSnapshot | null): Entitleme
   // must not roll back a newer usage snapshot (or vice versa).
   return update ? { ...item, ...update, consumed_bytes: BigInt(update.consumed_bytes) > BigInt(item.consumed_bytes) ? update.consumed_bytes : item.consumed_bytes, activated_at: item.activated_at ?? update.activated_at, revoked_at: item.revoked_at ?? update.revoked_at } : item;
 }
-export default function CustomerAccess({ close, capabilities, selectedBundle = null, requestedBundleId = null, initialTab = 'access', recovered, onNavigate, onBuyData }: { close: () => void; capabilities: Capabilities; selectedBundle?: Product | null; requestedBundleId?: string | null; initialTab?: CustomerTab; recovered: () => void; onNavigate?: (tab: CustomerTab, bundleId?: string) => void; onBuyData?: () => void }) {
+export default function CustomerAccess({ close, capabilities, selectedBundle = null, requestedBundleId = null, initialTab = 'access', recovered, onSessionStatus, onNavigate, onBuyData }: { close: () => void; capabilities: Capabilities; selectedBundle?: Product | null; requestedBundleId?: string | null; initialTab?: CustomerTab; recovered: () => void; onSessionStatus: (status: CustomerSessionStatus) => void; onNavigate?: (tab: CustomerTab, bundleId?: string) => void; onBuyData?: () => void }) {
   const [tab, setTab] = useState<CustomerTab>(selectedBundle ? capabilities.staffSales && capabilities.receiptPairing ? 'receipt' : 'purchase' : initialTab), [owner, setOwner] = useState<string | null>(null);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [now, setNow] = useState(Date.now());
   const [memberSignInRequired, setMemberSignInRequired] = useState(false);
@@ -88,6 +88,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const isCurrent = (revision: number) => live.current && generation.current === revision;
   function invalidateAccount(expectedOwner?: string) {
     if (expectedOwner && ownerRef.current !== expectedOwner) return;
+    onSessionStatus('signed-out');
     ++generation.current; ownerRef.current = null; lastUsage.current = null; invoiceChoiceExplicit.current = false; clearSessionSecrets();
     if (live.current) { setOwner(null); setAccess([]); setBundleListUnavailable(false); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setReferencePending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setCheckoutPending(false); setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
   }
@@ -97,15 +98,22 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     setAccess(previous => previous.map(item => withUsage(item, snapshot)));
   }
   const usage = useLiveUsage(owner, ['access', 'wifi', 'history'].includes(tab) && !leaving, visibleIds.length ? visibleIds : access.slice(0, 100).map(item => item.id), mergeUsage, invalidateAccount);
-  function remember(id: string) { ownerRef.current = id; if (live.current) { setOwner(id); setMemberSignInRequired(false); } }
+  function remember(session: { customerId: string; guest?: boolean }) {
+    ownerRef.current = session.customerId;
+    if (live.current) {
+      onSessionStatus(session.guest === true ? 'guest' : 'member');
+      setOwner(session.customerId); setMemberSignInRequired(false);
+    }
+  }
   async function identity(create = false) {
     const revision = generation.current;
     const creating = create && !ownerRef.current;
     try {
-      const id = create && !ownerRef.current ? await ensureSession() : await currentSession();
+      const session = creating ? { customerId: await ensureSession(), guest: true } : await readCustomerSession();
+      const id = session.customerId;
       if (!isCurrent(revision)) throw new ApiError(401, 'session_changed');
       if (ownerRef.current && ownerRef.current !== id) throw new ApiError(401, 'session_changed');
-      remember(id); return id;
+      remember(session); return id;
     } catch (error) {
       if (error instanceof ApiError && error.code === 'onesa_sign_in_required' && isCurrent(revision)) setMemberSignInRequired(true);
       if (error instanceof ApiError && error.status === 401 && isCurrent(revision) && (!creating || ownerRef.current)) invalidateAccount();
@@ -113,17 +121,22 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       throw error;
     }
   }
-  async function refreshAccess(more = false) {
-    const revision = generation.current, id = await identity();
+  async function loadAccess(id: string, revision: number, more = false) {
+    if (!isCurrent(revision)) return;
     const result = await api<{ customerId: string; entitlements: Entitlement[]; hasMore: boolean; nextOffset: number | null }>(`/api/access${more && nextOffset !== null ? `?offset=${nextOffset}` : ''}`);
     if (isCurrent(revision) && result.customerId !== id) { invalidateAccount(id); throw new ApiError(401, 'session_changed'); }
     if (isCurrent(revision) && ownerRef.current === id) { setBundleListUnavailable(false); setAccess(previous => { const rows = more ? [...new Map([...previous, ...result.entitlements].map(item => [item.id, item])).values()] : result.entitlements; return rows.map(item => withUsage(item, lastUsage.current?.customerId === id ? lastUsage.current : null)); }); setNextOffset(result.hasMore ? result.nextOffset : null); }
+  }
+  async function refreshAccess(more = false) {
+    const revision = generation.current, id = await identity();
+    await loadAccess(id, revision, more);
   }
   useEffect(() => {
     live.current = true; const revision = generation.current; heading.current?.focus();
     (async () => {
       try {
-        const id = await currentSession(); if (!isCurrent(revision)) return; remember(id);
+        const session = await inspectBrowserSession(); if (!isCurrent(revision)) return; remember(session);
+        const id = session.customerId;
         try { const saved = sessionStorage.getItem(`pamofi.operation:customer:${id}:purchase-details`); if (saved) { const draft = JSON.parse(JSON.parse(saved).payload) as PurchaseDetails; invoiceChoiceExplicit.current = true; setInvoiceDelivery(draft.invoiceDelivery ?? { channel: 'download' }); restoredMethod.current = draft.methodCode; setBundleId(draft.bundleId); setSiteId(draft.siteId); setMethodCode(draft.methodCode); setCheckoutPending(true); selectTab('purchase', draft.bundleId); setMessage('Your unfinished checkout details were restored. Safely retry or check its verified status before starting another purchase.'); void restoreSavedOrder(id, revision, draft.bundleId).catch(() => { if (isCurrent(revision)) setMessage('Your checkout is still saved. Its order could not be loaded. Retry the saved-order check before starting another payment.'); }); } } catch { /* Storage is required and checked before a new checkout request. */ }
         const savedReference = sessionStorage.getItem(`pamofi.operation:customer:${id}:receipt-pairing`);
         if (savedReference && agentPurchaseAvailable) { const draft = JSON.parse(JSON.parse(savedReference).payload) as { bundleId: string; siteId: string }; if (draft.bundleId && draft.siteId) { setReferencePending(true); setBundleId(draft.bundleId); setSiteId(draft.siteId); await createReference(id, draft, revision); } else { finishMutation(`customer:${id}`, 'receipt-pairing'); } }
@@ -135,10 +148,14 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
             if (result.receipt && isCurrent(revision)) { await identity(); if (isCurrent(revision)) setReceipt(result.receipt); }
           } catch { /* Invoice history can recover a paid receipt independently. */ }
         }
-        await refreshAccess();
+        await loadAccess(id, revision);
       }
       catch (error) {
         if (!isCurrent(revision)) return;
+        if (error instanceof ApiError && error.status === 401) {
+          if (ownerRef.current) invalidateAccount();
+          else onSessionStatus('signed-out');
+        }
         if (error instanceof ApiError && error.code === 'onesa_sign_in_required') setMemberSignInRequired(true);
         else if (!(error instanceof ApiError && error.status === 401)) setMessage(messageFor(error));
       }
@@ -442,11 +459,11 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     {loading && <div className="customer-loading" role="status"><span className="customer-loading-dot" />Checking your account…</div>}
     {message && <p className="feedback" role="status">{message}</p>}
     {!loading && !owner && (memberSignInRequired ? <p className="notice customer-session-notice">
-      Sign in again with Onesa to keep purchases with your existing PasoFi account. <button className="text-button" disabled={busy} onClick={logout}>Sign out on this device</button>
+      Sign in again to access your existing PasoFi purchases. <button className="text-button" disabled={busy} onClick={logout}>Sign out on this device</button>
     </p> : <p className="notice customer-session-notice">
       {tab === 'purchase' && capabilities.paymentCheckout || tab === 'receipt' && agentPurchaseAvailable
         ? 'You can continue as a guest. PasoFi saves the purchase in this browser. Save your recovery key to use it on another device. '
-        : 'No account is active in this browser. Sign in with Onesa Identity to open your PasoFi account. '}
+        : 'No account is active in this browser. Sign in to open your PasoFi account. '}
       <button className="text-button" onClick={recovered}>Recover an existing account</button>
     </p>)}
     {recoveryReminder && owner && tab !== 'recovery' && <aside className="notice customer-recovery-reminder"><strong>Keep access to your bundle.</strong><p>Save your account reference and recovery key before changing devices or clearing this browser.</p><button className="secondary" onClick={() => { setRecoveryReminder(false); selectTab('recovery'); }}>Review recovery & devices</button></aside>}

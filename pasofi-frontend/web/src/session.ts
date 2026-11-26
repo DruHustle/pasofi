@@ -3,7 +3,8 @@ import { clearNetworkRequest } from './network-request';
 
 // A retry secret can recreate its session cookie. Never put it in a URL or localStorage.
 const storageKey = 'pamofi.sessionCreationRetry';
-type Session = { customerId: string };
+type Session = { customerId: string; guest?: boolean };
+export type CustomerSessionStatus = 'member' | 'guest' | 'signed-out';
 const customerIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function validSession(value: Session): string {
   if (!value || !customerIdPattern.test(value.customerId)) throw Error('invalid_session');
@@ -23,7 +24,19 @@ function retryKey(): string {
 }
 function clearCreationKey() { try { sessionStorage.removeItem(storageKey); } catch { /* An existing cookie still works without storage. */ } }
 
-export async function currentSession(): Promise<string> { return validSession(await api<Session>('/api/session')); }
+export async function readCustomerSession(): Promise<Session> {
+  const session = await api<Session>('/api/session');
+  validSession(session);
+  return session;
+}
+export async function currentSession(): Promise<string> { return (await readCustomerSession()).customerId; }
+let browserSessionCheck: Promise<Session> | null = null;
+export function inspectBrowserSession(): Promise<Session> {
+  if (browserSessionCheck) return browserSessionCheck;
+  const request = readCustomerSession().finally(() => { if (browserSessionCheck === request) browserSessionCheck = null; });
+  browserSessionCheck = request;
+  return request;
+}
 let creating: Promise<string> | null = null;
 export function ensureSession(): Promise<string> {
   if (creating) return creating;
@@ -42,6 +55,7 @@ export function ensureSession(): Promise<string> {
 type SessionChange = 'signed_out' | 'recovered';
 const channel = (() => { try { return typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pamofi.session') : null; } catch { return null; } })();
 export function clearSessionSecrets() {
+  browserSessionCheck = null;
   clearNetworkRequest();
   try {
     for (const key of Object.keys(sessionStorage)) {

@@ -154,7 +154,7 @@ test('failed Android return setup leaves the qualified manual handoff available'
   });
   await page.goto(configuredBaseURL);
   await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
-  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click({ timeout: 5000 });
   await expect(page.getByLabel('One-time handoff code')).toBeVisible();
   await expect(page.getByText('Preparing the secure sign-in return…')).toHaveCount(0);
@@ -246,8 +246,8 @@ for (const platform of ['ios', 'android'] as const) for (const returnMethod of [
   await page.goto(configuredBaseURL);
   await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
   await expect(page.getByRole('link', {name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform='+platform);
-  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
-  await page.getByRole('button', { name: 'Open Onesa sign-in in browser', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Open sign-in in browser', exact: true }).click();
   await expect(page.getByText('Browser opened.', { exact: false })).toBeVisible();
   const opened = calls.filter(call => call.method === 'openSignIn');
   expect(opened).toHaveLength(1); expect(Object.keys(opened[0].options)).toEqual(['requestId']);
@@ -269,9 +269,9 @@ test('native Onesa entry refuses an unqualified handoff deployment', async ({ pa
   const calls = await nativeBridge(page, request => request.path === '/api/capabilities' ? reply(capabilities)
     : request.path === '/api/onesa/availability' ? reply({ origin: apiOrigin }) : reply({ error: 'not_authenticated' }, 401));
   await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
-  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
-  await expect(page.getByText('Onesa sign-in for this app is not available', { exact: false })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open Onesa sign-in in browser', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByText('Sign-in is currently unavailable in the app', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open sign-in in browser', exact: true })).toHaveCount(0);
   expect(calls.filter(call => call.method === 'openSignIn')).toHaveLength(0);
 });
 

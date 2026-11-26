@@ -43,7 +43,7 @@
     if (!customer && query.get('error') === 'access_denied') {
       failure('Staff sign-in needs attention', 'Check that your PasoFi staff access is approved. Sign in again and complete the authenticator prompt.');
     } else if (hotspot && query.get('error') === 'access_denied') {
-      failure('Check your PasoFi access', 'Use an Onesa account with PasoFi access. If you’re new to PasoFi, choose Sign up on the Wi-Fi page.');
+      failure('Check your PasoFi access', 'Sign in with an account that has PasoFi access. If you’re new to PasoFi, choose Sign up on the Wi-Fi page.');
       if (back) {
         back.href = '/connect?onesa=retry';
         back.textContent = 'Return to PasoFi Wi-Fi';
@@ -69,12 +69,12 @@
       if (data.error === 'session_already_exists') {
         failure('Another PasoFi session is open', 'Return to PasoFi to continue with your current session or switch accounts.');
       } else if (data.error === 'guest_transfer_requires_review') {
-        failure('This Onesa account already has a PasoFi account', 'Your guest purchases are still available. Return to PasoFi to use them or save their recovery details.');
+        failure('This sign-in is already linked to a PasoFi account', 'Your guest purchases are still available. Return to PasoFi to use them or save their recovery details.');
       } else if (data.error === 'guest_session_changed') {
         failure('Guest session changed', 'Return to the browser with your guest purchases before trying again.');
       } else if (result.status === 401 || result.status === 403) {
         failure(customer ? 'PasoFi sign-in could not finish' : 'Staff sign-in needs attention',
-          customer ? 'Start a fresh sign-in from PasoFi using your verified Onesa account.'
+          customer ? 'Return to PasoFi and sign in again.'
             : 'Check that your PasoFi staff access is approved, then start a new staff sign-in and complete verification.');
       } else if (result.status === 429) {
         failure('Too many sign-in attempts', 'Wait a minute before starting another sign-in.');
