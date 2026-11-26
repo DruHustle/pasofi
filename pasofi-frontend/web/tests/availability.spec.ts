@@ -72,7 +72,7 @@ for (const width of [320, 390]) {
     const state = await guestAvailability(page);
     await page.setViewportSize({ width, height: 844 }); await page.goto('/');
     await expect(page.getByText(emptyMessage, { exact: true })).toBeVisible();
-    await expect(page.getByText('SERVICE IN PREPARATION', { exact: true })).toBeVisible();
+    await expect(page.getByText('SERVICE IN PREPARATION', { exact: true })).toHaveCount(0);
 
     await test.step('Home navigation works by keyboard', async () => {
       const bundles = navigation(page).getByRole('button', { name: 'Bundles', exact: true });
@@ -91,7 +91,8 @@ for (const width of [320, 390]) {
       await test.step(`${entry} can return to bundles without creating an account`, async () => {
         await navigation(page).getByRole('button', { name: entry, exact: true }).click();
         await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
-        await expect(page.getByText('No account is active in this browser.', { exact: false })).toBeVisible();
+        if (entry === 'Account') await expect(page.getByRole('button', { name: 'Recover my account', exact: true })).toBeVisible();
+        else await expect(page.getByText('No account is active in this browser.', { exact: false })).toBeVisible();
         await expect(page.getByText('You can buy or redeem as a guest.', { exact: false })).toHaveCount(0);
         await navigation(page).getByRole('button', { name: 'Bundles', exact: true }).click();
         await expectEmptyBundles(page);
@@ -171,7 +172,7 @@ test('refresh availability and returning to Bundles fetch both published offers 
   expect(state.mutations).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('authenticated empty Home explains unavailable purchases without directing a customer to pay', async ({ page }) => {
+test('authenticated empty usage explains unavailable purchases without directing a customer to pay', async ({ page }) => {
   const state = await guestAvailability(page);
   await page.route('**/api/**', async route => {
     if (route.request().method() !== 'GET') return route.fallback();
@@ -185,7 +186,7 @@ test('authenticated empty Home explains unavailable purchases without directing 
     }
     return route.fallback();
   });
-  await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
+  await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/#usage');
   await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible();
   await expect(page.getByTestId('usage-remaining')).toHaveText('0.000 GB');
   await expect(page.getByTestId('usage-bundle-time')).toHaveText('No active bundle');
@@ -199,42 +200,29 @@ test('authenticated empty Home explains unavailable purchases without directing 
   expect(state.mutations).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('returning Home opens the signed-in dashboard while the fresh session check is pending', async ({ page }) => {
+test('returning Home shows the hero without a session or usage lookup', async ({ page }) => {
   const state = await guestAvailability(page);
-  let holdSession = false, accessReads = 0, pendingSessionReads = 0;
-  let releaseSession!: () => void;
-  const sessionPending = new Promise<void>(resolve => { releaseSession = resolve; });
+  let sessionReads = 0, accessReads = 0;
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() !== 'GET') return route.fallback();
-    if (path === '/api/session') {
-      if (holdSession) { pendingSessionReads++; await sessionPending; }
-      return json(route, { customerId, guest: false });
-    }
+    if (path === '/api/session') { sessionReads++; return json(route, { customerId, guest: false }); }
     if (path === '/api/access') { accessReads++; return json(route, { customerId, entitlements: [], hasMore: false, nextOffset: null }); }
     if (path === '/api/usage') return json(route, { ...usageSnapshot('0', { allowanceBytes: '0' }), entitlementUpdates: [] });
     return route.fallback();
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
-  const home = page.getByRole('heading', { name: 'Your internet', exact: true });
-  await expect(home).toBeVisible();
+  await page.goto('/#usage');
+  await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible();
   await expect.poll(() => accessReads).toBe(1);
-  holdSession = true;
-  try {
-    await navigation(page).getByRole('button', { name: 'Bundles', exact: true }).click();
-    await expect(catalogueHeading(page)).toBeVisible();
-    await navigation(page).getByRole('button', { name: 'Home', exact: true }).click();
-    await expect(home).toBeVisible();
-    await expect(home).toBeFocused();
-    await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toHaveCount(0);
-    await expect(page.getByText(/checking.*sign.in/i)).toHaveCount(0);
-    await expect.poll(() => pendingSessionReads).toBe(1);
-    expect(accessReads).toBe(1);
-  } finally { releaseSession(); }
-  await expect.poll(() => accessReads).toBe(2);
-  expect(pendingSessionReads).toBe(1);
+  const originalSessionReads = sessionReads;
+  await navigation(page).getByRole('button', { name: 'Home', exact: true }).click();
+  const home = page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true });
+  await expect(home).toBeVisible();
+  await expect(home).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toHaveCount(0);
+  expect(sessionReads).toBe(originalSessionReads);
+  expect(accessReads).toBe(1);
   expect(state.mutations).toEqual([]);
 });
 
