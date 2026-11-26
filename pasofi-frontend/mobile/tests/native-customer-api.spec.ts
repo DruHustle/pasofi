@@ -146,17 +146,17 @@ test('failed Android launch inspection removes its partially initialized return 
   expect(outcome).toEqual({ rejected: true, listeners: 0 });
 });
 
-test('failed Android return setup leaves the qualified manual handoff available', async ({ page, configuredBaseURL }) => {
+test('failed Android return setup offers web sign-in without a code transfer', async ({ page, configuredBaseURL }) => {
   await nativeBridge(page, request => request.path === '/api/capabilities' ? reply(capabilities)
     : request.path === '/api/onesa/availability' ? reply({ origin: apiOrigin, handoff: true })
     : reply({ error: 'not_authenticated' }, 401), {
     platform: 'android', authenticate: async () => '', launchUrlFailure: true,
   });
   await page.goto(configuredBaseURL);
-  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await page.getByRole('button', { name: 'Your account', exact: true }).click();
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click({ timeout: 5000 });
-  await expect(page.getByLabel('One-time handoff code')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open PasoFi on the web', exact: true })).toBeVisible();
+  await expect(page.getByLabel('One-time handoff code')).toHaveCount(0);
   await expect(page.getByText('Preparing the secure sign-in return…')).toHaveCount(0);
 });
 
@@ -205,7 +205,7 @@ for (const platform of ['ios', 'android'] as const) {
       if(req.path==='/api/bundles')return reply({products:[]});
       return reply({error:'unavailable'},503);
     },{platform,authenticate:async value=>{
-      if(value==='https://account.onesa.eu/register?audience='+(platform==='ios'?'user':'admin')+'&product=pasofi&platform='+platform){
+      if(value==='https://account.onesa.eu/register?audience=user&product=pasofi&platform='+platform){
         return 'com.onesa.pasofi.identity://login/registered';
       }
       const url=new URL(value);expect(url.origin+'/').toBe(issuer);authorization=url.searchParams;
@@ -215,9 +215,9 @@ for (const platform of ['ios', 'android'] as const) {
       return callback+'?code=sample&state='+authorization.get('state');
     }});
     await page.goto(configuredBaseURL);
-    await page.getByRole('button',{name:'My PasoFi',exact:true}).click();
+    await page.getByRole('button',{name:'Your account',exact:true}).click();
     await page.getByRole('button',{name:'History',exact:true}).first().click();
-    await page.getByRole('link',{name:platform==='ios'?'Register an Onesa account':'Request administrator access',exact:true}).click();
+    await page.getByRole('link',{name:'Sign up',exact:true}).click();
     // The Android system-browser deep link is asynchronous. Wait for the
     // server-side session exchange and protected history read, not a fixed delay.
     await expect.poll(() => established && readHistory, { timeout: 15000 }).toBe(true);
@@ -230,7 +230,7 @@ for (const platform of ['ios', 'android'] as const) {
   });
 }
 
-for (const platform of ['ios', 'android'] as const) for (const returnMethod of ['deep link', 'manual'] as const) test(`${platform} native sign-in receives its one-use code by ${returnMethod} and registration opens Identity separately`, async ({ page, configuredBaseURL }) => {
+for (const platform of ['ios', 'android'] as const) test(`${platform} keeps handling an existing sign-in code link during client updates`, async ({ page, configuredBaseURL }) => {
   let recovered = false;
   const handoffCode = 'N'.repeat(43);
   const calls = await nativeBridge(page, request => {
@@ -244,33 +244,29 @@ for (const platform of ['ios', 'android'] as const) for (const returnMethod of [
     return reply({ error: 'not_authenticated' }, 401);
   }, { platform });
   await page.goto(configuredBaseURL);
-  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
-  await expect(page.getByRole('link', {name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform='+platform);
+  await page.getByRole('button', { name: 'Your account', exact: true }).click();
+  await expect(page.getByRole('link', {name:'Sign up',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform='+platform);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await page.getByRole('button', { name: 'Open sign-in in browser', exact: true }).click();
-  await expect(page.getByText('Browser opened.', { exact: false })).toBeVisible();
-  const opened = calls.filter(call => call.method === 'openSignIn');
-  expect(opened).toHaveLength(1); expect(Object.keys(opened[0].options)).toEqual(['requestId']);
+  await expect(page.getByRole('link', { name: 'Open PasoFi on the web', exact: true })).toBeVisible();
   expect(recovered).toBe(false);
-  if (returnMethod === 'deep link') await page.evaluate(() => (window as any).__returnToHandoff());
-  else await page.getByRole('button', { name: 'Enter sign-in code', exact: true }).click();
-  await expect(page.getByRole('heading', {name: 'Accept an account handoff'})).toBeVisible();
+  await page.evaluate(() => (window as any).__returnToHandoff());
+  await expect(page.getByRole('heading', {name: 'Enter a sign-in code'})).toBeVisible();
   await page.getByLabel('One-time handoff code').fill(handoffCode);
-  await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Confirm sign-in' })).toBeDisabled();
   await page.getByRole('checkbox', { name: /my own PasoFi account/ }).check();
-  await page.getByRole('button', { name: 'Accept account handoff' }).click();
+  await page.getByRole('button', { name: 'Confirm sign-in' }).click();
   await expect.poll(() => recovered).toBe(true);
   await expect.poll(() => calls.filter(call => call.method === 'request' && call.options.path === '/api/session').length).toBeGreaterThan(1);
   const storage = await page.evaluate(() => ({ persistent: JSON.stringify(localStorage) + JSON.stringify(sessionStorage), fetches: (window as any).browserApiFetches }));
   expect(storage.persistent).not.toContain(handoffCode); expect(storage.fetches).toBe(0);
 });
 
-test('native Onesa entry refuses an unqualified handoff deployment', async ({ page, configuredBaseURL }) => {
+test('native entry offers web sign-in without a registered app callback', async ({ page, configuredBaseURL }) => {
   const calls = await nativeBridge(page, request => request.path === '/api/capabilities' ? reply(capabilities)
     : request.path === '/api/onesa/availability' ? reply({ origin: apiOrigin }) : reply({ error: 'not_authenticated' }, 401));
-  await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'Your account', exact: true }).click();
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page.getByText('Sign-in is currently unavailable in the app', { exact: false })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open PasoFi on the web', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open sign-in in browser', exact: true })).toHaveCount(0);
   expect(calls.filter(call => call.method === 'openSignIn')).toHaveLength(0);
 });
@@ -300,10 +296,10 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
   test(`native account UI requires qualified cookie protocol version1 ${JSON.stringify(patch)}`, async ({ page, configuredBaseURL }) => {
     const requests: NativeRequest[] = [];
     await nativeBridge(page, request => { requests.push(request); return reply({ ...capabilities, ...patch }); });
-    await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+    await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'Your account', exact: true }).click();
     await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible();
     await expect(page.getByRole('link',{name:'Continue to PasoFi account on the web',exact:true})).toHaveAttribute('href','https://pasofi.mobile.onesa.eu/#account');
-    await expect(page.getByRole('link',{name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform=ios');
+    await expect(page.getByRole('link',{name:'Sign up',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform=ios');
     await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
     expect(requests.length).toBeGreaterThan(0); expect(new Set(requests.map(request => request.path))).toEqual(new Set(['/api/capabilities']));
     expect(await page.evaluate(() => (window as any).browserApiFetches)).toBe(0);
@@ -316,14 +312,14 @@ test('unresponsive native capabilities request returns to offline preview withou
     ? new Promise<NativeReply>(() => {})
     : reply({ error: 'not_authenticated' }, 401));
   await page.goto(configuredBaseURL);
-  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await page.getByRole('button', { name: 'Your account', exact: true }).click();
   await expect(page.getByText('Checking the configured PasoFi service', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry service connection' })).toBeVisible({ timeout: 16000 });
   await expect(page.getByRole('button', { name: '← Offline preview' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
   expect(calls.filter(call => call.method === 'request').map(call => call.options.path)).toEqual(['/api/capabilities']);
   await page.getByRole('button', { name: '← Offline preview' }).click();
-  await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Your account', exact: true })).toBeVisible();
 });
 for (const platform of ['ios', 'android'] as const) {
   test(`${platform} account creation keeps retry custody native while customer mutations preserve their idempotency keys`, async ({ page, configuredBaseURL }) => {
@@ -485,7 +481,7 @@ test('Android cold-start return survives a missed notification and is acknowledg
   await expect(page.getByRole('heading', { name: 'Accept an account handoff' })).toBeVisible({ timeout: 5000 });
   await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
   await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
-  await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Your account', exact: true })).toBeVisible();
   await page.evaluate(() => (window as any).__returnToHandoff());
   await expect(page.getByRole('heading', { name: 'Accept an account handoff' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
@@ -495,11 +491,11 @@ test('Android cold-start return survives a missed notification and is acknowledg
 test('unavailable native capabilities keep the read-only fallback and do not imply a completed mutation', async ({ page, configuredBaseURL }) => {
   const calls = await nativeBridge(page, () => reply({ error: 'unavailable' }, 503));
   await page.goto(configuredBaseURL);
-  await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+  await page.getByRole('button', { name: 'Your account', exact: true }).click();
   await expect(page.getByText('The configured PasoFi service could not be reached.', { exact: false })).toBeVisible();
   await expect(page.getByText('A request may still have completed', { exact: false })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Start a new customer account' })).toHaveCount(0);
   expect(calls.filter(call => call.method === 'request').every(call => call.options.method === 'GET' && call.options.path === '/api/capabilities')).toBe(true);
   await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
-  await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Your account', exact: true })).toBeVisible();
 });
