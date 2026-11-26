@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 const paused = { demo: false, paymentMode: 'disabled', paymentCheckout: false, vouchers: false, receiptPairing: false, staffSales: false, deliverySms: false, networkAccess: false, mobileCookies: false };
 const bundle = { id: 'flex', price_minor: 100, currency: 'USD', byte_limit: '5000000000', validity_seconds: 86400 };
 
-for (const width of [320, 390, 1280]) test(`Onesa customer entry is discoverable and recovers focus at ${width}px`, async ({ page }, info) => {
+for (const width of [320, 390, 1280]) test(`customer sign-in opens directly and can be retried at ${width}px`, async ({ page }, info) => {
   let starts = 0;
   await page.route('**/api/**', route => {
     const url = new URL(route.request().url());
@@ -15,17 +15,11 @@ for (const width of [320, 390, 1280]) test(`Onesa customer entry is discoverable
     return route.fulfill({ status: url.pathname === '/api/onesa/start' ? 503 : url.pathname === '/api/session' ? 401 : 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
   await page.setViewportSize({ width, height: 900 }); await page.goto('/');
-  const entry = page.getByRole('button', { name: 'Sign in with Onesa', exact: true });
+  const entry = page.getByRole('button', { name: 'Sign in', exact: true });
   await expect(entry).toHaveCount(1); await expect(entry).toBeInViewport();
   await entry.click();
-  await expect(page.getByRole('heading', { name: 'Continue to your Onesa account' })).toBeFocused();
-  await expect(page.getByText(/Guest purchases stay with your guest account/)).toBeVisible();
-  expect(starts).toBe(0);
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(entry).toBeFocused(); await expect(entry).toHaveAttribute('aria-expanded', 'false');
-  await entry.click(); await page.getByRole('button', { name: 'Continue with Onesa', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Onesa sign-in is temporarily unavailable');
-  await expect(page.getByRole('button', { name: 'Continue with Onesa', exact: true })).toBeEnabled();
+  await expect(page.getByRole('alert')).toContainText('Sign-in is temporarily unavailable');
+  await expect(entry).toBeEnabled();
   expect(starts).toBe(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: info.outputPath(`customer-entry-${width}.png`), fullPage: true });
@@ -50,10 +44,10 @@ test('central signup stays separate from the PasoFi interaction that returns to 
   });
   await page.route('https://portal-signup.example.invalid/**', route => route.fulfill({body:'Test Company Portal issuer'}));
   await page.goto('/#account');
-  await expect(page.getByText('Checking Onesa sign-in…')).toBeVisible();
-  await expect(page.getByRole('link', {name:'Create an Onesa account'})).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', {name:'Sign up'})).toHaveCount(0);
   releaseAvailability();
-  const signup = page.getByRole('link', {name:'Create an Onesa account',exact:true});
+  const signup = page.getByRole('link', {name:'Sign up',exact:true});
   await expect(signup).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform=web');
   expect(await signup.getAttribute('target')).toBeNull();
   const origin=new URL(page.url()).origin;
@@ -63,14 +57,33 @@ test('central signup stays separate from the PasoFi interaction that returns to 
   await expect(page).toHaveURL('https://portal-signup.example.invalid/authorize');
   expect(starts).toBe(1);
   await page.goto('/#account');
-  const signIn = page.getByRole('button', {name:'Sign in with Onesa',exact:true});
+  const signIn = page.getByRole('button', {name:'Sign in',exact:true});
   await signIn.click();
-  await page.getByRole('button', {name:'Cancel',exact:true}).click();
-  await expect(signIn).toBeFocused();
-  await signIn.click();
-  await page.getByRole('button', {name:'Continue with Onesa',exact:true}).click();
   await expect(page).toHaveURL('https://portal-signup.example.invalid/authorize');
   expect(starts).toBe(2);
+});
+
+test('normal sign-in and keeping guest purchases send distinct requests', async ({ page }) => {
+  const starts: unknown[] = [];
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/onesa/start') {
+      starts.push(route.request().postDataJSON());
+      return route.fulfill({ status: 503, json: { error: 'unavailable' } });
+    }
+    if (path === '/api/onesa/availability') return route.fulfill({ json: { origin: new URL(route.request().url()).origin } });
+    if (path === '/api/session') return route.fulfill({ json: { customerId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', guest: true } });
+    if (path === '/api/capabilities') return route.fulfill({ json: paused });
+    if (path === '/api/help') return route.fulfill({ json: { articles: [] } });
+    return route.fulfill({ json: { products: [], candidate: false } });
+  });
+  await page.goto('/#bundles');
+  const keepPurchases = page.getByRole('button', { name: 'Keep guest purchases', exact: true });
+  await expect(keepPurchases).toBeVisible();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByText('Sign-in is temporarily unavailable. Please try again.')).toBeVisible();
+  await keepPurchases.click();
+  await expect.poll(() => starts).toEqual([{ returnTo: '/#bundles' }, { returnTo: '/#bundles', claimGuest: true }]);
 });
 
 test('unverified availability cannot enable a published bundle and an explicit refresh recovers', async ({ page }) => {
@@ -93,7 +106,7 @@ test('unverified availability cannot enable a published bundle and an explicit r
 });
 
 test('staff sign-in clears an abandoned customer flow and signup has its own administrator entry', async ({ page, baseURL }) => {
-  const label = 'Sign in with Onesa';
+  const label = 'Sign in';
   // Preserve production's HTTPS requirement while serving this test's local UI.
   // No request reaches the reserved example hostname.
   await page.route('https://pasofi-entry.example.invalid/**', async route => {
@@ -135,13 +148,13 @@ test('customer entry and staff access remain fail-closed when Identity is unavai
   for (const hash of ['#account', '#staff?apply=1']) {
     await page.goto('/' + hash);
     const scope = hash.startsWith('#staff') ? page.getByRole('region', { name: 'Staff workspace' }) : page;
-    await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Create an Onesa account'})).toHaveAttribute('href','https://account.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
+    await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Sign up'})).toHaveAttribute('href','https://account.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
     if (hash.startsWith('#staff')) {
-      await expect(scope.getByText('Onesa Identity sign-in is not connected to this PasoFi service yet. PasoFi access remains disabled until the connection is configured.')).toBeVisible();
+      await expect(scope.getByText('Staff sign-in is temporarily unavailable.')).toBeVisible();
       await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveCount(0);
     } else {
-      await expect(scope.getByRole('button',{name:'Retry Onesa sign-in'})).toBeVisible();
-      await expect(scope.getByText(/Onesa Identity unavailable/)).toBeVisible();
+      await expect(scope.getByRole('button',{name:'Retry sign-in'})).toBeVisible();
+      await expect(scope.getByText(/Sign-in unavailable/)).toBeVisible();
       await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveCount(0);
     }
     await expect(scope.getByRole('button',{name:'Start a new customer account'})).toHaveCount(0);
@@ -160,13 +173,13 @@ test('a gateway outage keeps customer and staff Identity access fail-closed', as
     await page.goto('/'+hash);
     const scope = hash.startsWith('#staff') ? page.getByRole('region',{name:'Staff workspace'}) : page.getByRole('main');
     if (hash.startsWith('#staff')) {
-      await expect(scope.getByText('Onesa Identity sign-in is not connected to this PasoFi service yet. PasoFi access remains disabled until the connection is configured.')).toBeVisible();
+      await expect(scope.getByText('Staff sign-in is temporarily unavailable.')).toBeVisible();
       await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveCount(0);
     } else {
-      await expect(scope.getByRole('button',{name:'Retry Onesa sign-in',exact:true})).toBeVisible();
+      await expect(scope.getByRole('button',{name:'Retry sign-in',exact:true})).toBeVisible();
       await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveCount(0);
     }
-    await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Create an Onesa account',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
+    await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Sign up',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
     await expect(scope.locator('input[type="password"]')).toHaveCount(0);
   }
   expect(writes).toBe(0);
@@ -174,6 +187,7 @@ test('a gateway outage keeps customer and staff Identity access fail-closed', as
 
 test('a customer signing in at the hotspot welcome returns to the welcome screen', async ({ page, baseURL }) => {
   let returnTo: string | undefined;
+  let signedIn = false;
   const state = 'c'.repeat(43);
   const authorize = 'https://portal.example.invalid/authorize?state=' + state;
   await page.route('**/api/**', async route => {
@@ -183,6 +197,8 @@ test('a customer signing in at the hotspot welcome returns to the welcome screen
       return route.fulfill({ json: { authorizationUrl: authorize } });
     }
     const customerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    if (path === '/api/session' && !signedIn) return route.fulfill({ status: 401, json: { error: 'not_authenticated' } });
+    if (path === '/api/onesa/complete') signedIn = true;
     const body = path === '/api/onesa/complete' ? { authenticated: true, returnTo, customerId }
       : path === '/api/session' ? { customerId }
       : path === '/api/onesa/availability' ? { origin: new URL(route.request().url()).origin }
@@ -192,8 +208,7 @@ test('a customer signing in at the hotspot welcome returns to the welcome screen
   await page.route(authorize, route =>
     route.fulfill({contentType:'text/html',body:'<script>location.replace('+JSON.stringify(new URL('/onesa-callback.html?code=test&state=' + state,baseURL).href)+')</script>'}));
   await page.goto('/connect');
-  await page.getByRole('button', { name: 'Sign in with Onesa', exact: true }).click();
-  await page.getByRole('button', { name: 'Continue with Onesa', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect.poll(() => returnTo).toBe('/#connect');
   await expect(page).toHaveURL(/\/#connect$/);
   await expect(page.getByRole('button', { name: 'My WiFi', exact: true })).toBeVisible();

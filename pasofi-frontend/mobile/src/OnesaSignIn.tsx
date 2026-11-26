@@ -19,7 +19,7 @@ export default function OnesaSignIn({ enterCode, close, destination, managedRetu
         setAvailable(value.origin === mobileApiOrigin && value.handoff === true);
         setNative(value.origin === mobileApiOrigin ? value.native ?? null : null);
       }
-    }).catch(() => { if (!controller.signal.aborted) setMessage('Onesa sign-in availability could not be checked. Your existing account is unchanged.'); })
+    }).catch(() => { if (!controller.signal.aborted) setMessage('Sign-in availability could not be checked. Please try again.'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [attempt]);
@@ -53,13 +53,13 @@ export default function OnesaSignIn({ enterCode, close, destination, managedRetu
     finally { setBusy(false); }
   }
   return <section className="workspace" aria-labelledby="onesa-app-heading" aria-busy={loading || busy}>
-    <div className="purchase-head"><h2 id="onesa-app-heading">Sign in with Onesa</h2><button className="close-button" onClick={close} aria-label="Close Onesa sign-in">×</button></div>
+    <div className="purchase-head"><h2 id="onesa-app-heading">Sign in</h2><button className="close-button" onClick={close} aria-label="Close sign-in">×</button></div>
     <p>{direct ? 'Sign in in your system browser. PasoFi will reopen your current screen.' : 'Sign in securely in your browser, then bring that account into this app with a one-time code. Your browser and app keep separate sessions.'}</p>
-    {loading ? <p role="status">Checking Onesa sign-in…</p> : !available ? <><p role="status">Onesa sign-in for this app is not available from the configured service yet. Your guest recovery options still work.</p><p><a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">PasoFi account on the web</a></p><button className="secondary" onClick={() => setAttempt(value => value + 1)}>Check sign-in availability</button></> : <>
-      {!direct && <ol className="onesa-app-steps"><li>Open PasoFi in your browser and choose <strong>Sign in with Onesa</strong>. Sign in or register through Onesa Identity.</li><li>In the browser footer, choose <strong>Accept handoff</strong>, then <strong>Create a code for the PasoFi app</strong>. Use only a code from your own account.</li><li>Copy your code and select the browser’s return link to open this app at Accept an account handoff. Enter the code within two minutes. Sign out of any other app account first.</li></ol>}
+    {loading ? <p role="status">Preparing sign-in…</p> : !available ? <><p role="status">Sign-in is currently unavailable in the app. You can recover a guest account or open PasoFi on the web.</p><p><a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">PasoFi account on the web</a></p><button className="secondary" onClick={() => setAttempt(value => value + 1)}>Check sign-in availability</button></> : <>
+      {!direct && <ol className="onesa-app-steps"><li>Open PasoFi in your browser and choose <strong>Sign in</strong> or <strong>Sign up</strong>.</li><li>In the browser footer, choose <strong>Accept handoff</strong>, then <strong>Create a code for the PasoFi app</strong>. Use only a code from your own account.</li><li>Copy your code and select the browser’s return link to open this app at Accept an account handoff. Enter the code within two minutes. Sign out of any other app account first.</li></ol>}
       <p className="private-value">PasoFi address: <strong>{mobileApiOrigin}</strong></p>
       <p>Guest purchases stay with the guest account. Save its recovery details before switching accounts.</p>
-      <div className="purchase-actions"><button className="primary" disabled={busy} onClick={() => openBrowser(true)}>{busy ? 'Opening browser…' : 'Open Onesa sign-in in browser'}</button>{!direct && <button className="secondary" disabled={busy} onClick={enterCode}>Enter sign-in code</button>}</div>
+      <div className="purchase-actions"><button className="primary" disabled={busy} onClick={() => openBrowser(true)}>{busy ? 'Opening browser…' : 'Open sign-in in browser'}</button>{!direct && <button className="secondary" disabled={busy} onClick={enterCode}>Enter sign-in code</button>}</div>
     </>}
     {message && <p role="status">{message}</p>}
   </section>;

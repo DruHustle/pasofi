@@ -4,8 +4,8 @@ import { createRoot } from 'react-dom/client';
 import { InvoiceLink } from './InvoiceActions';
 import type { Capabilities, Product } from './business';
 import type { CustomerTab } from './CustomerAccess';
-import { api, hotspotPortal } from './api';
-import { currentSession, onSessionChange } from './session';
+import { api, ApiError, hotspotPortal } from './api';
+import { inspectBrowserSession, onSessionChange, type CustomerSessionStatus } from './session';
 import Icon, { type IconName } from './Icon';
 import BundleCatalogue from './BundleCatalogue';
 import Home from './Home';
@@ -22,7 +22,8 @@ import './customer-journey.css';
 const DemoPurchase = lazy(() => import('./DemoPurchase'));
 const Recovery = lazy(() => import('./Recovery'));
 const StaffWorkspace = lazy(() => import('./StaffWorkspace'));
-const CustomerAccess = lazy(() => import('./CustomerAccess'));
+const loadCustomerAccess = () => import('./CustomerAccess');
+const CustomerAccess = lazy(loadCustomerAccess);
 const Handoff = lazy(() => import('./Handoff'));
 type View = 'home' | 'bundles' | 'help' | 'history' | 'account' | 'wifi' | 'voucher' | 'connect' | 'checkout' | 'receipt' | 'staff' | 'handoff' | 'terms' | 'privacy';
 const customerViews: Partial<Record<View, CustomerTab>> = { history: 'history', account: 'recovery', wifi: 'wifi', voucher: 'voucher', checkout: 'purchase', receipt: 'receipt' };
@@ -62,9 +63,11 @@ function App() {
   const [checkoutBundle, setCheckoutBundle] = useState<Product | null>(null);
   const [requestedBundleId, setRequestedBundleId] = useState<string | null>(locationBundleId);
   const [purchase, setPurchase] = useState<Product | 'access' | 'recovery' | null>(null);
+  const [customerSession, setCustomerSession] = useState<CustomerSessionStatus | null>(null);
   const [notice, setNotice] = useState(''), [offline, setOffline] = useState(!navigator.onLine);
   const opener = useRef<HTMLButtonElement | null>(null), content = useRef<HTMLElement>(null), interactions = useRef(0);
   const recoveryTarget = useRef<'demo' | 'customer'>('demo'), allowHomeRestore = useRef(true);
+  const hasCustomerSession = customerSession === 'member' || customerSession === 'guest';
   const catalogueGeneration = useRef(0), capabilityGeneration = useRef(0);
 
   useEffect(() => {
@@ -98,14 +101,25 @@ function App() {
     return () => controller.abort();
   }, [capabilityAttempt]);
   useEffect(() => {
-    // A read-only session check restores a returning customer's dashboard. Browsing
-    // never creates an account, and a late result cannot override a user action.
-    if (!allowHomeRestore.current || capabilities?.demo !== false || view !== 'home' || workspace || purchase) return;
+    if (capabilities?.demo !== false || !allowHomeRestore.current || (view !== 'home' && view !== 'bundles') || workspace || purchase || customerSession === 'signed-out') return;
+    function prepareHome() {
+      if (view === 'home') { setCustomerTab('access'); setWorkspace('customer'); }
+      else void loadCustomerAccess().catch(() => {});
+    }
+    if (hasCustomerSession) { prepareHome(); return; }
+    // Browsing only verifies the session. The workspace still verifies ownership before displaying account data.
     let active = true; const revision = interactions.current;
-    currentSession().then(() => { if (active && interactions.current === revision) { setCustomerTab('access'); setWorkspace('customer'); } }).catch(() => {});
+    void inspectBrowserSession().then(session => {
+      if (!active || interactions.current !== revision) return;
+      setCustomerSession(session.guest === true ? 'guest' : 'member');
+      prepareHome();
+    }).catch(error => {
+      if (active && interactions.current === revision && error instanceof ApiError && error.status === 401) setCustomerSession('signed-out');
+    });
     return () => { active = false; };
   }, [capabilities?.demo, view]);
   useEffect(() => onSessionChange(change => {
+    setCustomerSession(change === 'signed_out' ? 'signed-out' : null);
     ++interactions.current; allowHomeRestore.current = false; setPurchase(null); setWorkspace(null); setCheckoutBundle(null); setRequestedBundleId(null);
     history.replaceState(null, '', `${mainPath()}#home`); setView('home'); setCustomerTab('access');
     setNotice(change === 'signed_out' ? 'Signed out in another tab. Account details have been cleared from this view.' : 'Your account changed in another tab. Reopen your account tools to load the current account.');
@@ -117,12 +131,13 @@ function App() {
   useEffect(() => {
     const sync = () => {
       ++interactions.current; const next = locationView(); setView(next); setPurchase(null); setCheckoutBundle(null);
-      setWorkspace(workspaceFor(next)); setRequestedBundleId(locationBundleId());
+      const customerHome = next === 'home' && allowHomeRestore.current && capabilities?.demo === false && hasCustomerSession;
+      setWorkspace(workspaceFor(next) ?? (customerHome ? 'customer' : null)); setRequestedBundleId(locationBundleId());
       setCustomerTab(customerViews[next] ?? 'access');
     };
     addEventListener('popstate', sync); addEventListener('hashchange', sync);
     return () => { removeEventListener('popstate', sync); removeEventListener('hashchange', sync); };
-  }, []);
+  }, [capabilities?.demo, hasCustomerSession]);
   function setLocation(next: View, bundleId?: string | null, replace = false) {
     const selected = (next === 'checkout' || next === 'receipt') && bundleId && /^[a-z][a-z0-9-]{0,39}$/.test(bundleId) ? bundleId : null;
     const path = next === 'staff' && !hotspotPortal ? staffEntry
@@ -148,7 +163,8 @@ function App() {
   }
   function navigate(next: View, button?: HTMLButtonElement, { resetCatalogue = false } = {}) {
     allowHomeRestore.current = true; ++interactions.current; if (button) opener.current = button; setPurchase(null); setNotice(''); setCheckoutBundle(null); setLocation(next);
-    setCustomerTab(customerViews[next] ?? 'access'); setWorkspace(workspaceFor(next) ?? (next === 'home' && workspace === 'customer' ? 'customer' : null));
+    const customerHome = next === 'home' && (workspace === 'customer' || (capabilities?.demo === false && hasCustomerSession));
+    setCustomerTab(customerViews[next] ?? 'access'); setWorkspace(workspaceFor(next) ?? (customerHome ? 'customer' : null));
     if (resetCatalogue) { setBundles(null); setDemoEnabled(false); }
     if (next === 'bundles' && (resetCatalogue || view !== 'bundles' || !checkingAvailability)) refreshAvailability();
     focusScreen();
@@ -188,7 +204,7 @@ function App() {
   const showWelcome = !workspace && !purchase && (view === 'home' || view === 'connect');
   const accountOwnsSignIn = workspace === 'customer' && (customerTab === 'recovery' || (hotspotPortal && customerTab === 'voucher'));
   const showCatalogue = !workspace && !purchase && (view === 'home' || view === 'bundles' || view === 'connect');
-  const showBundleSignIn = hotspotPortal && showCatalogue && view === 'bundles';
+  const showBundleSignIn = hotspotPortal && showCatalogue && view === 'bundles' && customerSession !== 'member';
   const serviceLabel = capabilities === null ? capabilitiesError ? 'SERVICE STATUS UNAVAILABLE' : 'CHECKING SERVICE STATUS' : capabilities.demo ? 'DEMONSTRATION' : capabilities.staffSales || capabilities.paymentCheckout || capabilities.networkAccess ? 'PASOFI CUSTOMER SERVICE' : 'SERVICE IN PREPARATION';
   const serviceDetail = capabilities === null ? capabilitiesError ? 'Purchases and connection status cannot be confirmed. Retry to check availability.' : 'Checking purchases and connection options…' : capabilities.demo ? 'Candidate bundles · purchases and connections are not yet available' : capabilities.staffSales || capabilities.paymentCheckout || capabilities.networkAccess ? 'Your account shows confirmed purchases and connection status' : 'Purchases and connections are not yet available';
 
@@ -200,7 +216,7 @@ function App() {
       {!hotspotPortal && offline && <div className="connection-notice" role="status">You appear to be offline. Reconnect before checking an order or recovering access.</div>}
       {notice && <div className="connection-notice" role="status">{notice}</div>}
       <div className="demo pf-service-status" role="status" aria-live="polite" data-status={capabilitiesError ? 'unavailable' : !capabilities ? 'checking' : capabilities.demo ? 'demo' : capabilities.staffSales || capabilities.paymentCheckout || capabilities.networkAccess ? 'available' : 'preparation'}><span className="pf-status-dot"/><span><strong>{serviceLabel}</strong><span className="pf-service-detail">{serviceDetail}</span></span>{capabilitiesError && <button onClick={refreshCapabilities}>Retry service status</button>}</div>
-      {showWelcome && view === 'home' && <OnesaCustomerSignIn prominent/>}
+      {showWelcome && view === 'home' && customerSession !== 'member' && <OnesaCustomerSignIn prominent/>}
       <ScreenBoundary screen={`${view}:${workspace ?? ''}:${purchase === 'recovery' ? 'recovery' : purchase ? 'purchase' : ''}:${catalogueAttempt}`} onBrowse={() => navigate('bundles', undefined, { resetCatalogue: true })}>
       {showWelcome && view === 'connect' && <>
         <div className="pf-page-intro"><h1 tabIndex={-1}>Connect to PasoFi</h1></div>
@@ -222,14 +238,14 @@ function App() {
         ]).map(action => <button key={action.label} className={action.className} disabled={action.disabled} onClick={event => action.action(event.currentTarget)}><span><Icon name={action.icon}/></span><strong>{action.label}</strong></button>)}</section>
       </>}
       {purchase && <Suspense fallback={<div className="pf-empty" role="status">Loading your account tools…</div>}>{purchase === 'recovery' ? <Recovery close={closeWorkspace} recovered={() => { setPurchase(null); if (recoveryTarget.current === 'customer' && capabilities) openCustomer(); else setPurchase('access'); }}/>: <DemoPurchase key={purchase === 'access' ? 'access' : purchase.id} bundle={purchase === 'access' ? null : purchase} close={closeWorkspace} signedOut={() => { closeWorkspace(); setNotice('Signed out of this device. Use Recover to return to your saved demo account.'); }}/>}</Suspense>}
-      {workspace && <Suspense fallback={<div className="pf-workspace-loading" role="status"><span/><span/><span/>Loading your workspace…</div>}>{workspace === 'staff' ? <StaffWorkspace close={closeWorkspace} capabilities={capabilities}/> : workspace === 'handoff' ? <Handoff close={closeWorkspace} recovered={() => { if (capabilities) openCustomer(); else { setWorkspace(null); setPurchase('access'); } }}/> : capabilities ? <CustomerAccess close={closeWorkspace} capabilities={capabilities} selectedBundle={checkoutBundle} requestedBundleId={requestedBundleId} initialTab={customerTab} onNavigate={customerNavigate} onBuyData={() => navigate('bundles')} recovered={() => openRecovery(undefined, 'customer')}/> : <div className="pf-empty" role="status"><h2 tabIndex={-1}>Let’s check your service.</h2><p>{capabilitiesError ? 'Account tools are temporarily unavailable. Please retry the service status.' : 'Checking which account features are available…'}</p>{capabilitiesError && <><button className="pf-button pf-button-secondary" onClick={refreshCapabilities}>Retry account connection</button>{accountOwnsSignIn && <OnesaCustomerSignIn/>}</>}</div>}</Suspense>}
+      {workspace && <Suspense fallback={<div className="pf-workspace-loading" role="status"><span/><span/><span/>Loading your workspace…</div>}>{workspace === 'staff' ? <StaffWorkspace close={closeWorkspace} capabilities={capabilities}/> : workspace === 'handoff' ? <Handoff close={closeWorkspace} recovered={() => { if (capabilities) openCustomer(); else { setWorkspace(null); setPurchase('access'); } }}/> : capabilities ? <CustomerAccess close={closeWorkspace} capabilities={capabilities} selectedBundle={checkoutBundle} requestedBundleId={requestedBundleId} initialTab={customerTab} onSessionStatus={setCustomerSession} onNavigate={customerNavigate} onBuyData={() => navigate('bundles')} recovered={() => openRecovery(undefined, 'customer')}/> : <div className="pf-empty" role="status"><h2 tabIndex={-1}>Let’s check your service.</h2><p>{capabilitiesError ? 'Account tools are temporarily unavailable. Please retry the service status.' : 'Checking which account features are available…'}</p>{capabilitiesError && <><button className="pf-button pf-button-secondary" onClick={refreshCapabilities}>Retry account connection</button>{accountOwnsSignIn && <OnesaCustomerSignIn/>}</>}</div>}</Suspense>}
       {showCatalogue && (view === 'home' ? <Home capabilities={capabilities} onInteract={() => { allowHomeRestore.current = false; ++interactions.current; }} browse={button => navigate('bundles', button)} account={openCustomer} help={button => navigate('help', button)} recover={openRecovery}><BundleCatalogue compact bundles={bundles} demo={demoEnabled} capabilities={capabilities} checkingAvailability={checkingAvailability} error={catalogueError} retry={refreshCatalogue} refreshAvailability={refreshAvailability} choose={chooseBundle} help={() => navigate('help')}/></Home>
         : <BundleCatalogue compact={view !== 'bundles'} headingLevel={view === 'bundles' ? 1 : 2} bundles={bundles} demo={demoEnabled} capabilities={capabilities} checkingAvailability={checkingAvailability} error={catalogueError} retry={refreshCatalogue} refreshAvailability={refreshAvailability} choose={chooseBundle} help={() => navigate('help')} accountEntry={showBundleSignIn && <OnesaCustomerSignIn prominent/>}/>)}
       {!workspace && !purchase && view === 'help' && <section className="pf-help" aria-labelledby="help-heading"><div className="pf-page-intro"><div><span className="pf-eyebrow">A LITTLE GUIDANCE</span><h1 id="help-heading" tabIndex={-1}>Here to help.</h1><p>Quick answers. More time for your day.</p></div><span className="pf-help-illustration"><Icon name="help"/></span></div><div className="pf-help-layout"><div className="pf-help-main"><label className="pf-search" htmlFor="help-query"><Icon name="search"/><span className="pf-sr-only">Find a quick answer</span><input id="help-query" type="search" maxLength={160} placeholder="Search data, vouchers or recovery" value={helpQuery} onChange={event => setHelpQuery(event.target.value)}/></label><p className="pf-private-note">Search reviewed answers. Never enter a voucher, password or recovery key here.</p><div className="pf-faq">{helpError && <div className="pf-empty"><p role="status">Help is temporarily unavailable.</p><p>Policy answers are available below.</p><button className="pf-button pf-button-secondary" onClick={() => setHelpAttempt(value => value + 1)}>Retry help</button></div>}{!helpError && articles === null && <p role="status">Loading more help…</p>}{visibleArticles.length === 0 ? <p className="pf-empty" role="status">No reviewed answer matches that search. Try a shorter phrase or clear the search to see all answers.</p> : visibleArticles.map(a => <details key={a.question}><summary>{a.question}<Icon name="plus"/></summary><p>{a.answer}</p></details>)}</div></div><aside className="pf-support-card"><span className="pf-empty-icon"><Icon name="shield"/></span><h2>Your account, in your hands.</h2><p>Call customer support on <a href="tel:+263715092221">+263 715 092 221</a>. Keep recovery details and voucher codes private.</p><p>Keep your recovery key somewhere safe. You can use it to restore access on another device.</p><button className="pf-button pf-button-secondary" onClick={event => openRecovery(event.currentTarget)}>Recover my account <Icon name="arrow"/></button><p className="pf-private-note">For a cash-sale query, ask the agent at your PasoFi location to review your receipt.</p><PolicyNotice/></aside></div></section>}
       {!workspace && !purchase && (view === 'terms' || view === 'privacy') && <Policies kind={view}/>}
       {showCatalogue && <section className="pf-help-banner"><span className="pf-empty-icon"><Icon name="help"/></span><div><h2>A little help goes a long way.</h2><p>From your first voucher to your next connection.</p></div><button className="pf-text-link" onClick={() => navigate('help')}>Explore help <Icon name="arrow"/></button></section>}
       </ScreenBoundary>
-      <footer className="pf-footer"><div><strong>PasoFi</strong><p>An Onesa Mobile product</p></div><AppDownloads /><div className="pf-footer-tools">{!showWelcome && !accountOwnsSignIn && !showBundleSignIn && <OnesaCustomerSignIn/>}<button onClick={event => openRecovery(event.currentTarget)}>Recover</button><button onClick={event => openUtility('staff', event.currentTarget)}>Staff</button><button onClick={event => openUtility('handoff', event.currentTarget)}>Accept handoff</button>{demoEnabled && <button onClick={event => openDemo('access', event.currentTarget)}>My demo access</button>}<a href="#terms" onClick={event => { event.preventDefault(); navigate('terms'); }}>Service terms</a><a href="#privacy" onClick={event => { event.preventDefault(); navigate('privacy'); }}>Privacy</a><a href="/connect" onClick={event => { event.preventDefault(); navigate('connect'); }}>Hotspot welcome</a></div></footer>
+      <footer className="pf-footer"><div><strong>PasoFi</strong><p>An Onesa Mobile product</p></div><AppDownloads /><div className="pf-footer-tools">{!showWelcome && !accountOwnsSignIn && !showBundleSignIn && workspace !== 'staff' && customerSession !== 'member' && <OnesaCustomerSignIn/>}<button onClick={event => openRecovery(event.currentTarget)}>Recover</button><button onClick={event => openUtility('staff', event.currentTarget)}>Staff</button><button onClick={event => openUtility('handoff', event.currentTarget)}>Accept handoff</button>{demoEnabled && <button onClick={event => openDemo('access', event.currentTarget)}>My demo access</button>}<a href="#terms" onClick={event => { event.preventDefault(); navigate('terms'); }}>Service terms</a><a href="#privacy" onClick={event => { event.preventDefault(); navigate('privacy'); }}>Privacy</a><a href="/connect" onClick={event => { event.preventDefault(); navigate('connect'); }}>Hotspot welcome</a></div></footer>
     </main>
   </div>;
 }

@@ -163,11 +163,11 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     {message && <p className="feedback" role="status">{message}</p>}
     {step === 'loading' && <p role="status">Checking your staff session…</p>}
     {step === 'unavailable' && <button className="secondary" onClick={load} disabled={busy}>Retry staff connection</button>}
-    {(step === 'login' || step === 'unavailable') && onesaOrigin && <button className="secondary" disabled={busy} onClick={() => startOnesa()}>Sign in with Onesa</button>}
+    {(step === 'login' || step === 'unavailable') && onesaOrigin && <button className="secondary" disabled={busy} onClick={() => startOnesa()}>Sign in</button>}
     {!capabilities?.demo && (step === 'login' || step === 'register' || step === 'unavailable') && <div className="workspace-auth">
-      <p>Use your Onesa Identity account. PasoFi staff actions require an approved PasoFi role and recent multifactor authentication.</p>
-      {onesaOrigin === undefined && <p role="status">Checking Onesa Identity sign-in…</p>}
-      {onesaOrigin === null && <p>Onesa Identity sign-in is not connected to this PasoFi service yet. PasoFi access remains disabled until the connection is configured.</p>}
+      <p>Staff access requires approval and verification.</p>
+      {onesaOrigin === undefined && <p role="status">Checking staff sign-in…</p>}
+      {onesaOrigin === null && <p>Staff sign-in is temporarily unavailable.</p>}
       <a href={registrationUrl('admin')} onClick={()=>rememberRegistration(true)}>Request administrator access</a>
     </div>}
     {capabilities?.demo && (step === 'login' || step === 'register') && <div className="workspace-auth"><div><h3>{step === 'register' ? 'Apply for staff access' : 'Welcome back'}</h3><p>{step === 'register' ? 'Every staff account needs an authenticator and administrator approval before it can sell vouchers or manage a site.' : 'Sign in with your email, password, and authenticator code.'}</p></div><form className="form-grid" onSubmit={authenticate}>
