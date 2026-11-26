@@ -63,6 +63,7 @@ for (const width of [320, 390, 430, 1280]) {
   test(`primary navigation and customer screens remain usable at ${width}px`, async ({ page }, testInfo) => {
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await page.setViewportSize({ width, height: 844 }); await fixture(page); await page.goto('/');
+    await page.getByRole('button', { name: 'Check usage', exact: true }).click();
     await expect(page.getByTestId('usage-remaining')).toHaveText('4.000 GB');
     const nav = navigation(page);
     for (const name of ['Home', 'Bundles', 'History', 'Account']) {
@@ -90,7 +91,7 @@ for (const width of [320, 390, 430, 1280]) {
     await expect(page.locator('[data-entitlement-id]')).toHaveCount(1); await noOverflow(page);
     await nav.getByRole('button', { name: 'Account', exact: true }).click();
     await expect(nav.getByRole('button', { name: 'Account', exact: true })).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByRole('heading', { name: 'Keep your access recoverable' })).toBeVisible(); await noOverflow(page);
+    await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible(); await noOverflow(page);
     expect(errors).toEqual([]);
   });
 }
