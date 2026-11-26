@@ -89,7 +89,7 @@ export default function BundleCatalogue({ bundles, demo, capabilities, checkingA
     </div>
   </>;
   return <section className={narrowHotspotCatalogue ? 'pf-catalogue pf-catalogue--hotspot' : 'pf-catalogue'} id="explore" aria-labelledby="catalogue-heading" tabIndex={-1}>
-    <div className="pf-section-heading"><div><span className="pf-eyebrow">A LITTLE MORE FREEDOM</span><Heading id="catalogue-heading" tabIndex={-1}>Find your fit.</Heading><p>Pick your data. Make more of your day.</p></div><button className="pf-text-link" onClick={help}>Help & FAQs <Icon name="arrow"/></button></div>
+    <div className="pf-section-heading"><div><Heading id="catalogue-heading" tabIndex={-1}>Find your fit.</Heading></div><button className="pf-text-link" onClick={help}>Help & FAQs <Icon name="arrow"/></button></div>
     {accountEntry}
     {compact || narrowHotspotCatalogue ? <details className="pf-catalogue-options"><summary>{narrowHotspotCatalogue ? 'Filter & sort' : 'Filter & sort bundles'}</summary>{controls}</details> : controls}
     {sort.startsWith('price-') && multipleCurrencies && <p className="pf-sort-note">Prices are grouped by currency, then sorted within each currency.</p>}
@@ -106,7 +106,7 @@ export default function BundleCatalogue({ bundles, demo, capabilities, checkingA
           <h3>{data.amount}<span>{data.unit}</span></h3>
           <p className="pf-validity"><Icon name="clock"/>{bundleDuration(bundle.validity_seconds)}</p>
           <div className="pf-bundle-price"><strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: bundle.currency }).format(bundle.price_minor / 100)}</strong><span>{bundle.currency}</span></div>
-          {(!narrowHotspotCatalogue || availableToBuy) && <button className="pf-button pf-button-primary" disabled={!availableToBuy} aria-label={label} onClick={event => choose(bundle, event.currentTarget)}>{checkingAvailability ? 'Checking…' : demo ? 'Try demo' : availableToBuy ? 'Choose' : capabilities === null ? 'Check status' : 'Paused'}<Icon name="arrow"/></button>}
+          {(!narrowHotspotCatalogue || availableToBuy) && <button className="pf-button pf-button-primary" disabled={!availableToBuy} aria-label={label} onClick={event => choose(bundle, event.currentTarget)}>{checkingAvailability ? 'Checking…' : demo ? 'Try demo' : availableToBuy ? 'Choose' : capabilities === null ? 'Unavailable' : 'Paused'}<Icon name="arrow"/></button>}
         </article>;
       })}</div>}
     <div className="pf-bundle-terms"><Icon name="shield"/><p><strong>Simple, upfront terms.</strong> One-off prices. Time starts on your first successful connection. Uploads and downloads count. One active connection per customer. Start within 30 days; your bundle ends when its time or data runs out.</p></div>
