@@ -72,7 +72,7 @@ test('an unpublished checkout link never silently selects another bundle', async
 
 test('customer tools keep distinct routes through back and forward navigation', async ({ page }) => {
   const mutations = await guest(page);
-  await page.goto('/#account');
+  await page.goto('/#history');
   const sections = page.getByRole('navigation', { name: 'Customer sections' });
   await sections.getByRole('button', { name: 'Private receipt', exact: true }).click();
   await expect(page).toHaveURL(/#receipt\?bundle=daily$/);
@@ -247,6 +247,7 @@ for (const delayedOperation of ['lookup', 'quote closure'] as const) {
       const navigation = page.getByRole('navigation', { name: 'Main navigation' });
       await navigation.getByRole('button', { name: 'Bundles', exact: true }).click();
       await navigation.getByRole('button', { name: 'Account', exact: true }).click();
+      await page.getByRole('button', { name: 'Resume checkout', exact: true }).click();
     }
     await page.getByRole('button', { name: 'Check verified payment status', exact: true }).click();
     await page.getByRole('button', { name: 'Review a fresh quote', exact: true }).click();
