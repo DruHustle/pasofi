@@ -6,13 +6,21 @@ const hotspotScreens = ['/connect', '/connect#bundles', '/connect#voucher'];
 export const registrationUrl = (audience:'user'|'admin') =>
   'https://account.onesa.eu/register?audience='+audience+'&product=pasofi&platform=web'+
   (hotspotPortal && audience === 'user' ? '&entry=pasofi-hotspot' : '');
+export const requestAccessUrl = (role: 'agent' | 'administrator') =>
+  'https://account.onesa.eu/access?product=pasofi&role=' + role;
 
-type Availability = { origin: string | null; hotspotOrigin?: string };
+type Availability = { origin: string | null; hotspotOrigin?: string; signup?: boolean };
 
 export async function signInAvailable(staff = false, signal?: AbortSignal) {
   const value = await api<Availability>(staff ? '/api/staff/onesa/availability' : '/api/onesa/availability', {signal});
   const expectedOrigin = hotspotPortal && !staff ? value.hotspotOrigin : value.origin;
   return expectedOrigin === location.origin;
+}
+
+export async function customerSignInAvailability(signal?: AbortSignal) {
+  const value = await api<Availability>('/api/onesa/availability', {signal});
+  const available = (hotspotPortal ? value.hotspotOrigin : value.origin) === location.origin;
+  return { available, signup: available && value.signup === true };
 }
 
 export function currentCustomerScreen() {
@@ -29,11 +37,11 @@ export function rememberRegistration(staff=false) {
   const path=staff?staffEntry:currentCustomerScreen();
   try { sessionStorage.setItem(storageKey,JSON.stringify({path:destination(path),expires:Date.now()+30*60*1000})); } catch {}
 }
-export async function startProductSignIn(staff:boolean,returnTo:string,reauthenticate=false,claimGuest=false) {
+export async function startProductSignIn(staff:boolean,returnTo:string,reauthenticate=false,claimGuest=false,signup=false) {
   if(staff)sessionStorage.removeItem('pasofi-onesa-customer');
   const flow=await api<{authorizationUrl:string}>(staff?'/api/staff/onesa/start':'/api/onesa/start',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(staff?(reauthenticate?{reauthenticate:true}:{}):claimGuest?{returnTo,claimGuest:true}:{returnTo}),
+    body:JSON.stringify(staff?(reauthenticate?{reauthenticate:true}:{}):claimGuest?{returnTo,claimGuest:true}:signup?{returnTo,signup:true}:{returnTo}),
   });
   const target=new URL(flow.authorizationUrl);
   if(target.protocol!=='https:' || target.username || target.password)throw Error('Invalid sign-in destination');
@@ -45,7 +53,7 @@ export async function startProductSignIn(staff:boolean,returnTo:string,reauthent
   const state = target.searchParams.get('state');
   if (!hotspotPortal && state && /^[A-Za-z0-9_-]{43}$/.test(state)) {
     sessionStorage.setItem('pasofi-onesa-flow:' + state, JSON.stringify({
-      staff, returnTo: staff ? staffEntry : destination(returnTo), expires: Date.now() + 300000,
+      staff, returnTo: staff ? staffEntry : destination(returnTo), expires: Date.now() + (signup ? 900000 : 300000),
     }));
   }
   // Older callback assets can still complete a customer sign-in during rollout.
