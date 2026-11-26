@@ -39,7 +39,7 @@ async function mock(page: Page, caps = capabilities, handle?: (route: Route, pat
   });
 }
 async function customer(page: Page, tab: 'History' | 'Online payment') {
-  await page.goto('/'); await page.getByRole('button', { name: 'Customer tools' }).click();
+  await page.goto('/'); await page.goto('/#usage');
   await page.getByRole('button', { name: tab, exact: true }).click();
 }
 
