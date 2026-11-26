@@ -93,6 +93,7 @@ export async function startNativeSignIn(
     state: flow.state,
     nonce: flow.nonce,
     audience: registration.audience,
+    acr_values: 'urn:onesa:authentication:pasofi-customer',
     code_challenge_method: 'S256',
     code_challenge: await oidc.calculatePKCECodeChallenge(flow.verifier),
   });
