@@ -36,7 +36,7 @@ async function mock(page: Page, handle?: (route: Route, path: string, method: st
   });
 }
 async function openStaff(page: Page) { await page.goto('/'); await page.getByRole('button', { name: 'Staff', exact: true }).click(); }
-async function openCustomer(page: Page) { await page.goto('/'); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible(); }
+async function openCustomer(page: Page) { await page.goto('/'); await page.goto('/#usage'); await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible(); }
 
 test('staff application enrolls MFA, remains pending, and exposes no sales or administration', async ({ page }, testInfo) => {
   let authenticated = false;
@@ -208,7 +208,7 @@ test('checkout survives a lost response and only authoritative fulfillment unloc
     return false;
   });
   await openCustomer(page); await page.getByRole('button', { name: 'Online payment', exact: true }).click(); await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Prepare checkout' }).click(); await expect(page.getByText('Checkout could not be confirmed.', { exact: false })).toBeVisible();
-  await page.reload(); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByText('Your checkout is still saved. Its order could not be loaded.', { exact: false })).toBeVisible(); expect(keys).toHaveLength(1); await expect(page.getByRole('button', { name: 'Check saved checkout status' })).toBeVisible(); await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Retry this checkout safely' }).click(); await expect(page.getByRole('link', { name: /Continue to payment provider/ })).toHaveAttribute('href', 'https://payments.example.test/checkout');
+  await page.reload(); await page.goto('/#usage'); await expect(page.getByText('Your checkout is still saved. Its order could not be loaded.', { exact: false })).toBeVisible(); expect(keys).toHaveLength(1); await expect(page.getByRole('button', { name: 'Check saved checkout status' })).toBeVisible(); await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Retry this checkout safely' }).click(); await expect(page.getByRole('link', { name: /Continue to payment provider/ })).toHaveAttribute('href', 'https://payments.example.test/checkout');
   expect(keys).toHaveLength(2); expect(new Set(keys).size).toBe(1); await page.getByRole('button', { name: 'Check verified payment status' }).click(); await expect(page.getByText('Payment not confirmed.', { exact: false })).toBeVisible(); await expect(page.getByRole('button', { name: 'Review another bundle' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Simulate successful payment' }).click(); await expect(page.getByText('Simulated payment verified.', { exact: false })).toBeVisible(); await page.getByRole('button', { name: 'Review another bundle' }).click(); await expect(page.getByRole('button', { name: 'Prepare checkout' })).toBeVisible(); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.includes('purchase-details') || key.includes(':checkout:') || key.includes(':order:')))).toEqual([]);
 });
@@ -244,7 +244,8 @@ test('the customer account omits device transfer but keeps the explicit app sign
   await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Continue on another device', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Create one-time handoff code', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Accept handoff', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Accept handoff', exact: true })).toHaveCount(0);
+  await page.goto('/handoff');
   await page.getByRole('button', { name: 'Create a code for the PasoFi app', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'App sign-in code', exact: true })).toBeVisible();
   expect(created).toBe(0);
@@ -257,7 +258,7 @@ test('the customer account omits device transfer but keeps the explicit app sign
 test('handoff requires explicit consent and refuses a mismatched or blocked resulting cookie', async ({ page }) => {
   const code = 'h'.repeat(43); let requests = 0;
   await mock(page, async (route, path) => { if (path === '/api/handoff/redeem') { requests++; expect(route.request().postDataJSON()).toEqual({ handoffCode: code }); await json(route, { customerId: agentId }); return true; } return false; });
-  await page.goto('/handoff'); await page.getByLabel('One-time handoff code').fill(code); await expect(page.getByRole('button', { name: 'Accept account handoff' })).toBeDisabled(); expect(requests).toBe(0); await page.getByRole('checkbox', { name: /my own PasoFi account/ }).check(); await page.getByRole('button', { name: 'Accept account handoff' }).click(); await expect(page.getByRole('alert')).toContainText('did not keep the transferred session'); expect(page.url()).not.toContain(code);
+  await page.goto('/handoff'); await page.getByLabel('One-time handoff code').fill(code); await expect(page.getByRole('button', { name: 'Confirm sign-in' })).toBeDisabled(); expect(requests).toBe(0); await page.getByRole('checkbox', { name: /my own PasoFi account/ }).check(); await page.getByRole('button', { name: 'Confirm sign-in' }).click(); await expect(page.getByRole('alert')).toContainText('did not keep the transferred session'); expect(page.url()).not.toContain(code);
 });
 
 for (const phase of ['initial session', 'MFA confirmation'] as const) {
