@@ -146,10 +146,11 @@ function App() {
     document.getElementById('catalogue-heading')?.focus({ preventScroll: true });
     refreshCatalogue(); refreshCapabilities();
   }
-  function navigate(next: View, button?: HTMLButtonElement) {
+  function navigate(next: View, button?: HTMLButtonElement, { resetCatalogue = false } = {}) {
     allowHomeRestore.current = true; ++interactions.current; if (button) opener.current = button; setPurchase(null); setNotice(''); setCheckoutBundle(null); setLocation(next);
     setCustomerTab(customerViews[next] ?? 'access'); setWorkspace(workspaceFor(next) ?? (next === 'home' && workspace === 'customer' ? 'customer' : null));
-    if (next === 'bundles' && view !== 'bundles') refreshAvailability();
+    if (resetCatalogue) { setBundles(null); setDemoEnabled(false); }
+    if (next === 'bundles' && (resetCatalogue || view !== 'bundles' || !checkingAvailability)) refreshAvailability();
     focusScreen();
   }
   function openCustomer(tab: CustomerTab = 'access', button?: HTMLButtonElement, bundle: Product | null = null) {
@@ -200,7 +201,7 @@ function App() {
       {notice && <div className="connection-notice" role="status">{notice}</div>}
       <div className="demo pf-service-status" role="status" aria-live="polite" data-status={capabilitiesError ? 'unavailable' : !capabilities ? 'checking' : capabilities.demo ? 'demo' : capabilities.staffSales || capabilities.paymentCheckout || capabilities.networkAccess ? 'available' : 'preparation'}><span className="pf-status-dot"/><span><strong>{serviceLabel}</strong><span className="pf-service-detail">{serviceDetail}</span></span>{capabilitiesError && <button onClick={refreshCapabilities}>Retry service status</button>}</div>
       {showWelcome && view === 'home' && <OnesaCustomerSignIn prominent/>}
-      <ScreenBoundary screen={`${view}:${workspace ?? ''}:${purchase === 'recovery' ? 'recovery' : purchase ? 'purchase' : ''}:${catalogueAttempt}`} onBrowse={() => navigate('bundles')}>
+      <ScreenBoundary screen={`${view}:${workspace ?? ''}:${purchase === 'recovery' ? 'recovery' : purchase ? 'purchase' : ''}:${catalogueAttempt}`} onBrowse={() => navigate('bundles', undefined, { resetCatalogue: true })}>
       {showWelcome && view === 'connect' && <>
         <div className="pf-page-intro"><h1 tabIndex={-1}>Connect to PasoFi</h1></div>
         <OnesaCustomerSignIn prominent/>
