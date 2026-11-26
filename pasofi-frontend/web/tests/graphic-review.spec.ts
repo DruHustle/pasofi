@@ -46,7 +46,7 @@ for (const width of [320, 390, 1280]) {
 
 test('customer usage metadata remains readable on the vivid blue surface, including offline state', async ({ page, context }, testInfo) => {
   await fixture(page, true); await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
-  await page.getByRole('button', { name: 'Customer tools', exact: true }).click();
+  await page.goto('/#usage');
   await expect(page.getByTestId('usage-remaining')).toHaveText('4.000 GB');
   const selectors = ['.usage-card-top .eyebrow', '.usage-freshness', '.usage-meter-label', '.usage-validity dt', '.usage-validity small', '.usage-allowances dt', '.usage-allowances small', '.usage-ring span', '.usage-explanation summary', '.usage-refresh', '.usage-connection-pill'];
   async function checkContrast(selector: string) {
