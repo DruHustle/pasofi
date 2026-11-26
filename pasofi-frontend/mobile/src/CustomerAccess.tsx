@@ -432,7 +432,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     <PolicyNotice/>
     {loading && <div className="customer-loading" role="status"><span className="customer-loading-dot" />Checking your account…</div>}
     {message && <p className="feedback" role="status">{message}</p>}
-    {!loading && !owner && <p className="notice customer-session-notice">Sign in to open your PasoFi account. <button className="text-button" onClick={recovered}>Recover an existing account</button></p>}
+    {!loading && !owner && <p className="notice customer-session-notice">No account is active in this {usesNativeCustomerApi ? 'app' : 'browser'}. Sign in to open your PasoFi account. <button className="text-button" onClick={recovered}>Recover an existing account</button></p>}
     {recoveryReminder && owner && tab !== 'recovery' && <aside className="notice customer-recovery-reminder"><strong>Keep access to your bundle.</strong><p>Save your account reference and recovery key before changing devices or {usesNativeCustomerApi ? "clearing this app’s data" : 'clearing this browser'}.</p><button className="secondary" onClick={() => { setRecoveryReminder(false); selectTab('recovery'); }}>Review recovery & devices</button></aside>}
     {showPurchaseOptions && <>
       {catalogueLoading && <p role="status">Loading available bundles and locations…</p>}
