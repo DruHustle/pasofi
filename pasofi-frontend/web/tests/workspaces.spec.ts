@@ -425,7 +425,7 @@ test('paused commerce allows administrator onboarding and stock preparation with
   });
   await openStaff(page);
   await expect(page.getByRole('heading', { name: 'Onboard your agents' })).toBeVisible();
-  await expect(page.getByLabel('Agent application link')).toHaveValue(new URL('/#staff?apply=1', page.url()).href);
+  await expect(page.getByLabel('Agent application link')).toHaveValue(new URL('/admin', page.url()).href);
   await page.getByRole('button', { name: 'Bundle catalogue', exact: true }).click();
   await page.getByLabel('Unique version ID').fill('review-draft'); await page.getByRole('combobox', { name: 'Currency', exact: true }).selectOption('ZWG'); await page.getByLabel('Price', { exact: true }).fill('1.50'); await page.getByLabel('Data allowance in GB').fill('3'); await page.getByLabel('Validity in days').fill('2'); await page.getByLabel('Reason', { exact: true }).fill('Prepare reviewed draft before launch');
   await page.getByRole('button', { name: 'Save draft bundle' }).click(); await expect(page.getByText('A new draft bundle version is saved.', { exact: false })).toBeVisible();
