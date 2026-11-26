@@ -22,7 +22,7 @@ async function mock(page: Page, handle: (route: Route, path: string) => Promise<
     return json(route, { error: 'unexpected_request' }, 500);
   });
 }
-async function open(page: Page) { await page.goto('/'); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByTestId('live-usage')).toBeVisible(); }
+async function open(page: Page) { await page.goto('/'); await page.goto('/#usage'); await expect(page.getByTestId('live-usage')).toBeVisible(); }
 
 test('hotspot preparation respects exhausted data and explains server-side eligibility changes', async ({ page }) => {
   let used = '5000000000', attempts = 0;
@@ -116,7 +116,7 @@ test('a held old-account usage read cannot replace the account reopened after cr
     return false;
   });
   await open(page); await waiting; owner = otherCustomer; await page.evaluate(() => { const channel = new BroadcastChannel('pamofi.session'); channel.postMessage('signed_out'); channel.close(); });
-  await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toHaveCount(0); await page.getByRole('button', { name: 'Customer tools' }).click(); await expect(page.getByTestId('usage-remaining')).toHaveText('2.000 GB'); release(); await done; await expect(page.getByTestId('usage-remaining')).toHaveText('2.000 GB'); await expect(page.getByTestId('usage-used')).toHaveText('3.000 GB');
+  await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toHaveCount(0); await page.goto('/#usage'); await expect(page.getByTestId('usage-remaining')).toHaveText('2.000 GB'); release(); await done; await expect(page.getByTestId('usage-remaining')).toHaveText('2.000 GB'); await expect(page.getByTestId('usage-used')).toHaveText('3.000 GB');
 });
 
 test('a slow history response cannot roll back newer verified usage counters', async ({ page }) => {
@@ -293,7 +293,7 @@ for (const transition of ['page reload', 'workspace remount'] as const) {
     await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
     if (transition === 'page reload') await page.reload();
     else await page.getByRole('button', { name: 'Close customer workspace' }).click();
-    await page.getByRole('button', { name: 'Customer tools' }).click();
+    await page.goto('/#usage');
     await expect(page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' })).toHaveValue(secondNasId);
     const retry = page.getByRole('button', { name: 'Retry connection', exact: true }); await expect(retry).toBeEnabled(); await retry.click();
     await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('test-only-hotspot-password');
@@ -345,7 +345,7 @@ for (const change of ['removed router', 'changed site', 'paused network'] as con
     if (change === 'removed router') state.points = state.points.filter(point => point.nasId !== secondNasId);
     if (change === 'changed site') state.points = state.points.map(point => point.nasId === secondNasId ? { ...point, siteId: '99999999-9999-4999-8999-999999999999' } : point);
     if (change === 'paused network') state.networkEnabled = false;
-    await page.reload(); await page.getByRole('button', { name: 'Customer tools' }).click();
+    await page.reload(); await page.goto('/#usage');
     await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toHaveCount(0);
     if (change === 'paused network') await expect(page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true })).toHaveCount(0);
@@ -361,7 +361,7 @@ for (const change of ['signed_out', 'recovered'] as const) {
     state.owner = '99999999-9999-4999-8999-999999999999';
     await page.evaluate(change => { const channel = new BroadcastChannel('pamofi.session'); channel.postMessage(change); channel.close(); }, change);
     await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), preparedRequestStorage)).toBeNull();
-    await page.getByRole('button', { name: 'Customer tools' }).click();
+    await page.goto('/#usage');
     await expect(page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' })).toHaveValue('');
     await prepareRecoveryRequest(page);
     expect(state.requests).toHaveLength(2); expect(state.requests[1].requestKey).not.toBe(firstKey);
@@ -376,7 +376,7 @@ test('hotspot preparation handles unavailable tab storage without issuing a repl
   await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
   await expect(page.getByLabel('Hotspot password', { exact: true })).toHaveValue('test-only-hotspot-password');
   expect(state.requests).toHaveLength(2); expect(state.requests[1]).toEqual(state.requests[0]);
-  await page.reload(); await page.getByRole('button', { name: 'Customer tools' }).click();
+  await page.reload(); await page.goto('/#usage');
   await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Connect to Wi-Fi', exact: true })).toBeDisabled();
   expect(state.requests).toHaveLength(2);
