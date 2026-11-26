@@ -11,7 +11,7 @@ export { customerAssertion };
 export function customerReturnTo(value: unknown, hotspot = false): string {
   if (typeof value !== 'string') return '/#account';
   if (value === '/#connect' || (hotspot && ['/connect', '/connect#bundles', '/connect#voucher'].includes(value))) return value;
-  return /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
+  return /^\/#(?:home|usage|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
 }
 export class OnesaCustomer extends OnesaStaff {
   constructor(config: OnesaStaff['config'], key: Buffer, readonly hotspotCallback?: URL) { super(config, key); }
