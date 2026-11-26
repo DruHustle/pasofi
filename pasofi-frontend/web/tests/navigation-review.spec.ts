@@ -88,7 +88,7 @@ test('customer tools keep distinct routes through back and forward navigation', 
 test('handoff and staff entry routes reopen correctly and close to home', async ({ page }) => {
   const mutations = await guest(page);
   await page.goto('/handoff');
-  await expect(page.getByRole('heading', { name: 'Accept a browser handoff', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Enter a sign-in code', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close handoff', exact: true }).click();
   await expect(page).toHaveURL(/\/#home$/);
   await page.reload();
