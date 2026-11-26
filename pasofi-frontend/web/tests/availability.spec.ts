@@ -265,3 +265,19 @@ test('late older availability responses cannot replace a newer published catalog
     await Promise.all(state.held.splice(0).map(({ route, body }) => json(route, body)));
   }
 });
+
+test('customers can redeem an issued voucher while new sales are paused', async ({ page }) => {
+  const state = await guestAvailability(page);
+  state.products = [flex];
+  state.capabilities.vouchers = true;
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto('/#bundles');
+  const availability = page.locator('.pf-purchase-availability');
+  await expect(availability.getByRole('status')).toHaveText('New sales are paused');
+  await expect(page.getByRole('button', { name: 'flex purchasing is not available' })).toBeDisabled();
+  await expect(availability.getByRole('button', { name: 'Refresh availability' })).toBeEnabled();
+  await availability.getByRole('button', { name: 'Redeem voucher' }).click();
+  await expect(page).toHaveURL(/#voucher$/);
+  await expect(page.getByLabel('Voucher code', { exact: true })).toBeVisible();
+  expect(state.mutations).toEqual([]);
+});
