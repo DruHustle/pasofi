@@ -304,8 +304,26 @@ export class OnesaStaff {
     }).catch(() => { throw denied(); });
     if (tokens.token_type.toLowerCase() !== 'bearer' || !tokens.access_token || tokens.access_token.length > (this.config.managed ? 16384 : 2048)) throw denied();
     const staff = await this.inspect(tokens.access_token);
-    if (tokens.claims()?.sub !== (staff.providerSubject ?? staff.subject)) throw denied();
+    const claims = tokens.claims();
+    if (claims?.sub !== (staff.providerSubject ?? staff.subject)) throw denied();
     if (this.config.managed && staff.authorizedClient && staff.authorizedClient !== this.config.clientId) throw denied();
+    if (this.config.managed && staff.siteOperator && process.env.PASOFI_ONESA_STAFF_ONBOARDING === 'true') {
+      const bound = await db.query(`SELECT u.status FROM staff_onesa_bindings b JOIN staff_users u ON u.id=b.staff_id
+        WHERE b.issuer=$1 AND b.subject=$2::uuid`, [this.recordIssuer, staff.subject]);
+      if (bound.rows[0]?.status === 'pending') throw new OnesaError(403, 'staff_assignment_pending');
+      if (!bound.rowCount) {
+        if (claims.email_verified !== true || typeof claims.email !== 'string') throw denied();
+        const created = await db.query('SELECT public.create_managed_staff_applicant($1,$2::uuid,$3) AS created',
+          [this.recordIssuer, staff.subject, claims.email.trim().toLowerCase()]);
+        if (created.rows[0].created) throw new OnesaError(403, 'staff_assignment_pending');
+        // A parallel request may have created the same applicant. Email
+        // conflicts with another identity remain an ownership review.
+        const applicant = await db.query(`SELECT u.status FROM staff_onesa_bindings b JOIN staff_users u ON u.id=b.staff_id
+          WHERE b.issuer=$1 AND b.subject=$2::uuid`, [this.recordIssuer, staff.subject]);
+        if (applicant.rows[0]?.status === 'pending') throw new OnesaError(403, 'staff_assignment_pending');
+        if (!applicant.rowCount) throw new OnesaError(409, 'staff_binding_review_required');
+      }
+    }
     const session = freshOpaque(), hash = opaqueHash(session);
     const envelope = this.protectAccess(tokens.access_token, 'onesa-session:' + hash.toString('hex'));
     const renewal = await this.startRenewal(db,tokens.access_token,tokens.refresh_token,staff);
