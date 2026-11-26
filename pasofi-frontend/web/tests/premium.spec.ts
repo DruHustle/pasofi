@@ -180,7 +180,7 @@ test('the captive entry is lightweight and reaches voucher redemption without re
 test('dashboard shows bundle validity independently of a shorter pending connection grant', async ({ page }, testInfo) => {
   await page.clock.install(); await fixture(page, { pending: true });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
-  await page.getByRole('button', { name: 'Customer tools', exact: true }).click();
+  await page.goto('/#usage');
   await expect(page.getByTestId('usage-remaining')).toHaveText('4.000 GB');
   await expect(page.getByTestId('usage-bundle-time')).toContainText(/18h|18 h|18 hours/);
   await expect(page.getByTestId('usage-connection-status')).not.toHaveText(/^Connected/);
@@ -190,7 +190,7 @@ test('dashboard shows bundle validity independently of a shorter pending connect
 
 test('offline dashboard retains its confirmed balance and visibly withdraws connection certainty', async ({ page, context }) => {
   await fixture(page, { pending: true }); await page.goto('/');
-  await page.getByRole('button', { name: 'Customer tools', exact: true }).click();
+  await page.goto('/#usage');
   await expect(page.getByTestId('usage-remaining')).toHaveText('4.000 GB');
   await context.setOffline(true);
   await expect(page.getByText('Offline · showing the last confirmed balance', { exact: true })).toBeVisible();
