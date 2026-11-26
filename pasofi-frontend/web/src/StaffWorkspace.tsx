@@ -44,10 +44,15 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     }).catch(() => { if (live.current) setOnesaOrigin(null); });
     const requireMfa = () => setReauthenticate(true);
     window.addEventListener('pasofi:staff-mfa-required', requireMfa);
-    const timer = setInterval(() => setNow(Date.now()), 1_000);
     const unsubscribe = onStaffSessionChange((kind, staffId) => { generation.current++; setBusy(false); setExpiresAt(0); setStaff(null); setSecret(''); setEnrollmentUri(''); setCode(''); setResetCode(''); setPassword(''); setPasswordConfirmation(''); challengeOwner.current = null; discardStaffDrafts(kind === 'signed_in' ? staffId : undefined); setStep('login'); setMessage('The staff account changed in another tab. Sign in again or refresh this workspace before continuing.'); });
-    return () => { generation.current++; live.current = false; clearInterval(timer); window.removeEventListener('pasofi:staff-mfa-required', requireMfa); unsubscribe(); };
+    return () => { generation.current++; live.current = false; window.removeEventListener('pasofi:staff-mfa-required', requireMfa); unsubscribe(); };
   }, []);
+  useEffect(() => {
+    if ((step !== 'mfa_setup' && step !== 'mfa_verify') || !expiresAt) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [step, expiresAt]);
   useEffect(() => {
     if ((step === 'mfa_setup' || step === 'mfa_verify') && expiresAt && now >= expiresAt) {
       generation.current++; challengeOwner.current = null; setBusy(false); setExpiresAt(0); setSecret(''); setEnrollmentUri(''); setCode(''); setPassword(''); setStep('login'); setMessage('Verification expired. Sign in again for a new challenge.');

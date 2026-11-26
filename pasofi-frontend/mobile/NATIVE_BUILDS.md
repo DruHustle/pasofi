@@ -33,8 +33,9 @@ and [Apple external URL opening](https://developer.apple.com/documentation/uikit
 
 The app first requires `/api/onesa/availability` to advertise the exact configured
 origin and `handoff: true`. Older deployments remain unavailable. The customer signs
-in with Onesa in the browser, opens Account and creates a two-minute one-use handoff
-code and copies it. The browser’s return link, `com.onesa.pasofi://account/handoff`,
+in with Onesa in the browser, opens **Accept handoff** in the footer, then selects
+**Create a code for the PasoFi app** to issue a two-minute one-use code. The browser’s
+return link, `com.onesa.pasofi://account/handoff`,
 opens the installed app at the handoff form. This fixed link carries no code, query
 or fragment. The customer pastes the code and explicitly confirms ownership.
 After redemption the app checks its own session and resumes the chosen account

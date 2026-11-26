@@ -38,6 +38,22 @@ export async function resolveNetworkReview(pool:Pool,grantId:string,actorId:stri
  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
 }
 export function registerNetworkAdmin(app:FastifyInstance,pool:Pool|null,staff:StaffGuard){
+ app.get('/v1/admin/network/connections', async (request, reply) => {
+  if (!await staff(request, reply, ['admin'])) return;
+  if (!pool) return reply.code(503).send({error:'unavailable'});
+  try {
+   const result = await pool.query(`
+    SELECT g.id,s.name AS "siteName",g.accounting_started_at AS "startedAt",
+      g.last_accounting_at AS "lastAccountingAt",g.charged_bytes::text AS "chargedBytes",
+      COALESCE(g.last_accounting_at,g.accounting_started_at) >= now()-interval '3 minutes' AS "recent"
+    FROM access_grants g LEFT JOIN sales_locations s ON s.id=g.site_id
+    WHERE g.state='active' AND g.accounting_started_at IS NOT NULL AND g.stop_received_at IS NULL
+    ORDER BY COALESCE(g.last_accounting_at,g.accounting_started_at) DESC,g.id LIMIT 101`);
+   return {connections:result.rows.slice(0, 100),truncated:result.rows.length>100};
+  } catch {
+   return reply.code(503).send({error:'unavailable'});
+  }
+ });
  app.get('/v1/admin/network/reviews',{schema:{querystring:{type:'object',additionalProperties:false,properties:{limit:{type:'integer',minimum:1,maximum:100,default:50},offset:{type:'integer',minimum:0,maximum:1000000,default:0}}}}},async(request,reply)=>{const actor=await staff(request,reply,['admin']);if(!actor)return;const q=request.query as {limit:number;offset:number};try{const rows=await pool!.query(`SELECT g.id,g.customer_id AS "customerId",g.site_id AS "siteId",g.nas_id AS "nasId",g.state,g.review_version::text AS version,GREATEST(g.upload_high,COALESCE((SELECT MAX((e.detail->>'upload')::numeric) FROM grant_reconciliation_events e WHERE e.grant_id=g.id AND e.kind='late_usage'),0))::text AS "uploadHigh",GREATEST(g.download_high,COALESCE((SELECT MAX((e.detail->>'download')::numeric) FROM grant_reconciliation_events e WHERE e.grant_id=g.id AND e.kind='late_usage'),0))::text AS "downloadHigh",g.charged_bytes::text AS "chargedBytes",g.reserved_bytes::text AS "reservedBytes",g.absent_verified_at AS "absentVerifiedAt",g.credential_fenced_at AS "credentialFencedAt",g.accounting_anomaly AS "accountingAnomaly",COALESCE(h.reason,'usage_requires_reconciliation') AS reason FROM access_grants g LEFT JOIN network_account_holds h ON h.grant_id=g.id WHERE g.state='uncertain' OR h.customer_id IS NOT NULL ORDER BY g.issued_at,g.id LIMIT $1 OFFSET $2`,[q.limit+1,q.offset]);const hasMore=rows.rows.length>q.limit;return {reviews:rows.rows.slice(0,q.limit),hasMore,nextOffset:hasMore?q.offset+q.limit:null};}catch{return reply.code(503).send({error:'unavailable'});}});
  app.post<{Params:{id:string};Body:Resolution}>('/v1/admin/network/reviews/:id/resolve',{config:{rateLimit:{max:15,timeWindow:'1 minute'}},schema:{body:{type:'object',additionalProperties:false,required:['expectedVersion','finalUpload','finalDownload','reason','evidenceReference'],properties:{expectedVersion:{type:'string',pattern:'^[0-9]{1,18}$'},finalUpload:{type:'string',pattern:'^(0|[1-9][0-9]{0,19})$'},finalDownload:{type:'string',pattern:'^(0|[1-9][0-9]{0,19})$'},reason:{type:'string',minLength:10,maxLength:500},evidenceReference:{type:'string',minLength:10,maxLength:500}}}}},async(request,reply)=>{const actor=await staff(request,reply,['admin']);if(!actor)return;const key=request.headers['idempotency-key'];if(typeof key!=='string'||!uuid.test(key))return reply.code(400).send({error:'invalid_idempotency_key'});try{return await resolveNetworkReview(pool!,request.params.id,actor.staffId,key,request.body);}catch(error){return reply.code(error instanceof NetworkReviewError?(error.code==='not_found'?404:error.code==='invalid_resolution'?400:409):503).send({error:error instanceof NetworkReviewError?error.code:'unavailable'});}});
 }
