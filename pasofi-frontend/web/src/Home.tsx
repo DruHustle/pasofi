@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { api } from './api';
-import type { Capabilities, Site } from './business';
+import { lazy, Suspense, useRef, useState, type ReactNode } from 'react';
+import type { Capabilities } from './business';
 import type { CustomerTab } from './CustomerAccess';
 import Icon from './Icon';
 
@@ -10,34 +9,24 @@ type Props = {
   account: (tab: CustomerTab, button: HTMLButtonElement) => void;
   help: (button?: HTMLButtonElement) => void;
 };
-function readLocations(value: unknown): Site[] {
-  if (!value || typeof value !== 'object' || !('sites' in value) || !Array.isArray(value.sites) || value.sites.length > 1000) throw Error('invalid_locations');
-  const locations = value.sites.map(item => {
-    if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(item.id)
-      || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 200) throw Error('invalid_locations');
-    return { id: item.id, name: item.name };
-  });
-  if (new Set(locations.map(site => site.id)).size !== locations.length) throw Error('invalid_locations');
-  return locations;
-}
+const HotspotMap = lazy(() => import('./HotspotMap'));
 
 export default function Home({ capabilities, children, browse, account, help }: Props) {
-  const [locationsOpen, setLocationsOpen] = useState(false), [locations, setLocations] = useState<Site[] | null>(null);
-  const [locationsError, setLocationsError] = useState(false), [locationsAttempt, setLocationsAttempt] = useState(0), [locationQuery, setLocationQuery] = useState('');
-  const locationPanel = useRef<HTMLDetailsElement>(null), locationSearch = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (!locationsOpen) return;
-    const controller = new AbortController(); setLocationsError(false); setLocations(null);
-    api<unknown>('/api/sites', { signal: controller.signal }).then(readLocations).then(result => {
-      if (!controller.signal.aborted) setLocations(result);
-    }).catch(() => { if (!controller.signal.aborted) setLocationsError(true); });
-    return () => controller.abort();
-  }, [locationsOpen, locationsAttempt]);
-  function showLocations() {
+  const [locationsOpen, setLocationsOpen] = useState(false);
+  const locationsDialog = useRef<HTMLDialogElement>(null);
+  const locationsButton = useRef<HTMLButtonElement>(null);
+
+  function showLocations(button: HTMLButtonElement) {
+    locationsButton.current = button;
+    locationsDialog.current?.showModal();
     setLocationsOpen(true);
-    requestAnimationFrame(() => { locationPanel.current?.scrollIntoView({ behavior: 'auto', block: 'start' }); locationSearch.current?.focus({ preventScroll: true }); });
   }
-  const filteredLocations = locations?.filter(site => site.name.toLocaleLowerCase().includes(locationQuery.trim().toLocaleLowerCase())) ?? [];
+
+  function closeLocations() {
+    setLocationsOpen(false);
+    locationsButton.current?.focus({ preventScroll: true });
+  }
+
   return <div className="pasofi-home-content">
     <section className="pasofi-home-hero" aria-labelledby="home-hero-heading">
       <div className="pasofi-home-hero-copy"><span className="pasofi-home-kicker">A LITTLE MORE PASOFI</span><h1 id="home-hero-heading" tabIndex={-1}>Your internet.<br/><em>Your everyday.</em></h1><p>For the catch-ups, bright ideas and everyday moments.</p>
@@ -46,28 +35,25 @@ export default function Home({ capabilities, children, browse, account, help }: 
     </section>
     <section className="pf-quick-actions pasofi-home-actions" aria-label="Quick actions">
       <button onClick={event => browse(event.currentTarget)}><span><Icon name="plus"/></span><strong>View bundles</strong></button>
-      <button onClick={showLocations}><span><Icon name="location"/></span><strong>Hotspot locations</strong></button>
+      <button aria-haspopup="dialog" onClick={event => showLocations(event.currentTarget)}><span><Icon name="location"/></span><strong>Hotspot locations</strong></button>
       <button disabled={!capabilities} onClick={event => account('access', event.currentTarget)}><span><Icon name="history"/></span><strong>Check usage</strong></button>
       <button onClick={event => help(event.currentTarget)}><span><Icon name="help"/></span><strong>Get help</strong></button>
     </section>
 
     {children}
 
-    <details className="pasofi-home-locations" ref={locationPanel} open={locationsOpen} onToggle={event => setLocationsOpen(event.currentTarget.open)}>
-      <summary><span className="pasofi-home-section-icon"><Icon name="location"/></span><span><strong>Find a PasoFi location</strong><small>Check listed locations before you visit.</small></span><Icon name="plus"/></summary>
-      <div className="pasofi-home-location-content"><p>These are listed sales locations. Confirm the hotspot name and local availability with the agent before travelling.</p>
-        <div className="pasofi-home-location-status" role="status">{capabilities?.demo ? 'Demonstration service · these listings do not confirm live coverage.' : capabilities === null ? 'Checking service availability…' : capabilities.networkAccess ? 'Check My WiFi for current connection options.' : 'Customer connections are currently paused.'}{capabilities?.demo !== true && capabilities?.staffSales === false && ' Cash purchases are currently paused.'}</div>
-        <div className="pasofi-home-location-tools"><label>Search locations<input ref={locationSearch} type="search" maxLength={160} value={locationQuery} onChange={event => setLocationQuery(event.target.value)} placeholder="Enter a location name"/></label><button className="pf-button pf-button-secondary" disabled={locations === null && !locationsError} onClick={() => setLocationsAttempt(value => value + 1)}>Refresh locations</button></div>
-        {locationsError ? <div className="pasofi-home-location-empty" role="status"><p>Locations could not be loaded. Refresh to check again or contact support.</p><button className="pf-text-link" onClick={event => help(event.currentTarget)}>Contact support <Icon name="arrow"/></button></div>
-          : locations === null ? <p role="status">Loading current locations…</p>
-          : locations.length === 0 ? <p role="status">No locations are listed yet. Please check again when the service is available.</p>
-          : <><p className="pasofi-home-location-count" role="status">{filteredLocations.length} of {locations.length} {locations.length === 1 ? 'location' : 'locations'}</p><ul>{filteredLocations.map(site => <li key={site.id}><span><strong>{site.name}</strong><small>Listed sales location</small></span><button className="pf-button pf-button-secondary" disabled={!capabilities} onClick={event => account('wifi', event.currentTarget)} aria-label={`Check Wi-Fi for ${site.name}`}>Check Wi-Fi <Icon name="arrow"/></button></li>)}</ul>{filteredLocations.length === 0 && <p>No listed location matches that search.</p>}</>}
-      </div>
-    </details>
     <details className="pasofi-home-guide"><summary><span className="pasofi-home-section-icon"><Icon name="bolt"/></span><span><strong>New to PasoFi?</strong><small>Three steps to your next connection.</small></span><Icon name="plus"/></summary><ol>
-      <li><span>01</span><div><h3>Find your hotspot</h3><p>Ask the local agent which Wi-Fi network to join and check its availability.</p><button className="pf-text-link" onClick={showLocations}>Find a location <Icon name="arrow"/></button></div></li>
+      <li><span>01</span><div><h3>Find your hotspot</h3><p>Ask the local agent which Wi-Fi network to join and check its availability.</p><button className="pf-text-link" aria-haspopup="dialog" onClick={event => showLocations(event.currentTarget)}>Find a location <Icon name="arrow"/></button></div></li>
       <li><span>02</span><div><h3>Choose your bundle</h3><p>Compare data, price and validity. Purchase options depend on current service availability.</p><button className="pf-text-link" onClick={event => browse(event.currentTarget)}>View bundles <Icon name="arrow"/></button></div></li>
       <li><span>03</span><div><h3>Make it your connection</h3><p>{capabilities?.vouchers ? 'Redeem your voucher and open My WiFi for the connection steps. Your account keeps track of usage.' : 'Open My WiFi to check connection options and account usage.'}</p><button className="pf-text-link" disabled={!capabilities} onClick={event => account('wifi', event.currentTarget)}>Open My WiFi <Icon name="arrow"/></button></div></li>
     </ol></details>
+
+    <dialog className="pasofi-map-dialog" ref={locationsDialog} aria-labelledby="pasofi-map-heading" onClose={closeLocations}>
+      <header>
+        <h2 id="pasofi-map-heading">Hotspot locations</h2>
+        <button type="button" aria-label="Close map" onClick={() => locationsDialog.current?.close()}><Icon name="close"/></button>
+      </header>
+      {locationsOpen && <Suspense fallback={<p className="pasofi-map-status" role="status">Loading map…</p>}><HotspotMap/></Suspense>}
+    </dialog>
   </div>;
 }

@@ -20,36 +20,84 @@
 .pf-home .pasofi-home-actions > button:nth-child(n) > span { color: var(--home-blue); background: transparent; width: 22px; height: 22px; }
 .pf-home .pasofi-home-actions > button strong { font-size: 11px; font-weight: 650; line-height: 1.25; color: var(--home-navy); }
 .pf-home .pasofi-home-actions > button:hover:not(:disabled) { border-color: var(--home-blue); background: #edf4ff; }
-.pasofi-home-locations,.pasofi-home-guide { border: 1px solid #dae3da; border-radius: 12px; margin-top: 10px; background: #fff; scroll-margin-top: 16px; }
-.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary { list-style: none; display: flex; align-items: center; gap: 10px; cursor: pointer; min-height: 78px; padding: 14px; }
-.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary::-webkit-details-marker { display: none; }
+.pasofi-home-guide { border: 1px solid #dae3da; border-radius: 12px; margin-top: 10px; background: #fff; scroll-margin-top: 16px; }
+.pasofi-home-guide > summary { list-style: none; display: flex; align-items: center; gap: 10px; cursor: pointer; min-height: 78px; padding: 14px; }
+.pasofi-home-guide > summary::-webkit-details-marker { display: none; }
 .pasofi-home-section-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: #eaf2ff; color: var(--home-blue); flex-shrink: 0; }
-.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary > span:nth-child(2) { display: grid; gap: 4px; min-width: 0; }
-.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary strong { font-size: 13px; line-height: 1.35; }
-.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary small { font-size: 11px; line-height: 1.45; font-weight: 400; color: var(--home-muted); }
-.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary > .pf-icon { margin-left: auto; width: 18px; height: 18px; flex-shrink: 0; }
-.pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide)[open] > summary > .pf-icon { transform: rotate(45deg); }
-.pasofi-home-location-content { padding: 0 14px 15px; }
-.pasofi-home-location-content p { font-size: 12px; line-height: 1.6; color: var(--home-muted); margin: 0 0 10px; }
-.pasofi-home-location-status { background: #f0f5ff; color: #294d82; border-radius: 7px; padding: 9px 10px; font-size: 11px; line-height: 1.5; margin-bottom: 12px; }
-.pasofi-home-location-tools { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
-.pasofi-home-location-tools label { display: grid; gap: 5px; flex: 1 1 150px; font-size: 12px; font-weight: 600; }
-.pasofi-home-location-tools input { width: 100%; min-height: 44px; border: 1px solid #b4c6e1; border-radius: 8px; padding: 9px 10px; background: #fff; color: var(--home-navy); font: inherit; }
-.pasofi-home-location-content .pf-button { min-height: 44px; padding: 8px 10px; border-radius: 8px; font-size: 11px; gap: 6px; }
-.pasofi-home-location-content ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; max-height: 280px; overflow: auto; }
-.pasofi-home-location-content li { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid #dce5f2; border-radius: 8px; padding: 10px; }
-.pasofi-home-location-content li > span { display: grid; gap: 4px; min-width: 0; }
-.pasofi-home-location-content li strong { font-size: 12px; overflow-wrap: anywhere; }
-.pasofi-home-location-content li small { color: var(--home-muted); font-size: 10px; }
-.pasofi-home-location-content li button { flex-shrink: 0; }
-.pasofi-home-location-content li .pf-icon { width: 14px; height: 14px; }
-.pasofi-home-location-content .pasofi-home-location-count { font-size: 11px; }
+.pasofi-home-guide > summary > span:nth-child(2) { display: grid; gap: 4px; min-width: 0; }
+.pasofi-home-guide > summary strong { font-size: 13px; line-height: 1.35; }
+.pasofi-home-guide > summary small { font-size: 11px; line-height: 1.45; font-weight: 400; color: var(--home-muted); }
+.pasofi-home-guide > summary > .pf-icon { margin-left: auto; width: 18px; height: 18px; flex-shrink: 0; }
+.pasofi-home-guide[open] > summary > .pf-icon { transform: rotate(45deg); }
 .pasofi-home-guide ol { list-style: none; padding: 0 14px 16px; margin: 0; display: grid; gap: 18px; }
 .pasofi-home-guide li { display: flex; gap: 10px; }
 .pasofi-home-guide li > span { font-size: 13px; font-weight: 750; background: var(--home-lime); border-radius: 50%; width: 30px; height: 30px; display: grid; place-items: center; flex-shrink: 0; }
 .pasofi-home-guide h3 { margin: 3px 0 6px; font-size: 14px; color: var(--home-navy); }
 .pasofi-home-guide p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--home-muted); }
 .pasofi-home-guide .pf-text-link { font-size: 12px; min-height: 44px; gap: 7px; color: #084ac0; }
+
+.pasofi-map-dialog {
+  width: min(760px, calc(100% - 24px));
+  max-width: none;
+  max-height: calc(100% - 24px);
+  padding: 0;
+  border: 1px solid #dae3da;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--home-navy);
+}
+.pasofi-map-dialog::backdrop { background: rgb(0 26 51 / .56); }
+.pasofi-map-dialog > header { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 4px 16px; }
+.pasofi-map-dialog h2 { margin: 0; font-size: 18px; }
+.pasofi-map-dialog > header button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.pasofi-map-dialog > header button:hover { background: #edf4ff; }
+.pasofi-map-canvas, .pasofi-map-status { height: min(540px, calc(100dvh - 80px)); }
+.pasofi-map-status {
+  display: grid;
+  place-items: center;
+  margin: 0;
+  background: #f2f6f4;
+  color: var(--home-muted);
+}
+.pasofi-map-tile-status { margin: 0; padding: 6px 16px; font-size: 13px; }
+.pasofi-map-canvas .leaflet-control-zoom a { width: 44px; height: 44px; line-height: 44px; }
+.pasofi-map-marker::before {
+  content: '';
+  position: absolute;
+  bottom: 6px;
+  left: 7px;
+  width: 26px;
+  height: 26px;
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  background: #084ac0;
+  box-shadow: 0 2px 6px rgb(0 26 51 / .45);
+  transform: rotate(-45deg);
+}
+.pasofi-map-marker::after {
+  content: '';
+  position: absolute;
+  bottom: 15px;
+  left: 16px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+.pasofi-map-popup { margin-right: 8px; }
+.pasofi-map-popup a { display: block; margin-top: 4px; }
+
 @media (min-width: 600px) {
   .pasofi-home-hero { grid-template-columns: minmax(0,.85fr) minmax(0,1fr); border-radius: 21px; }
   .pasofi-home-hero-copy { padding: 26px; }
@@ -62,8 +110,7 @@
   .pf-home .pasofi-home-actions { margin: 12px 0 20px; gap: 9px; }
   .pf-home .pasofi-home-actions > button { min-height: 54px; flex-direction: row; padding: 9px; gap: 8px; }
   .pf-home .pasofi-home-actions > button strong { font-size: 12px; }
-  .pasofi-home-locations,.pasofi-home-guide { margin-top: 12px; }
-  .pasofi-home-location-content { padding: 0 20px 20px; }
+  .pasofi-home-guide { margin-top: 12px; }
   .pasofi-home-guide ol { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; padding: 5px 20px 20px; }
   .pasofi-home-guide li { flex-direction: column; }
 }
