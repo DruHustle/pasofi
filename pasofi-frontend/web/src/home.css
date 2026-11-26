@@ -20,25 +20,6 @@
 .pf-home .pasofi-home-actions > button:nth-child(n) > span { color: var(--home-blue); background: transparent; width: 22px; height: 22px; }
 .pf-home .pasofi-home-actions > button strong { font-size: 11px; font-weight: 650; line-height: 1.25; color: var(--home-navy); }
 .pf-home .pasofi-home-actions > button:hover:not(:disabled) { border-color: var(--home-blue); background: #edf4ff; }
-.pasofi-home-more { display: grid; gap: 12px; margin: 24px 0 16px; }
-.pasofi-home-story { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: 180px auto; background: #e7efff; overflow: hidden; border: 1px solid #d0def8; border-radius: 15px; }
-.pasofi-home-story > img { width: 100%; height: 180px; min-height: 0; object-fit: cover; object-position: center top; }
-.pasofi-home-story > div { min-width: 0; padding: 17px 13px; align-self: center; }
-.pasofi-home-story .pasofi-home-kicker { font-size: 8px; letter-spacing: .5px; color: #355b95; }
-.pasofi-home-content .pasofi-home-story h2 { font-size: 20px; line-height: 1.15; letter-spacing: -.5px; margin: 8px 0; font-weight: 780; color: var(--home-navy); }
-.pasofi-home-story p { font-size: 12px; line-height: 1.6; color: var(--home-muted); margin: 0 0 8px; }
-.pasofi-home-story .pf-text-link { font-size: 11px; min-height: 44px; white-space: normal; text-align: left; gap: 6px; color: #084ac0; }
-.pasofi-home-story .pf-text-link .pf-icon { flex-shrink: 0; }
-.pasofi-home-account { background: var(--home-navy); color: #fff; border-radius: 15px; padding: 20px; position: relative; }
-.pasofi-home-account > .pasofi-home-kicker { color: #d1e2ff; font-size: 9px; padding-right: 36px; }
-.pasofi-home-account-icon { position: absolute; top: 18px; right: 18px; width: 36px; height: 36px; display: grid; place-items: center; background: var(--home-lime); color: var(--home-navy); border-radius: 11px; }
-.pasofi-home-content .pasofi-home-account h2 { font-size: 24px; line-height: 1.1; letter-spacing: -.5px; margin: 9px 0; font-weight: 760; color: #fff; }
-.pasofi-home-account > p { margin: 8px 0 14px; color: #d1e2ff; font-size: 12px; line-height: 1.6; max-width: 310px; }
-.pasofi-home-account > div { display: grid; gap: 5px; }
-.pasofi-home-account button { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 9px 11px; color: #fff; background: #163768; border: 1px solid #406292; border-radius: 8px; font: inherit; font-size: 12px; text-align: left; }
-.pasofi-home-account button > .pf-icon:first-child { color: var(--home-lime); width: 18px; height: 18px; }
-.pasofi-home-account button > .pf-icon:last-child { margin-left: auto; width: 17px; height: 17px; }
-.pasofi-home-account button:hover:not(:disabled) { background: #234c87; }
 .pasofi-home-locations,.pasofi-home-guide { border: 1px solid #dae3da; border-radius: 12px; margin-top: 10px; background: #fff; scroll-margin-top: 16px; }
 .pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary { list-style: none; display: flex; align-items: center; gap: 10px; cursor: pointer; min-height: 78px; padding: 14px; }
 .pasofi-home-content :is(.pasofi-home-locations,.pasofi-home-guide) > summary::-webkit-details-marker { display: none; }
@@ -81,14 +62,6 @@
   .pf-home .pasofi-home-actions { margin: 12px 0 20px; gap: 9px; }
   .pf-home .pasofi-home-actions > button { min-height: 54px; flex-direction: row; padding: 9px; gap: 8px; }
   .pf-home .pasofi-home-actions > button strong { font-size: 12px; }
-  .pasofi-home-more { grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); }
-  .pasofi-home-story { grid-template-columns: minmax(0,1fr); grid-template-rows: 150px auto; }
-  .pasofi-home-story > img { height: 150px; min-height: 0; object-position: center top; }
-  .pasofi-home-story > div { padding: 18px; }
-  .pasofi-home-story h2 br { display: none; }
-  .pasofi-home-story .pasofi-home-kicker { font-size: 9px; }
-  .pasofi-home-account { padding: 23px 19px; }
-  .pasofi-home-account > p { margin-bottom: 20px; }
   .pasofi-home-locations,.pasofi-home-guide { margin-top: 12px; }
   .pasofi-home-location-content { padding: 0 20px 20px; }
   .pasofi-home-guide ol { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; padding: 5px 20px 20px; }
@@ -102,12 +75,6 @@
   .pasofi-home-hero-photo { min-height: 302px; }
   .pasofi-home-photo-note { position: absolute; right: 15px; bottom: 15px; display: flex; align-items: center; gap: 7px; border-radius: 30px; padding: 9px 12px; background: #c7f5b5; color: #103c35; font-size: 11px; font-weight: 600; }
   .pasofi-home-photo-note .pf-icon { width: 16px; height: 16px; }
-  .pasofi-home-more { grid-template-columns: minmax(0,1.55fr) minmax(0,1fr); margin-top: 28px; gap: 14px; }
-  .pasofi-home-story { grid-template-columns: minmax(0,.9fr) minmax(0,1fr); grid-template-rows: auto; }
-  .pasofi-home-story > img { min-height: 100%; height: 100%; object-position: 50% center; }
-  .pasofi-home-content .pasofi-home-story h2 { font-size: 27px; margin: 12px 0; }
-  .pasofi-home-story p { font-size: 13px; }
-  .pasofi-home-story .pf-text-link { font-size: 12px; }
 }
 @media (max-width: 359px) {
   .pasofi-home-hero-copy { padding: 14px 10px; }
@@ -117,6 +84,4 @@
   .pasofi-home-hero-copy > .pf-button .pf-icon { width: 12px; }
   .pasofi-home-hero-photo { min-height: 160px; height: 160px; }
   .pf-home .pasofi-home-actions > button strong { font-size: 10px; }
-  .pasofi-home-story > div { padding: 14px 10px; }
-  .pasofi-home-content .pasofi-home-story h2 { font-size: 18px; }
 }
