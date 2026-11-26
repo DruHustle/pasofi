@@ -10,19 +10,22 @@
     ? ['/connect', '/connect#bundles', '/connect#voucher'].includes(path)
     : path === '/#connect' || /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(path));
   const state = query.get('state');
-  let flow, legacyCustomer = false, storageUnavailable = false;
+  let flow, expiredStaffFlow = false, legacyCustomer = false, storageUnavailable = false;
   try {
     const key = 'pasofi-onesa-flow:' + state;
     const saved = state && /^[A-Za-z0-9_-]{43}$/.test(state) && sessionStorage.getItem(key);
     if (saved) {
       sessionStorage.removeItem(key);
       const pending = JSON.parse(saved);
-      if (typeof pending?.staff === 'boolean' && Number.isFinite(pending.expires) && pending.expires >= Date.now()) flow = pending;
+      if (typeof pending?.staff === 'boolean' && Number.isFinite(pending.expires)) {
+        if (pending.expires > Date.now()) flow = pending;
+        else expiredStaffFlow = pending.staff;
+      }
     }
     legacyCustomer = sessionStorage.getItem('pasofi-onesa-customer') === '1';
     sessionStorage.removeItem('pasofi-onesa-customer');
   } catch { storageUnavailable = true; }
-  const customer = hotspot || (flow ? !flow.staff : legacyCustomer);
+  const customer = hotspot || (!expiredStaffFlow && (flow ? !flow.staff : legacyCustomer));
   const destination = customer
     ? (knownCustomerDestination(flow?.returnTo) ? flow.returnTo : hotspot ? '/connect' : '/#account')
     : '/admin';
@@ -37,6 +40,10 @@
   if (storageUnavailable && !hotspot) {
     if (back) { back.href = '/'; back.textContent = 'Return to PasoFi'; }
     failure('Browser could not finish sign-in', 'Allow site storage in this browser, then return to PasoFi and start a new sign-in.');
+    return;
+  }
+  if (!hotspot && expiredStaffFlow) {
+    failure('Staff sign-in expired', 'Start again from PasoFi Admin and complete sign-in and verification within five minutes.');
     return;
   }
   if (query.has('error')) {

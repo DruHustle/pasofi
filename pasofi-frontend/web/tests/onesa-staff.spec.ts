@@ -31,6 +31,24 @@ test('a cancelled or malformed callback presents a clean sign-in retry', async (
   expect(exchange).toBe(false);
 });
 
+test('an elapsed staff attempt offers a restart instead of reporting an access problem', async ({ page }) => {
+  const state = 'x'.repeat(43);
+  await page.addInitScript(state => {
+    sessionStorage.setItem('pasofi-onesa-flow:' + state, JSON.stringify({staff: true, expires: Date.now() - 1000}));
+    sessionStorage.setItem('pasofi-onesa-customer', '1');
+  }, state);
+  let exchanged = false;
+  await page.route('**/api/**', route => {
+    exchanged = true;
+    return route.fulfill({status: 401, json: {error: 'onesa_sign_in_rejected'}});
+  });
+  await page.goto('/onesa-callback.html?code=synthetic-code&state=' + state);
+  await expect(page.getByRole('heading', {name: 'Staff sign-in expired'})).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('within five minutes');
+  await expect(page.getByRole('link', {name: 'Return to PasoFi Staff'})).toHaveAttribute('href', '/admin');
+  await expect(page).toHaveURL(/\/onesa-callback\.html$/);
+  expect(exchanged).toBe(false);
+});
 
 test('blocked callback storage presents a readable retry after removing URL credentials', async ({page}) => {
   let exchanged=false;
