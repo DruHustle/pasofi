@@ -11,6 +11,7 @@ async function fixture(page: Page) {
     if (route.request().method() !== 'GET') { state.mutations.push(path); return json(route, { error: 'unexpected_mutation' }, 405); }
     if (path === '/api/capabilities') return json(route, caps);
     if (path === '/api/bundles') return json(route, { products: state.products, candidate: false });
+    if (path === '/api/onesa/availability') return json(route, { origin: new URL(route.request().url()).origin });
     if (path === '/api/help') return json(route, { articles: [] });
     if (path === '/api/sites') { state.locationReads++; return json(route, state.locationsFail ? { error: 'unavailable' } : { sites: state.locations }, state.locationsFail ? 503 : 200); }
     if (['/api/session', '/api/access', '/api/usage', '/api/recovery/status', '/api/orders'].includes(path)) return json(route, { error: 'not_authenticated' }, 401);
@@ -31,14 +32,14 @@ for (const width of [320, 390, 768, 1280]) test(`photo-led Home stays compact, r
     const box = await button.boundingBox(); expect(box!.height).toBeGreaterThanOrEqual(44); expect(box!.width).toBeGreaterThanOrEqual(44);
   }
   const heroBox = await page.locator('.pasofi-home-hero').boundingBox(); expect(heroBox!.height).toBeLessThan(width < 600 ? 360 : 380);
-  await expect(page.locator('#home-study-heading')).toHaveText('A little data. So many possibilities.');
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Sign up', exact: true })).toHaveCount(0);
+  await expect(page.locator('#home-study-heading, #home-account-heading')).toHaveCount(0);
+  await expect(page.getByAltText('Two adults working together on a laptop at a shared table')).toHaveCount(0);
   if (width < 600) {
     const imageBox = await hero.boundingBox();
     expect(imageBox!.width).toBeGreaterThan(width - 60);
     expect(imageBox!.height).toBeGreaterThanOrEqual(160);
-    const studyImageBox = await page.locator('.pasofi-home-story > img').boundingBox();
-    expect(studyImageBox!.width).toBeGreaterThan(width - 60);
-    expect(studyImageBox!.height).toBe(180);
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(state.locationReads).toBe(0); expect(state.mutations).toEqual([]);
@@ -69,7 +70,7 @@ test('Home account shortcuts and connection guidance preserve guest privacy and 
   await page.getByRole('button', { name: 'Check usage', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible();
   await expect(page.getByText('No account is active in this browser.', { exact: false })).toBeVisible();
-  await page.goto('/'); await expect(page.getByRole('button', { name: 'Vouchers paused', exact: true })).toBeDisabled();
+  await page.goto('/'); await expect(page.getByRole('button', { name: 'Vouchers paused', exact: true })).toHaveCount(0);
   await page.goto('/'); await page.locator('.pasofi-home-guide > summary').click();
   await expect(page.getByRole('heading', { name: 'Find your hotspot', exact: true })).toBeVisible();
   await page.locator('.pasofi-home-guide').getByRole('button', { name: 'View bundles', exact: true }).click(); await expect(page).toHaveURL(/#bundles$/);
