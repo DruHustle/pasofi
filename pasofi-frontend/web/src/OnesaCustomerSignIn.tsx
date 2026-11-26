@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { currentCustomerScreen, registrationUrl, rememberRegistration, signInAvailable, startProductSignIn } from './registration';
+import { currentCustomerScreen, customerSignInAvailability, registrationUrl, rememberRegistration, startProductSignIn } from './registration';
 import { hotspotPortal } from './api';
 import { inspectBrowserSession, onSessionChange } from './session';
 
 export default function OnesaCustomerSignIn({ prominent = false }: { prominent?: boolean }) {
   const [available, setAvailable] = useState<boolean | null>(null);
+  const [directSignup, setDirectSignup] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
   const [account, setAccount] = useState<'guest' | 'member' | null>(null);
@@ -21,22 +22,25 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
   useEffect(() => {
     const controller = new AbortController();
     setAvailable(null);
-    signInAvailable(false, controller.signal)
-      .then(value => { if (!controller.signal.aborted) setAvailable(value); })
+    customerSignInAvailability(controller.signal)
+      .then(value => { if (!controller.signal.aborted) { setAvailable(value.available); setDirectSignup(value.signup); } })
       .catch(() => { if (!controller.signal.aborted) setAvailable(false); });
     return () => controller.abort();
   }, [availabilityAttempt]);
 
-  async function signIn(claimGuest = false) {
+  async function signIn(claimGuest = false, signup = false) {
     if (busy) return;
     setBusy(true); setError('');
     try {
-      await startProductSignIn(false, currentCustomerScreen(), retryAccount, claimGuest);
+      await startProductSignIn(false, currentCustomerScreen(), retryAccount, claimGuest, signup);
     } catch { setError('Sign-in is temporarily unavailable. Please try again.'); setBusy(false); }
   }
 
   if (available === null || (account === 'member' && !retryAccount)) return null;
-  const signUp = <a className={hotspotPortal ? 'pf-button pf-button-secondary' : 'text-button'} href={registrationUrl('user')} onClick={() => rememberRegistration()}>Sign up</a>;
+  const signupClass = hotspotPortal ? 'pf-button pf-button-secondary' : 'text-button';
+  const signUp = available && directSignup
+    ? <button type="button" className={signupClass} disabled={busy} onClick={() => signIn(false, true)}>Sign up</button>
+    : <a className={signupClass} href={registrationUrl('user')} onClick={() => rememberRegistration()}>Sign up</a>;
   if (!available) return <nav className="pf-portal-links pf-onesa-sign-in-unavailable" aria-label="Customer sign-in">
     <span role="status">Sign-in unavailable</span>
     <button type="button" onClick={() => setAvailabilityAttempt(attempt => attempt + 1)}>Retry sign-in</button>
