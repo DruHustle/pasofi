@@ -1,6 +1,7 @@
 import { api, hotspotPortal } from './api';
 
 const storageKey = 'pasofi.registration';
+export const staffEntry = '/admin';
 const hotspotScreens = ['/connect', '/connect#bundles', '/connect#voucher'];
 export const registrationUrl = (audience:'user'|'admin') =>
   'https://account.onesa.eu/register?audience='+audience+'&product=pasofi&platform=web'+
@@ -21,11 +22,11 @@ export function currentCustomerScreen() {
 }
 
 function destination(value:string) {
-  if(value==='/#staff' || value==='/#connect' || (hotspotPortal && hotspotScreens.includes(value)))return value;
+  if(value===staffEntry || value==='/#staff' || value==='/#connect' || (hotspotPortal && hotspotScreens.includes(value)))return value;
   return /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
 }
 export function rememberRegistration(staff=false) {
-  const path=staff?'/#staff':currentCustomerScreen();
+  const path=staff?staffEntry:currentCustomerScreen();
   try { sessionStorage.setItem(storageKey,JSON.stringify({path:destination(path),expires:Date.now()+30*60*1000})); } catch {}
 }
 export async function startProductSignIn(staff:boolean,returnTo:string,reauthenticate=false,claimGuest=false) {
@@ -44,7 +45,7 @@ export async function startProductSignIn(staff:boolean,returnTo:string,reauthent
   const state = target.searchParams.get('state');
   if (!hotspotPortal && state && /^[A-Za-z0-9_-]{43}$/.test(state)) {
     sessionStorage.setItem('pasofi-onesa-flow:' + state, JSON.stringify({
-      staff, returnTo: staff ? '/#staff' : destination(returnTo), expires: Date.now() + 300000,
+      staff, returnTo: staff ? staffEntry : destination(returnTo), expires: Date.now() + 300000,
     }));
   }
   // Older callback assets can still complete a customer sign-in during rollout.
@@ -71,7 +72,7 @@ export function resumeRegistration() {
   // it, even when the browser has no pending receipt or its receipt expired.
   history.replaceState(null,'',path);
   if(!valid)return;
-  const staff=path==='/#staff';
+  const staff=path===staffEntry || path==='/#staff';
   void signInAvailable(staff)
     .then(available=>{if(available)return startProductSignIn(staff,path);})
     .catch(()=>{}); // The restored screen retains its ordinary sign-in and retry controls.
