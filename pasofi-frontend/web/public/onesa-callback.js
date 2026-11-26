@@ -6,7 +6,6 @@
   const status = document.getElementById('status');
   const heading = document.getElementById('heading');
   const back = document.getElementById('return');
-  const staffHelp = document.getElementById('staff-help');
   const knownCustomerDestination = path => typeof path === 'string' && (hotspot
     ? ['/connect', '/connect#bundles', '/connect#voucher'].includes(path)
     : path === '/#connect' || /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(path));
@@ -26,15 +25,14 @@
   const customer = hotspot || (flow ? !flow.staff : legacyCustomer);
   const destination = customer
     ? (knownCustomerDestination(flow?.returnTo) ? flow.returnTo : hotspot ? '/connect' : '/#account')
-    : '/#staff';
+    : '/admin';
   if (back) {
     back.href = destination;
     back.textContent = !customer ? 'Return to PasoFi Staff' : hotspot ? 'Return to PasoFi Wi-Fi' : 'Return to PasoFi';
   }
-  function failure(title, message, showStaffHelp = false) {
+  function failure(title, message) {
     if (heading) heading.textContent = title;
     if (status) status.textContent = message;
-    if (staffHelp && showStaffHelp) staffHelp.hidden = false;
   }
   if (storageUnavailable && !hotspot) {
     if (back) { back.href = '/'; back.textContent = 'Return to PasoFi'; }
@@ -43,7 +41,7 @@
   }
   if (query.has('error')) {
     if (!customer && query.get('error') === 'access_denied') {
-      failure('Staff sign-in needs attention', 'Check that your PasoFi staff access is approved. Sign in again and complete the authenticator prompt.', true);
+      failure('Staff sign-in needs attention', 'Check that your PasoFi staff access is approved. Sign in again and complete the authenticator prompt.');
     } else if (hotspot && query.get('error') === 'access_denied') {
       failure('Check your PasoFi access', 'Use an Onesa account with PasoFi access. If you’re new to PasoFi, choose Sign up on the Wi-Fi page.');
       if (back) {
@@ -77,7 +75,7 @@
       } else if (result.status === 401 || result.status === 403) {
         failure(customer ? 'PasoFi sign-in could not finish' : 'Staff sign-in needs attention',
           customer ? 'Start a fresh sign-in from PasoFi using your verified Onesa account.'
-            : 'Check that your PasoFi staff access is approved, then start a new staff sign-in and complete verification.', !customer);
+            : 'Check that your PasoFi staff access is approved, then start a new staff sign-in and complete verification.');
       } else if (result.status === 429) {
         failure('Too many sign-in attempts', 'Wait a minute before starting another sign-in.');
       } else {

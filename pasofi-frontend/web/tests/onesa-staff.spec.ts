@@ -16,7 +16,7 @@ test('Onesa callback removes credentials from the URL and returns a verified adm
     return route.fulfill({ status: 503, json: {} });
   });
   await page.goto('/onesa-callback.html?code=test-code&state=' + state + '&iss=https%3A%2F%2Fportal.example.invalid');
-  await expect(page).toHaveURL(/\/#staff$/);
+  await expect(page).toHaveURL(/\/admin$/);
   expect(body).toEqual({ code: 'test-code', state, iss: 'https://portal.example.invalid' });
   await expect(page.getByText('Onesa administrator', { exact: true })).toBeVisible();
 });
@@ -27,7 +27,7 @@ test('a cancelled or malformed callback presents a clean sign-in retry', async (
   await page.goto('/onesa-callback.html?error=access_denied&state=private-state');
   await expect(page).toHaveURL(/\/onesa-callback\.html$/);
   await expect(page.getByRole('heading', { name: 'Staff sign-in needs attention' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Return to PasoFi Staff' })).toHaveAttribute('href', '/#staff');
+  await expect(page.getByRole('link', { name: 'Return to PasoFi Staff' })).toHaveAttribute('href', '/admin');
   expect(exchange).toBe(false);
 });
 

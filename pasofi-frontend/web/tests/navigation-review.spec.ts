@@ -94,7 +94,7 @@ test('handoff and staff entry routes reopen correctly and close to home', async 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toBeVisible();
   await page.locator('footer').getByRole('button', { name: 'Staff', exact: true }).click();
-  await expect(page).toHaveURL(/#staff$/);
+  await expect(page).toHaveURL(/\/admin$/);
   await page.reload();
   const staff = page.getByRole('region', { name: 'Staff workspace' });
   await expect(staff.getByText('Onesa Identity sign-in is not connected to this PasoFi service yet. PasoFi access remains disabled until the connection is configured.')).toBeVisible();

@@ -214,8 +214,8 @@ test('a staff callback shows its own recovery page even after a customer sign-in
   });
   await page.goto('/onesa-callback.html?code=fixture&state=' + state);
   await expect(page.getByRole('heading', { name: 'Staff sign-in needs attention' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Return to PasoFi Staff' })).toHaveAttribute('href', '/#staff');
-  await expect(page.getByRole('link', { name: 'Check your Onesa access' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Return to PasoFi Staff' })).toHaveAttribute('href', '/admin');
+  await expect(page.getByRole('link', { name: 'Check your Onesa access' })).toHaveCount(0);
   await expect(page).toHaveURL(/\/onesa-callback\.html$/);
   expect(endpoint).toBe('/api/staff/onesa/complete');
 });
