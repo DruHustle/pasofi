@@ -8,7 +8,7 @@
   const back = document.getElementById('return');
   const knownCustomerDestination = path => typeof path === 'string' && (hotspot
     ? ['/connect', '/connect#bundles', '/connect#voucher'].includes(path)
-    : path === '/#connect' || /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(path));
+    : path === '/#connect' || /^\/#(?:home|usage|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(path));
   const state = query.get('state');
   let flow, legacyCustomer = false, storageUnavailable = false;
   try {

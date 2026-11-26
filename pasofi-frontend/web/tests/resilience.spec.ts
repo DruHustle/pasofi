@@ -255,7 +255,7 @@ test('service banner reflects disabled, demo and unavailable capabilities withou
     else await json(route, { demo: state === 'demo', staffSales: false, networkAccess: false });
     return true;
   });
-  await page.goto('/');
+  await page.goto('/#bundles');
   await expect(page.locator('.demo')).toContainText('SERVICE IN PREPARATION');
   await expect(page.locator('.demo')).toContainText('Purchases and connections are not yet available');
   state = 'demo'; await page.reload();

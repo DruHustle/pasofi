@@ -63,6 +63,7 @@ for (const width of [320, 390, 430, 1280]) {
   test(`primary navigation and customer screens remain usable at ${width}px`, async ({ page }, testInfo) => {
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await page.setViewportSize({ width, height: 844 }); await fixture(page); await page.goto('/');
+    await page.getByRole('button', { name: 'Check usage', exact: true }).click();
     await expect(page.getByTestId('usage-remaining')).toHaveText('4.000 GB');
     const nav = navigation(page);
     for (const name of ['Home', 'Bundles', 'History', 'Account']) {
@@ -90,7 +91,7 @@ for (const width of [320, 390, 430, 1280]) {
     await expect(page.locator('[data-entitlement-id]')).toHaveCount(1); await noOverflow(page);
     await nav.getByRole('button', { name: 'Account', exact: true }).click();
     await expect(nav.getByRole('button', { name: 'Account', exact: true })).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByRole('heading', { name: 'Keep your access recoverable' })).toBeVisible(); await noOverflow(page);
+    await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible(); await noOverflow(page);
     expect(errors).toEqual([]);
   });
 }
@@ -180,7 +181,7 @@ test('the captive entry is lightweight and reaches voucher redemption without re
 test('dashboard shows bundle validity independently of a shorter pending connection grant', async ({ page }, testInfo) => {
   await page.clock.install(); await fixture(page, { pending: true });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
-  await page.getByRole('button', { name: 'Customer tools', exact: true }).click();
+  await page.goto('/#usage');
   await expect(page.getByTestId('usage-remaining')).toHaveText('4.000 GB');
   await expect(page.getByTestId('usage-bundle-time')).toContainText(/18h|18 h|18 hours/);
   await expect(page.getByTestId('usage-connection-status')).not.toHaveText(/^Connected/);
@@ -190,7 +191,7 @@ test('dashboard shows bundle validity independently of a shorter pending connect
 
 test('offline dashboard retains its confirmed balance and visibly withdraws connection certainty', async ({ page, context }) => {
   await fixture(page, { pending: true }); await page.goto('/');
-  await page.getByRole('button', { name: 'Customer tools', exact: true }).click();
+  await page.goto('/#usage');
   await expect(page.getByTestId('usage-remaining')).toHaveText('4.000 GB');
   await context.setOffline(true);
   await expect(page.getByText('Offline · showing the last confirmed balance', { exact: true })).toBeVisible();

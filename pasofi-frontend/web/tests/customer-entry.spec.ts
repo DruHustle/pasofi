@@ -14,7 +14,7 @@ for (const width of [320, 390, 1280]) test(`customer sign-in opens directly and 
     if (url.pathname === '/api/onesa/start') starts++;
     return route.fulfill({ status: url.pathname === '/api/onesa/start' ? 503 : url.pathname === '/api/session' ? 401 : 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
-  await page.setViewportSize({ width, height: 900 }); await page.goto('/');
+  await page.setViewportSize({ width, height: 900 }); await page.goto('/#account');
   const entry = page.getByRole('button', { name: 'Sign in', exact: true });
   await expect(entry).toHaveCount(1); await expect(entry).toBeInViewport();
   await entry.click();

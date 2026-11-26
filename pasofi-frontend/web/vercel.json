@@ -34,7 +34,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' https://js.stripe.com https://*.js.stripe.com; connect-src 'self' https://api.stripe.com; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://login.pasofi.mobile.onesa.eu https://wifi.pasofi.mobile.onesa.eu"
+          "value": "default-src 'self'; img-src 'self' https://tile.openstreetmap.org; script-src 'self' https://js.stripe.com https://*.js.stripe.com; connect-src 'self' https://api.stripe.com; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://login.pasofi.mobile.onesa.eu https://wifi.pasofi.mobile.onesa.eu"
         }
       ]
     }

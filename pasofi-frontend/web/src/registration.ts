@@ -23,7 +23,7 @@ export function currentCustomerScreen() {
 
 function destination(value:string) {
   if(value===staffEntry || value==='/#staff' || value==='/#connect' || (hotspotPortal && hotspotScreens.includes(value)))return value;
-  return /^\/#(?:home|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
+  return /^\/#(?:home|usage|bundles|history|account|wifi|voucher|checkout|receipt)(?:\?bundle=[a-z][a-z0-9-]{0,39})?$/.test(value) ? value : '/#account';
 }
 export function rememberRegistration(staff=false) {
   const path=staff?staffEntry:currentCustomerScreen();
