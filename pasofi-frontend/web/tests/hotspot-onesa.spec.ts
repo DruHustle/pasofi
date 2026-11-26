@@ -43,17 +43,19 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => Object.defineProperty(Navigator.prototype, 'onLine', { get: () => false }));
   let enabled = false;
+  let signupEnabled = false;
   let completed = false;
   const returns: string[] = [];
   await page.route(captive + '/**', async route => {
     const url = new URL(route.request().url());
     switch (url.pathname) {
       case '/portal-api/onesa/availability':
-        return route.fulfill({ json: { origin: canonical, ...(enabled ? { hotspotOrigin: captive } : {}) } });
+        return route.fulfill({ json: { origin: canonical, ...(enabled ? { hotspotOrigin: captive } : {}), signup: signupEnabled } });
       case '/portal-api/onesa/start':
         expect(route.request().method()).toBe('POST');
-        returns.push(route.request().postDataJSON().returnTo);
-        return route.fulfill({ json: { authorizationUrl: authorize } });
+        const input = route.request().postDataJSON();
+        returns.push(input.returnTo);
+        return route.fulfill({ json: { authorizationUrl: authorize + (input.signup === true ? '&screen_hint=signup' : '') } });
       case '/portal-api/onesa/complete':
         expect(route.request().postDataJSON()).toEqual({ code: 'isolated-code', state });
         completed = true;
@@ -108,6 +110,16 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
   await expect(page).toHaveURL(captive + '/connect#bundles');
   expect(completed).toBe(true);
 
+  signupEnabled = true;
+  completed = false;
+  await page.goto(captive + '/connect#bundles');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page).toHaveURL(authorize + '&screen_hint=signup');
+  await page.getByRole('link', { name: 'Continue fixture sign-in' }).click();
+  await expect(page).toHaveURL(captive + '/connect#bundles');
+  expect(completed).toBe(true);
+  signupEnabled = false;
+
   completed = false;
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(captive + '/connect');
@@ -117,7 +129,7 @@ test('dedicated Connect signs in directly and resumes verified signup on the sam
   await expect(page.getByRole('link', { name: 'Create account' })).toHaveAttribute('href', account);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page).toHaveURL(authorize);
-  expect(returns).toEqual(['/connect', '/connect#bundles', '/connect#voucher']);
+  expect(returns).toEqual(['/connect', '/connect#bundles', '/connect#bundles', '/connect#voucher']);
   await page.getByRole('link', { name: 'Continue fixture sign-in' }).click();
   await expect(page).toHaveURL(captive + '/connect#voucher');
   expect(completed).toBe(true);

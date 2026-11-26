@@ -5,12 +5,14 @@ import { nativePlatform, deliverAppleCallback } from './native-oidc-ui';
 import type { CustomerTab } from './CustomerAccess';
 import { api, mobileApiOrigin } from './api';
 import { authenticateWithAppleBrowser, openNativeOnesaSignIn } from './native-api';
+import RegistrationLink from './RegistrationLink';
 
-export default function OnesaSignIn({ enterCode, close, destination, managedReturnReady = true, resumeRegistration=false, usedRegistration }: { destination: CustomerTab; enterCode: () => void; close: () => void; managedReturnReady?: boolean; resumeRegistration?:boolean; usedRegistration:()=>void }) {
+export default function OnesaSignIn({ enterCode, close, destination, managedReturnReady = true, resumeRegistration=false, createAccount = false, usedRegistration }: { destination: CustomerTab; enterCode: () => void; close: () => void; managedReturnReady?: boolean; resumeRegistration?:boolean; createAccount?: boolean; usedRegistration:()=>void }) {
   const [available, setAvailable] = useState(false), [loading, setLoading] = useState(true);
   const [native,setNative] = useState<NativeRegistration | null>(null);
   const platform=nativePlatform();
   const direct=Boolean(managedReturnReady && native && platform && native[platform]);
+  const directSignup = direct && native?.signup === true;
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setAvailable(false); setMessage('');
@@ -25,17 +27,18 @@ export default function OnesaSignIn({ enterCode, close, destination, managedRetu
   }, [attempt]);
   const launched=useRef(false);
   useEffect(()=>{
+    if (createAccount && !directSignup) return;
     if (!available || loading || launched.current || (!resumeRegistration && !direct)) return;
     launched.current = true;
     if (resumeRegistration) usedRegistration();
     void openBrowser(false);
-  }, [resumeRegistration, available, loading, direct]);
+  }, [resumeRegistration, available, loading, direct, createAccount, directSignup]);
   async function openBrowser(reauthenticate: boolean) {
     if (busy || !available || !mobileApiOrigin) return;
     setBusy(true); setMessage('');
     try {
       if (direct && native && platform) {
-        const url = await startNativeSignIn(native, platform, destination, sessionStorage, {reauthenticate});
+        const url = await startNativeSignIn(native, platform, destination, sessionStorage, {reauthenticate, signup: createAccount});
         if (platform === 'ios') {
           const result = await authenticateWithAppleBrowser(mobileApiOrigin, url);
           if (result) deliverAppleCallback(result);
@@ -52,6 +55,13 @@ export default function OnesaSignIn({ enterCode, close, destination, managedRetu
     } catch { setMessage('Your browser could not be opened. Retry, or open the PasoFi address shown below in your browser.'); }
     finally { setBusy(false); }
   }
+  if (createAccount) return <section className="workspace" aria-labelledby="onesa-app-heading" aria-busy={loading || busy}>
+    <div className="purchase-head"><h2 id="onesa-app-heading">Create account</h2><button className="close-button" onClick={close} aria-label="Close registration">×</button></div>
+    {loading ? <p role="status">Checking registration…</p> : available && directSignup
+      ? <button className="primary" disabled={busy} onClick={() => openBrowser(false)}>{busy ? 'Opening browser…' : 'Open registration in browser'}</button>
+      : <RegistrationLink tab={destination} showAdmin={false}/>}
+    {message && <p role="status">{message}</p>}
+  </section>;
   return <section className="workspace" aria-labelledby="onesa-app-heading" aria-busy={loading || busy}>
     <div className="purchase-head"><h2 id="onesa-app-heading">Sign in</h2><button className="close-button" onClick={close} aria-label="Close sign-in">×</button></div>
     <p>{direct ? 'After you sign in, PasoFi returns you to this screen.' : 'Sign in in your browser, then use a one-time code to open your account in the app.'}</p>

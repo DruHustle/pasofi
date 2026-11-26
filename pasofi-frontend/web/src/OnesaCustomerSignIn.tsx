@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { currentCustomerScreen, registrationUrl, rememberRegistration, signInAvailable, startProductSignIn } from './registration';
+import { accountEntryAvailability, currentCustomerScreen, registrationUrl, rememberRegistration, startProductSignIn } from './registration';
 import { api, hotspotPortal } from './api';
 
 export default function OnesaCustomerSignIn({ prominent = false }: { prominent?: boolean }) {
   const [available, setAvailable] = useState<boolean | null>(null);
+  const [directSignup, setDirectSignup] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
   const [guest, setGuest] = useState(false);
@@ -18,19 +19,31 @@ export default function OnesaCustomerSignIn({ prominent = false }: { prominent?:
   useEffect(() => {
     const controller = new AbortController();
     setAvailable(null);
-    signInAvailable(false, controller.signal)
-      .then(value => { if (!controller.signal.aborted) setAvailable(value); })
+    setDirectSignup(false);
+    accountEntryAvailability(false, controller.signal)
+      .then(value => {
+        if (!controller.signal.aborted) {
+          setAvailable(value.signIn);
+          setDirectSignup(value.signup);
+        }
+      })
       .catch(() => { if (!controller.signal.aborted) setAvailable(false); });
     return () => controller.abort();
   }, [availabilityAttempt]);
-  async function signIn(claimGuest = false) {
+  async function signIn(claimGuest = false, signup = false) {
     if (busy) return;
     setBusy(true); setError('');
     try {
-      await startProductSignIn(false,currentCustomerScreen(),retryAccount,claimGuest);
-    } catch { setError('Sign-in is temporarily unavailable. Please try again.'); setBusy(false); }
+      await startProductSignIn(false, currentCustomerScreen(), retryAccount && !signup, claimGuest, signup);
+    } catch {
+      setError(signup ? 'Registration is temporarily unavailable. Please try again.' : 'Sign-in is temporarily unavailable. Please try again.');
+      setBusy(false);
+    }
   }
-  const signup = <a className={hotspotPortal ? 'pf-button pf-button-secondary' : 'text-button'} href={registrationUrl('user')} onClick={()=>rememberRegistration()}>Create account</a>;
+  const signupClass = hotspotPortal ? 'pf-button pf-button-secondary' : 'text-button';
+  const signup = directSignup
+    ? <button type="button" className={signupClass} disabled={busy} onClick={() => signIn(false, true)}>Create account</button>
+    : <a className={signupClass} href={registrationUrl('user')} onClick={()=>rememberRegistration()}>Create account</a>;
   if (available === null) return <p role="status">Checking sign-in…</p>;
   if (!available) return <div className="pf-portal-links pf-onesa-sign-in-unavailable" aria-label="Customer sign-in">
     <span role="status">Sign-in is unavailable</span>
