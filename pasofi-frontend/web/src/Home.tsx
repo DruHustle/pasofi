@@ -6,7 +6,6 @@ import Icon from './Icon';
 
 type Props = {
   capabilities: Capabilities | null; children: ReactNode;
-  onInteract: () => void;
   browse: (button?: HTMLButtonElement) => void;
   account: (tab: CustomerTab, button: HTMLButtonElement) => void;
   help: (button?: HTMLButtonElement) => void;
@@ -22,7 +21,7 @@ function readLocations(value: unknown): Site[] {
   return locations;
 }
 
-export default function Home({ capabilities, children, onInteract, browse, account, help }: Props) {
+export default function Home({ capabilities, children, browse, account, help }: Props) {
   const [locationsOpen, setLocationsOpen] = useState(false), [locations, setLocations] = useState<Site[] | null>(null);
   const [locationsError, setLocationsError] = useState(false), [locationsAttempt, setLocationsAttempt] = useState(0), [locationQuery, setLocationQuery] = useState('');
   const locationPanel = useRef<HTMLDetailsElement>(null), locationSearch = useRef<HTMLInputElement>(null);
@@ -39,7 +38,7 @@ export default function Home({ capabilities, children, onInteract, browse, accou
     requestAnimationFrame(() => { locationPanel.current?.scrollIntoView({ behavior: 'auto', block: 'start' }); locationSearch.current?.focus({ preventScroll: true }); });
   }
   const filteredLocations = locations?.filter(site => site.name.toLocaleLowerCase().includes(locationQuery.trim().toLocaleLowerCase())) ?? [];
-  return <div className="pasofi-home-content" onPointerDownCapture={onInteract} onKeyDownCapture={onInteract} onClickCapture={onInteract} onInputCapture={onInteract}>
+  return <div className="pasofi-home-content">
     <section className="pasofi-home-hero" aria-labelledby="home-hero-heading">
       <div className="pasofi-home-hero-copy"><span className="pasofi-home-kicker">A LITTLE MORE PASOFI</span><h1 id="home-hero-heading" tabIndex={-1}>Your internet.<br/><em>Your everyday.</em></h1><p>For the catch-ups, bright ideas and everyday moments.</p>
         <button className="pf-button" onClick={event => browse(event.currentTarget)}>Browse bundles <Icon name="arrow"/></button></div>
