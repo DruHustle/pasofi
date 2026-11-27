@@ -9,16 +9,8 @@ body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-f
 .pf-app h1,.pf-app h2{letter-spacing:-.03em;font-weight:800}
 .pf-app h3{letter-spacing:-.015em}
 
-/* Bundle cards: name label, hero data figure, validity pill, split price, value line. */
+/* Bundle cards: one brand colour; name label, hero data figure, validity pill, split price, value line. */
 .pf-app .pf-bundle-card{--pf-accent:#0070f2;--pf-accent-ink:#0058c0;--pf-accent-soft:#eef5ff;--pf-accent-line:#cfe2fd;--pf-lift:0 0 #0000;background:var(--pf-accent-soft);border:1px solid var(--pf-accent-line);border-radius:14px;padding:10px 12px 10px 14px;box-shadow:inset 4px 0 0 var(--pf-accent),var(--pf-lift);transition:box-shadow .2s,transform .2s}
-/* Eight distinct tones so every bundle in a typical catalogue has its own colour. */
-.pf-app .pf-bundle-card[data-tone="1"]{--pf-accent:#00875f;--pf-accent-ink:#00704f;--pf-accent-soft:#ebf7f1;--pf-accent-line:#c6e8d7}
-.pf-app .pf-bundle-card[data-tone="2"]{--pf-accent:#f29d00;--pf-accent-ink:#a35f00;--pf-accent-soft:#fff5e3;--pf-accent-line:#f8dfae}
-.pf-app .pf-bundle-card[data-tone="3"]{--pf-accent:#7c4dff;--pf-accent-ink:#5b2fd6;--pf-accent-soft:#f3efff;--pf-accent-line:#ddd2ff}
-.pf-app .pf-bundle-card[data-tone="4"]{--pf-accent:#e0336e;--pf-accent-ink:#b4204f;--pf-accent-soft:#fff0f4;--pf-accent-line:#f9cbd9}
-.pf-app .pf-bundle-card[data-tone="5"]{--pf-accent:#0097a7;--pf-accent-ink:#00727e;--pf-accent-soft:#e9f8fa;--pf-accent-line:#bfe8ee}
-.pf-app .pf-bundle-card[data-tone="6"]{--pf-accent:#f0612f;--pf-accent-ink:#b8401a;--pf-accent-soft:#fff1eb;--pf-accent-line:#fbd3c4}
-.pf-app .pf-bundle-card[data-tone="7"]{--pf-accent:#3f51b5;--pf-accent-ink:#2f3d91;--pf-accent-soft:#eef0fb;--pf-accent-line:#cdd3f1}
 .pf-app .pf-bundle-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .pf-app .pf-plan-name{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--pf-accent-ink)}
 .pf-app .pf-bundle-badge{display:inline-flex;align-items:center;min-height:20px;padding:1px 8px;border-radius:999px;background:#c7f5b5;color:#0b3d24;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
