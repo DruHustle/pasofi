@@ -1,4 +1,4 @@
-import { configuredOnesaStaff, OnesaError, RejectedStaffSession } from './onesa-staff.js';
+import { configuredOnesaStaff, OnesaError, RejectedStaffSession, staffFlowLifetime } from './onesa-staff.js';
 import { managedBrowserLogoutUrl } from './onesa-browser-logout.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
@@ -272,8 +272,8 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     if (!onesa) return fail(503, 'onesa_unavailable');
     if (request.headers.origin !== onesa.config.callback.origin) return fail(403, 'origin_rejected');
     const flow = await onesa.start(pool!, request.body?.reauthenticate === true);
-    reply.setCookie(flowCookie, flow.browser, { ...attributes, maxAge: 300 });
-    return { authorizationUrl: flow.authorizationUrl };
+    reply.setCookie(flowCookie, flow.browser, { ...attributes, maxAge: staffFlowLifetime });
+    return { authorizationUrl: flow.authorizationUrl, expiresIn: staffFlowLifetime };
   }));
   app.post<{ Body: { state: string; code: string; iss?: string } }>('/v1/staff/onesa/complete', {
     preHandler: publicGuard, config: { rateLimit: { max: 15, timeWindow: '1 minute' } },

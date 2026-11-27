@@ -41,3 +41,12 @@ test('blocked callback storage presents a readable retry after removing URL cred
   await expect(page.getByRole('status')).toContainText('Allow site storage');
   expect(exchanged).toBe(false);
 });
+
+test('an expired staff transaction explains how to restart sign-in', async ({ page }) => {
+  await page.route('**/api/staff/onesa/complete', route =>
+    route.fulfill({ status: 401, json: { error: 'staff_sign_in_expired' } }));
+  await page.goto('/onesa-callback.html?code=synthetic-code&state=' + 's'.repeat(43));
+  await expect(page.getByRole('heading', { name: 'Staff sign-in expired' })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('same tab');
+  await expect(page.getByRole('link', { name: 'Return to PasoFi Staff' })).toHaveAttribute('href', '/admin');
+});

@@ -103,7 +103,14 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     assert.equal(start.statusCode,200,start.body);
     query=new URL(start.json().authorizationUrl).searchParams;
     assert.equal(query.get('audience'),audience); assert.equal(query.get('code_challenge_method'),'S256');
-    if(staff) assert.equal(query.get('acr_values'),'http://schemas.openid.net/pape/policies/2007/06/multi-factor');
+    if(staff) {
+      assert.equal(query.get('acr_values'),'http://schemas.openid.net/pape/policies/2007/06/multi-factor');
+      assert.equal(query.get('max_age'),'300','the password authentication freshness limit remains five minutes');
+      assert.equal(start.json().expiresIn,900);
+      assert.equal(start.cookies.find(c=>c.name.endsWith('onesa_flow')).maxAge,900);
+      const window = await db.query('SELECT extract(epoch FROM max(expires_at)-now())::int AS remaining FROM staff_onesa_flows');
+      assert.ok(window.rows[0].remaining > 840, 'the server still accepts a callback after five minutes');
+    }
     return request('POST',prefix+'complete',{code:'synthetic',state:query.get('state')},cookie(start,staff?'onesa_flow':'onesa_customer_flow'));
   }
   const nativeToken = (azp) => new SignJWT({azp,[ns+'user_id']:accountId,[ns+'products']:products,[ns+'roles']:[role,...extraRoles],onesa_roles:globalRoles,[ns+'mfa_time']:factor})
@@ -175,6 +182,12 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   factor=now();accountId=stable;
   globalRoles=[];
   await db.query("UPDATE staff_users SET role='admin',site_ids='{}',version=version+1 WHERE id=$1",[operator]);
+  const expiring=await request('POST','staff/onesa/start',{});
+  const expiredState=new URL(expiring.json().authorizationUrl).searchParams.get('state');
+  await db.query("UPDATE staff_onesa_flows SET expires_at=now()-interval '1 second'");
+  const expired=await request('POST','staff/onesa/complete',{code:'unused',state:expiredState},cookie(expiring,'onesa_flow'));
+  assert.equal(expired.statusCode,401);
+  assert.equal(expired.json().error,'staff_sign_in_expired');
   const approvedAdmin=await login(true);assert.equal(approvedAdmin.statusCode,200,approvedAdmin.body);
   const adminCookie=cookie(approvedAdmin,'staff_session');
   const adminSession=await request('GET','staff/session',undefined,adminCookie);
