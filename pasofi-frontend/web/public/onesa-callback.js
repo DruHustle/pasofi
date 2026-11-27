@@ -49,6 +49,11 @@
     failure('Browser could not finish sign-in', 'Allow site storage in this browser, then return to PasoFi and start a new sign-in.');
     return;
   }
+  if (kind === 'staff' && expired) {
+    // The server cannot exchange an elapsed staff attempt; offer a fresh start.
+    failure('Staff sign-in expired', 'Start again from PasoFi Admin and finish sign-in and verification in the same tab.');
+    return;
+  }
   if (query.has('error')) {
     // Only reasons published by Onesa's own sign-in rules are recognised. The
     // provider text is never shown, so a crafted link cannot place words here.
