@@ -185,9 +185,9 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   const expiring=await request('POST','staff/onesa/start',{});
   const expiredState=new URL(expiring.json().authorizationUrl).searchParams.get('state');
   await db.query("UPDATE staff_onesa_flows SET expires_at=now()-interval '1 second'");
-  const expired=await request('POST','staff/onesa/complete',{code:'unused',state:expiredState},cookie(expiring,'onesa_flow'));
-  assert.equal(expired.statusCode,401);
-  assert.equal(expired.json().error,'staff_sign_in_expired');
+  const expiredStaffFlow=await request('POST','staff/onesa/complete',{code:'unused',state:expiredState},cookie(expiring,'onesa_flow'));
+  assert.equal(expiredStaffFlow.statusCode,401);
+  assert.equal(expiredStaffFlow.json().error,'staff_sign_in_expired');
   const approvedAdmin=await login(true);assert.equal(approvedAdmin.statusCode,200,approvedAdmin.body);
   const adminCookie=cookie(approvedAdmin,'staff_session');
   const adminSession=await request('GET','staff/session',undefined,adminCookie);
