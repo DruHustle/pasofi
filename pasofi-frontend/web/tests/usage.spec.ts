@@ -292,7 +292,7 @@ for (const transition of ['page reload', 'workspace remount'] as const) {
     state.pending = true; await page.getByRole('button', { name: 'Check connection', exact: true }).click();
     await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
     if (transition === 'page reload') await page.reload();
-    else await page.getByRole('button', { name: 'Close customer workspace' }).click();
+    else await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Home', exact: true }).click();
     await page.goto('/#usage');
     await expect(page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' })).toHaveValue(secondNasId);
     const retry = page.getByRole('button', { name: 'Retry connection', exact: true }); await expect(retry).toBeEnabled(); await retry.click();

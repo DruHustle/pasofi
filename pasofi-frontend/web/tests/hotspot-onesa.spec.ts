@@ -122,7 +122,7 @@ test('dedicated Connect signs in directly from every entry and returns to the sa
   await page.getByRole('link', { name: 'Continue fixture sign-in' }).click();
   await expect(page).toHaveURL(captive + '/connect#voucher');
   expect(completed).toBe(true);
-  await page.getByRole('button', { name: 'Close customer workspace' }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(page).toHaveURL(captive + '/connect');
 
   completed = false;

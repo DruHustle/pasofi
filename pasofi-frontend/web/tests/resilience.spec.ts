@@ -41,7 +41,7 @@ test('read-only help searches reviewed answers and never sends the typed questio
   const requests: string[] = [];
   page.on('request', request => { if (request.url().includes('/api/')) requests.push(request.url()); });
   await mockApi(page); await page.goto('/');
-  await page.getByRole('button', { name: 'Help & FAQs' }).click();
+  await page.getByRole('banner').getByRole('button', { name: 'Help', exact: true }).click();
   await page.getByLabel('Find a quick answer').fill('uploads');
   await expect(page.locator('summary').filter({ hasText: 'What data counts?' })).toBeVisible();
   await expect(page.locator('summary').filter({ hasText: 'How do I recover?' })).toHaveCount(0);

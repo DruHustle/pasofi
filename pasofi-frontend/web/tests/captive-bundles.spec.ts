@@ -138,7 +138,7 @@ test.describe('narrow hotspot catalogue', () => {
       capabilities.paymentCheckout = !cash;
       capabilities.paymentMode = cash ? 'disabled' : 'sandbox';
       await pause.click();
-      const action = catalogue.getByRole('button', { name: cash ? 'Buy mini-v1 from an agent' : 'Review mini-v1 bundle' });
+      const action = catalogue.getByRole('button', { name: cash ? 'Buy mini-v1 from an agent' : 'Buy mini-v1 online' });
       await expect(action).toBeEnabled();
       await expect(rows.getByRole('button')).toHaveCount(5);
       await expectAllRowsInView();

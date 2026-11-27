@@ -12,6 +12,7 @@ import Home from './Home';
 import ScreenBoundary from './ScreenBoundary';
 import Policies, { PolicyNotice } from './Policies';
 import { withPolicyHelp, type HelpArticle as Article } from './PolicyHelp';
+import '@fontsource-variable/plus-jakarta-sans';
 import './style.css';
 import './premium.css';
 import AppDownloads from './AppDownloads';
@@ -20,6 +21,7 @@ import OnesaCustomerSignIn from './OnesaCustomerSignIn';
 import './home.css';
 import './customer-journey.css';
 import './refinements.css';
+import './clean-layout.css';
 
 const DemoPurchase = lazy(() => import('./DemoPurchase'));
 const Recovery = lazy(() => import('./Recovery'));
@@ -35,6 +37,8 @@ const navItems: { view: View; label: string; icon: IconName }[] = [
   { view: 'home', label: 'Home', icon: 'home' }, { view: 'bundles', label: 'Bundles', icon: 'grid' },
   { view: 'history', label: 'History', icon: 'history' }, { view: 'account', label: 'Account', icon: 'user' },
 ];
+const navArea: Partial<Record<View, View>> = { usage: 'account', wifi: 'account', voucher: 'bundles', checkout: 'bundles', receipt: 'bundles' };
+const statusViews: View[] = ['bundles', 'voucher', 'checkout', 'receipt', 'connect', 'staff'];
 function mainPath() {
   return ['/connect', '/handoff', staffEntry].includes(location.pathname) ? '/' : location.pathname;
 }
@@ -185,7 +189,13 @@ function App() {
     setLocation(customerView[tab], bundleId ?? checkoutBundle?.id ?? requestedBundleId, customerTab === tab);
   };
   const visibleArticles = view === 'help' ? withPolicyHelp(articles ?? []).filter(article => helpQuery.trim().toLocaleLowerCase().split(/\s+/).every(word => `${article.question} ${article.answer}`.toLocaleLowerCase().includes(word))) : [];
-  const activeNav: View = ['usage', 'wifi', 'voucher'].includes(view) ? 'home' : view === 'receipt' || view === 'checkout' ? 'bundles' : view;
+  // Every screen belongs to exactly one main destination, so the highlighted
+  // tab always matches what the customer is looking at.
+  const activeNav: View = navArea[view] ?? view;
+  // The status line matters where buying or redeeming happens, and only when
+  // something is not normal (checking, paused, unavailable or a demo).
+  const serviceNormal = !!capabilities && !capabilities.demo && (capabilities.staffSales || capabilities.paymentCheckout || capabilities.networkAccess);
+  const showServiceStatus = capabilities?.demo === true || capabilitiesError || (statusViews.includes(view) && !serviceNormal);
   const showWelcome = !workspace && !purchase && (view === 'home' || view === 'connect');
   const accountOwnsSignIn = workspace === 'customer' && (['recovery', 'access'].includes(customerTab) || (hotspotPortal && customerTab === 'voucher'));
   const showCatalogue = !workspace && !purchase && (view === 'home' || view === 'bundles' || view === 'connect');
@@ -200,7 +210,7 @@ function App() {
     <main id="main-content" className={`pf-main ${view === 'connect' ? 'pf-captive' : view === 'home' ? 'pf-home' : ''}`} ref={content} tabIndex={-1}>
       {!hotspotPortal && offline && <div className="connection-notice" role="status">You appear to be offline. Reconnect before checking an order or recovering access.</div>}
       {notice && <div className="connection-notice" role="status">{notice}</div>}
-      {(view !== 'home' || capabilities?.demo === true) && <div className="demo pf-service-status" role="status" aria-live="polite" data-status={capabilitiesError ? 'unavailable' : !capabilities ? 'checking' : capabilities.demo ? 'demo' : capabilities.staffSales || capabilities.paymentCheckout || capabilities.networkAccess ? 'available' : 'preparation'}><span className="pf-status-dot"/><span><strong>{serviceLabel}</strong><span className="pf-service-detail">{serviceDetail}</span></span>{capabilitiesError && <button onClick={refreshCapabilities}>Retry service status</button>}</div>}
+      {showServiceStatus && <div className="demo pf-service-status" role="status" aria-live="polite" data-status={capabilitiesError ? 'unavailable' : !capabilities ? 'checking' : capabilities.demo ? 'demo' : capabilities.staffSales || capabilities.paymentCheckout || capabilities.networkAccess ? 'available' : 'preparation'}><span className="pf-status-dot"/><span><strong>{serviceLabel}</strong><span className="pf-service-detail">{serviceDetail}</span></span>{capabilitiesError && <button onClick={refreshCapabilities}>Retry service status</button>}</div>}
       <ScreenBoundary screen={`${view}:${workspace ?? ''}:${purchase === 'recovery' ? 'recovery' : purchase ? 'purchase' : ''}:${catalogueAttempt}`} onBrowse={() => navigate('bundles', undefined, { resetCatalogue: true })}>
       {showWelcome && view === 'connect' && <>
         <div className="pf-page-intro"><h1 tabIndex={-1}>Connect to PasoFi</h1></div>
@@ -223,7 +233,7 @@ function App() {
       </>}
       {purchase && <Suspense fallback={<div className="pf-empty" role="status">Loading your account tools…</div>}>{purchase === 'recovery' ? <Recovery close={closeWorkspace} recovered={() => { setPurchase(null); if (recoveryTarget.current === 'customer' && capabilities) openCustomer(); else setPurchase('access'); }}/>: <DemoPurchase key={purchase === 'access' ? 'access' : purchase.id} bundle={purchase === 'access' ? null : purchase} close={closeWorkspace} signedOut={() => { closeWorkspace(); setNotice('Signed out of this device. Use Recover to return to your saved demo account.'); }}/>}</Suspense>}
       {workspace && <Suspense fallback={<div className="pf-workspace-loading" role="status"><span/><span/><span/>Loading your workspace…</div>}>{workspace === 'staff' ? <StaffWorkspace close={closeWorkspace} capabilities={capabilities}/> : workspace === 'handoff' ? <Handoff close={closeWorkspace} recovered={() => { if (capabilities) openCustomer(); else { setWorkspace(null); setPurchase('access'); } }}/> : capabilities ? <CustomerAccess key={customerTab === 'recovery' ? 'account' : 'customer'} close={closeWorkspace} capabilities={capabilities} selectedBundle={checkoutBundle} requestedBundleId={requestedBundleId} initialTab={customerTab} onSessionStatus={setCustomerSession} onNavigate={customerNavigate} onBuyData={() => navigate('bundles')} recovered={() => openRecovery(undefined, 'customer')}/> : <div className="pf-empty" role="status"><h2 tabIndex={-1}>Let’s check your service.</h2><p>{capabilitiesError ? 'Account tools are temporarily unavailable. Please retry the service status.' : 'Checking which account features are available…'}</p>{capabilitiesError && <><button className="pf-button pf-button-secondary" onClick={refreshCapabilities}>Retry account connection</button>{accountOwnsSignIn && <OnesaCustomerSignIn/>}</>}</div>}</Suspense>}
-      {showCatalogue && (view === 'home' ? <Home capabilities={capabilities} browse={button => navigate('bundles', button)} account={openCustomer} help={button => navigate('help', button)}><BundleCatalogue compact bundles={bundles} demo={demoEnabled} capabilities={capabilities} checkingAvailability={checkingAvailability} error={catalogueError} retry={refreshCatalogue} refreshAvailability={refreshAvailability} choose={chooseBundle} redeemVoucher={button => openCustomer('voucher', button)} help={() => navigate('help')}/></Home>
+      {showCatalogue && (view === 'home' ? <Home capabilities={capabilities} browse={button => navigate('bundles', button)} account={openCustomer} help={button => navigate('help', button)}><BundleCatalogue compact seeAll={button => navigate('bundles', button)} bundles={bundles} demo={demoEnabled} capabilities={capabilities} checkingAvailability={checkingAvailability} error={catalogueError} retry={refreshCatalogue} refreshAvailability={refreshAvailability} choose={chooseBundle} redeemVoucher={button => openCustomer('voucher', button)} help={() => navigate('help')}/></Home>
         : <BundleCatalogue compact={view !== 'bundles'} headingLevel={view === 'bundles' ? 1 : 2} bundles={bundles} demo={demoEnabled} capabilities={capabilities} checkingAvailability={checkingAvailability} error={catalogueError} retry={refreshCatalogue} refreshAvailability={refreshAvailability} choose={chooseBundle} redeemVoucher={button => openCustomer('voucher', button)} help={() => navigate('help')} accountEntry={showBundleSignIn && <OnesaCustomerSignIn prominent/>}/>)}
       {!workspace && !purchase && view === 'help' && <section className="pf-help" aria-labelledby="help-heading"><div className="pf-page-intro"><div><span className="pf-eyebrow">A LITTLE GUIDANCE</span><h1 id="help-heading" tabIndex={-1}>Here to help.</h1><p>Quick answers. More time for your day.</p></div><span className="pf-help-illustration"><Icon name="help"/></span></div><div className="pf-help-layout"><div className="pf-help-main"><label className="pf-search" htmlFor="help-query"><Icon name="search"/><span className="pf-sr-only">Find a quick answer</span><input id="help-query" type="search" maxLength={160} placeholder="Search data, vouchers or recovery" value={helpQuery} onChange={event => setHelpQuery(event.target.value)}/></label><p className="pf-private-note">Search reviewed answers. Never enter a voucher, password or recovery key here.</p><div className="pf-faq">{helpError && <div className="pf-empty"><p role="status">Help is temporarily unavailable.</p><p>Policy answers are available below.</p><button className="pf-button pf-button-secondary" onClick={() => setHelpAttempt(value => value + 1)}>Retry help</button></div>}{!helpError && articles === null && <p role="status">Loading more help…</p>}{visibleArticles.length === 0 ? <p className="pf-empty" role="status">No reviewed answer matches that search. Try a shorter phrase or clear the search to see all answers.</p> : visibleArticles.map(a => <details key={a.question}><summary>{a.question}<Icon name="plus"/></summary><p>{a.answer}</p></details>)}</div></div><aside className="pf-support-card"><span className="pf-empty-icon"><Icon name="shield"/></span><h2>Your account, in your hands.</h2><p>Call customer support on <a href="tel:+263715092221">+263 715 092 221</a>. Keep recovery details and voucher codes private.</p><p>Keep your recovery key somewhere safe. You can use it to restore access on another device.</p><button className="pf-button pf-button-secondary" onClick={event => openRecovery(event.currentTarget)}>Recover my account <Icon name="arrow"/></button><p className="pf-private-note">For a cash-sale query, ask the agent at your PasoFi location to review your receipt.</p><PolicyNotice/></aside></div></section>}
       {!workspace && !purchase && (view === 'terms' || view === 'privacy') && <Policies kind={view}/>}

@@ -92,7 +92,7 @@ for (const width of [320, 390]) {
         await navigation(page).getByRole('button', { name: entry, exact: true }).click();
         await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
         if (entry === 'Account') await expect(page.getByRole('button', { name: 'Recover my account', exact: true })).toBeVisible();
-        else await expect(page.getByText('No account is active in this browser.', { exact: false })).toBeVisible();
+        else await expect(page.getByRole('button', { name: 'Recover an existing account', exact: true })).toBeVisible();
         await expect(page.getByText('You can buy or redeem as a guest.', { exact: false })).toHaveCount(0);
         await navigation(page).getByRole('button', { name: 'Bundles', exact: true }).click();
         await expectEmptyBundles(page);
@@ -148,7 +148,8 @@ test('refresh availability and returning to Bundles fetch both published offers 
   state.products = [flex]; state.capabilities = { ...cashCapabilities };
   await page.getByRole('button', { name: 'Refresh availability', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Buy flex from an agent', exact: true })).toBeEnabled();
-  await expect(page.getByText('PASOFI CUSTOMER SERVICE', { exact: true })).toBeVisible();
+  // Normal service needs no banner; only a problem or a demo is announced.
+  await expect(page.locator('.pf-service-status')).toHaveCount(0);
   await expect(catalogueHeading(page)).toBeFocused();
   expect(state.reads).toEqual({ capabilities: initialReads.capabilities + 1, bundles: initialReads.bundles + 1 });
   await expect(page.getByText(emptyMessage, { exact: true })).toHaveCount(0);
@@ -190,12 +191,13 @@ test('authenticated empty usage explains unavailable purchases without directing
   await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible();
   await expect(page.getByTestId('usage-remaining')).toHaveText('0.000 GB');
   await expect(page.getByTestId('usage-bundle-time')).toHaveText('No active bundle');
-  await expect(page.getByText('SERVICE IN PREPARATION', { exact: true })).toBeVisible();
+  // The account area stays calm; the status line belongs to the buying screens.
+  await expect(page.getByText('SERVICE IN PREPARATION', { exact: true })).toHaveCount(0);
   await expect(page.getByText('No bundles are shown yet. Purchases and voucher redemption are not available yet. Browse bundles to check current availability.', { exact: true })).toBeVisible();
   await expect(page.getByText('Pay an authorized agent in cash', { exact: false })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Receive an agent receipt', exact: true })).toHaveCount(0);
   await expect(page.locator('[data-entitlement-id]')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Browse bundles', exact: true }).click();
+  await page.getByRole('button', { name: 'Buy more data', exact: true }).click();
   await expectEmptyBundles(page);
   expect(state.mutations).toEqual([]); expect(state.unexpected).toEqual([]);
 });
@@ -247,7 +249,7 @@ test('late older availability responses cannot replace a newer published catalog
   try {
     await page.getByRole('button', { name: 'Refresh availability', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Buy flex from an agent', exact: true })).toBeEnabled();
-    await expect(page.getByText('PASOFI CUSTOMER SERVICE', { exact: true })).toBeVisible();
+    await expect(page.locator('.pf-service-status')).toHaveCount(0);
     const released = state.held.splice(0);
     await Promise.all(released.map(async ({ route, body }) => {
       await json(route, body);
@@ -257,7 +259,7 @@ test('late older availability responses cannot replace a newer published catalog
     // Two rendering opportunities let all delivered response microtasks commit.
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expect(page.getByRole('button', { name: 'Buy flex from an agent', exact: true })).toBeEnabled();
-    await expect(page.getByText('PASOFI CUSTOMER SERVICE', { exact: true })).toBeVisible();
+    await expect(page.locator('.pf-service-status')).toHaveCount(0);
     await expect(page.getByText(emptyMessage, { exact: true })).toHaveCount(0);
     await expect(catalogueHeading(page)).toBeFocused();
     expect(state.mutations).toEqual([]); expect(state.unexpected).toEqual([]);
