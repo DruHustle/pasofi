@@ -105,3 +105,15 @@ body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-f
   .pf-app .pf-catalogue:not(.pf-catalogue--preview) .pf-bundle-card{grid-template-columns:minmax(0,1fr) auto 62px}
   .pf-app .pf-catalogue:not(.pf-catalogue--preview) .pf-per-gb{display:none}
 }
+
+/* Bundle filters: one row on phones. Short visible labels keep their full
+   accessible names; a sixth filter scrolls sideways instead of wrapping. */
+.pf-app .pf-filter-short{display:none}
+@media (max-width:599px){
+  .pf-app .pf-filter-row{flex-wrap:nowrap;gap:4px;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:none;margin-right:-2px;padding-right:2px}
+  .pf-app .pf-filter-row::-webkit-scrollbar{display:none}
+  .pf-app .pf-filter-row button{flex:0 0 auto;min-width:44px;padding:8px 10px;white-space:nowrap}
+  .pf-app .pf-filter-full{display:none}
+  .pf-app .pf-filter-short{display:inline}
+}
+@media (max-width:359px){.pf-app .pf-filter-row{gap:3px}.pf-app .pf-filter-row button{padding:8px 6px;font-size:12px}}

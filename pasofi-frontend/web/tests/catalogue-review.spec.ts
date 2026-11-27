@@ -148,6 +148,7 @@ for (const width of [320, 390, 1280]) {
       expect(box!.width).toBeGreaterThanOrEqual(44); expect(box!.height).toBeGreaterThanOrEqual(44);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    expect(await filters(page).evaluate(row => row.scrollWidth <= row.clientWidth && new Set([...row.children].map(chip => Math.round(chip.getBoundingClientRect().top))).size === 1), 'bundle filters stay on one line').toBe(true);
     for (const selector of ['.pf-validity', '.pf-bundle-price > span', '.pf-bundle-terms p', '.pf-catalogue-caption']) {
       expect(await page.locator(selector).first().evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(12);
     }

@@ -6,12 +6,12 @@ const hotspotBuild = import.meta.env.VITE_PASOFI_HOTSPOT_PORTAL === '1';
 const narrowViewport = '(max-width: 599px)';
 
 const filters = [
-  { id: 'all', label: 'All bundles', matches: (_: Product) => true },
-  { id: 'daily', label: 'Daily', matches: (b: Product) => b.validity_seconds <= 86400 },
-  { id: 'short', label: 'Short stays', matches: (b: Product) => b.validity_seconds > 86400 && b.validity_seconds <= 3 * 86400 },
-  { id: 'weekly', label: 'Weekly', matches: (b: Product) => b.validity_seconds > 3 * 86400 && b.validity_seconds <= 7 * 86400 },
-  { id: 'longer', label: 'Longer', matches: (b: Product) => b.validity_seconds > 7 * 86400 && b.validity_seconds <= 27 * 86400 },
-  { id: 'monthly', label: 'Monthly', matches: (b: Product) => b.validity_seconds > 27 * 86400 },
+  { id: 'all', label: 'All bundles', short: 'All', matches: (_: Product) => true },
+  { id: 'daily', label: 'Daily', short: 'Daily', matches: (b: Product) => b.validity_seconds <= 86400 },
+  { id: 'short', label: 'Short stays', short: 'Short', matches: (b: Product) => b.validity_seconds > 86400 && b.validity_seconds <= 3 * 86400 },
+  { id: 'weekly', label: 'Weekly', short: 'Weekly', matches: (b: Product) => b.validity_seconds > 3 * 86400 && b.validity_seconds <= 7 * 86400 },
+  { id: 'longer', label: 'Longer', short: 'Longer', matches: (b: Product) => b.validity_seconds > 7 * 86400 && b.validity_seconds <= 27 * 86400 },
+  { id: 'monthly', label: 'Monthly', short: 'Monthly', matches: (b: Product) => b.validity_seconds > 27 * 86400 },
 ];
 const sorts = [
   { id: 'published', label: 'Default order' },
@@ -115,7 +115,7 @@ export default function BundleCatalogue({ bundles, demo, capabilities, checkingA
     : canRedeemVoucher ? 'New sales are paused' : 'Purchases paused';
   const Heading = headingLevel === 1 ? 'h1' : 'h2';
   const controls = <>
-    <div className="pf-filter-row" role="group" aria-label="Bundle duration">{available.map(f => <button key={f.id} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</button>)}</div>
+    <div className="pf-filter-row" role="group" aria-label="Bundle duration">{available.map(f => <button key={f.id} aria-pressed={filter === f.id} aria-label={f.short === f.label ? undefined : f.label} onClick={() => setFilter(f.id)}>{f.short === f.label ? f.label : <><span className="pf-filter-full">{f.label}</span><span className="pf-filter-short" aria-hidden="true">{f.short}</span></>}</button>)}</div>
     <div className="pf-catalogue-toolbar">
       <div className="pf-catalogue-caption"><span>{demo ? 'Candidate bundles · demo only' : 'Published bundles'}</span>{bundles !== null && !error && <span className="pf-result-count" role="status" aria-atomic="true">Showing {visible.length} of {bundles.length} {bundles.length === 1 ? 'bundle' : 'bundles'}</span>}</div>
       <label className="pf-sort" htmlFor="bundle-sort"><span>Sort bundles</span><select id="bundle-sort" value={sort} disabled={!bundles?.length || error} onChange={event => setSort(event.target.value as Sort)}>{sorts.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
