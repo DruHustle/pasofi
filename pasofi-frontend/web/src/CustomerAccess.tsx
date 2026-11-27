@@ -580,6 +580,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
           <div><h3>PasoFi</h3><p>{guestSession ? 'Guest session' : 'Signed in'}</p></div>
           {!guestSession && <button className="secondary" disabled={busy} onClick={logout}>Sign out</button>}
         </section>
+        {!guestSession && <RecoverySetup />}
         {guestSession && <><RecoverySetup />{signout
           ? <div className="notice"><p>Save your recovery details before signing out of a guest session.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of guest session</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></div>
           : <button className="secondary" disabled={busy} onClick={() => setSignout(true)}>Sign out</button>}</>}

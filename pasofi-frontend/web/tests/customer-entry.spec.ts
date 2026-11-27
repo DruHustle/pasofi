@@ -57,25 +57,26 @@ test('one Sign in entry goes straight to the provider and back without Onesa Acc
   expect(starts).toBe(1);
 });
 
-test('direct signup starts authentication from Account and preserves that screen', async ({ page }) => {
-  let started = false;
+test('one Sign in stays the only customer entry even when the service offers direct sign-up', async ({ page }) => {
+  const starts: unknown[] = [];
   await page.route('**/api/**', route => {
     const url = new URL(route.request().url());
     if (url.pathname === '/api/onesa/availability') return route.fulfill({ json: { origin: url.origin, signup: true } });
     if (url.pathname === '/api/onesa/start') {
-      expect(route.request().postDataJSON()).toEqual({ returnTo: '/#account', signup: true });
-      started = true;
-      return route.fulfill({ json: { authorizationUrl: 'https://signup.pasofi.example.invalid/authorize?screen_hint=signup' } });
+      starts.push(route.request().postDataJSON());
+      return route.fulfill({ json: { authorizationUrl: 'https://auth.example.invalid/authorize' } });
     }
     if (url.pathname === '/api/session') return route.fulfill({ status: 401, json: { error: 'not_authenticated' } });
     if (url.pathname === '/api/capabilities') return route.fulfill({ json: paused });
     return route.fulfill({ json: url.pathname === '/api/help' ? { articles: [] } : { products: [], candidate: false } });
   });
-  await page.route('https://signup.pasofi.example.invalid/**', route => route.fulfill({ body: 'Signup fixture' }));
+  await page.route('https://auth.example.invalid/**', route => route.fulfill({ body: 'Sign in or sign up' }));
   await page.goto('/#account');
-  await page.getByRole('button', { name: 'Sign up', exact: true }).click();
-  await expect(page).toHaveURL('https://signup.pasofi.example.invalid/authorize?screen_hint=signup');
-  expect(started).toBe(true);
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign up', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL('https://auth.example.invalid/authorize');
+  expect(starts).toEqual([{ returnTo: '/#account' }]);
 });
 
 test('normal sign-in and keeping guest purchases send distinct requests', async ({ page }) => {

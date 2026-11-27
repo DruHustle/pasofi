@@ -164,7 +164,7 @@ test('the Account icon leaves a saved checkout and cash reference pending until 
     sessionStorage.setItem(prefix + ':purchase-details', JSON.stringify({ payload: JSON.stringify({ bundleId: 'flex' }) }));
     sessionStorage.setItem(prefix + ':receipt-pairing', JSON.stringify({ payload: JSON.stringify({ bundleId: 'flex', siteId: 'fixture' }) }));
   }, id);
-  await page.route('**/api/session', route => json(route, { customerId: id, guest: false }));
+  await page.route(url => url.pathname === '/api/session', route => json(route, { customerId: id, guest: false }));
   await page.goto('/');
   await page.getByRole('banner').getByRole('button', { name: 'Your account', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Account & devices', exact: true }).click();
