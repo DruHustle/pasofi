@@ -17,6 +17,7 @@ const rules = [
   [/^\/api\/onesa\/native-session$/, ['POST']],
   [/^\/api\/onesa\/(start|complete)$/, ['POST']],
   [/^\/api\/staff\/onesa\/availability$/, ['GET']],
+  [/^\/api\/staff\/administration$/, ['GET', 'POST']],
   [/^\/api\/staff\/onesa\/(start|complete)$/, ['POST']],
   [localStaffCredentials, ['POST']],
   [/^\/api\/staff\/password-reset\/availability$/, ['GET']],

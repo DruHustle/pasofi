@@ -26,7 +26,7 @@ const fail = (status: number, code: string): never => { throw new StaffError(sta
 const state = (row: Record<string, any>) => ({ status: row.status, role: row.role, siteIds: row.site_ids });
 export const publicStaff = (row: Record<string, any>) => ({
   staffId: row.id, email: row.email, displayName: row.display_name, ...state(row),
-  version: row.version, mfaEnrolled: !!row.mfa_enrolled_at, createdAt: new Date(row.created_at).toISOString()
+  version: row.version, mfaEnrolled: !!row.mfa_enrolled_at, ...(row.managed_sign_in ? { managedSignIn: true } : {}), createdAt: new Date(row.created_at).toISOString()
 });
 
 export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Pool | null; demo: boolean; origin?: string; validOrigin: boolean; originAllowed: (value: string | undefined) => boolean; resetDelivery?: StaffResetDelivery; resetJobs: Set<Promise<void>> }) {
@@ -318,9 +318,35 @@ export function registerStaffRoutes(app: FastifyInstance, options: { pool: pg.Po
     return reply.code(204).send();
   }));
 
+  app.get('/v1/staff/administration', {
+    preHandler: publicGuard, config: { rateLimit: { max: 40, timeWindow: '1 minute' } },
+  }, async (request, reply) => execute(reply, async () => {
+    await administrator(request);
+    if (!onesa) return fail(503, 'staff_administration_unavailable');
+    return onesa.administerStaff(pool!, request.cookies[sessionCookie]);
+  }));
+
+  app.post('/v1/staff/administration', {
+    preHandler: publicGuard, config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
+    schema: { body: { oneOf: [
+      { type: 'object', additionalProperties: false, required: ['action', 'email'],
+        properties: { action: { const: 'invite' }, email } },
+      { type: 'object', additionalProperties: false, required: ['action', 'kind', 'id', 'revision', 'status'],
+        properties: { action: { const: 'review' }, kind: { enum: ['staff', 'administrator'] }, id: uuid,
+          revision: expectedVersion, status: { enum: ['active', 'rejected', 'revoked'] } } },
+    ] } },
+  }, async (request, reply) => execute(reply, () => transaction(async client => {
+    await administrator(request, client, true);
+    if (!onesa) return fail(503, 'staff_administration_unavailable');
+    return onesa.administerStaff(client, request.cookies[sessionCookie], request.body);
+  })));
+
   app.get<{ Querystring: { after?: string } }>('/v1/staff/users', { preHandler: publicGuard, schema: { querystring: paging } }, async (request, reply) => execute(reply, async () => {
     await administrator(request);
-    const result = await pool!.query(`SELECT ${PUBLIC_COLUMNS.join(',')} FROM staff_users WHERE ($1::uuid IS NULL OR id>$1::uuid) ORDER BY id LIMIT 51`, [request.query.after || null]);
+    const result = await pool!.query(`SELECT ${PUBLIC_COLUMNS.map(column => `u.${column}`).join(',')},
+      EXISTS(SELECT 1 FROM staff_onesa_bindings b WHERE b.staff_id=u.id AND b.issuer=$2) AS managed_sign_in
+      FROM staff_users u WHERE ($1::uuid IS NULL OR u.id>$1::uuid) ORDER BY u.id LIMIT 51`,
+    [request.query.after || null, onesa?.recordIssuer ?? null]);
     const rows = result.rows.slice(0, 50);
     return { users: rows.map(publicStaff), nextCursor: result.rows.length > 50 ? rows.at(-1)!.id : null };
   }));

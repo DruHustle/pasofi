@@ -131,7 +131,7 @@ test('staff sign-in clears an abandoned customer flow and signup has its own adm
     return route.fulfill({ status: url.pathname === '/api/staff/session' ? 401 : 200, json: body });
   });
   await page.goto('https://pasofi-entry.example.invalid/#staff');
-  await expect(page.getByRole('link', {name:'Request administrator access'})).toHaveAttribute('href','https://account.onesa.eu/register?audience=admin&product=pasofi&platform=web');
+  await expect(page.getByRole('link', {name:'Request administrator access'})).toHaveAttribute('href','https://account.onesa.eu/access?product=pasofi&role=administrator');
   await page.getByRole('button', { name: label, exact: true }).click();
   await expect.poll(() => starts).toBe(1);
   await expect(page.getByRole('button', { name: label, exact: true })).toBeEnabled();
@@ -148,7 +148,7 @@ test('customer entry and staff access remain fail-closed when Identity is unavai
   for (const hash of ['#account', '#staff?apply=1']) {
     await page.goto('/' + hash);
     const scope = hash.startsWith('#staff') ? page.getByRole('region', { name: 'Staff workspace' }) : page;
-    await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Sign up'})).toHaveAttribute('href','https://account.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
+    await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Sign up'})).toHaveAttribute('href',hash.startsWith('#staff') ? 'https://account.onesa.eu/access?product=pasofi&role=administrator' : 'https://account.onesa.eu/register?audience=user&product=pasofi&platform=web');
     if (hash.startsWith('#staff')) {
       await expect(scope.getByText('Staff sign-in is temporarily unavailable.')).toBeVisible();
       await expect(scope.getByRole('link',{name:'Sign in to Company Portal'})).toHaveCount(0);
@@ -179,7 +179,7 @@ test('a gateway outage keeps customer and staff Identity access fail-closed', as
       await expect(scope.getByRole('button',{name:'Retry sign-in',exact:true})).toBeVisible();
       await expect(scope.getByRole('link',{name:'Sign in to Company Portal',exact:true})).toHaveCount(0);
     }
-    await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Sign up',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=' + (hash.startsWith('#staff') ? 'admin' : 'user') + '&product=pasofi&platform=web');
+    await expect(scope.getByRole('link',{name:hash.startsWith('#staff') ? 'Request administrator access' : 'Sign up',exact:true})).toHaveAttribute('href',hash.startsWith('#staff') ? 'https://account.onesa.eu/access?product=pasofi&role=administrator' : 'https://account.onesa.eu/register?audience=user&product=pasofi&platform=web');
     await expect(scope.locator('input[type="password"]')).toHaveCount(0);
   }
   expect(writes).toBe(0);

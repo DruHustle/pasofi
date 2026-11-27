@@ -36,6 +36,9 @@ export async function applyRuntimeGrants(client, { service, owner, runtime }) {
       if (!privileges.length || privileges.some(value => !['USAGE', 'SELECT'].includes(value))) throw Error('Invalid sequence grant policy.');
       await client.query(`GRANT ${privileges.join(',')} ON SEQUENCE public.${identifier(sequence)} TO ${identifier(runtime)}`);
     }
+    if (service === 'identity' && (await client.query("SELECT to_regprocedure('public.create_managed_staff_applicant(text,uuid,text)') IS NOT NULL AS present")).rows[0].present) {
+      await client.query(`GRANT EXECUTE ON FUNCTION public.create_managed_staff_applicant(text,uuid,text) TO ${identifier(runtime)}`);
+    }
     await client.query('COMMIT');
   } catch (error) { await client.query('ROLLBACK'); throw error; }
 }
