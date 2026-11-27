@@ -389,14 +389,16 @@ test('a legacy committed sale retries its exact saved body without inventing cas
   await openStaff(page); await expect(page.getByText('Do not collect cash again.', { exact: false })).toBeVisible(); await page.getByRole('checkbox', { name: /without collecting payment again/ }).check(); await page.getByRole('button', { name: 'Retry saved sale safely' }).click(); await expect(page.getByText('stock was not debited twice', { exact: false })).toBeVisible(); await expect(page.getByText('Cash confirmation was not recorded for this earlier sale.', { exact: true })).toBeVisible();
 });
 
-test('staff approvals remain available when unrelated commerce reads fail', async ({ page }) => {
+test('managed staff can be approved when unrelated commerce reads fail', async ({ page }) => {
   let decided = false;
   await mock(page, async (route, path) => {
     if (path === '/api/capabilities') { await json(route, { ...capabilities, staffSales: false, vouchers: false, receiptPairing: false, paymentCheckout: false }); return true; }
     if (path === '/api/staff/session') { await json(route, staff('admin')); return true; }
-    if (path === '/api/staff/users') { await json(route, { users: [staff('admin'), staff('agent', 'pending', agentId)], nextCursor: null }); return true; }
+    if (path === '/api/staff/users') { await json(route, { users: [staff('admin'), { ...staff('agent', 'pending', agentId), mfaEnrolled: false, managedSignIn: true, siteIds: [] }], nextCursor: null }); return true; }
     if (path === '/api/admin/bundles' || path === '/api/staff/inventory') { await json(route, { error: 'unavailable' }, 503); return true; }
-    if (path === `/api/staff/users/${agentId}/decision`) { decided = true; await json(route, { ...staff('agent', 'approved', agentId), version: 2 }); return true; }
+    if (path === `/api/staff/users/${agentId}/decision`) {
+      expect(route.request().postDataJSON()).toMatchObject({ status: 'approved', role: 'agent', siteIds: [siteId] });
+      decided = true; await json(route, { ...staff('agent', 'approved', agentId), mfaEnrolled: false, managedSignIn: true, version: 2 }); return true; }
     return false;
   });
   await openStaff(page); await page.getByRole('button', { name: 'Review access' }).click();
