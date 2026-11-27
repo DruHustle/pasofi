@@ -50,7 +50,7 @@ test('native Onesa sign-in fallback uses customer destinations, not admin UI', (
   assert.match(signInComponent, /https:\/\/pasofi\.mobile\.onesa\.eu\/#account/);
   assert.match(component, /<OnesaSignIn /);
   assert.match(component, /<RegistrationLink tab=\{activeTab\}/);
-  assert.match(signInComponent, /<strong>Sign in<[/]strong> or <strong>Sign up<[/]strong>/);
+  assert.match(signInComponent, /choose <strong>Sign in<\/strong>/);
 });
 
 test('both native registration choices reach Identity with the originating PasoFi platform',()=>{

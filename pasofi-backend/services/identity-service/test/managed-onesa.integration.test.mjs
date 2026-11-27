@@ -4,6 +4,7 @@ import test from 'node:test';
 import { SignJWT, exportJWK, jwtVerify } from 'jose';
 import pg from 'pg';
 import { buildApp } from '../dist/app.js';
+import { nativeCustomerClient } from '../dist/onesa-staff.js';
 
 test('managed PasoFi preserves customer and operator bindings, audience, MFA and outage expiry', {
   skip: !process.env.PAMOFI_TEST_DATABASE_URL,
@@ -32,7 +33,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   await db.query('INSERT INTO staff_onesa_bindings(issuer,subject,staff_id) VALUES($1,$2,$3)',[legacy,stable,operator]);
   let app = buildApp(), outage = false, role = 'customer', extraRoles = [], globalRoles = [], products = ['pasofi'], aud = audience, factor = now(), query, lifetime = 300;
   let accessSubject = providerSubject, accountId=stable;
-  let offerRefresh=false, refreshCalls=0, rejectRefresh=false;
+  let offerRefresh=false, refreshCalls=0, rejectRefresh=false, rotateRefresh=true;
   let personEmail, administrationWrites = 0;
   const refreshTokens=new Map();
   t.after(()=>app.close());
@@ -84,7 +85,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
       const used=form.get('refresh_token'), saved=refreshTokens.get(used);
       if(!saved||rejectRefresh)return Response.json({error:'invalid_grant'},{status:400});
       refreshTokens.delete(used);
-      const rotated=randomUUID();refreshTokens.set(rotated,saved);
+      const rotated=rotateRefresh ? randomUUID() : used;refreshTokens.set(rotated,saved);
       return Response.json({token_type:'Bearer',access_token:await sign(saved,audience,providerSubject,300),refresh_token:rotated});
     }
     assert.equal(createHash('sha256').update(form.get('code_verifier')).digest('base64url'),query.get('code_challenge'));
@@ -97,14 +98,17 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   });
   const request=(method,path,payload,cookie)=>app.inject({method,url:'/v1/'+path,headers:{origin,...(cookie?{cookie}:{})},...(payload?{payload}:{})});
   const cookie=(response,part)=>{ const c=response.cookies.find(c=>c.name.endsWith(part)); return c.name+'='+c.value; };
-  async function login(staff=false) {
+  async function login(staff=false, signup=false) {
     const prefix=staff?'staff/onesa/':'onesa/';
-    const start=await request('POST',prefix+'start',staff?{}:{returnTo:'/#history'});
+    const start=await request('POST',prefix+'start',staff ? {} : {returnTo:'/#history', ...(signup ? {signup:true} : {})});
     assert.equal(start.statusCode,200,start.body);
     query=new URL(start.json().authorizationUrl).searchParams;
     assert.equal(query.get('audience'),audience); assert.equal(query.get('code_challenge_method'),'S256');
+    assert.equal(query.get('screen_hint'),signup ? 'signup' : null);
+    assert.equal(query.get('acr_values'), staff
+      ? 'http://schemas.openid.net/pape/policies/2007/06/multi-factor'
+      : 'urn:onesa:authentication:pasofi-customer');
     if(staff) {
-      assert.equal(query.get('acr_values'),'http://schemas.openid.net/pape/policies/2007/06/multi-factor');
       assert.equal(query.get('max_age'),'300','the password authentication freshness limit remains five minutes');
       assert.equal(start.json().expiresIn,900);
       assert.equal(start.cookies.find(c=>c.name.endsWith('onesa_flow')).maxAge,900);
@@ -115,6 +119,24 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   }
   const nativeToken = (azp) => new SignJWT({azp,[ns+'user_id']:accountId,[ns+'products']:products,[ns+'roles']:[role,...extraRoles],onesa_roles:globalRoles,[ns+'mfa_time']:factor})
     .setIssuer(issuer).setAudience(audience).setSubject(providerSubject).setProtectedHeader({alg:'RS256',kid:'one'}).setIssuedAt(now()).setExpirationTime(now()+300).sign(privateKey);
+  assert.equal((await request('POST','onesa/start',{signup:true})).statusCode,403);
+  process.env.PASOFI_ONESA_DIRECT_SIGNUP = 'true';
+  assert.equal((await request('GET','onesa/availability')).json().signup,true);
+  assert.equal((await request('POST','onesa/start',{signup:true,claimGuest:true})).statusCode,403);
+  const signedUp = await login(false,true);
+  assert.equal(signedUp.statusCode,200,signedUp.body);
+  assert.equal(signedUp.json().returnTo,'/#history');
+  assert.equal(signedUp.json().customerId,customer);
+  delete process.env.PASOFI_ONESA_DIRECT_SIGNUP;
+
+  process.env.PASOFI_ONESA_NATIVE_CLIENT_ID = 'pasofi_shared_native';
+  assert.equal(nativeCustomerClient('ios',clientId),null);
+  process.env.PASOFI_ONESA_VERIFIED_NATIVE_CALLBACK = 'true';
+  assert.equal(nativeCustomerClient('ios',clientId),'pasofi_shared_native');
+  assert.equal(nativeCustomerClient('android',clientId),'pasofi_shared_native');
+  assert.equal(nativeCustomerClient('android','pasofi_shared_native'),null);
+  delete process.env.PASOFI_ONESA_NATIVE_CLIENT_ID;
+  delete process.env.PASOFI_ONESA_VERIFIED_NATIVE_CALLBACK;
   for(const platform of ['ios','android']) {
     const token=await nativeToken(platform==='ios'?'pasofi_synthetic_ios':'pasofi_synthetic_android');
     const native=await request('POST','onesa/native-session',{platform,accessToken:token});
@@ -298,4 +320,23 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   await db.query("UPDATE customer_onesa_sessions SET expires_at=now()-interval '1 second' WHERE customer_id=$1",[customer]);
   assert.equal((await request('GET','session',undefined,browser)).statusCode,401);
   assert.equal((await db.query('SELECT customer_id FROM customer_onesa_identities WHERE issuer=$1 AND subject=$2',[legacy,stable])).rows[0].customer_id,customer);
+
+  await app.close();
+  process.env.PASOFI_ONESA_SESSION_DAYS = '30';
+  app = buildApp();
+  outage = false;
+  assert.equal((await login()).statusCode,503,'a multi-day session requires a refresh credential');
+  offerRefresh = true;
+  const multiDay = await login();
+  assert.equal(multiDay.statusCode,200,multiDay.body);
+  const longCookie = cookie(multiDay,'demo_session');
+  const expiry = await db.query(`UPDATE onesa_session_renewals SET access_expires_at=now()-interval '1 second'
+    WHERE id=(SELECT renewal_id FROM customer_onesa_sessions WHERE token_hash=$1)
+    RETURNING EXTRACT(epoch FROM (expires_at-now())) AS seconds`,[hash(longCookie)]);
+  assert.ok(Number(expiry.rows[0].seconds) > 29 * 86400);
+  assert.ok(Number(expiry.rows[0].seconds) <= 30 * 86400);
+  rotateRefresh = false;
+  assert.equal((await request('GET','session',undefined,longCookie)).json().error,'onesa_sign_in_required');
+  assert.equal((await request('POST','session',undefined,longCookie)).json().error,'onesa_sign_in_required');
+  delete process.env.PASOFI_ONESA_SESSION_DAYS;
 });

@@ -52,7 +52,7 @@ export function RecoverySetup() {
       try { await loadStatus(); } catch { /* Keep replacement disabled until the current version is known. */ }
     } finally { if (mounted.current) setBusy(false); }
   }
-  if (status?.authentication === 'onesa') return <div className="recovery-box"><h3>Your account</h3><p>Sign in to reopen the same PasoFi account. A one-time handoff brings it into another device while keeping each device’s session separate.</p><AccountClosureLink /></div>;
+  if (status?.authentication === 'onesa') return <div className="recovery-box"><h3>Your PasoFi account</h3><p>Choose Sign in to reopen this account. You can also use a one-time code to open it on another device.</p><AccountClosureLink /></div>;
   return <div className="recovery-box" aria-busy={busy}>
     <h3>Keep your access recoverable</h3><p>Save an account reference and recovery key somewhere private. You need both to restore this account on another device. Never send the key to support or paste it into chat.</p>
     {status?.configured && !secret && <p>Account reference: <strong>{status.accountReference}</strong></p>}

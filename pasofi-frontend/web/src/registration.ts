@@ -7,12 +7,17 @@ export const registrationUrl = (audience:'user'|'admin') =>
   'https://account.onesa.eu/register?audience='+audience+'&product=pasofi&platform=web'+
   (hotspotPortal && audience === 'user' ? '&entry=pasofi-hotspot' : '');
 
-type Availability = { origin: string | null; hotspotOrigin?: string };
+type Availability = { origin: string | null; hotspotOrigin?: string; signup?: boolean };
 
-export async function signInAvailable(staff = false, signal?: AbortSignal) {
+export async function accountEntryAvailability(staff = false, signal?: AbortSignal) {
   const value = await api<Availability>(staff ? '/api/staff/onesa/availability' : '/api/onesa/availability', {signal});
   const expectedOrigin = hotspotPortal && !staff ? value.hotspotOrigin : value.origin;
-  return expectedOrigin === location.origin;
+  const signIn = expectedOrigin === location.origin;
+  return { signIn, signup: signIn && !staff && value.signup === true };
+}
+
+export async function signInAvailable(staff = false, signal?: AbortSignal) {
+  return (await accountEntryAvailability(staff, signal)).signIn;
 }
 
 export function currentCustomerScreen() {
@@ -30,11 +35,13 @@ export function rememberRegistration(staff=false) {
   const path=staff?staffEntry:currentCustomerScreen();
   try { sessionStorage.setItem(storageKey,JSON.stringify({path:destination(path),expires:Date.now()+30*60*1000})); } catch {}
 }
-export async function startProductSignIn(staff:boolean,returnTo:string,reauthenticate=false,claimGuest=false) {
+export async function startProductSignIn(staff:boolean,returnTo:string,reauthenticate=false,claimGuest=false, signup=false) {
   if(staff)sessionStorage.removeItem('pasofi-onesa-customer');
   const flow=await api<{authorizationUrl:string;expiresIn?:number}>(staff?'/api/staff/onesa/start':'/api/onesa/start',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(staff?(reauthenticate?{reauthenticate:true}:{}):claimGuest?{returnTo,claimGuest:true}:{returnTo}),
+    body:JSON.stringify(staff ? (reauthenticate ? {reauthenticate:true} : {}) : {
+      returnTo, ...(claimGuest ? {claimGuest:true} : {}), ...(signup ? {signup:true} : {}),
+    }),
   });
   const target=new URL(flow.authorizationUrl);
   if(target.protocol!=='https:' || target.username || target.password)throw Error('Invalid sign-in destination');

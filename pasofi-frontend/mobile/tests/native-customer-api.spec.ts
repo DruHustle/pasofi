@@ -212,12 +212,17 @@ for (const platform of ['ios', 'android'] as const) {
       expect(authorization.get('code_challenge_method')).toBe('S256');expect(authorization.get('redirect_uri')).toBe(callback);
       expect(authorization.get('prompt')).toBeNull();
       expect(authorization.get('scope')).toBe('openid offline_access');
+      expect(authorization.get('acr_values')).toBe('urn:onesa:authentication:pasofi-customer');
       return callback+'?code=sample&state='+authorization.get('state');
     }});
     await page.goto(configuredBaseURL);
     await page.getByRole('button',{name:'My PasoFi',exact:true}).click();
     await page.getByRole('button',{name:'History',exact:true}).first().click();
-    await page.getByRole('link',{name:platform==='ios'?'Register an Onesa account':'Request administrator access',exact:true}).click();
+    if (platform === 'ios') {
+      await page.getByRole('link', { name: 'Create account', exact: true }).click();
+    } else {
+      await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    }
     // The Android system-browser deep link is asynchronous. Wait for the
     // server-side session exchange and protected history read, not a fixed delay.
     await expect.poll(() => established && readHistory, { timeout: 15000 }).toBe(true);
@@ -245,7 +250,7 @@ for (const platform of ['ios', 'android'] as const) for (const returnMethod of [
   }, { platform });
   await page.goto(configuredBaseURL);
   await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
-  await expect(page.getByRole('link', {name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform='+platform);
+  await expect(page.getByRole('link', {name:'Create account',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform='+platform);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByRole('button', { name: 'Open sign-in in browser', exact: true }).click();
   await expect(page.getByText('Browser opened.', { exact: false })).toBeVisible();
@@ -270,7 +275,7 @@ test('native Onesa entry refuses an unqualified handoff deployment', async ({ pa
     : request.path === '/api/onesa/availability' ? reply({ origin: apiOrigin }) : reply({ error: 'not_authenticated' }, 401));
   await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page.getByText('Sign-in is currently unavailable in the app', { exact: false })).toBeVisible();
+  await expect(page.getByText('Sign in on the web or use your recovery details in the app.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open sign-in in browser', exact: true })).toHaveCount(0);
   expect(calls.filter(call => call.method === 'openSignIn')).toHaveLength(0);
 });
@@ -303,7 +308,7 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
     await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
     await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible();
     await expect(page.getByRole('link',{name:'Continue to PasoFi account on the web',exact:true})).toHaveAttribute('href','https://pasofi.mobile.onesa.eu/#account');
-    await expect(page.getByRole('link',{name:'Register an Onesa account',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform=ios');
+    await expect(page.getByRole('link',{name:'Create account',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform=ios');
     await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
     expect(requests.length).toBeGreaterThan(0); expect(new Set(requests.map(request => request.path))).toEqual(new Set(['/api/capabilities']));
     expect(await page.evaluate(() => (window as any).browserApiFetches)).toBe(0);

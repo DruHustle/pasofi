@@ -6,7 +6,7 @@ import type { CustomerTab } from './CustomerAccess';
 export const callback = 'com.onesa.pasofi.identity://login/callback';
 export const verifiedCallback = 'https://pasofi.mobile.onesa.eu/native/onesa-callback.html';
 export const flowKey = 'pasofi-native-oidc-v1';
-export type NativeRegistration = { issuer: string; audience: string; ios: string | null; android: string | null; verifiedCallback?: string; renewal?: boolean };
+export type NativeRegistration = { issuer: string; audience: string; ios: string | null; android: string | null; verifiedCallback?: string; renewal?: boolean; signup?: boolean };
 export type Platform = 'ios' | 'android';
 type Flow = {
   state: string;
@@ -71,9 +71,11 @@ export async function startNativeSignIn(
   platform: Platform,
   destination: CustomerTab,
   storage: Storage,
-  options: { transport?: oidc.CustomFetch; reauthenticate?: boolean } = {},
+  options: { transport?: oidc.CustomFetch; reauthenticate?: boolean; signup?: boolean } = {},
 ) {
   if (!destinations.has(destination)) throw Error('Invalid customer destination');
+  if (options.signup && (registration.signup !== true || registration.verifiedCallback !== verifiedCallback))
+    throw Error('Native registration unavailable');
   const client = await publicClient(registration, platform, options.transport);
   const flow: Flow = {
     state: oidc.randomState(),
@@ -88,8 +90,10 @@ export async function startNativeSignIn(
   const url = oidc.buildAuthorizationUrl(client, {
     redirect_uri: flow.callback!,
     response_type: 'code',
+    ...(options.signup ? {screen_hint:'signup'} : {}),
     ...(options.reauthenticate ? {prompt:'login'} : {}),
     scope: registration.renewal === true ? 'openid offline_access' : 'openid',
+    acr_values: 'urn:onesa:authentication:pasofi-customer',
     state: flow.state,
     nonce: flow.nonce,
     audience: registration.audience,

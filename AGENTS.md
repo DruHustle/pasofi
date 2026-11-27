@@ -45,7 +45,8 @@ scope and recent provider MFA. Use the original token expiry to bound sessions
 and native one-use transfers. Local guest recovery must never bypass revoked
 federated access. Preserve guest purchase ownership, operator recovery controls,
 router telemetry and network enforcement independently of human authentication.
-Register distinct public clients for iOS and Android. Open the system browser,
+Use a qualified shared public client with verified HTTPS links, or the
+separately registered iOS and Android clients during migration. Open the system browser,
 bind the authorization code to S256, the exact callback and the original screen,
 and pass the PasoFi audience token to the private native session endpoint.
 Keep the two-minute browser handoff available during transition. Qualify installed

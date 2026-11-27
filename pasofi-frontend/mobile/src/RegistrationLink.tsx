@@ -44,11 +44,15 @@ function RegistrationChoice({tab,audience}:{tab:CustomerTab;audience:'user'|'adm
       setFailed(false);
       void Browser.open({url:href}).catch(()=>setFailed(true));
     } catch {setFailed(true);}
-  }}>{audience==='admin'?'Request administrator access':'Register an Onesa account'}</a>{failed&&<span role="status">Registration could not open. Please try again.</span>}</>;
+  }}>{audience==='admin'?'Request administrator access':'Create account'}</a>{failed&&<span role="status">Registration could not open. Please try again.</span>}</>;
 }
 
-export default function RegistrationLink({tab}:{tab:CustomerTab}) {
-  return <><RegistrationChoice tab={tab} audience="user"/> · <RegistrationChoice tab={tab} audience="admin"/></>;
+export default function RegistrationLink({tab, showCustomer = true, showAdmin = true}: {
+  tab: CustomerTab; showCustomer?: boolean; showAdmin?: boolean;
+}) {
+  return <>{showCustomer && <RegistrationChoice tab={tab} audience="user"/>}
+    {showCustomer && showAdmin && ' · '}
+    {showAdmin && <RegistrationChoice tab={tab} audience="admin"/>}</>;
 }
 
 export function AccountClosureLink() {
