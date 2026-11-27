@@ -174,3 +174,27 @@ test('the Account icon leaves a saved checkout and cash reference pending until 
   await expect(page.getByRole('button', { name: 'Resume cash purchase', exact: true })).toBeVisible();
   expect(state.mutations).toEqual([]);
 });
+
+for (const width of [390, 1280]) test(`Home scrolls beneath the stationary header at ${width}px`, async ({ page }) => {
+  const state = await fixture(page);
+  state.products = Array.from({ length: 6 }, (_, index) => ({ ...product, id: `test-bundle-${index}` }));
+  await page.setViewportSize({ width, height: 580 });
+  await page.goto('/');
+  await expect(page.getByRole('article')).toHaveCount(6);
+
+  const header = page.getByRole('banner');
+  const initialHeader = await header.boundingBox();
+  expect(initialHeader?.y).toBe(0);
+  for (const scrollTop of [360, 150]) {
+    await page.evaluate(top => window.scrollTo(0, top), scrollTop);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollTop);
+    expect(await header.boundingBox()).toEqual(initialHeader);
+    expect(await page.evaluate(() => {
+      const hero = document.querySelector('.pasofi-home-hero')!.getBoundingClientRect();
+      return hero.top < 0 && Boolean(document.elementFromPoint(window.innerWidth / 2, 10)?.closest('.pf-header'));
+    })).toBe(true);
+  }
+  await page.getByRole('button', { name: 'Your account', exact: true }).click();
+  await expect(page).toHaveURL(/#account$/);
+  await expect(header).toBeInViewport({ ratio: 1 });
+});
