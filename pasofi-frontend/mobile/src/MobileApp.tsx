@@ -116,7 +116,7 @@ export default function MobileApp() {
     <a className="mobile-skip" href="#mobile-content">Skip to content</a>
     <header className="mobile-header">
       <button className="mobile-brand" aria-label="PasoFi home" aria-describedby="pasofi-product-family" onClick={() => choose('home')}><span className="mobile-brandmark"><Icon name="wifi" /></span><span>PasoFi<small id="pasofi-product-family">An Onesa Mobile product</small></span></button>
-      <div className="mobile-header-actions"><button className="mobile-icon-button" aria-label="Help" onClick={() => choose('help')}><Icon name="help" /></button><button className="mobile-avatar-button" aria-label="My PasoFi" onClick={() => mobileApiConfigured ? openAccount() : choose('account')}><Icon name="account" /></button></div>
+      <div className="mobile-header-actions"><button className="mobile-icon-button" aria-label="Help" aria-current={tab === 'help' ? 'page' : undefined} onClick={() => choose('help')}><Icon name="help" /></button><button className="mobile-avatar-button" aria-label="My PasoFi" onClick={() => mobileApiConfigured ? openAccount() : choose('account')}><Icon name="account" /></button></div>
     </header>
     <main id="mobile-content" className="mobile-content" ref={content}>
       {!mobileApiConfigured && <div className="mobile-notice"><Icon name="info" /><p><strong>Offline preview</strong><span>Explore the app. Purchases and Wi-Fi access are not available yet.</span></p></div>}
@@ -128,7 +128,7 @@ export default function MobileApp() {
           <div className="mobile-hero-art"><img src="/images/pasofi-community-hero.webp" alt="Three friends sharing a happy moment around a smartphone" width="1536" height="1024" /></div>
         </section>
         <section className="mobile-quick-actions" aria-label="Quick actions">
-          <button className="is-primary" onClick={() => choose('bundles')}><span><Icon name="bundles" /></span>View bundles</button>
+          <button onClick={() => accountFeature('voucher')}><span><Icon name="voucher" /></span>Redeem voucher</button>
           <button onClick={() => accountFeature('access')}><span><Icon name="history" /></span>Check usage</button>
           <button onClick={() => accountFeature('wifi')}><span><Icon name="wifi" /></span>My WiFi</button>
           <button onClick={() => choose('help')}><span><Icon name="help" /></span>Get help</button>
@@ -163,7 +163,7 @@ export default function MobileApp() {
 
       {tab === 'help' && <section aria-labelledby="mobile-help">
         <div className="mobile-page-heading"><span className="mobile-eyebrow">A LITTLE GUIDANCE</span><h1 tabIndex={-1} id="mobile-help">Here to help.</h1><p>Quick answers. More time for your day.</p></div>
-        <div className="mobile-help-search"><label htmlFor="mobile-help-search">Find a quick answer</label><input id="mobile-help-search" type="search" maxLength={160} placeholder="Search data, vouchers or recovery" value={helpQuery} onChange={event => setHelpQuery(event.target.value)} /><small>Search stays on this device. Never enter a private voucher, password or recovery key.</small></div>
+        <div className="mobile-help-search"><label htmlFor="mobile-help-search">Find a quick answer</label><input id="mobile-help-search" type="search" maxLength={160} placeholder="Search help" value={helpQuery} onChange={event => setHelpQuery(event.target.value)} /><small>Search stays on this device. Never enter a private voucher, password or recovery key.</small></div>
         <div className="mobile-faq">{shownQuestions.length ? shownQuestions.map(item => <details key={item.q}><summary>{item.q}<Icon name="chevron" /></summary><p>{item.a}</p></details>) : <p className="mobile-no-results" role="status">No matching answer. Try a shorter phrase or clear your search.</p>}</div>
       </section>}
       {(tab === 'help' || tab === 'bundles') && <PolicyNotice/>}

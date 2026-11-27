@@ -133,3 +133,15 @@ body,.mobile-app{background:#f3f5f8;color:#0a1628}
 .pf-card-button:disabled{background:#c9d3df;color:#4a5868}
 .mobile-app .mobile-quick-actions button.is-primary{background:#fff;border-color:#dfe6ee}
 .mobile-app .mobile-quick-actions button{color:#0a1628}
+.mobile-app .mobile-icon-button[aria-current=page]{background:#0070f2;border-radius:999px}
+.mobile-app .customer-how{margin:14px 0 4px;border-top:1px solid #e1e7ef;padding-top:10px}
+.mobile-app .customer-how>summary{display:flex;align-items:center;min-height:44px;color:#0057d9;font-weight:700}
+
+/* Account shell: the same navy header as the app's main screens, with white
+   pill links instead of a white bar of grey buttons. */
+.mobile-app .mobile-account-links{gap:8px;align-items:center;padding:calc(12px + env(safe-area-inset-top)) 16px 14px;background:var(--pf-navy);border-bottom:0;color:#fff}
+.mobile-app .mobile-account-brand{color:#c7f5b5;font-size:12px}
+.mobile-app .mobile-account-brand strong{color:#fff;font-size:22px;font-weight:800;letter-spacing:-.03em;margin-right:6px}
+.mobile-app .mobile-account-links :is(button,a){display:inline-flex;align-items:center;min-height:44px;padding:8px 14px;border:1px solid #ffffff40;border-radius:999px;background:transparent;color:#fff;font-size:13px;font-weight:700;text-decoration:none}
+.mobile-app .mobile-account-links button:first-of-type{background:#fff;border-color:#fff;color:var(--pf-navy)}
+.mobile-app .mobile-account-links :is(button,a):focus-visible{outline:2px solid #9cc7ff;outline-offset:2px}

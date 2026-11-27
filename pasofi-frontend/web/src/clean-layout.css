@@ -180,3 +180,33 @@ body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-f
 .pf-app :is(.pf-home,.pf-captive) .pf-quick-actions>button,.pf-app :is(.pf-home,.pf-captive) .pf-quick-actions>button:first-child{background:#fff;border:1px solid #e1e7ef;color:#0a1628;box-shadow:0 1px 2px #0a16280d}
 .pf-app :is(.pf-home,.pf-captive) .pf-quick-actions>button strong{font-weight:700;color:#0a1628}
 .pf-app :is(.pf-home,.pf-captive) .pf-quick-actions>button:hover:not(:disabled){border-color:#0070f2}
+
+/* Slim navy header at every width (like vodacom.co.za); no blue rule underneath. */
+:root{--pf-header-height:64px}
+.pf-app .pf-header{height:var(--pf-header-height);padding-top:0;padding-bottom:0;border-bottom:0;max-width:none}
+.pf-app .pf-brand{font-size:22px}
+.pf-app .pf-brand-mark{width:36px;height:36px;border-radius:11px;background:#0070f2;color:#fff}
+.pf-app .pf-header-tagline{display:none}
+@media (min-width:600px){:root{--pf-header-height:64px}.pf-app .pf-header{padding-left:24px;padding-right:24px}}
+
+/* Desktop: the main navigation sits in the header as top links; no sidebar. */
+@media (min-width:1000px){
+  :root{--pf-header-height:64px}
+  .pf-app .pf-navigation{position:fixed;top:0;left:50%;right:auto;bottom:auto;transform:translateX(-50%);z-index:32;width:auto;height:var(--pf-header-height);display:flex;flex-direction:row;align-items:center;gap:4px;padding:0;background:transparent;border:0;box-shadow:none}
+  .pf-app .pf-navigation>button{flex-direction:row;min-height:44px;padding:8px 18px;border-radius:999px;background:transparent;color:#e6ecf5;font-size:15px;font-weight:600}
+  .pf-app .pf-navigation>button:hover{background:#ffffff1a;color:#fff}
+  .pf-app .pf-navigation>button[aria-current=page]{background:#0070f2;color:#fff}
+  .pf-app .pf-navigation :is(.pf-nav-icon,.pf-nav-dot),.pf-app .pf-nav-title,.pf-app .pf-nav-note{display:none}
+  .pf-app .pf-main{width:100%;max-width:1200px;margin-left:auto;margin-right:auto;padding:28px 32px 48px}
+  .pf-app .pf-header{background:#0a1628}
+}
+
+/* Help in the header shows when it is the current screen. */
+.pf-app .pf-icon-button[aria-current=page]{background:#0070f2;color:#fff;border-radius:999px}
+
+/* "How paying with cash works": details tucked under the action. */
+.pf-app .customer-how{margin:14px 0 4px;border-top:1px solid #e1e7ef;padding-top:10px}
+.pf-app .customer-how>summary{display:flex;align-items:center;min-height:44px;color:#0057d9;font-weight:700;cursor:pointer}
+.pf-app .customer-how[open]>summary{margin-bottom:6px}
+/* The EcoCash notice follows the payment action with clear separation. */
+.pf-app .customer-payment-card .customer-ecocash-journeys{margin-top:28px;padding-top:20px;border-top:1px solid #e1e7ef}
