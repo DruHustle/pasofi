@@ -132,7 +132,7 @@ test('Home handles an empty published catalogue without inserting promotional pr
   await expect(page.getByText('No bundles are published yet. Check back when PasoFi launches.', { exact: true })).toBeVisible();
   await expect(page.locator('.pf-bundle-card')).toHaveCount(0);
   await expect(page.locator('.pasofi-home-hero')).not.toContainText('$');
-  await page.getByRole('button', { name: 'View bundles', exact: true }).click(); await expect(page).toHaveURL(/#bundles$/);
+  await page.getByRole('button', { name: 'See all bundles', exact: true }).click(); await expect(page).toHaveURL(/#bundles$/);
   expect(state.mutations).toEqual([]);
 });
 
@@ -194,7 +194,8 @@ for (const width of [390, 1280]) test(`Home scrolls beneath the stationary heade
     expect(await header.boundingBox()).toEqual(initialHeader);
     expect(await page.evaluate(() => {
       const hero = document.querySelector('.pasofi-home-hero')!.getBoundingClientRect();
-      return hero.top < 0 && Boolean(document.elementFromPoint(window.innerWidth / 2, 10)?.closest('.pf-header'));
+      // From desktop width the main navigation sits inside the header bar.
+      return hero.top < 0 && Boolean(document.elementFromPoint(window.innerWidth / 2, 10)?.closest('.pf-header, .pf-navigation'));
     })).toBe(true);
   }
   await page.getByRole('button', { name: 'Your account', exact: true }).click();

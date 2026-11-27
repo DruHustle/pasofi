@@ -45,8 +45,8 @@ final class ConfiguredAccessTests: XCTestCase {
             print("PASOFI_EXPECTED_GATE_MISSING foreground=" + String(app.state == .runningForeground) + " webview=" + String(app.webViews.firstMatch.exists))
             XCTFail("The installed account view did not display a disabled or unavailable account state")
         }
-        let back = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Offline preview")).firstMatch
-        guard back.exists else { XCTFail("Missing offline-preview return control"); return }
+        let back = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Back to PasoFi")).firstMatch
+        guard back.exists else { XCTFail("Missing Back to PasoFi return control"); return }
         back.tap()
         guard openAccount.waitForExistence(timeout: 15) else { XCTFail("Home did not resume"); return }
         print("PASOFI_RETURNED_HOME")

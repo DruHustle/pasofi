@@ -78,11 +78,11 @@ test('customer tools keep distinct routes through back and forward navigation', 
   await expect(main.getByRole('button', { name: 'History', exact: true })).toHaveAttribute('aria-current', 'page');
   await main.getByRole('button', { name: 'Account', exact: true }).click();
   await expect(page).toHaveURL(/#account$/);
-  const sections = page.getByRole('navigation', { name: 'Account sections' });
-  await sections.getByRole('button', { name: 'My WiFi', exact: true }).click();
-  await expect(page).toHaveURL(/#wifi$/);
+  // Signed out, every account section shows the same sign-in card, so the switch is hidden.
+  await expect(page.getByRole('navigation', { name: 'Account sections' })).toHaveCount(0);
+  await page.goto('/#wifi');
+  await expect(page.getByRole('heading', { name: 'My WiFi', exact: true })).toBeVisible();
   await expect(main.getByRole('button', { name: 'Account', exact: true })).toHaveAttribute('aria-current', 'page');
-  await expect(sections.getByRole('button', { name: 'My WiFi', exact: true })).toHaveAttribute('aria-current', 'page');
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
   await page.goBack();
