@@ -3,7 +3,6 @@ import { api, ApiError, usesNativeCustomerApi } from './api';
 import { currentSession, ensureSession, announceSessionChange, clearSessionSecrets } from './session';
 import { type Capabilities, type Product, type Site, type CashEvidence, cashDescription, finishMutation, localDate, messageFor, money, mutationIntent } from './business';
 import { RecoverySetup } from './Recovery';
-import { CreateHandoff } from './Handoff';
 import NetworkAccess from './NetworkAccess';
 import { PolicyNotice } from './Policies';
 import { InvoiceDeliveryFields, InvoiceDownload, InvoiceHistory } from './InvoiceActions';
@@ -407,7 +406,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const sectionLinks: { tab: CustomerTab; label: string }[] = [
     { tab: 'access', label: 'My bundles' }, { tab: 'wifi', label: 'My WiFi' }, { tab: 'history', label: 'History' },
     { tab: 'voucher', label: capabilities.vouchers ? 'Use a voucher' : 'Vouchers paused' }, { tab: 'receipt', label: 'Private receipt' },
-    { tab: 'purchase', label: 'Online payment' }, { tab: 'recovery', label: 'Recovery & devices' },
+    { tab: 'purchase', label: 'Online payment' }, { tab: 'recovery', label: 'Account' },
   ];
   const sectionNavigation = <nav className="workspace-tabs customer-section-tabs" aria-label="Customer sections">{sectionLinks.map(link => <button key={link.tab} disabled={link.tab === 'voucher' && !capabilities.vouchers} aria-pressed={tab === link.tab} className={tab === link.tab ? 'selected' : ''} onClick={() => selectTab(link.tab)}>{link.label}</button>)}</nav>;
   const emptyBundleGuidance = capabilities.staffSales || capabilities.paymentCheckout || capabilities.vouchers
@@ -433,7 +432,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     {loading && <div className="customer-loading" role="status"><span className="customer-loading-dot" />Checking your account…</div>}
     {message && <p className="feedback" role="status">{message}</p>}
     {!loading && !owner && <p className="notice customer-session-notice">No account is active in this {usesNativeCustomerApi ? 'app' : 'browser'}. Sign in to open your PasoFi account. <button className="text-button" onClick={recovered}>Recover an existing account</button></p>}
-    {recoveryReminder && owner && tab !== 'recovery' && <aside className="notice customer-recovery-reminder"><strong>Keep access to your bundle.</strong><p>Save your account reference and recovery key before changing devices or {usesNativeCustomerApi ? "clearing this app’s data" : 'clearing this browser'}.</p><button className="secondary" onClick={() => { setRecoveryReminder(false); selectTab('recovery'); }}>Review recovery & devices</button></aside>}
+    {recoveryReminder && owner && tab !== 'recovery' && <aside className="notice customer-recovery-reminder"><strong>Keep access to your bundle.</strong><p>Save your account reference and recovery key before changing devices or {usesNativeCustomerApi ? "clearing this app’s data" : 'clearing this browser'}.</p><button className="secondary" onClick={() => { setRecoveryReminder(false); selectTab('recovery'); }}>Review recovery details</button></aside>}
     {showPurchaseOptions && <>
       {catalogueLoading && <p role="status">Loading available bundles and locations…</p>}
       {catalogueError && <div className="notice"><p role="alert">Available bundles and locations could not be loaded. Your saved purchase details are unchanged.</p><button className="secondary" disabled={busy || catalogueLoading} onClick={() => setCatalogueAttempt(value => value + 1)}>Retry purchase options</button></div>}
@@ -457,7 +456,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
 
     {tab === 'wifi' && <>
       <section className="customer-wifi-intro"><span className="customer-welcome-icon"><CustomerGlyph name="wifi" /></span><div><h3>A connection that moves with you.</h3><p>Use one active hotspot connection at a time. Disconnect and wait for confirmation before switching to another location.</p></div></section>
-      {owner ? <div className="customer-detail-grid">{connectionPanel}<section className="workspace-card"><span className="customer-record-icon"><CustomerGlyph name="user" /></span><h3>Use another device</h3><p>Move your account using a one-time handoff. Your existing bundle stays with your account.</p><button className="secondary" onClick={() => selectTab('recovery')}>Recovery & device options</button><p className="customer-muted">Moving your account does not end an existing hotspot session.</p></section></div> : <section className="workspace-card customer-empty-state"><h3>Bring your data with you.</h3><p>Recover your account to check its connection, or choose your first bundle.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button><button className="secondary" onClick={buyData}>Browse bundles</button></div></section>}
+      {owner ? <div className="customer-detail-grid">{connectionPanel}</div> : <section className="workspace-card customer-empty-state"><h3>Bring your data with you.</h3><p>Recover your account to check its connection, or choose your first bundle.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button><button className="secondary" onClick={buyData}>Browse bundles</button></div></section>}
     </>}
 
     {tab === 'history' && <>
@@ -509,8 +508,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     </section>}
 
     {tab === 'recovery' && <>
-      <section className="customer-profile-card"><span className="customer-profile-avatar"><CustomerGlyph name="user" /></span><div><span className="eyebrow">YOUR EVERYDAY CONNECTION</span><h3>{owner ? 'Your PasoFi account' : 'Welcome to PasoFi'}</h3><p>{owner ? (usesNativeCustomerApi ? 'Your account is available in this app.' : 'Your account is available in this browser.') : 'Start with a bundle, or bring back your saved account.'}</p></div><span className="customer-profile-language">English</span></section>
-      {owner ? <><div className="customer-account-grid"><RecoverySetup /><CreateHandoff customerId={owner} /></div><section className="workspace-card customer-signout-card"><h3>Sign out of this {usesNativeCustomerApi ? 'app' : 'browser'}</h3>{signout ? <><p>Save your recovery details before you leave. Signing out does not end an active hotspot session; use the connection controls for that.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of customer account</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></> : <button className="secondary" onClick={() => setSignout(true)}>Prepare to sign out</button>}</section></> : <section className="workspace-card"><h3>Save or restore access</h3><p>Use your saved reference and recovery key to restore a guest purchase.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button></div></section>}
+      <section className="customer-profile-card"><span className="customer-profile-avatar"><CustomerGlyph name="user" /></span><div><h3>{owner ? 'Your PasoFi account' : 'Welcome to PasoFi'}</h3><p>{owner ? (usesNativeCustomerApi ? 'Your account is available in this app.' : 'Signed in on this device.') : 'Sign in to see your account details.'}</p></div></section>
+      {owner ? <><div className="customer-account-grid"><RecoverySetup /></div><section className="workspace-card customer-signout-card"><h3>Sign out of this {usesNativeCustomerApi ? 'app' : 'browser'}</h3>{signout ? <><p>Save your recovery details before you leave. Signing out does not end an active hotspot session; use the connection controls for that.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of customer account</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></> : <button className="secondary" onClick={() => setSignout(true)}>Sign out</button>}</section></> : <section className="workspace-card"><h3>Save or restore access</h3><p>Use your saved reference and recovery key to restore a guest purchase. Sign in to recover a registered account.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button></div></section>}
     </>}
   </section>;
 }

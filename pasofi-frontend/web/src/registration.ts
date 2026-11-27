@@ -6,6 +6,8 @@ const hotspotScreens = ['/connect', '/connect#bundles', '/connect#voucher'];
 export const registrationUrl = (audience:'user'|'admin') =>
   'https://account.onesa.eu/register?audience='+audience+'&product=pasofi&platform=web'+
   (hotspotPortal && audience === 'user' ? '&entry=pasofi-hotspot' : '');
+export const requestAccessUrl = (role: 'agent' | 'administrator') =>
+  'https://account.onesa.eu/access?product=pasofi&role=' + role;
 
 type Availability = { origin: string | null; hotspotOrigin?: string; signup?: boolean };
 
@@ -18,6 +20,12 @@ export async function accountEntryAvailability(staff = false, signal?: AbortSign
 
 export async function signInAvailable(staff = false, signal?: AbortSignal) {
   return (await accountEntryAvailability(staff, signal)).signIn;
+}
+
+export async function customerSignInAvailability(signal?: AbortSignal) {
+  const value = await api<Availability>('/api/onesa/availability', {signal});
+  const available = (hotspotPortal ? value.hotspotOrigin : value.origin) === location.origin;
+  return { available, signup: available && value.signup === true };
 }
 
 export function currentCustomerScreen() {
