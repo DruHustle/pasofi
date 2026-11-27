@@ -103,7 +103,7 @@ export default function MobileApp() {
     <a className="mobile-skip" href="#mobile-content">Skip to content</a>
     <header className="mobile-header">
       <button className="mobile-brand" aria-label="PasoFi home" aria-describedby="pasofi-product-family" onClick={() => choose('home')}><span className="mobile-brandmark"><Icon name="wifi" /></span><span>PasoFi<small id="pasofi-product-family">An Onesa Mobile product</small></span></button>
-      <div className="mobile-header-actions"><button className="mobile-icon-button" aria-label="Help" onClick={() => choose('help')}><Icon name="help" /></button><button className="mobile-icon-button" aria-label="Your account" onClick={() => accountFeature('recovery')}><Icon name="account" /></button></div>
+      <div className="mobile-header-actions">{mobileApiConfigured && <button className="mobile-account-button" onClick={() => openAccount()}>My PasoFi</button>}<button className="mobile-icon-button" aria-label="Help" onClick={() => choose('help')}><Icon name="help" /></button></div>
     </header>
     <main id="mobile-content" className="mobile-content" ref={content}>
       <div className="mobile-notice"><Icon name="info" /><p><strong>Offline preview</strong><span>{mobileApiConfigured ? 'Example bundles only. My PasoFi checks the configured service.' : 'Explore the app. Purchases and Wi-Fi access are not available yet.'}</span></p></div>
