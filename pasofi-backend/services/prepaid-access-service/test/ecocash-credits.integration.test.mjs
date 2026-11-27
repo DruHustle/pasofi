@@ -2,12 +2,24 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import pg from 'pg';
-import { applySimulatedEcoCashCredit } from '../dist/ecocash-credits.js';
+import { applySimulatedEcoCashCredit, ingestEcoCashMerchantCredit } from '../dist/ecocash-credits.js';
 import { readEcoCashDelivery, redeemVoucher } from '../dist/vouchers.js';
+import { syntheticMerchantEnvelopes } from './fixtures/ecocash-merchant-envelope.mjs';
 
 const url = process.env.PAMOFI_TEST_DATABASE_URL;
 const iso = ms => new Date(ms).toISOString();
 const day = 86400000;
+
+function merchantSwitch(t, enabled) {
+  const key = 'PAMOFI_ECOCASH_MERCHANT_CREDITS_ENABLED';
+  const previous = process.env[key];
+  if (enabled) process.env[key] = 'true';
+  else delete process.env[key];
+  t.after(() => {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  });
+}
 
 async function fixture(t) {
   const pool = new pg.Pool({connectionString: url, max: 8});
@@ -54,9 +66,36 @@ test('EcoCash credit simulation refuses production before any database access', 
   }
 });
 
-test('concurrent retries, including alternate phone formats, create one credit, code and delivery event', {skip: !url}, async t => {
-  const {apply, pool, observation, key} = await fixture(t);
-  const outcomes = await Promise.all(Array.from({length: 12}, (_, i) => apply(i % 2 ? {payerPhone: '+263770000001'} : {})));
+test('merchant credit intake is disabled by default and requires demo mode and a verifier', async t => {
+  merchantSwitch(t, false);
+  let verificationCalls = 0;
+  const verifier = { replayWindowMs: 60_000, async verify() { verificationCalls++; return null; } };
+  await assert.rejects(ingestEcoCashMerchantCredit(null, null, null, null, verifier), /ecocash_merchant_credits_disabled/);
+  process.env.PAMOFI_ECOCASH_MERCHANT_CREDITS_ENABLED = 'true';
+  const previous = { node: process.env.NODE_ENV, app: process.env.APP_ENV };
+  try {
+    process.env.NODE_ENV = 'production';
+    process.env.APP_ENV = 'production';
+    await assert.rejects(ingestEcoCashMerchantCredit(null, null, null, null, verifier), /isolated_demo_required/);
+    process.env.NODE_ENV = 'development';
+    process.env.APP_ENV = 'demo';
+    await assert.rejects(ingestEcoCashMerchantCredit(null, null, null, null, null), /ecocash_merchant_verifier_unavailable/);
+  } finally {
+    if (previous.node === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previous.node;
+    if (previous.app === undefined) delete process.env.APP_ENV;
+    else process.env.APP_ENV = previous.app;
+  }
+  assert.equal(verificationCalls, 0);
+});
+
+test('ECO-009 authenticated concurrent credits issue one voucher and queue unmatched amounts for review', {skip: !url}, async t => {
+  const {pool, config, observation, key} = await fixture(t);
+  merchantSwitch(t, true);
+  const { sign, verifier } = syntheticMerchantEnvelopes();
+  const ingest = input => ingestEcoCashMerchantCredit(pool, key, config, sign(input), verifier);
+  const outcomes = await Promise.all(Array.from({length: 12}, (_, i) =>
+    ingest({ ...observation, payerPhone: i % 2 ? '+263770000001' : observation.payerPhone })));
   const result = outcomes[0];
   assert.equal(result.state, 'issued');
   for (const outcome of outcomes) assert.deepEqual(outcome, result);
@@ -71,6 +110,37 @@ test('concurrent retries, including alternate phone formats, create one credit, 
   const events = (await pool.query('SELECT event_type,payload FROM event_outbox WHERE aggregate_id=$1', [result.creditId])).rows;
   assert.deepEqual(events, [{event_type: 'ecocash.voucher.issued', payload: {deliveryReference: result.creditId}}]);
   assert.equal((await readEcoCashDelivery(pool, result.creditId, key, true)).to, '263770000001');
+
+  const unmatched = await ingest({ ...observation, transactionId: randomUUID(), amountMinor: 126 });
+  assert.equal(unmatched.state, 'review');
+  assert.equal(unmatched.reason, 'unmatched_amount');
+  const review = await pool.query('SELECT state,reason FROM ecocash_credits WHERE id=$1', [unmatched.creditId]);
+  assert.deepEqual(review.rows, [{ state: 'review', reason: 'unmatched_amount' }]);
+  assert.equal((await pool.query('SELECT id FROM issued_vouchers WHERE ecocash_credit_id=$1', [unmatched.creditId])).rowCount, 0);
+  assert.equal((await pool.query('SELECT id FROM event_outbox WHERE aggregate_id=$1', [unmatched.creditId])).rowCount, 0);
+});
+
+test('ECO-010 invalid authentication and stale or future signed timestamps leave the ledger untouched', {skip: !url}, async t => {
+  const { pool, config, observation, key } = await fixture(t);
+  merchantSwitch(t, true);
+  const { sign, verifier } = syntheticMerchantEnvelopes();
+  let connections = 0;
+  const observedPool = { connect() { connections++; return pool.connect(); } };
+  const ingest = envelope => ingestEcoCashMerchantCredit(observedPool, key, config, envelope, verifier);
+  const valid = sign(observation);
+  const forged = syntheticMerchantEnvelopes().sign(observation);
+  await assert.rejects(ingest(forged), /ecocash_merchant_signature_rejected/);
+  const changedBody = Buffer.from(JSON.stringify({ ...observation, amountMinor: 999 }));
+  await assert.rejects(ingest({ ...valid, rawBody: changedBody }), /ecocash_merchant_signature_rejected/);
+  const stale = sign(observation, Date.now() - 2 * verifier.replayWindowMs);
+  await assert.rejects(ingest(stale), /ecocash_merchant_timestamp_rejected/);
+  const changedTime = { ...stale.headers, 'x-pasofi-test-signed-at': valid.headers['x-pasofi-test-signed-at'] };
+  await assert.rejects(ingest({ ...stale, headers: changedTime }), /ecocash_merchant_signature_rejected/);
+  await assert.rejects(ingest(sign(observation, Date.now() + 2 * verifier.replayWindowMs)), /ecocash_merchant_timestamp_rejected/);
+
+  assert.equal(connections, 0);
+  assert.equal((await pool.query('SELECT id FROM ecocash_credits WHERE merchant_code=$1', [config.merchantCode])).rowCount, 0);
+  assert.equal((await ingest(valid)).state, 'issued');
 });
 
 test('failure after voucher generation rolls the receipt back and a retry issues it once', {skip: !url}, async t => {

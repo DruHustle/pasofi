@@ -60,7 +60,9 @@ Run the existing five-database integration gate from the repository root, follow
 node pasofi-backend/local-tools/verify.mjs --integration --browser
 ```
 
-The input fixture lives at `test/fixtures/ecocash-credit.mjs` in the prepaid service and reads a JSON object with `config` and `observation` from standard input. The executable example is in `test/ecocash-workflow.integration.test.mjs`. The fixture uses demo/development, a disposable loopback prepaid database, an explicit isolation acknowledgement and demo delivery keys. Its output contains the credit ID and outcome. It accepts no network callbacks. Its record shape is local to PasoFi and is not an EcoCash payload specification.
+The input fixture at `test/fixtures/ecocash-credit.mjs` reads `config` and `observation` from standard input. It requires demo/development, a disposable loopback prepaid database, an isolation acknowledgement and demo delivery keys. It enables `PAMOFI_ECOCASH_MERCHANT_CREDITS_ENABLED` for that process and exercises the merchant intake with a locally generated signature. The existing transaction handles duplicate original references, review records, vouchers and delivery events after the verifier authenticates the raw envelope and its signed delivery time.
+
+The switch defaults to off. The intake currently accepts only the disposable demo ledger even when enabled. The synthetic envelope and key live in the tests. Production integration needs EcoCash's endpoint, signature or feed authentication and replay specification, test credentials, and authoritative examples for original credits and reversals.
 
 Production activation requires an adapter for the contract EcoCash supplies, provider-certified samples including reversals, a qualified SMS sender and a supervised payment through voucher redemption and hotspot access. The simulation cannot send real SMS or grant a router session. No production receiving number or merchant credentials are configured by this feature.
 
