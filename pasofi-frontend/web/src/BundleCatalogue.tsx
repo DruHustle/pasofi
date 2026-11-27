@@ -108,6 +108,8 @@ export default function BundleCatalogue({ bundles, demo, capabilities, checkingA
   const visible = (bundles?.filter(selected.matches) ?? []).sort((left, right) => compareBundles(left, right, sort));
   const multipleCurrencies = new Set(visible.map(bundle => bundle.currency)).size > 1;
   const bestValue = bestValueIds(bundles ?? []);
+  // Each published bundle keeps its own colour, whatever the filter or sort.
+  const tone = (bundle: Product) => String(Math.max(0, bundles?.indexOf(bundle) ?? 0) % 8);
   const availableToBuy = !checkingAvailability && Boolean(demo || capabilities?.staffSales || capabilities?.paymentCheckout);
   const canRedeemVoucher = !checkingAvailability && capabilities?.vouchers === true;
   const purchaseStatus = checkingAvailability ? 'Checking purchase availability…'
@@ -144,7 +146,7 @@ export default function BundleCatalogue({ bundles, demo, capabilities, checkingA
         const label = checkingAvailability ? `Checking ${bundle.id} purchase availability` : demo ? `Try ${bundle.id} demo bundle` : capabilities?.staffSales ? `Buy ${bundle.id} from an agent` : capabilities?.paymentCheckout ? `Review ${bundle.id} bundle` : `${bundle.id} purchasing is not available`;
         const nameId = `bundle-name-${bundle.id}`;
         const best = bestValue.has(bundle.id), perGb = perGbLabel(bundle);
-        return <article className="pf-bundle-card" key={bundle.id} aria-labelledby={nameId} data-best-value={best || undefined}>
+        return <article className="pf-bundle-card" key={bundle.id} aria-labelledby={nameId} data-best-value={best || undefined} data-tone={tone(bundle)}>
           <div className="pf-bundle-top"><span className="pf-plan-name" id={nameId}>{bundle.id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ')}</span>{best && <span className="pf-bundle-badge">Best value</span>}<Icon name="wifi"/></div>
           <h3>{data.amount}<span>{data.unit}</span></h3>
           <p className="pf-validity"><Icon name="clock"/>{bundleDuration(bundle.validity_seconds)}</p>
