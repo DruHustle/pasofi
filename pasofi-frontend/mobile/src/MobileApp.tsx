@@ -4,7 +4,7 @@ import { pendingNativeDestination } from './native-oidc';
 import { mobileApiConfigured } from './api';
 import Icon, { type IconName } from './Icon';
 import type { CustomerTab } from './CustomerAccess';
-import RegistrationLink, {watchRegistrationReturn} from './RegistrationLink';
+import RegistrationLink, {AccountClosureLink, watchRegistrationReturn} from './RegistrationLink';
 import MobileCustomer from './MobileCustomer';
 import { PolicyNotice } from './Policies';
 import { policyHelpArticles } from './PolicyHelp';
@@ -155,6 +155,7 @@ export default function MobileApp() {
         <div className="mobile-profile-card"><span className="mobile-profile-avatar"><Icon name="account" /></span><div><h2>Welcome to PasoFi</h2><p>{mobileApiConfigured ? 'Check your configured account service.' : 'You’re exploring the offline preview.'}</p></div><span className="mobile-label">Preview</span></div>
         {mobileApiConfigured ? <button className="mobile-primary mobile-primary-wide" onClick={() => openAccount()}>Open My PasoFi <Icon name="arrow" /></button> : <p className="mobile-account-explainer">Accounts, vouchers and devices become available when the service is ready. No account is created while you explore.</p>}
         {mobileApiConfigured ? <p className="mobile-account-explainer">Open My PasoFi to sign in or sign up.</p> : <p className="mobile-account-explainer"><a href="https://pasofi.mobile.onesa.eu/#account" target="_blank" rel="noopener noreferrer">PasoFi account on the web</a> · <RegistrationLink tab="access"/></p>}
+        <p className="mobile-account-explainer"><AccountClosureLink /></p>
         <div className="mobile-settings-list">
           <button onClick={() => mobileApiConfigured ? openAccount('wifi') : choose('help')}><span className="mobile-setting-icon"><Icon name="devices" /></span><span><strong>My WiFi & devices</strong><small>{mobileApiConfigured ? 'Check account availability' : 'Learn how connecting will work'}</small></span><Icon name="chevron" /></button>
           <button onClick={() => mobileApiConfigured ? openAccount('recovery') : choose('help')}><span className="mobile-setting-icon"><Icon name="shield" /></span><span><strong>Account & security</strong><small>{mobileApiConfigured ? 'Recovery and device access' : 'Account access is not available yet'}</small></span><Icon name="chevron" /></button>

@@ -50,3 +50,17 @@ function RegistrationChoice({tab,audience}:{tab:CustomerTab;audience:'user'|'adm
 export default function RegistrationLink({tab}:{tab:CustomerTab}) {
   return <><RegistrationChoice tab={tab} audience="user"/> · <RegistrationChoice tab={tab} audience="admin"/></>;
 }
+
+export function AccountClosureLink() {
+  const [failed, setFailed] = useState(false);
+  const href = 'https://account.onesa.eu/account/closure';
+  return <>
+    <a href={href} target="_blank" rel="noopener noreferrer" onClick={event => {
+      if (!nativePlatform()) return;
+      event.preventDefault();
+      setFailed(false);
+      void Browser.open({url: href}).catch(() => setFailed(true));
+    }}>Delete your Onesa account</a>
+    {failed && <span role="status">The account closure page could not open. Please try again.</span>}
+  </>;
+}
