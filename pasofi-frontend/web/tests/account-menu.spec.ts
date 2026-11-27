@@ -20,7 +20,8 @@ async function fixture(page: Page, initial: 'signed-out' | 'member' | 'guest') {
       case '/api/session':
         if (method === 'DELETE') { state.deletes++; state.session = 'signed-out'; return route.fulfill({ status: 204 }); }
         state.sessionReads++;
-        return state.session === 'signed-out' ? json(route, { error: 'not_authenticated' }, 401) : json(route, { customerId, guest: state.session === 'guest' });
+        if (state.session === 'signed-out') return url.searchParams.get('restore') === '1' ? route.fulfill({ status: 204 }) : json(route, { error: 'not_authenticated' }, 401);
+        return json(route, { customerId, guest: state.session === 'guest' });
       case '/api/access': return json(route, { customerId, entitlements: [], hasMore: false, nextOffset: null });
       case '/api/usage': return json(route, { error: 'not_authenticated' }, 401);
       case '/api/vouchers/redeem':
@@ -41,6 +42,8 @@ for (const width of [320, 390, 1280]) test(`a signed-out visitor opens the accou
   await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toBeVisible();
   expect(state.sessionReads).toBe(0);
 
+  const rejected: string[] = [];
+  page.on('response', response => { const url = new URL(response.url()); if (url.pathname.startsWith('/api/') && response.status() >= 400) rejected.push(`${response.status()} ${url.pathname}`); });
   const button = accountButton(page);
   await expect(button).toHaveAttribute('aria-haspopup', 'menu');
   await button.click();
@@ -51,6 +54,7 @@ for (const width of [320, 390, 1280]) test(`a signed-out visitor opens the accou
   await expect(menu).toBeInViewport({ ratio: 1 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   for (const item of await menu.getByRole('menuitem').all()) expect((await item.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(rejected).toEqual([]);
   await page.screenshot({ path: info.outputPath(`account-menu-signed-out-${width}.png`) });
 
   await expect(menu.getByRole('menuitem', { name: 'Sign in or sign up' })).toBeFocused();

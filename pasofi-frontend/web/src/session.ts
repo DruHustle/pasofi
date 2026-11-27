@@ -38,6 +38,14 @@ export function inspectBrowserSession(): Promise<Session> {
   browserSessionCheck = request;
   return request;
 }
+// A quiet check for optional UI such as the account menu: no session is an
+// empty answer rather than an error. Older services still answer 401.
+export async function peekCustomerSession(): Promise<Session | null> {
+  const session = await api<Session | undefined>('/api/session?restore=1');
+  if (session === undefined) return null;
+  validSession(session);
+  return session;
+}
 let creating: Promise<string> | null = null;
 export function ensureSession(): Promise<string> {
   if (creating) return creating;

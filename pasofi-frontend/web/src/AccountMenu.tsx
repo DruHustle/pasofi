@@ -4,7 +4,7 @@ import type { CustomerTab } from './CustomerAccess';
 import Icon, { type IconName } from './Icon';
 import { followOnesaLogout } from './onesa-browser-logout';
 import { currentCustomerScreen, signInAvailable, startProductSignIn } from './registration';
-import { inspectBrowserSession, signOutCustomer, type CustomerSessionStatus } from './session';
+import { peekCustomerSession, signOutCustomer, type CustomerSessionStatus } from './session';
 
 type Props = {
   session: CustomerSessionStatus | null;
@@ -36,8 +36,8 @@ export default function AccountMenu({ session, onSession, current, vouchers, ope
     // Check only when asked: the public Home never looks up a session on load.
     const attempt = ++check.current;
     setChecking(session === null);
-    inspectBrowserSession()
-      .then(value => { if (attempt === check.current) onSession(value.guest === true ? 'guest' : 'member'); })
+    peekCustomerSession()
+      .then(value => { if (attempt === check.current) onSession(value === null ? 'signed-out' : value.guest === true ? 'guest' : 'member'); })
       .catch(reason => { if (attempt === check.current && reason instanceof ApiError && reason.status === 401) onSession('signed-out'); })
       .finally(() => { if (attempt === check.current) setChecking(false); });
   }

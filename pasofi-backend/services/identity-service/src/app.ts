@@ -77,13 +77,17 @@ export function buildApp(options: { staffResetDelivery?: StaffResetDelivery } = 
       return customerId ? { customerId } : reply.code(401).send({ error: 'not_authenticated' });
     } catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
-  app.get('/v1/session', async (request, reply) => {
+  app.get<{ Querystring: { restore?: string } }>('/v1/session', async (request, reply) => {
     reply.header('Cache-Control','no-store');
     if (!pool || !validOrigin) return reply.code(503).send({ error: 'identity_unavailable' });
     try {
       const customerId = await current(request);
       if (customerId) return { customerId, guest: !await previousOnesaSession(request.cookies[cookieName]) };
-      return reply.code(401).send({error: await previousOnesaSession(request.cookies[cookieName]) ? 'onesa_sign_in_required' : 'not_authenticated'});
+      const previous = await previousOnesaSession(request.cookies[cookieName]);
+      // An optional check (restore=1) answers "no session" without an error.
+      // A member whose Onesa sign-in lapsed still needs to sign in again.
+      if (!previous && request.query.restore === '1') return reply.code(204).send();
+      return reply.code(401).send({error: previous ? 'onesa_sign_in_required' : 'not_authenticated'});
     }
     catch { return reply.code(503).send({ error: 'identity_unavailable' }); }
   });
