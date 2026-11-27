@@ -122,9 +122,9 @@ if __name__ == "__main__":
             "-a", "android.intent.action.VIEW", "-c", "android.intent.category.BROWSABLE",
             "-d", "com.onesa.pasofi://account/handoff")
         account_return_state()
-        tap("Offline preview")
+        tap("Back to PasoFi")
         visible("My PasoFi", exact=True)
-        print("The system return opened the installed account surface; its Offline preview control returned home.", flush=True)
+        print("The system return opened the installed account surface; its Back to PasoFi control returned home.", flush=True)
         adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
         tap("My PasoFi", exact=True)
         print("Entered My PasoFi from the installed application", flush=True)
@@ -142,8 +142,8 @@ if __name__ == "__main__":
                 print("Installed configured app reports account access paused before checkout. No payment was attempted.", flush=True)
                 raise SystemExit(0)
             for gate in (
-                "The configured PasoFi service could not be reached. Your offline preview is still available.",
-                "The configured PasoFi service did not respond in time. Your offline preview is still available.",
+                "The configured PasoFi service could not be reached.",
+                "The configured PasoFi service did not respond in time.",
             ):
                 if locate(gate, nodes=nodes):
                     print("Installed configured app reports the service unavailable and keeps account access and checkout closed. No payment was attempted.", flush=True)
@@ -156,9 +156,19 @@ if __name__ == "__main__":
             print("Observed public first-run accessibility labels:", last_labels[:36], flush=True)
             raise RuntimeError("The installed app did not show a recognized hosted access state")
         print("Installed app reached the configured customer service as a guest", flush=True)
+        # Bundles returns to the app's live catalogue, as on the website. A paused
+        # catalogue ends here; otherwise Buy opens checkout for that bundle.
         tap("Bundles")
         end = time.monotonic() + 55
+        opened_checkout = False
         while time.monotonic() < end:
+            if not opened_checkout and (locate("Purchases paused") or locate("purchasing is not available")):
+                print("Installed app displayed the live catalogue with purchases paused; no payment was attempted", flush=True)
+                break
+            if not opened_checkout and locate(" bundle", nodes=[node for node in screen() if (node.get("content-desc") or node.get("text") or "").startswith("Buy ")]):
+                tap("Buy ")
+                opened_checkout = True
+                continue
             if locate("Online checkout is not enabled here"):
                 print("Installed app displayed the live disabled-checkout state; no payment was attempted", flush=True)
                 break
