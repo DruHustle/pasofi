@@ -10,14 +10,14 @@ body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-f
 .pf-app h3{letter-spacing:-.015em}
 
 /* Bundle cards: name label, hero data figure, validity pill, split price, value line. */
-.pf-app .pf-bundle-card{--pf-accent:#0070f2;--pf-accent-ink:#0058c0;--pf-lift:0 0 #0000;background:#fff;border:1px solid #dfe6ee;border-radius:16px;box-shadow:inset 4px 0 0 var(--pf-accent),var(--pf-lift);transition:box-shadow .2s,transform .2s}
-.pf-app .pf-bundle-card:nth-child(3n+2){--pf-accent:#00875f;--pf-accent-ink:#00704f}.pf-app .pf-bundle-card:nth-child(3n){--pf-accent:#f29d00;--pf-accent-ink:#a35f00}
+.pf-app .pf-bundle-card{--pf-accent:#0070f2;--pf-accent-ink:#0058c0;--pf-accent-soft:#eef5ff;--pf-accent-line:#cfe2fd;--pf-lift:0 0 #0000;background:var(--pf-accent-soft);border:1px solid var(--pf-accent-line);border-radius:16px;box-shadow:inset 4px 0 0 var(--pf-accent),var(--pf-lift);transition:box-shadow .2s,transform .2s}
+.pf-app .pf-bundle-card:nth-child(3n+2){--pf-accent:#00875f;--pf-accent-ink:#00704f;--pf-accent-soft:#ebf7f1;--pf-accent-line:#c6e8d7}.pf-app .pf-bundle-card:nth-child(3n){--pf-accent:#f29d00;--pf-accent-ink:#a35f00;--pf-accent-soft:#fff5e3;--pf-accent-line:#f8dfae}
 .pf-app .pf-bundle-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .pf-app .pf-plan-name{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--pf-accent-ink)}
 .pf-app .pf-bundle-badge{display:inline-flex;align-items:center;min-height:20px;padding:1px 8px;border-radius:999px;background:#c7f5b5;color:#0b3d24;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
 .pf-app .pf-bundle-card h3{display:flex;align-items:baseline;gap:4px;margin:2px 0 0;font-size:36px;font-weight:800;letter-spacing:-.05em;line-height:1;color:#001a33;font-variant-numeric:tabular-nums}
 .pf-app .pf-bundle-card h3 span{font-size:15px;font-weight:800;letter-spacing:0;color:var(--pf-accent-ink)}
-.pf-app .pf-validity{display:inline-flex;align-items:center;justify-self:start;width:max-content;gap:5px;margin:6px 0 0;padding:3px 9px 3px 7px;border-radius:999px;background:#eef3f8;color:#3c4f63;font-size:12px;font-weight:600}
+.pf-app .pf-validity{display:inline-flex;align-items:center;justify-self:start;width:max-content;gap:5px;margin:6px 0 0;padding:3px 9px 3px 7px;border-radius:999px;background:#ffffffc7;color:#3c4f63;font-size:12px;font-weight:600}
 .pf-app .pf-validity .pf-icon{width:13px;height:13px}
 .pf-app .pf-bundle-price strong{display:inline-flex;align-items:flex-start;justify-content:flex-end;font-size:28px;font-weight:800;letter-spacing:-.04em;line-height:1;color:#001a33;font-variant-numeric:tabular-nums}
 .pf-app .pf-price-symbol{font-size:15px;font-weight:700;letter-spacing:0;margin:3px 1px 0 0}
@@ -27,7 +27,7 @@ body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-f
 .pf-app .pf-catalogue--hotspot .pf-per-gb{display:none}
 .pf-app .pf-bundle-price abbr{text-decoration:none;font-weight:700;color:#3c4f63}
 .pf-app .pf-bundle-card>.pf-button{font-weight:700;letter-spacing:.01em}
-.pf-app .pf-bundle-card[data-best-value]{border-color:#9fe38a;--pf-lift:0 8px 24px #00875f1f}
+.pf-app .pf-bundle-card[data-best-value]{--pf-accent-line:#9fe38a;--pf-lift:0 8px 24px #00875f1f}
 @media (hover:hover){.pf-app .pf-bundle-card:hover{--pf-lift:0 10px 28px #001a331a;transform:translateY(-1px)}}
 @media (max-width:359px){.pf-app .pf-bundle-card h3{font-size:30px}.pf-app .pf-bundle-price strong{font-size:23px}}
 
