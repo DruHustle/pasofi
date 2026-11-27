@@ -33,7 +33,8 @@ for (const width of [320, 390, 768, 1280]) test(`photo-led Home stays compact, r
   const heroBox = await page.locator('.pasofi-home-hero').boundingBox(); expect(heroBox!.height).toBeLessThan(width < 600 ? 360 : 380);
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Explore help', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Help & FAQs', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'See all bundles', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Help', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Sign up', exact: true })).toHaveCount(0);
   await expect(page.locator('#home-study-heading, #home-account-heading')).toHaveCount(0);
   await expect(page.getByAltText('Two adults working together on a laptop at a shared table')).toHaveCount(0);
@@ -105,7 +106,8 @@ test('Home account shortcuts and connection guidance preserve guest privacy and 
   const state = await fixture(page); await page.goto('/');
   await page.getByRole('button', { name: 'Check usage', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible();
-  await expect(page.getByText('No account is active in this browser.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Account', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('button', { name: 'Recover an existing account', exact: true })).toBeVisible();
   await page.goto('/'); await expect(page.getByRole('button', { name: 'Vouchers paused', exact: true })).toHaveCount(0);
   await page.goto('/'); await page.locator('.pasofi-home-guide > summary').click();
   await expect(page.getByRole('heading', { name: 'Find your hotspot', exact: true })).toBeVisible();

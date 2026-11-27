@@ -40,7 +40,8 @@ async function mock(page: Page, caps = capabilities, handle?: (route: Route, pat
 }
 async function customer(page: Page, tab: 'History' | 'Online payment') {
   await page.goto('/'); await page.goto('/#usage');
-  await page.getByRole('button', { name: tab, exact: true }).click();
+  if (tab === 'History') await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'History', exact: true }).click();
+  else await page.goto('/#checkout');
 }
 
 test('invoice delivery values normalize only new requests and reject invalid invoice evidence', () => {

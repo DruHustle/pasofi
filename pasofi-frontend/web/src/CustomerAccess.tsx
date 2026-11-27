@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError } from './api';
+import { api, ApiError, hotspotPortal } from './api';
 import { inspectBrowserSession, readCustomerSession, ensureSession, clearSessionSecrets, signOutCustomer, type CustomerSessionStatus } from './session';
 import { type Capabilities, type Product, type Site, type CashEvidence, cashDescription, finishMutation, localDate, messageFor, money, mutationIntent } from './business';
 import { RecoverySetup } from './Recovery';
@@ -26,7 +26,7 @@ const ecocashNumber = (value: string) => /^(?:\+?263|0)?7[0-9]{8}$/.test(value.r
 type PaymentMethod = { code: string; name: string; currency: string; minMinor: number; maxMinor: number };
 type PaymentStatus = { order: Order; attempts: { id: string; state: string }[]; entitlementId: string | null; simulation: boolean; fulfillmentState: 'unconfirmed' | 'fulfilled' | 'reversed' | 'pending_review'; entitlementRevokedAt: string | null; safeToRequote?: boolean };
 export type CustomerTab = 'access' | 'wifi' | 'history' | 'voucher' | 'receipt' | 'purchase' | 'recovery';
-type CustomerIcon = 'data' | 'voucher' | 'wifi' | 'history' | 'shield' | 'receipt' | 'user' | 'arrow';
+type CustomerIcon = 'data' | 'voucher' | 'wifi' | 'history' | 'shield' | 'receipt' | 'user' | 'arrow' | 'back';
 function CustomerGlyph({ name }: { name: CustomerIcon }) {
   const paths: Record<CustomerIcon, string> = {
     data: 'M12 3v18M3 12h18',
@@ -37,6 +37,7 @@ function CustomerGlyph({ name }: { name: CustomerIcon }) {
     receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2V3Zm3 5h6m-6 4h6',
     user: 'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a8 8 0 0 1 16 0v2',
     arrow: 'M5 12h14m-6-6 6 6-6 6',
+    back: 'M19 12H5m6-6-6 6 6 6',
   };
   return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
 }
@@ -90,7 +91,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   }, [selectedBundle?.id, requestedBundleId]);
   useEffect(() => {
     // Keep the selected section visible in the horizontally scrolling list on phones.
-    requestAnimationFrame(() => document.querySelectorAll<HTMLElement>('.customer-section-tabs').forEach(list => {
+    requestAnimationFrame(() => document.querySelectorAll<HTMLElement>('.pf-segmented').forEach(list => {
       const selected = list.querySelector<HTMLElement>('.selected');
       if (selected && list.scrollWidth > list.clientWidth) list.scrollLeft = selected.offsetLeft - list.offsetLeft - (list.clientWidth - selected.offsetWidth) / 2;
     }));
@@ -445,12 +446,18 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   function accessState(item: Entitlement) { if (item.revoked_at) return 'Reversed · unavailable'; if (BigInt(item.consumed_bytes) >= BigInt(item.byte_limit)) return 'Data used up'; if (!item.activated_at) return Date.parse(item.start_by) <= now ? 'Start deadline passed' : 'Queued · not connected'; return Date.parse(item.activated_at) + item.validity_seconds * 1000 <= now ? 'Validity ended' : 'Activated · check hotspot connection below'; }
   const titles: Record<CustomerTab, string> = { access: 'Your internet', wifi: 'My WiFi', history: 'Your activity', voucher: capabilities.vouchers ? 'Redeem a voucher' : 'Vouchers paused', receipt: agentPurchaseAvailable ? 'Buy with an agent' : 'Private receipts', purchase: 'Checkout', recovery: 'Your account' };
   const subtitles: Record<CustomerTab, string> = { access: 'A little data. A lot of possibility.', wifi: 'Your hotspot, your devices, your connection.', history: 'Keep track of your bundles and recent receipts.', voucher: capabilities.vouchers ? 'A code away from your next connection.' : 'Keep your code to redeem when service resumes.', receipt: agentPurchaseAvailable ? 'Pay in cash. Get your data privately.' : 'Review receipts from earlier purchases.', purchase: 'Your bundle. Your preferred way to pay.', recovery: '' };
-  const sectionLinks: { tab: CustomerTab; label: string }[] = [
-    { tab: 'access', label: 'My bundles' }, { tab: 'wifi', label: 'My WiFi' }, { tab: 'history', label: 'History' },
-    { tab: 'voucher', label: capabilities.vouchers ? 'Use a voucher' : 'Vouchers paused' }, { tab: 'receipt', label: 'Private receipt' },
-    { tab: 'purchase', label: 'Online payment' }, { tab: 'recovery', label: 'Account' },
-  ];
-  const sectionNavigation = <nav className="workspace-tabs customer-section-tabs" aria-label="Customer sections">{sectionLinks.map(link => <button key={link.tab} disabled={link.tab === 'voucher' && !capabilities.vouchers} aria-pressed={tab === link.tab} className={tab === link.tab ? 'selected' : ''} onClick={() => selectTab(link.tab)}>{link.label}</button>)}</nav>;
+  // Main navigation owns the destinations. Only two places need a local switch,
+  // and each fits on a phone without scrolling: the account area, and the two
+  // ways to pay when both are offered.
+  const accountArea = tab === 'recovery' || tab === 'access' || tab === 'wifi';
+  const flow = tab === 'voucher' || tab === 'receipt' || tab === 'purchase';
+  const sectionLinks: { tab: CustomerTab; label: string }[] = accountArea
+    ? [{ tab: 'recovery', label: 'Account' }, { tab: 'access', label: 'My bundles' }, { tab: 'wifi', label: 'My WiFi' }]
+    : (tab === 'receipt' || tab === 'purchase') && agentPurchaseAvailable && capabilities.paymentCheckout
+      ? [{ tab: 'receipt', label: 'Cash with an agent' }, { tab: 'purchase', label: 'Online payment' }] : [];
+  const sectionNavigation = sectionLinks.length > 0 && <nav className="pf-segmented" aria-label={accountArea ? 'Account sections' : 'Payment options'}>{sectionLinks.map(link => <button key={link.tab} aria-current={tab === link.tab ? 'page' : undefined} className={tab === link.tab ? 'selected' : ''} onClick={() => selectTab(link.tab)}>{link.label}</button>)}</nav>;
+  const back = hotspotPortal || !onBuyData ? close : onBuyData;
+  const signedOutHere = !loading && !owner && !memberSignInRequired;
   const emptyBundleGuidance = capabilities.staffSales || capabilities.paymentCheckout || capabilities.vouchers
     ? 'No bundles are shown yet. Browse bundles to check current availability.'
     : 'No bundles are shown yet. Purchases and voucher redemption are not available yet. Browse bundles to check current availability.';
@@ -467,21 +474,18 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   </section>;
   const connectionPanel = owner && <NetworkAccess customerId={owner} capabilities={capabilities} usage={usage.snapshot} fresh={usage.fresh} refreshing={usage.refreshing} refresh={usage.refresh} />;
   return <section className="workspace customer-workspace" aria-labelledby="customer-heading" aria-busy={busy || loading} data-screen={tab}>
-    <div className="purchase-head customer-page-heading"><div><h2 id="customer-heading" tabIndex={-1} ref={heading}>{titles[tab]}</h2>{subtitles[tab] && <p>{subtitles[tab]}</p>}</div><button className="close-button" onClick={close} aria-label="Close customer workspace">×</button></div>
-    {!loading && ((tab === 'recovery' && guestSession) || (!owner && (memberSignInRequired || ['recovery','access'].includes(tab)))) && <OnesaCustomerSignIn prominent />}
+    {flow && <button className="pf-back" onClick={back} aria-label={hotspotPortal ? 'Back' : 'Back to bundles'}><CustomerGlyph name="back" /><span>{hotspotPortal ? 'Back' : 'Bundles'}</span></button>}
+    <div className="purchase-head customer-page-heading"><div><h2 id="customer-heading" tabIndex={-1} ref={heading}>{titles[tab]}</h2>{subtitles[tab] && <p>{subtitles[tab]}</p>}</div></div>
+    {sectionNavigation}
+    {!loading && ((tab === 'recovery' && guestSession) || (!owner && (memberSignInRequired || tab === 'recovery' || tab === 'access' || tab === 'wifi' || tab === 'history'))) && <OnesaCustomerSignIn prominent />}
     {capabilities.demo && <p className="notice customer-demo-notice">Demonstration environment. These flows do not establish real customer payment, SMS delivery, or internet connectivity.</p>}
-    {tab !== 'access' && tab !== 'recovery' && sectionNavigation}
-    {tab !== 'recovery' && <PolicyNotice/>}
     {loading && <div className="customer-loading" role="status"><span className="customer-loading-dot" />Checking your account…</div>}
     {message && <p className="feedback" role="status">{message}</p>}
     {!loading && !owner && (memberSignInRequired ? <p className="notice customer-session-notice">
       Sign in again to access your existing PasoFi purchases. <button className="text-button" disabled={busy} onClick={logout}>Sign out on this device</button>
-    </p> : tab !== 'recovery' && tab !== 'voucher' && <p className="notice customer-session-notice">
-      {tab === 'purchase' && capabilities.paymentCheckout || tab === 'receipt' && agentPurchaseAvailable
-        ? 'You can continue as a guest. PasoFi saves the purchase in this browser. Save your recovery key to use it on another device. '
-        : 'No account is active in this browser. Sign in to open your PasoFi account. '}
-      <button className="text-button" onClick={recovered}>Recover an existing account</button>
-    </p>)}
+    </p> : (tab === 'purchase' && capabilities.paymentCheckout || tab === 'receipt' && agentPurchaseAvailable) ? <p className="notice customer-session-notice">
+      You can continue as a guest. PasoFi saves the purchase in this browser. Save your recovery key to use it on another device. <button className="text-button" onClick={recovered}>Recover an existing account</button>
+    </p> : (tab === 'access' || tab === 'wifi' || tab === 'history') && <p className="customer-signin-alt">Bought before without an account? <button className="text-button" onClick={recovered}>Recover an existing account</button></p>)}
     {recoveryReminder && owner && tab !== 'recovery' && <aside className="notice customer-recovery-reminder"><strong>Keep access to your bundle.</strong><p>Save your account reference and recovery key before changing devices or clearing this browser.</p><button className="secondary" onClick={() => { setRecoveryReminder(false); selectTab('recovery'); }}>Review recovery details</button></aside>}
     {showPurchaseOptions && <>
       {catalogueLoading && <p role="status">Loading available bundles and locations…</p>}
@@ -492,29 +496,25 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     {checkoutPending && tab !== 'purchase' && <button className="customer-pending-checkout" onClick={() => selectTab('purchase')}><CustomerGlyph name="receipt" /><span><strong>Your checkout is saved</strong><small>Check its status before starting another payment.</small></span><CustomerGlyph name="arrow" /></button>}
 
     {tab === 'access' && <>
-      {owner ? <LiveUsage usage={usage} onBuyData={buyData} /> : !loading && <section className="customer-welcome-card"><span className="customer-welcome-icon"><CustomerGlyph name="wifi" /></span><div className="eyebrow">A WORLD OF POSSIBILITY</div><h3>Make yourself at home.</h3><p>{capabilities.vouchers ? 'Choose a bundle or redeem a voucher.' : 'Explore the published bundles.'} Your data balance and connection will appear right here.</p><button className="primary" onClick={buyData}>Explore bundles<CustomerGlyph name="arrow" /></button><small>No registration form to get started.</small></section>}
-      <div className="customer-quick-actions" aria-label="Quick actions">
-        <button onClick={buyData}><span><CustomerGlyph name="data" /></span>Browse bundles</button>
-        <button disabled={!capabilities.vouchers} onClick={() => selectTab('voucher')}><span><CustomerGlyph name="voucher" /></span>{capabilities.vouchers ? 'Redeem a voucher' : 'Vouchers paused'}</button>
-        <button onClick={() => selectTab('wifi')} aria-label="Manage my WiFi"><span><CustomerGlyph name="wifi" /></span>My WiFi</button>
-        <button onClick={() => selectTab('recovery')} aria-label="Manage recovery and devices"><span><CustomerGlyph name="user" /></span>My account</button>
-      </div>
-      {sectionNavigation}
-      <div className="customer-overview-grid">{bundleList()}{connectionPanel}</div>
-      <section className="customer-soft-banner"><span><CustomerGlyph name="shield" /></span><div><h3>Your data, on your terms.</h3><p>Validity begins at your first successful hotspot connection. Your uploads and downloads both count.</p></div></section>
+      {owner && <LiveUsage usage={usage} onBuyData={buyData} />}
+      {owner && capabilities.vouchers && <div className="customer-shortcuts">
+        <button className="secondary" onClick={() => selectTab('voucher')}><CustomerGlyph name="voucher" />Redeem a voucher</button>
+      </div>}
+      {(owner || access.length > 0) && <div className="customer-overview-grid">{bundleList()}{connectionPanel}</div>}
+      {signedOutHere && <button className="text-button customer-browse-link" onClick={buyData}>New to PasoFi? Browse bundles<CustomerGlyph name="arrow" /></button>}
     </>}
 
     {tab === 'wifi' && <>
       <section className="customer-wifi-intro"><span className="customer-welcome-icon"><CustomerGlyph name="wifi" /></span><div><h3>A connection that moves with you.</h3><p>Use one active hotspot connection at a time. Disconnect and wait for confirmation before switching to another location.</p></div></section>
-      {owner ? <div className="customer-detail-grid">{connectionPanel}</div> : <section className="workspace-card customer-empty-state"><h3>Bring your data with you.</h3><p>Recover your account to check its connection, or choose your first bundle.</p><div className="purchase-actions"><button className="primary" onClick={recovered}>Recover my account</button><button className="secondary" onClick={buyData}>Browse bundles</button></div></section>}
+      {owner && <div className="customer-detail-grid">{connectionPanel}</div>}
     </>}
 
     {tab === 'history' && <>
-      <div className="customer-history-summary customer-history-compact"><div><h3>History and receipts</h3><p>Paid invoices and bundle activity for this account.</p></div></div>
+      {owner && <div className="customer-history-summary customer-history-compact"><div><h3>History and receipts</h3><p>Paid invoices and bundle activity for this account.</p></div></div>}
       {owner && capabilities.invoices && <InvoiceHistory key={owner} scope="customer" ownerKey={owner} verify={identity} redeeming={busy} onViewReceipt={capabilities.cashReceiptRecovery ? viewPaidReceipt : undefined} onRedeem={capabilities.vouchers && capabilities.receiptPairing ? (saleId, pairingId) => { void redeem(undefined, undefined, {saleId, pairingId}); } : undefined} />}
       {receipt && <section className="customer-history-record"><div><h3>{receipt.sale.simulation ? 'Latest demo receipt' : 'Latest agent receipt'}</h3><strong>{money(receipt.sale.priceMinor, receipt.sale.currency)} · {receipt.sale.bundleId.toUpperCase()}</strong><small>{receipt.sale.siteName} · {cashDescription(receipt.sale.payment, receipt.sale.simulation)}</small></div><div className="customer-history-record-actions"><button className="secondary" onClick={() => selectTab('receipt')}>View private receipt</button>{owner && capabilities.invoices && <InvoiceDownload scope="customer" ownerKey={owner} verify={identity} saleId={receipt.sale.id} disabled={busy} />}</div></section>}
       {order && <section className="customer-history-record"><div><h3>Recent checkout <span className="customer-status-tag">{paymentLabel}</span></h3><strong>{money(order.price_minor, order.currency)} · {order.bundle_id.toUpperCase()}</strong><small>Order {order.id.slice(0, 8)}</small></div><div className="customer-history-record-actions"><button className="secondary" onClick={() => selectTab('purchase')}>View checkout status</button>{owner && capabilities.invoices && paymentVerified && <InvoiceDownload scope="customer" ownerKey={owner} verify={identity} orderId={order.id} disabled={busy} />}</div></section>}
-      {bundleList(true)}
+      {(owner || access.length > 0) && bundleList(true)}
       {owner && usage.snapshot && <section className="workspace-card customer-history-usage"><div><span className="eyebrow">RECORDED USAGE</span><h3>{dataAmount(usage.snapshot.lifetimeAccountedBytes)}</h3></div><p>Lifetime data recorded for this account.{!usage.fresh && ' This is the last confirmed snapshot.'}</p></section>}
     </>}
 
@@ -584,13 +584,12 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
         {guestSession && <><RecoverySetup />{signout
           ? <div className="notice"><p>Save your recovery details before signing out of a guest session.</p><div className="purchase-actions"><button className="secondary" disabled={busy} onClick={logout}>Sign out of guest session</button><button className="secondary" disabled={busy} onClick={() => setSignout(false)}>Keep this session</button></div></div>
           : <button className="secondary" disabled={busy} onClick={() => setSignout(true)}>Sign out</button>}</>}
-        <div className="purchase-actions">
-          <button className="text-button" onClick={() => selectTab('access')}>My bundles</button>
-          <button className="text-button" onClick={() => selectTab('wifi')}>My WiFi</button>
+        {(savedCheckout || savedCashReference) && <div className="purchase-actions">
           {savedCheckout && <button className="text-button" onClick={() => selectTab('purchase')}>Resume checkout</button>}
           {savedCashReference && <button className="text-button" onClick={() => selectTab('receipt')}>Resume cash purchase</button>}
-        </div>
+        </div>}
       </> : <button className="text-button" onClick={recovered}>Recover my account</button>}
     </>}
+    {flow && <PolicyNotice/>}
   </section>;
 }

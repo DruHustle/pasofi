@@ -219,9 +219,14 @@ for (const width of [320, 390, 1280]) {
     const first = await cards.first().boundingBox(), last = await cards.last().boundingBox();
     await expect(page.locator('.pasofi-home-hero')).toBeVisible();
     expect(first!.y, 'first offer should follow the compact photo hero in the first viewport').toBeLessThan(800);
-    expect(last!.y + last!.height, 'the photo hero and five compact offers should need at most one short scroll').toBeLessThan(width >= 1000 ? 1140 : 1350);
+    if (width < 700) {
+      // Phones swipe through offers in one row instead of scrolling a long list.
+      expect(last!.y, 'every offer sits in the same swipeable row').toBeCloseTo(first!.y, 0);
+      expect(await page.locator('.pf-catalogue--preview .pf-bundle-grid').evaluate(row => row.scrollWidth > row.clientWidth)).toBe(true);
+      await expect(page.getByRole('button', { name: 'See all bundles', exact: true })).toBeVisible();
+    } else expect(last!.y + last!.height, 'the photo hero and the offers grid need at most one short scroll').toBeLessThan(1500);
     for (const card of await cards.all()) {
-      const box = await card.boundingBox(); expect(box!.height).toBeLessThan(125);
+      const box = await card.boundingBox(); expect(box!.height).toBeLessThan(width < 700 ? 200 : 240);
       const button = await card.getByRole('button').boundingBox(); expect(button!.height).toBeGreaterThanOrEqual(44); expect(button!.width).toBeGreaterThanOrEqual(44);
     }
     await expect(cards.last().locator('h3')).toHaveText('100GB');

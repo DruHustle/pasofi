@@ -1,0 +1,107 @@
+/* Clean layout: one main navigation, small local switches that fit a phone,
+   and a short swipeable bundle preview on Home. Loaded last; `.pf-app` keeps
+   these rules ahead of the account stylesheets that load with that screen. */
+
+/* Typography: one self-hosted face (Plus Jakarta Sans, OFL) with tighter display
+   headings and tabular figures wherever amounts are compared. */
+:root{--pf-font:'Plus Jakarta Sans Variable',Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-family:var(--pf-font)}
+.pf-app h1,.pf-app h2{letter-spacing:-.03em;font-weight:800}
+.pf-app h3{letter-spacing:-.015em}
+
+/* Bundle cards: name label, hero data figure, validity pill, split price, value line. */
+.pf-app .pf-bundle-card{--pf-accent:#0070f2;--pf-accent-ink:#0058c0;--pf-lift:0 0 #0000;background:#fff;border:1px solid #dfe6ee;border-radius:16px;box-shadow:inset 4px 0 0 var(--pf-accent),var(--pf-lift);transition:box-shadow .2s,transform .2s}
+.pf-app .pf-bundle-card:nth-child(3n+2){--pf-accent:#00875f;--pf-accent-ink:#00704f}.pf-app .pf-bundle-card:nth-child(3n){--pf-accent:#f29d00;--pf-accent-ink:#a35f00}
+.pf-app .pf-bundle-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pf-app .pf-plan-name{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--pf-accent-ink)}
+.pf-app .pf-bundle-badge{display:inline-flex;align-items:center;min-height:20px;padding:1px 8px;border-radius:999px;background:#c7f5b5;color:#0b3d24;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.pf-app .pf-bundle-card h3{display:flex;align-items:baseline;gap:4px;margin:2px 0 0;font-size:36px;font-weight:800;letter-spacing:-.05em;line-height:1;color:#001a33;font-variant-numeric:tabular-nums}
+.pf-app .pf-bundle-card h3 span{font-size:15px;font-weight:800;letter-spacing:0;color:var(--pf-accent-ink)}
+.pf-app .pf-validity{display:inline-flex;align-items:center;justify-self:start;width:max-content;gap:5px;margin:6px 0 0;padding:3px 9px 3px 7px;border-radius:999px;background:#eef3f8;color:#3c4f63;font-size:12px;font-weight:600}
+.pf-app .pf-validity .pf-icon{width:13px;height:13px}
+.pf-app .pf-bundle-price strong{display:inline-flex;align-items:flex-start;justify-content:flex-end;font-size:28px;font-weight:800;letter-spacing:-.04em;line-height:1;color:#001a33;font-variant-numeric:tabular-nums}
+.pf-app .pf-price-symbol{font-size:15px;font-weight:700;letter-spacing:0;margin:3px 1px 0 0}
+.pf-app .pf-price-cents{font-size:15px;font-weight:700;letter-spacing:0;margin-top:3px}
+.pf-app .pf-bundle-price>span{max-width:none;color:#5b6b7a;font-size:12px;font-weight:600}
+.pf-app .pf-per-gb{white-space:nowrap}
+.pf-app .pf-catalogue--hotspot .pf-per-gb{display:none}
+.pf-app .pf-bundle-price abbr{text-decoration:none;font-weight:700;color:#3c4f63}
+.pf-app .pf-bundle-card>.pf-button{font-weight:700;letter-spacing:.01em}
+.pf-app .pf-bundle-card[data-best-value]{border-color:#9fe38a;--pf-lift:0 8px 24px #00875f1f}
+@media (hover:hover){.pf-app .pf-bundle-card:hover{--pf-lift:0 10px 28px #001a331a;transform:translateY(-1px)}}
+@media (max-width:359px){.pf-app .pf-bundle-card h3{font-size:30px}.pf-app .pf-bundle-price strong{font-size:23px}}
+
+/* Compact lists (captive Connect page, narrow hotspot) keep short rows so every offer fits one screen. */
+.pf-app :is(.pf-catalogue--compact,.pf-catalogue--hotspot) .pf-bundle-card h3{font-size:29px}
+.pf-app :is(.pf-catalogue--compact,.pf-catalogue--hotspot) .pf-validity{margin-top:3px;padding:1px 8px 1px 6px}
+.pf-app :is(.pf-catalogue--compact,.pf-catalogue--hotspot) .pf-bundle-price strong{font-size:24px}
+.pf-app .pf-catalogue--hotspot .pf-bundle-card{padding-top:7px;padding-bottom:7px;row-gap:0}
+.pf-app .pf-catalogue--hotspot .pf-bundle-card h3{font-size:25px}
+.pf-app .pf-catalogue--hotspot .pf-bundle-price strong{font-size:22px}
+.pf-app .pf-catalogue--hotspot .pf-validity{margin-top:2px;padding:0 7px 0 5px}
+
+/* From tablet width the full list stacks like product cards in a grid. */
+@media (min-width:700px){
+  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-card{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name name" "data data" "validity validity" "price action";row-gap:6px;padding:20px 18px 18px;box-shadow:inset 0 4px 0 var(--pf-accent),var(--pf-lift)}
+  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-card h3{font-size:44px;margin-top:8px}
+  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-price{align-self:end;text-align:left;margin-top:18px}
+  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-price strong{justify-content:flex-start}
+  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-card>.pf-button{align-self:end;min-width:96px;padding:10px 16px}
+}
+@media (min-width:1000px){.pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}
+
+/* Local switch (account sections, payment choice). Never scrolls sideways. */
+.pf-app .pf-segmented{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;width:100%;max-width:460px;margin:0 0 20px;padding:4px;background:#eaf0f6;border-radius:14px}
+.pf-app .pf-segmented button{min-width:0;min-height:42px;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:#4a5d70;font-size:13px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.pf-app .pf-segmented button:hover{color:#001a33}
+.pf-app .pf-segmented button[aria-current=page]{background:#fff;color:#001a33;box-shadow:0 1px 3px #001a3329}
+.pf-app .pf-segmented button:focus-visible{outline:2px solid #0070f2;outline-offset:2px}
+
+/* Back link for buying, voucher and payment steps (replaces the × button). */
+.pf-app .pf-back{display:inline-flex;align-items:center;gap:6px;min-height:40px;margin:0 0 2px -8px;padding:6px 12px 6px 8px;border:0;border-radius:10px;background:transparent;color:#0058c0;font-size:14px;font-weight:600;cursor:pointer}
+.pf-app .pf-back svg{width:18px;height:18px}
+.pf-app .pf-back:hover{background:#eef4fd}
+.pf-app .pf-back:focus-visible{outline:2px solid #0070f2;outline-offset:2px}
+.pf-app .customer-workspace .customer-page-heading{margin-bottom:16px}
+
+/* Signed-out account screens: one sign-in card and one quiet alternative. */
+.pf-app .customer-signin-alt{margin:-6px 0 20px;color:#5b6b7a;font-size:13px;line-height:1.5}
+.pf-app .customer-signin-alt .text-button{font-size:13px}
+.pf-app .customer-browse-link{display:inline-flex;align-items:center;gap:6px;min-height:44px;font-size:14px}
+.pf-app .customer-browse-link svg{width:16px;height:16px}
+
+/* Signed-in shortcuts under the live usage card. */
+.pf-app .customer-shortcuts{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
+.pf-app .customer-shortcuts button{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 16px}
+.pf-app .customer-shortcuts svg{width:18px;height:18px}
+
+/* Home preview: swipe through bundles on phones instead of a long list. */
+.pf-catalogue--preview .pf-section-heading{align-items:baseline}
+@media (max-width:699px){
+  .pf-catalogue--preview .pf-bundle-grid{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(188px,62%);gap:10px;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:x mandatory;padding:2px 2px 12px;margin:0 -2px;scrollbar-width:none}
+  .pf-catalogue--preview .pf-bundle-grid::-webkit-scrollbar{display:none}
+  .pf-app .pf-catalogue--preview .pf-bundle-card{scroll-snap-align:start;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name name" "data data" "validity validity" "price action";row-gap:4px;padding:16px 14px 14px;box-shadow:inset 0 4px 0 var(--pf-accent),var(--pf-lift)}
+  .pf-app .pf-catalogue--preview .pf-bundle-price{align-self:end;text-align:left;margin-top:10px}
+  .pf-app .pf-catalogue--preview .pf-bundle-price strong{justify-content:flex-start}
+  .pf-catalogue--preview .pf-bundle-card>.pf-button{align-self:end;min-width:76px;padding:9px 10px}
+  .pf-catalogue--preview .pf-bundle-skeleton{min-width:188px}
+}
+
+/* Breathing room under the sticky header on phones and tablets. */
+@media (max-width:999px){.pf-app .pf-main{padding-top:12px}}
+
+/* Calmer page rhythm on phones. */
+@media (max-width:599px){
+  .pf-app .pf-service-status{margin-bottom:14px}
+  .pf-app .pf-segmented{margin-bottom:16px}
+}
+
+
+/* Smallest phones: keep the brand line on one line. */
+@media (max-width:359px){.pf-app .pf-brand small{font-size:9px;white-space:nowrap}}
+
+/* Smallest phones: the price column sizes to its amount and the per-GB note steps aside. */
+@media (max-width:359px){
+  .pf-app .pf-catalogue:not(.pf-catalogue--preview) .pf-bundle-card{grid-template-columns:minmax(0,1fr) auto 62px}
+  .pf-app .pf-catalogue:not(.pf-catalogue--preview) .pf-per-gb{display:none}
+}

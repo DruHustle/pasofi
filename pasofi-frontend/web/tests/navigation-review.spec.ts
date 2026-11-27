@@ -37,8 +37,9 @@ for (const [route, title] of [['checkout', 'Checkout'], ['receipt', 'Private rec
       await expect(page.getByText(/pay the exact cash amount|ask the agent for this published bundle/i)).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Create private pairing code' })).toHaveCount(0);
     }
-    await page.getByRole('button', { name: 'Close customer workspace', exact: true }).click();
-    await expect(page).toHaveURL(/#home$/);
+    await page.getByRole('button', { name: 'Back to bundles', exact: true }).click();
+    await expect(page).toHaveURL(/#bundles$/);
+    await expect(page.getByRole('heading', { name: 'Find your fit.', exact: true, level: 1 })).toBeVisible();
     expect(mutations).toEqual([]);
   });
 }
@@ -73,15 +74,34 @@ test('an unpublished checkout link never silently selects another bundle', async
 test('customer tools keep distinct routes through back and forward navigation', async ({ page }) => {
   const mutations = await guest(page);
   await page.goto('/#history');
-  const sections = page.getByRole('navigation', { name: 'Customer sections' });
-  await sections.getByRole('button', { name: 'Private receipt', exact: true }).click();
-  await expect(page).toHaveURL(/#receipt\?bundle=daily$/);
-  await sections.getByRole('button', { name: 'Online payment', exact: true }).click();
-  await expect(page).toHaveURL(/#checkout\?bundle=daily$/);
+  const main = page.getByRole('navigation', { name: 'Main navigation' });
+  await expect(main.getByRole('button', { name: 'History', exact: true })).toHaveAttribute('aria-current', 'page');
+  await main.getByRole('button', { name: 'Account', exact: true }).click();
+  await expect(page).toHaveURL(/#account$/);
+  const sections = page.getByRole('navigation', { name: 'Account sections' });
+  await sections.getByRole('button', { name: 'My WiFi', exact: true }).click();
+  await expect(page).toHaveURL(/#wifi$/);
+  await expect(main.getByRole('button', { name: 'Account', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(sections.getByRole('button', { name: 'My WiFi', exact: true })).toHaveAttribute('aria-current', 'page');
   await page.goBack();
-  await expect(page.getByRole('heading', { name: 'Private receipts', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Your activity', exact: true })).toBeVisible();
   await page.goForward();
-  await expect(page.getByRole('heading', { name: 'Checkout', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
+  expect(mutations).toEqual([]);
+});
+
+test('each screen highlights exactly one main destination', async ({ page }) => {
+  const mutations = await guest(page, { vouchers: true });
+  const main = page.getByRole('navigation', { name: 'Main navigation' });
+  for (const [route, destination] of [['home', 'Home'], ['bundles', 'Bundles'], ['voucher', 'Bundles'], ['checkout', 'Bundles'], ['receipt', 'Bundles'],
+    ['history', 'History'], ['account', 'Account'], ['usage', 'Account'], ['wifi', 'Account']] as const) {
+    await page.goto(`/#${route}`);
+    await expect(main.getByRole('button', { name: destination, exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(main.locator('[aria-current="page"]')).toHaveCount(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
   expect(mutations).toEqual([]);
 });
 
@@ -119,7 +139,8 @@ test('a failed deferred workspace keeps navigation and offers safe recovery', as
 test('history changes preserve explicit checkout when cash purchases are also available', async ({ page }) => {
   const mutations = await guest(page, { staffSales: true, receiptPairing: true, paymentCheckout: true });
   await page.goto('/#receipt?bundle=daily');
-  const sections = page.getByRole('navigation', { name: 'Customer sections' });
+  const sections = page.getByRole('navigation', { name: 'Payment options' });
+  await expect(sections.getByRole('button', { name: 'Cash with an agent', exact: true })).toHaveAttribute('aria-current', 'page');
   await sections.getByRole('button', { name: 'Online payment', exact: true }).click();
   await page.getByRole('combobox', { name: 'Bundle', exact: true }).selectOption('weekly');
   await expect(page).toHaveURL(/#checkout\?bundle=weekly$/);
