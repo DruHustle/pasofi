@@ -45,7 +45,7 @@ async function open(page: Page, origin: string) { await page.goto(origin); await
 async function openCheckout(page: Page, origin: string) {
   await page.goto(origin);
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Bundles', exact: true }).click();
-  await page.getByRole('button', { name: 'Choose flex bundle', exact: true }).click();
+  await page.getByRole('button', { name: 'Buy flex bundle', exact: true }).click();
   const options = page.getByRole('navigation', { name: 'Payment options' });
   await expect(page.getByRole('heading', { name: /^(Checkout|Buy with an agent)$/ })).toBeVisible();
   if (await options.count()) await options.getByRole('button', { name: 'Online payment', exact: true }).click();
@@ -196,7 +196,7 @@ test('a configured HTTPS gateway still fails closed until native cookie access i
   const requested: string[] = [];
   await mock(page, async (_route, path, _method, reply) => { requested.push(path); if (path === '/api/capabilities') { await reply({ ...capabilities, mobileCookies: false }); return true; } return false; });
   await open(page, configuredBaseURL); await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible(); await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0); expect(requested.length).toBeGreaterThan(0); // Only the public catalogue and capability reads; no session or account endpoint before qualification.
-  expect([...new Set(requested)].every(path => ['/api/capabilities', '/api/bundles'].includes(path))).toBe(true); expect(requested).toContain('/api/capabilities'); await page.getByRole('button', { name: '← Back to PasoFi' }).click(); await expect(page.getByRole('button', { name: 'Browse bundles' })).toBeVisible(); await expect(page.getByRole('button', { name: /^Choose / })).toHaveCount(0);
+  expect([...new Set(requested)].every(path => ['/api/capabilities', '/api/bundles'].includes(path))).toBe(true); expect(requested).toContain('/api/capabilities'); await page.getByRole('button', { name: '← Back to PasoFi' }).click(); await expect(page.getByRole('button', { name: 'Browse bundles' })).toBeVisible(); await expect(page.getByRole('button', { name: /^Buy / })).toHaveCount(0);
 });
 
 test('qualified mobile API session and voucher redemption use credentialed HTTPS and remain disconnected', async ({ page, configuredBaseURL }, testInfo) => {
@@ -236,7 +236,7 @@ test('mobile private receipts lead to history when cash purchases are paused', a
   await expect(page.getByRole('button', { name: 'Create private pairing code' })).toHaveCount(0);
   await expect(page.getByText(/pay the exact cash amount|ask the agent for this published bundle/i)).toHaveCount(0);
   await page.getByRole('navigation', { name: 'Account navigation' }).getByRole('button', { name: 'Bundles', exact: true }).click();
-  await expect(page.getByRole('button', { name: /^Choose / })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Buy / })).toHaveCount(0);
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'History', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your activity' })).toBeVisible();
   expect(writes).toEqual([]);
@@ -356,7 +356,7 @@ test('native bottom navigation preserves an unresolved checkout and its safe ret
   const main = page.getByRole('navigation', { name: 'Main navigation' });
   // Like the website: choose a live bundle, then pay in My PasoFi.
   await main.getByRole('button', { name: 'Bundles', exact: true }).click();
-  await page.getByRole('button', { name: 'Choose flex bundle', exact: true }).click();
+  await page.getByRole('button', { name: 'Buy flex bundle', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Checkout', exact: true })).toBeVisible();
   await page.getByRole('checkbox', { name: /reviewed the price/ }).check();
   await page.getByRole('button', { name: 'Prepare checkout' }).click();
@@ -370,7 +370,7 @@ test('native bottom navigation preserves an unresolved checkout and its safe ret
   await nav.getByRole('button', { name: 'Home', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toBeVisible();
   await main.getByRole('button', { name: 'Bundles', exact: true }).click();
-  await page.getByRole('button', { name: 'Choose flex bundle', exact: true }).click();
+  await page.getByRole('button', { name: 'Buy flex bundle', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Checkout', exact: true })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toHaveValue(siteId);
   await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toBeDisabled();

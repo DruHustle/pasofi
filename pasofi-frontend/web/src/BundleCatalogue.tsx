@@ -141,7 +141,7 @@ export default function BundleCatalogue({ bundles, demo, capabilities, checkingA
       : bundles.length === 0 ? <div className="pf-empty"><span className="pf-empty-icon"><Icon name="grid"/></span><h3>More connection is on the way.</h3><p role="status">No bundles are published yet. Check back when PasoFi launches.</p><div className="purchase-actions"><button className="pf-button pf-button-secondary" onClick={refreshAvailability}>Refresh availability</button><button className="pf-button pf-button-secondary" onClick={help}>Explore help <Icon name="arrow"/></button></div></div>
       : <div className="pf-bundle-grid" data-purchasable={availableToBuy}>{visible.map(bundle => {
         const data = bundleData(bundle.byte_limit);
-        const label = checkingAvailability ? `Checking ${bundle.id} purchase availability` : demo ? `Try ${bundle.id} demo bundle` : capabilities?.staffSales ? `Buy ${bundle.id} from an agent` : capabilities?.paymentCheckout ? `Review ${bundle.id} bundle` : `${bundle.id} purchasing is not available`;
+        const label = checkingAvailability ? `Checking ${bundle.id} purchase availability` : demo ? `Try ${bundle.id} demo bundle` : capabilities?.staffSales ? `Buy ${bundle.id} from an agent` : capabilities?.paymentCheckout ? `Buy ${bundle.id} online` : `${bundle.id} purchasing is not available`;
         const nameId = `bundle-name-${bundle.id}`;
         const best = bestValue.has(bundle.id), perGb = perGbLabel(bundle);
         return <article className="pf-bundle-card" key={bundle.id} aria-labelledby={nameId} data-best-value={best || undefined}>
@@ -149,7 +149,7 @@ export default function BundleCatalogue({ bundles, demo, capabilities, checkingA
           <h3>{data.amount}<span>{data.unit}</span></h3>
           <p className="pf-validity"><Icon name="clock"/>{bundleDuration(bundle.validity_seconds)}</p>
           <div className="pf-bundle-price"><PriceParts minor={bundle.price_minor} currency={bundle.currency}/><span><abbr title={bundle.currency === 'USD' ? 'US dollars' : bundle.currency}>{bundle.currency}</abbr>{perGb && <span className="pf-per-gb"> · {perGb}</span>}</span></div>
-          {(!narrowHotspotCatalogue || availableToBuy) && <button className="pf-button pf-button-primary" disabled={!availableToBuy} aria-label={label} onClick={event => choose(bundle, event.currentTarget)}>{checkingAvailability ? 'Checking…' : demo ? 'Try demo' : availableToBuy ? 'Choose' : capabilities === null ? 'Unavailable' : 'Paused'}<Icon name="arrow"/></button>}
+          {(!narrowHotspotCatalogue || availableToBuy) && <button className="pf-button pf-button-primary" disabled={!availableToBuy} aria-label={label} onClick={event => choose(bundle, event.currentTarget)}>{checkingAvailability ? 'Checking…' : demo ? 'Try demo' : availableToBuy ? 'Buy' : capabilities === null ? 'Unavailable' : 'Paused'}<Icon name="arrow"/></button>}
         </article>;
       })}</div>}
     {!preview && <div className="pf-bundle-terms"><Icon name="shield"/><p><strong>Simple, upfront terms.</strong> One-off prices. Time starts on your first successful connection. Uploads and downloads count. One active connection per customer. Start within 30 days; your bundle ends when its time or data runs out.</p></div>}

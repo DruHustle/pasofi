@@ -33,10 +33,12 @@ for (const platform of ['small-phone', 'large-phone', 'wide-phone'] as const) {
     await expect(page.locator('.pf-plan-name')).toHaveText(['month']);
     await expect(filters.getByRole('button', { name: 'Daily', exact: true })).toHaveCount(0);
     await filters.getByRole('button', { name: 'All bundles', exact: true }).click();
-    await page.getByRole('button',{name:'View Flex example bundle'}).click();
-    await expect(page.getByText('Example only. Buying and connecting are not available in this preview.')).toBeVisible();
+    // Same Buy button as the website, but disabled: the preview cannot start a purchase.
+    const buy = page.getByRole('button', { name: /^Buy .* \(not available in this preview\)$/ });
+    await expect(buy).toHaveCount(5);
+    for (const button of await buy.all()) await expect(button).toBeDisabled();
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    await expect(page.getByRole('button',{name:/buy|purchase|pay|recover|choose/i})).toHaveCount(0);
+    await expect(page.locator('button:enabled').filter({ hasText: /buy|purchase|pay|recover|choose/i })).toHaveCount(0);
     await page.screenshot({path:testInfo.outputPath(`pamofi-${platform}-bundles.png`),fullPage:true});
 
     const nav = page.getByRole('navigation', { name: 'Main navigation' });

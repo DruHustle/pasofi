@@ -68,7 +68,7 @@ export default function MobileCatalogue({ bundles, example, error, checking, pur
   retry: () => void; choose: (bundle: Product) => void; help: () => void; seeAll?: () => void; headingLevel?: 1 | 2;
 }) {
   const preview = Boolean(seeAll);
-  const [filter, setFilter] = useState('all'), [sort, setSort] = useState<Sort>('published'), [open, setOpen] = useState<string | null>(null);
+  const [filter, setFilter] = useState('all'), [sort, setSort] = useState<Sort>('published');
   const available = filters.filter(f => f.id === 'all' || bundles?.some(f.matches));
   useEffect(() => { if (bundles !== null && !available.some(f => f.id === filter)) setFilter('all'); }, [bundles, filter]);
   const selected = available.find(f => f.id === filter) ?? filters[0];
@@ -81,7 +81,7 @@ export default function MobileCatalogue({ bundles, example, error, checking, pur
       : <button className="pf-text-link" onClick={help}>Help & FAQs <Icon name="arrow" /></button>}</div>
     {example && <p className="pf-example-note"><Icon name="info" />Example bundles. Prices and terms are illustrative and may change before launch.</p>}
     {!preview && <>
-      <div className="pf-filter-row" role="group" aria-label="Bundle duration">{available.map(f => <button key={f.id} aria-pressed={filter === f.id} aria-label={f.short === f.label ? undefined : f.label} onClick={() => { setFilter(f.id); setOpen(null); }}>{f.short === f.label ? f.label : <><span className="pf-filter-full">{f.label}</span><span className="pf-filter-short" aria-hidden="true">{f.short}</span></>}</button>)}</div>
+      <div className="pf-filter-row" role="group" aria-label="Bundle duration">{available.map(f => <button key={f.id} aria-pressed={filter === f.id} aria-label={f.short === f.label ? undefined : f.label} onClick={() => setFilter(f.id)}>{f.short === f.label ? f.label : <><span className="pf-filter-full">{f.label}</span><span className="pf-filter-short" aria-hidden="true">{f.short}</span></>}</button>)}</div>
       <div className="pf-catalogue-toolbar">
         <div className="pf-catalogue-caption"><span>{example ? 'Example bundles' : 'Published bundles'}</span>{bundles !== null && !error && <span role="status" aria-atomic="true">Showing {visible.length} of {bundles.length} {bundles.length === 1 ? 'bundle' : 'bundles'}</span>}</div>
         <label className="pf-sort" htmlFor="bundle-sort"><span>Sort bundles</span><select id="bundle-sort" value={sort} disabled={!bundles?.length || error} onChange={event => setSort(event.target.value as Sort)}>{sorts.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
@@ -93,17 +93,15 @@ export default function MobileCatalogue({ bundles, example, error, checking, pur
       : bundles.length === 0 ? <div className="pf-empty"><h3>More connection is on the way.</h3><p role="status">No bundles are published yet.</p><button className="mobile-secondary" onClick={retry}>Refresh availability</button></div>
       : <div className="pf-bundle-grid">{visible.map(bundle => {
         const data = bundleData(bundle.byte_limit), name = bundleName(bundle), perGb = perGbLabel(bundle), nameId = `bundle-name-${bundle.id}`;
-        const shown = open === bundle.id;
-        const label = example ? `${shown ? 'Close' : 'View'} ${name.charAt(0).toUpperCase() + name.slice(1)} example bundle`
-          : checking ? `Checking ${bundle.id} purchase availability` : purchasable ? `Choose ${bundle.id} bundle` : `${bundle.id} purchasing is not available`;
+        // The preview shows the same Buy button as the website, disabled: it never starts a purchase.
+        const label = example ? `Buy ${name} (not available in this preview)`
+          : checking ? `Checking ${bundle.id} purchase availability` : purchasable ? `Buy ${bundle.id} bundle` : `${bundle.id} purchasing is not available`;
         return <article className="pf-bundle-card" key={bundle.id} aria-labelledby={nameId} data-best-value={best.has(bundle.id) || undefined}>
           <div className="pf-bundle-top"><span className="pf-plan-name" id={nameId}>{name}</span>{best.has(bundle.id) && <span className="pf-bundle-badge">Best value</span>}</div>
           <h3>{data.amount}<span>{data.unit}</span></h3>
           <p className="pf-validity"><Icon name="clock" />{bundleDuration(bundle.validity_seconds)}</p>
           <div className="pf-bundle-price"><PriceParts minor={bundle.price_minor} currency={bundle.currency} /><span><abbr title={bundle.currency === 'USD' ? 'US dollars' : bundle.currency}>{bundle.currency}</abbr>{perGb && <span className="pf-per-gb"> · {perGb}</span>}</span></div>
-          {example ? <button className="pf-card-button pf-card-button--quiet" aria-label={label} aria-expanded={shown} aria-controls={shown ? `bundle-detail-${bundle.id}` : undefined} onClick={() => setOpen(shown ? null : bundle.id)}>{shown ? 'Close' : 'Details'}</button>
-            : <button className="pf-card-button" aria-label={label} disabled={checking || !purchasable} onClick={() => choose(bundle)}>{checking ? 'Checking…' : purchasable ? 'Choose' : 'Paused'}</button>}
-          {shown && <div className="pf-card-detail" id={`bundle-detail-${bundle.id}`}><p>Example only. Buying and connecting are not available in this preview.</p><p>Uploads and downloads count. Validity begins on the first successful hotspot connection.</p></div>}
+          <button className="pf-card-button" aria-label={label} disabled={example || checking || !purchasable} onClick={() => choose(bundle)}>{example ? 'Buy' : checking ? 'Checking…' : purchasable ? 'Buy' : 'Paused'}</button>
         </article>;
       })}</div>}
     {!preview && <div className="pf-bundle-terms"><Icon name="shield" /><p><strong>Simple, upfront terms.</strong> One-off prices. Time starts on your first successful connection. Uploads and downloads count. One active connection per customer.</p></div>}
