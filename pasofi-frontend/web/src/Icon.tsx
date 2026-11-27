@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 
-export type IconName = 'home' | 'grid' | 'history' | 'user' | 'wifi' | 'ticket' | 'help' | 'arrow' | 'chevron' | 'shield' | 'clock' | 'plus' | 'check' | 'location' | 'search' | 'devices' | 'bolt' | 'close';
+export type IconName = 'home' | 'grid' | 'history' | 'user' | 'wifi' | 'ticket' | 'help' | 'arrow' | 'chevron' | 'shield' | 'clock' | 'plus' | 'check' | 'location' | 'search' | 'devices' | 'bolt' | 'close' | 'login' | 'logout';
 const paths: Record<IconName, ReactNode> = {
   home: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></>,
   grid: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
@@ -20,6 +20,8 @@ const paths: Record<IconName, ReactNode> = {
   devices: <><rect x="3" y="3" width="12" height="16" rx="2"/><rect x="12" y="9" width="9" height="12" rx="2"/><path d="M6 15h3m6 3h3"/></>,
   bolt: <path d="m13 2-9 12h7l-1 8 10-13h-7Z"/>,
   close: <path d="m6 6 12 12M6 18 18 6"/>,
+  login: <><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="m10 16 4-4-4-4M14 12H4"/></>,
+  logout: <><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="m16 16 4-4-4-4M20 12H10"/></>,
 };
 export default function Icon({ name, className = '', style }: { name: IconName; className?: string; style?: CSSProperties }) {
   return <svg className={`pf-icon ${className}`} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{paths[name]}</svg>;

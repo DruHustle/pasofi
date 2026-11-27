@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError, hotspotPortal } from './api';
-import { inspectBrowserSession, readCustomerSession, ensureSession, announceSessionChange, clearSessionSecrets, type CustomerSessionStatus } from './session';
+import { api, ApiError } from './api';
+import { inspectBrowserSession, readCustomerSession, ensureSession, clearSessionSecrets, signOutCustomer, type CustomerSessionStatus } from './session';
 import { type Capabilities, type Product, type Site, type CashEvidence, cashDescription, finishMutation, localDate, messageFor, money, mutationIntent } from './business';
 import { RecoverySetup } from './Recovery';
 import NetworkAccess from './NetworkAccess';
@@ -10,8 +10,9 @@ import { type InvoiceDelivery, invoiceIdPattern, defaultInvoiceDelivery, invoice
 import LiveUsage, { dataAmount, useLiveUsage, type UsageSnapshot } from './LiveUsage';
 import StripeCheckout,{type StripePayment} from './StripeCheckout';
 import OnesaCustomerSignIn from './OnesaCustomerSignIn';
-import { followOnesaLogout, onesaLogoutHeaders, type LogoutResponse } from './onesa-browser-logout';
+import { followOnesaLogout } from './onesa-browser-logout';
 import './customer-premium.css';
+import './customer-voucher.css';
 
 type Entitlement = { id: string; bundle_id: string; byte_limit: string; consumed_bytes: string; validity_seconds: number; activated_at: string | null; revoked_at: string | null; start_by: string };
 type Pairing = { id: string; code: string; expiresAt: string; status?: string; quote?: { bundleId: string; siteId: string; siteName: string; priceMinor: number; currency: string; byteLimit: string; validitySeconds: number } };
@@ -87,6 +88,13 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     // Explicit checkout/receipt routes own the screen; a changed ID only updates selection.
     setBundleId(nextBundleId);
   }, [selectedBundle?.id, requestedBundleId]);
+  useEffect(() => {
+    // Keep the selected section visible in the horizontally scrolling list on phones.
+    requestAnimationFrame(() => document.querySelectorAll<HTMLElement>('.customer-section-tabs').forEach(list => {
+      const selected = list.querySelector<HTMLElement>('.selected');
+      if (selected && list.scrollWidth > list.clientWidth) list.scrollLeft = selected.offsetLeft - list.offsetLeft - (list.clientWidth - selected.offsetWidth) / 2;
+    }));
+  }, [tab]);
   const isCurrent = (revision: number) => live.current && generation.current === revision;
   function invalidateAccount(expectedOwner?: string) {
     if (expectedOwner && ownerRef.current !== expectedOwner) return;
@@ -417,10 +425,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   async function logout() {
     if (busy) return; const revision = generation.current; setBusy(true); setLeaving(true);
     try {
-      const result = await api<LogoutResponse>('/api/session', { method: 'DELETE', headers: onesaLogoutHeaders(), redirect: 'error' });
-      clearSessionSecrets();
-      try { for (const key of Object.keys(sessionStorage)) if (key.startsWith('pamofi.operation:customer:')) sessionStorage.removeItem(key); } catch { /* The server session was revoked; private view is still cleared. */ }
-      announceSessionChange('signed_out'); if (isCurrent(revision)) { invalidateAccount(); close(); followOnesaLogout(result); }
+      const result = await signOutCustomer();
+      if (isCurrent(revision)) { invalidateAccount(); close(); followOnesaLogout(result); }
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error)); }
     finally { if (isCurrent(revision)) { setBusy(false); setLeaving(false); } }
   }
@@ -462,7 +468,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const connectionPanel = owner && <NetworkAccess customerId={owner} capabilities={capabilities} usage={usage.snapshot} fresh={usage.fresh} refreshing={usage.refreshing} refresh={usage.refresh} />;
   return <section className="workspace customer-workspace" aria-labelledby="customer-heading" aria-busy={busy || loading} data-screen={tab}>
     <div className="purchase-head customer-page-heading"><div><h2 id="customer-heading" tabIndex={-1} ref={heading}>{titles[tab]}</h2>{subtitles[tab] && <p>{subtitles[tab]}</p>}</div><button className="close-button" onClick={close} aria-label="Close customer workspace">×</button></div>
-    {!loading && ((tab === 'recovery' && guestSession) || (!owner && (memberSignInRequired || ['recovery','access'].includes(tab) || (hotspotPortal && tab === 'voucher')))) && <OnesaCustomerSignIn prominent />}
+    {!loading && ((tab === 'recovery' && guestSession) || (!owner && (memberSignInRequired || ['recovery','access'].includes(tab)))) && <OnesaCustomerSignIn prominent />}
     {capabilities.demo && <p className="notice customer-demo-notice">Demonstration environment. These flows do not establish real customer payment, SMS delivery, or internet connectivity.</p>}
     {tab !== 'access' && tab !== 'recovery' && sectionNavigation}
     {tab !== 'recovery' && <PolicyNotice/>}
@@ -470,7 +476,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     {message && <p className="feedback" role="status">{message}</p>}
     {!loading && !owner && (memberSignInRequired ? <p className="notice customer-session-notice">
       Sign in again to access your existing PasoFi purchases. <button className="text-button" disabled={busy} onClick={logout}>Sign out on this device</button>
-    </p> : tab !== 'recovery' && <p className="notice customer-session-notice">
+    </p> : tab !== 'recovery' && tab !== 'voucher' && <p className="notice customer-session-notice">
       {tab === 'purchase' && capabilities.paymentCheckout || tab === 'receipt' && agentPurchaseAvailable
         ? 'You can continue as a guest. PasoFi saves the purchase in this browser. Save your recovery key to use it on another device. '
         : 'No account is active in this browser. Sign in to open your PasoFi account. '}
@@ -513,10 +519,17 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     </>}
 
     {tab === 'voucher' && <section className="workspace-card customer-voucher-card">
-      <div className="customer-voucher-art" aria-hidden="true"><CustomerGlyph name="voucher" /><span>PASOFI</span><i /><span>YOUR NEXT CONNECTION</span></div>
-      <div className="customer-voucher-content">{capabilities.vouchers && <><div className="eyebrow">GOOD THINGS COME IN SMALL CODES</div><h3>Use your voucher</h3><p>Enter the code from your agent or private receipt. Uploads and downloads count toward the allowance. Redeeming queues the bundle; it does not start its validity or connect you.</p></>}
-      {!capabilities.vouchers ? <><p className="notice" role="status">Voucher redemption is currently paused.</p><button className="secondary" onClick={buyData}>Browse bundles</button></> : <form className="form-grid" onSubmit={redeem}><label>Voucher code<input className="customer-voucher-input" required maxLength={40} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Enter your voucher code" value={voucherCode} onChange={event => setVoucherCode(event.target.value.toUpperCase())} /></label><button className="primary" disabled={busy}>Redeem voucher<CustomerGlyph name="arrow" /></button></form>}
-      <div className="customer-private-note"><CustomerGlyph name="shield" /><span>Your voucher is private. Share it only when redeeming.</span></div></div>
+      {!capabilities.vouchers ? <div className="customer-voucher-paused"><p className="notice" role="status">Voucher redemption is currently paused.</p><button className="secondary" onClick={buyData}>Browse bundles</button></div>
+        : <form className="customer-voucher-form" onSubmit={redeem}>
+          <label htmlFor="customer-voucher-code">Voucher code</label>
+          <div className="customer-voucher-row">
+            <input id="customer-voucher-code" className="customer-voucher-input" required maxLength={40} autoComplete="off" autoCapitalize="characters" spellCheck={false} inputMode="text" enterKeyHint="go" placeholder="XXXX-XXXX-XXXX-XXXX" aria-describedby="customer-voucher-help" value={voucherCode} onChange={event => setVoucherCode(event.target.value.toUpperCase())} />
+            <button className="primary" disabled={busy}>{busy ? 'Redeeming…' : 'Redeem voucher'}</button>
+          </div>
+          <p id="customer-voucher-help" className="customer-voucher-help">Use the code on your agent receipt or SMS. {owner && !guestSession ? 'The bundle is added to your account.' : 'The bundle is saved in this browser.'} Its time starts when you first connect.</p>
+        </form>}
+      {capabilities.vouchers && !loading && (!owner || guestSession) && !memberSignInRequired && <div className="customer-voucher-account"><span>Want it saved to your account?</span><OnesaCustomerSignIn compact /></div>}
+      <div className="customer-private-note"><CustomerGlyph name="shield" /><span>Keep your code private. It can be redeemed only once.</span></div>
     </section>}
 
     {tab === 'receipt' && <div className={agentPurchaseAvailable ? 'customer-checkout-layout' : undefined}><section className="workspace-card customer-agent-checkout">
