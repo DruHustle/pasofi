@@ -10,16 +10,16 @@ body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-f
 .pf-app h3{letter-spacing:-.015em}
 
 /* Bundle cards: name label, hero data figure, validity pill, split price, value line. */
-.pf-app .pf-bundle-card{--pf-accent:#0070f2;--pf-accent-ink:#0058c0;--pf-accent-soft:#eef5ff;--pf-accent-line:#cfe2fd;--pf-lift:0 0 #0000;background:var(--pf-accent-soft);border:1px solid var(--pf-accent-line);border-radius:16px;box-shadow:inset 4px 0 0 var(--pf-accent),var(--pf-lift);transition:box-shadow .2s,transform .2s}
+.pf-app .pf-bundle-card{--pf-accent:#0070f2;--pf-accent-ink:#0058c0;--pf-accent-soft:#eef5ff;--pf-accent-line:#cfe2fd;--pf-lift:0 0 #0000;background:var(--pf-accent-soft);border:1px solid var(--pf-accent-line);border-radius:14px;padding:10px 12px 10px 14px;box-shadow:inset 4px 0 0 var(--pf-accent),var(--pf-lift);transition:box-shadow .2s,transform .2s}
 .pf-app .pf-bundle-card:nth-child(3n+2){--pf-accent:#00875f;--pf-accent-ink:#00704f;--pf-accent-soft:#ebf7f1;--pf-accent-line:#c6e8d7}.pf-app .pf-bundle-card:nth-child(3n){--pf-accent:#f29d00;--pf-accent-ink:#a35f00;--pf-accent-soft:#fff5e3;--pf-accent-line:#f8dfae}
 .pf-app .pf-bundle-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .pf-app .pf-plan-name{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--pf-accent-ink)}
 .pf-app .pf-bundle-badge{display:inline-flex;align-items:center;min-height:20px;padding:1px 8px;border-radius:999px;background:#c7f5b5;color:#0b3d24;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
-.pf-app .pf-bundle-card h3{display:flex;align-items:baseline;gap:4px;margin:2px 0 0;font-size:36px;font-weight:800;letter-spacing:-.05em;line-height:1;color:#001a33;font-variant-numeric:tabular-nums}
+.pf-app .pf-bundle-card h3{display:flex;align-items:baseline;gap:4px;margin:2px 0 0;font-size:32px;font-weight:800;letter-spacing:-.05em;line-height:1;color:#001a33;font-variant-numeric:tabular-nums}
 .pf-app .pf-bundle-card h3 span{font-size:15px;font-weight:800;letter-spacing:0;color:var(--pf-accent-ink)}
-.pf-app .pf-validity{display:inline-flex;align-items:center;justify-self:start;width:max-content;gap:5px;margin:6px 0 0;padding:3px 9px 3px 7px;border-radius:999px;background:#ffffffc7;color:#3c4f63;font-size:12px;font-weight:600}
+.pf-app .pf-validity{display:inline-flex;align-items:center;justify-self:start;width:max-content;gap:5px;margin:4px 0 0;padding:2px 8px 2px 6px;border-radius:999px;background:#ffffffc7;color:#3c4f63;font-size:12px;font-weight:600}
 .pf-app .pf-validity .pf-icon{width:13px;height:13px}
-.pf-app .pf-bundle-price strong{display:inline-flex;align-items:flex-start;justify-content:flex-end;font-size:28px;font-weight:800;letter-spacing:-.04em;line-height:1;color:#001a33;font-variant-numeric:tabular-nums}
+.pf-app .pf-bundle-price strong{display:inline-flex;align-items:flex-start;justify-content:flex-end;font-size:26px;font-weight:800;letter-spacing:-.04em;line-height:1;color:#001a33;font-variant-numeric:tabular-nums}
 .pf-app .pf-price-symbol{font-size:15px;font-weight:700;letter-spacing:0;margin:3px 1px 0 0}
 .pf-app .pf-price-cents{font-size:15px;font-weight:700;letter-spacing:0;margin-top:3px}
 .pf-app .pf-bundle-price>span{max-width:none;color:#5b6b7a;font-size:12px;font-weight:600}
@@ -40,15 +40,18 @@ body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-f
 .pf-app .pf-catalogue--hotspot .pf-bundle-price strong{font-size:22px}
 .pf-app .pf-catalogue--hotspot .pf-validity{margin-top:2px;padding:0 7px 0 5px}
 
-/* From tablet width the full list stacks like product cards in a grid. */
+/* From tablet width the full list becomes a grid of short product cards:
+   name, then data with its validity, then price with the action. */
 @media (min-width:700px){
-  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-card{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name name" "data data" "validity validity" "price action";row-gap:6px;padding:20px 18px 18px;box-shadow:inset 0 4px 0 var(--pf-accent),var(--pf-lift)}
-  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-card h3{font-size:44px;margin-top:8px}
-  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-price{align-self:end;text-align:left;margin-top:18px}
+  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-card{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name name" "data validity" "price action";align-items:center;column-gap:10px;row-gap:4px;padding:14px 16px 14px;box-shadow:inset 0 4px 0 var(--pf-accent),var(--pf-lift)}
+  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-card h3{font-size:36px;margin-top:2px}
+  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-validity{justify-self:end;margin:0}
+  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-price{align-self:end;text-align:left;margin-top:8px}
   .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-price strong{justify-content:flex-start}
-  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-card>.pf-button{align-self:end;min-width:96px;padding:10px 16px}
+  .pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-card>.pf-button{align-self:end;min-width:88px;padding:9px 14px}
 }
-@media (min-width:1000px){.pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}
+@media (min-width:1000px){.pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}
+@media (min-width:1200px){.pf-app .pf-catalogue:not(.pf-catalogue--compact) .pf-bundle-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 
 /* Local switch (account sections, payment choice). Never scrolls sideways. */
 .pf-app .pf-segmented{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;width:100%;max-width:460px;margin:0 0 20px;padding:4px;background:#eaf0f6;border-radius:14px}
