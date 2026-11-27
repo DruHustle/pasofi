@@ -317,7 +317,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     assert.equal((await db.query('SELECT 1 FROM staff_onesa_bindings WHERE subject=$1', [administratorId])).rowCount, 0);
     const administratorSession = await request('GET', 'staff/session', undefined, cookie(administrator, 'staff_session'));
     assert.equal(administratorSession.json().role, 'admin');
-  } finally { delete process.env.PASOFI_ONESA_STAFF_ONBOARDING; role = 'agent'; }
+  } finally { delete process.env.PASOFI_ONESA_STAFF_ONBOARDING; role = 'customer'; personEmail = undefined; }
   accountId=stable;
   await app.close();app=buildApp();outage=true;
   assert.equal((await request('GET','session',undefined,browser)).json().customerId,customer);
