@@ -479,12 +479,12 @@ test('Android cold-start return survives a missed notification and is acknowledg
   await nativeBridge(page, request => request.path === '/api/capabilities' ? reply(capabilities)
     : reply({ error: 'not_authenticated' }, 401), { platform: 'android', handoffPending: true });
   await page.goto(configuredBaseURL);
-  await expect(page.getByRole('heading', { name: 'Accept an account handoff' })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole('heading', { name: 'Enter a sign-in code' })).toBeVisible({ timeout: 5000 });
   await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
   await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
   await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
   await page.evaluate(() => (window as any).__returnToHandoff());
-  await expect(page.getByRole('heading', { name: 'Accept an account handoff' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Enter a sign-in code' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
 });
 

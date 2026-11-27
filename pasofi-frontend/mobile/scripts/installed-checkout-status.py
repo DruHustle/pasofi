@@ -97,7 +97,7 @@ def account_return_state():
         except Exception:
             resumed = False
         nodes = screen() if resumed else []
-        if locate("Accept an account handoff", exact=True, nodes=nodes):
+        if any(locate(heading, exact=True, nodes=nodes) for heading in ("Enter a sign-in code", "Accept an account handoff")):
             print("Installed app opened the account handoff form from the OS return intent.", flush=True)
             return
         for gate in (
