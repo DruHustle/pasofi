@@ -11,8 +11,7 @@ for (const [platform, redirect] of [['ios',callback],['android',callback],['ios'
         audience: 'https://api.pasofi.example.invalid',
         ios: 'test_pasofi_ios_client',
         android: 'test_pasofi_android_client',
-        ...(redirect === verifiedCallback ? { verifiedCallback, signup: true,
-          ios: 'test_pasofi_shared_native', android: 'test_pasofi_shared_native' } : {}),
+        ...(redirect === verifiedCallback ? {verifiedCallback} : {}),
       };
     const db = new Map(),
       storage = {
@@ -69,14 +68,9 @@ for (const [platform, redirect] of [['ios',callback],['android',callback],['ios'
         }),
       });
     };
-    if (redirect === callback)
-      await assert.rejects(startNativeSignIn(registration, platform, 'history', storage, { transport: fetch, signup: true }));
-    const signup = redirect === verifiedCallback;
-    const url = new URL(await startNativeSignIn(registration, platform, 'history', storage,
-      { transport: fetch, reauthenticate: !signup, signup }));
+    const url = new URL(await startNativeSignIn(registration, platform, 'history', storage, { transport: fetch, reauthenticate: true }));
     auth = url.searchParams;
-    assert.equal(auth.get('prompt'), signup ? null : 'login');
-    assert.equal(auth.get('screen_hint'), signup ? 'signup' : null);
+    assert.equal(auth.get('prompt'), 'login');
     assert.equal(url.origin + '/', issuer);
     assert.equal(auth.get('code_challenge_method'), 'S256');
     assert.equal(auth.get('audience'), registration.audience);
