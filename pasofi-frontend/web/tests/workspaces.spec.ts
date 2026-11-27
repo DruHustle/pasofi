@@ -734,3 +734,38 @@ test('an agent can open a refund drawer while sales and all sale locations are p
   expect(posts).toEqual([{siteId,currency:'ZWG',openingMinor:250,refundOnly:true}]);
   await expect(page.getByRole('button',{name:'Open shift',exact:true})).toBeDisabled();
 });
+
+test('production staff invitations and requests can be managed from PasoFi admin', async ({ page }) => {
+  const invitationUrl = 'https://account.onesa.eu/register?invite=fixture-opaque';
+  const writes: unknown[] = [];
+  let staffRequest = { id: agentId, revision: 1, email: 'seller@example.test', kind: 'staff', status: 'pending' };
+  await mock(page, async (route, path, method) => {
+    if (path === '/api/capabilities') { await json(route, { ...capabilities, demo: false, staffSales: false }); return true; }
+    if (path === '/api/staff/session') { await json(route, staff('admin')); return true; }
+    if (path === '/api/staff/users') { await json(route, { users: [staff('admin')], nextCursor: null }); return true; }
+    if (path === '/api/staff/inventory') { await json(route, { inventory: [] }); return true; }
+    if (path === '/api/admin/bundles') { await json(route, { products: [{ ...product, published: true }] }); return true; }
+    if (path !== '/api/staff/administration') return false;
+    if (method === 'GET') await json(route, { requests: [staffRequest] });
+    else {
+      const body = route.request().postDataJSON();
+      writes.push(body);
+      if (body.action === 'invite') await json(route, { invitationUrl }, 201);
+      else { staffRequest = { ...staffRequest, revision: 2, status: 'active' }; await json(route, { saved: true }); }
+    }
+    return true;
+  });
+
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { name: 'Staff invitations and requests' })).toBeVisible();
+  await page.getByLabel('Seller email').fill('new-agent@example.test');
+  await page.getByRole('button', { name: 'Create seller invitation' }).click();
+  await expect(page.getByLabel('One-time invitation link')).toHaveValue(invitationUrl);
+  await page.getByRole('button', { name: 'Approve staff access', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Revoke staff access' })).toBeVisible();
+  await expect(page).toHaveURL(/\/admin$/);
+  expect(writes).toEqual([
+    { action: 'invite', email: 'new-agent@example.test' },
+    { action: 'review', kind: 'staff', id: agentId, revision: 1, status: 'active' },
+  ]);
+});

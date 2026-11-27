@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
-import { SignJWT, exportJWK } from 'jose';
+import { SignJWT, exportJWK, jwtVerify } from 'jose';
 import pg from 'pg';
 import { buildApp } from '../dist/app.js';
 
 test('managed PasoFi preserves customer and operator bindings, audience, MFA and outage expiry', {
   skip: !process.env.PAMOFI_TEST_DATABASE_URL,
 }, async t => {
-  const issuer = 'https://auth.example.invalid/', legacy = 'https://portal.example.invalid/api/v1/identity';
-  const audience = 'https://api.pasofi.example.invalid', origin = 'https://pasofi.example.invalid';
+  const issuer = 'https://auth.onesa.eu/', legacy = 'https://portal.example.invalid/api/v1/identity';
+  const audience = 'https://api.pasofi.mobile.onesa.eu', origin = 'https://pasofi.example.invalid';
   const clientId = 'pasofi_isolated_client';
   const stable = randomUUID(), customer = randomUUID(), operator = randomUUID(), providerSubject = 'auth0|' + randomUUID();
   const site = randomUUID(), now = () => Math.floor(Date.now() / 1000);
@@ -33,6 +33,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   let app = buildApp(), outage = false, role = 'customer', extraRoles = [], globalRoles = [], products = ['pasofi'], aud = audience, factor = now(), query, lifetime = 300;
   let accessSubject = providerSubject, accountId=stable;
   let offerRefresh=false, refreshCalls=0, rejectRefresh=false;
+  let personEmail, administrationWrites = 0;
   const refreshTokens=new Map();
   t.after(()=>app.close());
   const ns = 'https://onesa.eu/claims/';
@@ -59,6 +60,16 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
       return new Response(response.body,{status:response.statusCode,headers:{'content-type':'application/json'}});
     }
     if(outage) throw Error('isolated issuer unavailable');
+    if (String(url) === 'https://account.onesa.eu/internal/pasofi/staff-administration') {
+      assert.equal(init.redirect, 'error');
+      const { payload } = await jwtVerify(init.headers.Authorization.slice(7), publicKey, { issuer, audience });
+      assert.deepEqual(payload[ns+'roles'], ['admin']);
+      assert.equal(payload[ns+'user_id'], stable);
+      if (init.method === 'GET') return Response.json({ requests: [] });
+      administrationWrites++;
+      assert.deepEqual(JSON.parse(init.body), { action: 'invite', email: 'new-seller@example.invalid' });
+      return Response.json({ invitationUrl: 'https://account.onesa.eu/register?invite=fixture' }, { status: 201 });
+    }
     if(String(url)===issuer+'.well-known/openid-configuration') return Response.json({
       issuer,authorization_endpoint:issuer+'authorize',token_endpoint:issuer+'oauth/token',jwks_uri:issuer+'keys',
       response_types_supported:['code'],subject_types_supported:['public'],id_token_signing_alg_values_supported:['RS256'],
@@ -82,7 +93,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     if(refresh)refreshTokens.set(refresh,claims);
     return Response.json({token_type:'Bearer',access_token:await sign({
       ...claims,[ns+'mfa_time']:factor,
-    },aud,accessSubject,lifetime),id_token:await sign({nonce:query.get('nonce'),auth_time:now()},clientId,providerSubject,300),refresh_token:refresh});
+    },aud,accessSubject,lifetime),id_token:await sign({nonce:query.get('nonce'),auth_time:now(),...(personEmail ? { email: personEmail, email_verified: true } : {})},clientId,providerSubject,300),refresh_token:refresh});
   });
   const request=(method,path,payload,cookie)=>app.inject({method,url:'/v1/'+path,headers:{origin,...(cookie?{cookie}:{})},...(payload?{payload}:{})});
   const cookie=(response,part)=>{ const c=response.cookies.find(c=>c.name.endsWith(part)); return c.name+'='+c.value; };
@@ -169,6 +180,9 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   const adminSession=await request('GET','staff/session',undefined,adminCookie);
   assert.equal(adminSession.json().staffId,operator);
   assert.equal(adminSession.json().role,'admin');assert.deepEqual(adminSession.json().siteIds,[]);
+  assert.deepEqual((await request('GET','staff/administration',undefined,adminCookie)).json(), { requests: [] });
+  assert.equal((await request('POST','staff/administration',{action:'invite',email:'new-seller@example.invalid'},adminCookie)).statusCode, 200);
+  assert.equal(administrationWrites, 1);
   await db.query("UPDATE staff_users SET role='agent',site_ids=$2,version=version+1 WHERE id=$1",[operator,[site]]);
   assert.equal((await request('GET','staff/session',undefined,adminCookie)).statusCode,401,'a changed local approval retires the managed administrator session');
   role='customer';products=['pasofi','smart-farmer'];
@@ -179,6 +193,8 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   const staffCookie=cookie(staff,'staff_session');
   const me=await request('GET','staff/session',undefined,staffCookie);assert.equal(me.json().staffId,operator);assert.deepEqual(me.json().siteIds,[site]);
   assert.equal((await request('GET','staff/users',undefined,staffCookie)).statusCode,403);
+  assert.equal((await request('POST','staff/administration',{action:'invite',email:'blocked@example.invalid'},staffCookie)).statusCode,403);
+  assert.equal(administrationWrites, 1);
   aud='https://other.example.invalid';assert.equal((await login()).statusCode,401);aud=audience;
   accessSubject='auth0|different';assert.equal((await login()).statusCode,401);accessSubject=providerSubject;
   role='customer';lifetime=1200;
@@ -236,6 +252,20 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
   assert.equal(mergedGuest.json().customerId,guestId);
   assert.equal((await request('GET','session',undefined,guestCookie)).statusCode,401);
   assert.equal((await request('GET','session',undefined,cookie(mergedGuest,'demo_session'))).json().guest,false);
+  const applicantId = randomUUID();
+  accountId = applicantId;
+  role = 'agent';
+  factor = now();
+  personEmail = 'new-seller-' + applicantId + '@example.invalid';
+  process.env.PASOFI_ONESA_STAFF_ONBOARDING = 'true';
+  try {
+    const application = await login(true);
+    assert.equal(application.statusCode, 403);
+    assert.equal(application.json().error, 'staff_assignment_pending');
+    assert.deepEqual((await db.query(`SELECT u.email,u.status,u.role,u.site_ids
+      FROM staff_users u JOIN staff_onesa_bindings b ON b.staff_id=u.id WHERE b.subject=$1`, [applicantId])).rows,
+    [{ email: personEmail, status: 'pending', role: null, site_ids: [] }]);
+  } finally { delete process.env.PASOFI_ONESA_STAFF_ONBOARDING; }
   accountId=stable;
   await app.close();app=buildApp();outage=true;
   assert.equal((await request('GET','session',undefined,browser)).json().customerId,customer);

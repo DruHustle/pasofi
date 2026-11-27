@@ -18,7 +18,7 @@ export function cashDescription(payment: CashEvidence | undefined, simulation: b
 export type Staff = {
   staffId: string; email: string; displayName: string; status: 'pending' | 'approved' | 'rejected' | 'disabled';
   role: 'admin' | 'agent' | 'support' | null; siteIds: string[]; version: number;
-  mfaEnrolled?: boolean; mfaVerified?: boolean; createdAt?: string;
+  mfaEnrolled?: boolean; mfaVerified?: boolean; managedSignIn?: boolean; createdAt?: string;
 };
 export const money = (minor: number, currency = 'USD') => new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(minor / 100);
 export const localDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -29,7 +29,9 @@ export function messageFor(error: unknown, fallback = 'This request could not be
   if (error.status === 403) return 'This action is not available for your account or assigned site. Refresh your account permissions.';
   if (error.status === 429) return 'Too many attempts. Wait a minute before trying again.';
   const messages: Record<string, string> = {
-    staff_mfa_required: 'Verify your staff sign-in again before making this change.',
+    staff_mfa_required: 'Verify your staff sign-in again to manage access.',
+    staff_administration_unavailable: 'Staff invitations and access requests are temporarily unavailable.',
+    staff_review_conflict: 'This request changed. Refresh access requests before reviewing it again.',
     no_usable_entitlement: 'Your account has no bundle eligible for a new hotspot session. Check the remaining data and validity of your bundles.',
     accounting_review_required: 'Your previous connection needs an accounting review. Contact your PasoFi agent before reconnecting.',
     session_pending_or_active: 'A hotspot session is still open. Check its status before starting another connection.',

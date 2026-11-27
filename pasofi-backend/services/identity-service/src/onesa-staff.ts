@@ -304,8 +304,26 @@ export class OnesaStaff {
     }).catch(() => { throw denied(); });
     if (tokens.token_type.toLowerCase() !== 'bearer' || !tokens.access_token || tokens.access_token.length > (this.config.managed ? 16384 : 2048)) throw denied();
     const staff = await this.inspect(tokens.access_token);
-    if (tokens.claims()?.sub !== (staff.providerSubject ?? staff.subject)) throw denied();
+    const claims = tokens.claims();
+    if (claims?.sub !== (staff.providerSubject ?? staff.subject)) throw denied();
     if (this.config.managed && staff.authorizedClient && staff.authorizedClient !== this.config.clientId) throw denied();
+    if (this.config.managed && staff.siteOperator && process.env.PASOFI_ONESA_STAFF_ONBOARDING === 'true') {
+      const bound = await db.query(`SELECT u.status FROM staff_onesa_bindings b JOIN staff_users u ON u.id=b.staff_id
+        WHERE b.issuer=$1 AND b.subject=$2::uuid`, [this.recordIssuer, staff.subject]);
+      if (bound.rows[0]?.status === 'pending') throw new OnesaError(403, 'staff_assignment_pending');
+      if (!bound.rowCount) {
+        if (claims.email_verified !== true || typeof claims.email !== 'string') throw denied();
+        const created = await db.query('SELECT public.create_managed_staff_applicant($1,$2::uuid,$3) AS created',
+          [this.recordIssuer, staff.subject, claims.email.trim().toLowerCase()]);
+        if (created.rows[0].created) throw new OnesaError(403, 'staff_assignment_pending');
+        // A parallel request may have created the same applicant. Email
+        // conflicts with another identity remain an ownership review.
+        const applicant = await db.query(`SELECT u.status FROM staff_onesa_bindings b JOIN staff_users u ON u.id=b.staff_id
+          WHERE b.issuer=$1 AND b.subject=$2::uuid`, [this.recordIssuer, staff.subject]);
+        if (applicant.rows[0]?.status === 'pending') throw new OnesaError(403, 'staff_assignment_pending');
+        if (!applicant.rowCount) throw new OnesaError(409, 'staff_binding_review_required');
+      }
+    }
     const session = freshOpaque(), hash = opaqueHash(session);
     const envelope = this.protectAccess(tokens.access_token, 'onesa-session:' + hash.toString('hex'));
     const renewal = await this.startRenewal(db,tokens.access_token,tokens.refresh_token,staff);
@@ -330,6 +348,32 @@ export class OnesaStaff {
       await db.query('INSERT INTO staff_onesa_sessions(token_hash,issuer,subject,access_ciphertext,expires_at,renewal_id) VALUES($1,$2,$3,$4,to_timestamp($5),$6)', values);
     }
     return { session, maxAge: this.config.managed ? 30 * 86400 : Math.max(1, staff.expires - Math.floor(Date.now() / 1000)) };
+  }
+
+  async administerStaff(db: Store, session: unknown, body?: unknown) {
+    if (!this.config.managed || this.config.issuer !== 'https://auth.onesa.eu/' ||
+        this.config.managed.audience !== 'https://api.pasofi.mobile.onesa.eu')
+      throw new OnesaError(503, 'staff_administration_unavailable');
+    if (!isOpaque(session)) throw denied();
+    const hash = opaqueHash(session);
+    const result = await db.query('SELECT access_ciphertext FROM staff_onesa_sessions WHERE token_hash=$1 AND issuer=$2 AND expires_at>now()',
+      [hash, this.recordIssuer]);
+    if (!result.rowCount) throw denied();
+    const token = this.readAccess(result.rows[0].access_ciphertext, 'onesa-session:' + hash.toString('hex'));
+    const response = await fetch('https://account.onesa.eu/internal/pasofi/staff-administration', {
+      method: body === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(4000),
+      headers: { Authorization: 'Bearer ' + token, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (response.status === 401 || response.status === 428) throw new OnesaError(428, 'staff_mfa_required');
+    if (response.status === 403) throw new OnesaError(403, 'admin_required');
+    if (response.status === 409) {
+      const invitation = (body as { action?: unknown } | null)?.action === 'invite';
+      throw new OnesaError(409, invitation ? 'staff_invitation_unavailable' : 'staff_review_conflict');
+    }
+    if (!response.ok || !response.headers.get('content-type')?.includes('application/json'))
+      throw new OnesaError(503, 'staff_administration_unavailable');
+    return response.json();
   }
 
   async principal(db: Store, session: string, lock: boolean) {

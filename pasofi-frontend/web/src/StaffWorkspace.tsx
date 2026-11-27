@@ -1,4 +1,4 @@
-import { registrationUrl, rememberRegistration, staffEntry, startProductSignIn } from './registration';
+import { staffEntry, startProductSignIn } from './registration';
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, ApiError } from './api';
@@ -168,7 +168,8 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
       <p>Staff access requires approval and verification.</p>
       {onesaOrigin === undefined && <p role="status">Checking staff sign-in…</p>}
       {onesaOrigin === null && <p>Staff sign-in is temporarily unavailable.</p>}
-      <a href={registrationUrl('admin')} onClick={()=>rememberRegistration(true)}>Request administrator access</a>
+      <p><a href="https://account.onesa.eu/access?product=pasofi&amp;role=agent">Request staff access</a></p>
+      <p><a href="https://account.onesa.eu/access?product=pasofi&amp;role=administrator">Request administrator access</a></p>
     </div>}
     {capabilities?.demo && (step === 'login' || step === 'register') && <div className="workspace-auth"><div><h3>{step === 'register' ? 'Apply for staff access' : 'Welcome back'}</h3><p>{step === 'register' ? 'Every staff account needs an authenticator and administrator approval before it can sell vouchers or manage a site.' : 'Sign in with your email, password, and authenticator code.'}</p></div><form className="form-grid" onSubmit={authenticate}>
       {step === 'register' && <label>Your name<input required maxLength={80} autoComplete="name" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>}
