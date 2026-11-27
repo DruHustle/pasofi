@@ -69,6 +69,41 @@ test('native bridge argument logging stays disabled even in debug payment builds
   expect(configuration).toMatch(/loggingBehavior:\s*'none'/);
 });
 
+test('an expired customer session clears the mobile EcoCash checkout form', async ({ page, configuredBaseURL }) => {
+  const siteId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const orderId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+  const order = { id: orderId, bundle_id: 'flex', price_minor: 100, currency: 'USD', status: 'awaiting_payment', quote_expires_at: new Date(Date.now() + 900000).toISOString() };
+  let customerSessionExpired = false;
+  let checkoutRequests = 0;
+  await mock(page, async (_route, path, method, reply) => {
+    if (path === '/api/capabilities') { await reply({ ...capabilities, paymentCheckout: true, paymentMode: 'sandbox', ecocashCheckout: true }); return true; }
+    if (path === '/api/sites') { await reply({ sites: [{ id: siteId, name: 'Synthetic EcoCash site' }] }); return true; }
+    if (path === '/api/payments/methods') { await reply({ enabled: true, methods: [{ code: 'ECOCASH', name: 'EcoCash', currency: 'USD', minMinor: 50, maxMinor: 50000 }] }); return true; }
+    if (path === '/api/orders' && method === 'POST') { await reply({ order }); return true; }
+    if (path === `/api/orders/${orderId}/checkout`) {
+      checkoutRequests++;
+      await reply({ attemptId: orderId, state: 'pending', simulation: true, redirectUrl: null, ecocash: { provider: 'ecocash', payerHint: '653', awaitingApproval: true } });
+      return true;
+    }
+    if (path === '/api/session' && customerSessionExpired) { await reply({ error: 'session_required' }, 401); return true; }
+    return false;
+  });
+  await open(page, configuredBaseURL);
+  await page.getByRole('button', { name: 'Online payment', exact: true }).click();
+  const walletNumber = page.getByLabel('EcoCash number');
+  await walletNumber.fill('077 304 7653');
+  await page.getByRole('checkbox', { name: /reviewed the price/ }).check();
+  await page.getByRole('button', { name: 'Prepare checkout' }).click();
+  await expect(page.getByRole('heading', { name: 'Approve on your phone' })).toBeVisible();
+
+  customerSessionExpired = true;
+  await page.getByRole('button', { name: 'Check verified payment status' }).click();
+  await expect(page.getByText('Your customer session changed or expired.', { exact: false })).toBeVisible();
+  await expect(walletNumber).toHaveValue('');
+  await expect(page.getByRole('heading', { name: 'Approve on your phone' })).toHaveCount(0);
+  expect(checkoutRequests).toBe(1);
+});
+
 for(const platform of ['ios','android'])for(const outcome of ['completed','cancelled']){
   test(`${platform} payment sheet ${outcome} preserves server-only fulfillment and memory-only client secret`,async({page,configuredBaseURL})=>{
     const siteId='dddddddd-dddd-4ddd-8ddd-dddddddddddd',orderId='ffffffff-ffff-4fff-8fff-ffffffffffff';
