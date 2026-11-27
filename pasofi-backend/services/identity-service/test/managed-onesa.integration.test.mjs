@@ -253,6 +253,7 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     query=new URL(started.json().authorizationUrl).searchParams;
     assert.equal(query.get('prompt'),'login');
     assert.equal(query.get('max_age'),'0');
+    assert.equal(query.get('acr_values'),'urn:onesa:authentication:pasofi-customer','a customer entry requests only the customer role');
     return request('POST','onesa/complete',{code:'claim',state:query.get('state')},
       [guestCookie,cookie(started,'onesa_customer_flow')].join('; '));
   };
@@ -278,7 +279,17 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
     assert.deepEqual((await db.query(`SELECT u.email,u.status,u.role,u.site_ids
       FROM staff_users u JOIN staff_onesa_bindings b ON b.staff_id=u.id WHERE b.subject=$1`, [applicantId])).rows,
     [{ email: personEmail, status: 'pending', role: null, site_ids: [] }]);
-  } finally { delete process.env.PASOFI_ONESA_STAFF_ONBOARDING; }
+    // An Onesa administrator signing in for the first time is not filed as a seller application.
+    const administratorId = randomUUID();
+    accountId = administratorId; role = 'admin'; factor = now();
+    personEmail = 'new-admin-' + administratorId + '@example.invalid';
+    await app.close(); app = buildApp(); // A fresh instance keeps this case clear of the per-minute staff sign-in limit.
+    const administrator = await login(true);
+    assert.equal(administrator.statusCode, 200, administrator.body);
+    assert.equal((await db.query('SELECT 1 FROM staff_onesa_bindings WHERE subject=$1', [administratorId])).rowCount, 0);
+    const administratorSession = await request('GET', 'staff/session', undefined, cookie(administrator, 'staff_session'));
+    assert.equal(administratorSession.json().role, 'admin');
+  } finally { delete process.env.PASOFI_ONESA_STAFF_ONBOARDING; role = 'agent'; }
   accountId=stable;
   await app.close();app=buildApp();outage=true;
   assert.equal((await request('GET','session',undefined,browser)).json().customerId,customer);

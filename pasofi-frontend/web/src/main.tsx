@@ -15,9 +15,11 @@ import { withPolicyHelp, type HelpArticle as Article } from './PolicyHelp';
 import './style.css';
 import './premium.css';
 import AppDownloads from './AppDownloads';
+import AccountMenu from './AccountMenu';
 import OnesaCustomerSignIn from './OnesaCustomerSignIn';
 import './home.css';
 import './customer-journey.css';
+import './refinements.css';
 
 const DemoPurchase = lazy(() => import('./DemoPurchase'));
 const Recovery = lazy(() => import('./Recovery'));
@@ -159,6 +161,11 @@ function App() {
     if (customerViews[view] || view === 'staff' || view === 'handoff') setLocation(hotspotPortal && view === 'voucher' ? 'connect' : 'home');
     requestAnimationFrame(() => { if (opener.current?.isConnected) opener.current.focus(); else focusScreen(); });
   }
+  function signedOut() {
+    setPurchase(null); setWorkspace(null); setCheckoutBundle(null); setRequestedBundleId(null);
+    setLocation(hotspotPortal ? 'connect' : 'home'); setCustomerTab('access');
+    setNotice('You have signed out of PasoFi on this device.'); focusScreen();
+  }
   function openDemo(next: Product | 'access', button: HTMLButtonElement) {
     opener.current = button; setNotice(''); setWorkspace(null); recoveryTarget.current = 'demo'; setPurchase(next); focusScreen();
   }
@@ -188,7 +195,7 @@ function App() {
 
   return <div className="pf-app">
     <a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); content.current?.focus(); content.current?.scrollIntoView({ block: 'start', behavior: 'auto' }); }}>Skip to main content</a>
-    <header className="pf-header"><a className="pf-brand" href="#home" onClick={event => { event.preventDefault(); navigate('home'); }} aria-label="PasoFi home" aria-describedby="pasofi-product-family"><span className="pf-brand-mark"><Icon name="wifi"/></span><span>PasoFi<small id="pasofi-product-family">An Onesa Mobile product</small></span></a><span className="pf-header-tagline">A little connection. More possibility.</span><div className="pf-header-actions"><button className="pf-icon-button" onClick={() => navigate('help')} aria-label="Help"><Icon name="help"/><span>Help</span></button><button className="pf-avatar-button" onClick={event => openCustomer('recovery', event.currentTarget)} aria-label="Your account" aria-current={view === 'account' ? 'page' : undefined}><Icon name="user"/></button></div></header>
+    <header className="pf-header"><a className="pf-brand" href="#home" onClick={event => { event.preventDefault(); navigate('home'); }} aria-label="PasoFi home" aria-describedby="pasofi-product-family"><span className="pf-brand-mark"><Icon name="wifi"/></span><span>PasoFi<small id="pasofi-product-family">An Onesa Mobile product</small></span></a><span className="pf-header-tagline">A little connection. More possibility.</span><div className="pf-header-actions"><button className="pf-icon-button" onClick={() => navigate('help')} aria-label="Help"><Icon name="help"/><span>Help</span></button><AccountMenu session={customerSession} onSession={setCustomerSession} current={view === 'account'} vouchers={capabilities?.vouchers === true} open={(tab, button) => openCustomer(tab, button)} recover={button => openRecovery(button, 'customer')} help={button => navigate('help', button)} signedOut={signedOut}/></div></header>
     <nav className="pf-navigation" aria-label="Main navigation"><span className="pf-nav-title">YOUR PASOFI</span>{navItems.map(item => <button key={item.view} aria-current={activeNav === item.view ? 'page' : undefined} onClick={event => navigate(item.view, event.currentTarget)}><span className="pf-nav-icon"><Icon name={item.icon}/></span><span>{item.label}</span>{activeNav === item.view && <span className="pf-nav-dot"/>}</button>)}<div className="pf-nav-note"><Icon name="shield"/><strong>Connection on your terms.</strong><span>No subscriptions.<br/>Just the data you need.</span></div></nav>
     <main id="main-content" className={`pf-main ${view === 'connect' ? 'pf-captive' : view === 'home' ? 'pf-home' : ''}`} ref={content} tabIndex={-1}>
       {!hotspotPortal && offline && <div className="connection-notice" role="status">You appear to be offline. Reconnect before checking an order or recovering access.</div>}
@@ -221,7 +228,7 @@ function App() {
       {!workspace && !purchase && view === 'help' && <section className="pf-help" aria-labelledby="help-heading"><div className="pf-page-intro"><div><span className="pf-eyebrow">A LITTLE GUIDANCE</span><h1 id="help-heading" tabIndex={-1}>Here to help.</h1><p>Quick answers. More time for your day.</p></div><span className="pf-help-illustration"><Icon name="help"/></span></div><div className="pf-help-layout"><div className="pf-help-main"><label className="pf-search" htmlFor="help-query"><Icon name="search"/><span className="pf-sr-only">Find a quick answer</span><input id="help-query" type="search" maxLength={160} placeholder="Search data, vouchers or recovery" value={helpQuery} onChange={event => setHelpQuery(event.target.value)}/></label><p className="pf-private-note">Search reviewed answers. Never enter a voucher, password or recovery key here.</p><div className="pf-faq">{helpError && <div className="pf-empty"><p role="status">Help is temporarily unavailable.</p><p>Policy answers are available below.</p><button className="pf-button pf-button-secondary" onClick={() => setHelpAttempt(value => value + 1)}>Retry help</button></div>}{!helpError && articles === null && <p role="status">Loading more help…</p>}{visibleArticles.length === 0 ? <p className="pf-empty" role="status">No reviewed answer matches that search. Try a shorter phrase or clear the search to see all answers.</p> : visibleArticles.map(a => <details key={a.question}><summary>{a.question}<Icon name="plus"/></summary><p>{a.answer}</p></details>)}</div></div><aside className="pf-support-card"><span className="pf-empty-icon"><Icon name="shield"/></span><h2>Your account, in your hands.</h2><p>Call customer support on <a href="tel:+263715092221">+263 715 092 221</a>. Keep recovery details and voucher codes private.</p><p>Keep your recovery key somewhere safe. You can use it to restore access on another device.</p><button className="pf-button pf-button-secondary" onClick={event => openRecovery(event.currentTarget)}>Recover my account <Icon name="arrow"/></button><p className="pf-private-note">For a cash-sale query, ask the agent at your PasoFi location to review your receipt.</p><PolicyNotice/></aside></div></section>}
       {!workspace && !purchase && (view === 'terms' || view === 'privacy') && <Policies kind={view}/>}
       </ScreenBoundary>
-      <footer className="pf-footer"><div><strong>PasoFi</strong><p>An Onesa Mobile product</p></div><AppDownloads /><div className="pf-footer-tools">{!showWelcome && !accountOwnsSignIn && !showBundleSignIn && workspace !== 'staff' && customerSession !== 'member' && <OnesaCustomerSignIn/>}<button onClick={event => openRecovery(event.currentTarget)}>Recover</button><button onClick={event => openUtility('staff', event.currentTarget)}>Staff</button>{demoEnabled && <button onClick={event => openDemo('access', event.currentTarget)}>My demo access</button>}<a href="#terms" onClick={event => { event.preventDefault(); navigate('terms'); }}>Service terms</a><a href="#privacy" onClick={event => { event.preventDefault(); navigate('privacy'); }}>Privacy</a><a href="/connect" onClick={event => { event.preventDefault(); navigate('connect'); }}>Hotspot welcome</a></div></footer>
+      <footer className="pf-footer"><div><strong>PasoFi</strong><p>An Onesa Mobile product</p></div><AppDownloads /><div className="pf-footer-tools"><button onClick={event => openRecovery(event.currentTarget)}>Recover</button><button onClick={event => openUtility('staff', event.currentTarget)}>Staff</button>{demoEnabled && <button onClick={event => openDemo('access', event.currentTarget)}>My demo access</button>}<a href="#terms" onClick={event => { event.preventDefault(); navigate('terms'); }}>Service terms</a><a href="#privacy" onClick={event => { event.preventDefault(); navigate('privacy'); }}>Privacy</a><a href="/connect" onClick={event => { event.preventDefault(); navigate('connect'); }}>Hotspot welcome</a></div></footer>
     </main>
   </div>;
 }

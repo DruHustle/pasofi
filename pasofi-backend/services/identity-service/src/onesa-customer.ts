@@ -36,6 +36,10 @@ export class OnesaCustomer extends OnesaStaff {
     const authorization = oidc.buildAuthorizationUrl(await this.protocolClient(), {
       redirect_uri: callback.href, response_type: 'code', ...this.authorizationParameters,
       state, nonce, code_challenge_method: 'S256', code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
+      // A customer entry asks Onesa for the customer role only. Onesa's Actions
+      // then skip the staff authenticator detour for administrators and issue
+      // a customer token; earlier Actions ignore the value.
+      ...(this.config.managed ? {acr_values:'urn:onesa:authentication:pasofi-customer'} : {}),
       ...(guestToken ? {prompt:'login',max_age:'0'} : {}),
     });
     await db.query('DELETE FROM customer_onesa_flows WHERE expires_at<=now()');
