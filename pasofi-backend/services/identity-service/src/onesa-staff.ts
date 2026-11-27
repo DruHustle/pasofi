@@ -59,6 +59,9 @@ function staffAssertion(input: unknown, config: Configuration, now: number): Adm
 
 const ns = 'https://onesa.eu/claims/';
 const mfaPolicy = 'http://schemas.openid.net/pape/policies/2007/06/multi-factor';
+// Allow time for password managers, browser handoff and MFA enrollment. The
+// existing ID token authentication age and recent-factor rules still apply.
+export const staffFlowLifetime = 15 * 60;
 
 function publicKeys(raw: string): JSONWebKeySet {
   const keys = JSON.parse(raw)?.keys;
@@ -238,8 +241,8 @@ export class OnesaStaff {
       ...(reauthenticate ? {prompt:'login'} : {}),
     });
     await db.query('DELETE FROM staff_onesa_flows WHERE expires_at<=now()');
-    await db.query('INSERT INTO staff_onesa_flows(state_hash,browser_hash,verifier,nonce) VALUES($1,$2,$3,$4)',
-      [opaqueHash(state), opaqueHash(browser), verifier, nonce]);
+    await db.query("INSERT INTO staff_onesa_flows(state_hash,browser_hash,verifier,nonce,expires_at) VALUES($1,$2,$3,$4,now()+$5::int*interval '1 second')",
+      [opaqueHash(state), opaqueHash(browser), verifier, nonce, staffFlowLifetime]);
     return { browser, authorizationUrl: authorization.href };
   }
 
@@ -293,10 +296,11 @@ export class OnesaStaff {
   }
 
   async finish(db: Store, browser: unknown, params: { state: string; code: string; iss?: string }) {
-    if (!isOpaque(browser) || !isOpaque(params.state)) throw denied();
+    if (!isOpaque(params.state)) throw denied();
+    if (!isOpaque(browser)) throw new OnesaError(401, 'staff_sign_in_expired');
     const result = await db.query('DELETE FROM staff_onesa_flows WHERE state_hash=$1 AND browser_hash=$2 AND expires_at>now() RETURNING verifier,nonce',
       [opaqueHash(params.state), opaqueHash(browser)]);
-    if (!result.rowCount) throw denied();
+    if (!result.rowCount) throw new OnesaError(401, 'staff_sign_in_expired');
     const url = new URL(this.config.callback);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     const tokens = await oidc.authorizationCodeGrant(await this.protocolClient(), url, {

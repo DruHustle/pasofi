@@ -72,6 +72,8 @@
         failure('This sign-in is already linked to a PasoFi account', 'Your guest purchases are still available. Return to PasoFi to use them or save their recovery details.');
       } else if (data.error === 'guest_session_changed') {
         failure('Guest session changed', 'Return to the browser with your guest purchases before trying again.');
+      } else if (!customer && data.error === 'staff_sign_in_expired') {
+        failure('Staff sign-in expired', 'Start a new sign-in from PasoFi and complete verification in the same tab.');
       } else if (!customer && data.error === 'staff_assignment_pending') {
         failure('Staff setup is pending', 'A PasoFi administrator will finish setting up your role and site access.');
       } else if (!customer && data.error === 'staff_binding_review_required') {

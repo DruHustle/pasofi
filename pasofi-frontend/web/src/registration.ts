@@ -31,7 +31,7 @@ export function rememberRegistration(staff=false) {
 }
 export async function startProductSignIn(staff:boolean,returnTo:string,reauthenticate=false,claimGuest=false) {
   if(staff)sessionStorage.removeItem('pasofi-onesa-customer');
-  const flow=await api<{authorizationUrl:string}>(staff?'/api/staff/onesa/start':'/api/onesa/start',{
+  const flow=await api<{authorizationUrl:string;expiresIn?:number}>(staff?'/api/staff/onesa/start':'/api/onesa/start',{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(staff?(reauthenticate?{reauthenticate:true}:{}):claimGuest?{returnTo,claimGuest:true}:{returnTo}),
   });
@@ -44,8 +44,9 @@ export async function startProductSignIn(staff:boolean,returnTo:string,reauthent
   if (hotspotPortal && !staff && reauthenticate) target.searchParams.set('prompt', 'login');
   const state = target.searchParams.get('state');
   if (!hotspotPortal && state && /^[A-Za-z0-9_-]{43}$/.test(state)) {
+    const expiresIn = staff && flow.expiresIn === 900 ? flow.expiresIn : 300;
     sessionStorage.setItem('pasofi-onesa-flow:' + state, JSON.stringify({
-      staff, returnTo: staff ? staffEntry : destination(returnTo), expires: Date.now() + 300000,
+      staff, returnTo: staff ? staffEntry : destination(returnTo), expires: Date.now() + expiresIn * 1000,
     }));
   }
   // Older callback assets can still complete a customer sign-in during rollout.
