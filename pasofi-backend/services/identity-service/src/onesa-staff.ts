@@ -5,7 +5,10 @@ import { createLocalJWKSet, jwtVerify, type JSONWebKeySet } from 'jose';
 import { decryptMfa, encryptMfa, freshOpaque, isOpaque, opaqueHash } from './staff-crypto.js';
 
 type Store = pg.Pool | pg.PoolClient;
-export type Configuration = { issuer: string; clientId: string; clientSecret: string; callback: URL; managed?: { audience: string; recordIssuer: string; keys: JSONWebKeySet; renewal?: boolean } };
+export type Configuration = {
+  issuer: string; clientId: string; clientSecret: string; callback: URL;
+  managed?: { audience: string; recordIssuer: string; keys: JSONWebKeySet; renewal?: boolean; sessionDays?: number };
+};
 export type Admin = { subject: string; email: string; name: string; expires: number; authenticated: number; siteOperator?: true; providerSubject?: string; authorizedClient?: string; localRole?: string };
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
@@ -17,6 +20,16 @@ export class RejectedStaffSession extends OnesaError {
   constructor(readonly hash: Buffer) { super(401, 'onesa_sign_in_rejected'); }
 }
 const denied = () => new OnesaError(401, 'onesa_sign_in_rejected');
+
+export function nativeCustomerClient(platform: 'ios' | 'android', confidentialId: string) {
+  const shared = process.env.PASOFI_ONESA_NATIVE_CLIENT_ID;
+  const ios = process.env.PASOFI_ONESA_IOS_CLIENT_ID;
+  const android = process.env.PASOFI_ONESA_ANDROID_CLIENT_ID;
+  const id = shared || (platform === 'ios' ? ios : android);
+  if (!id || !/^[A-Za-z0-9_-]{16,128}$/.test(id) || id === confidentialId) return null;
+  if (shared) return process.env.PASOFI_ONESA_VERIFIED_NATIVE_CALLBACK === 'true' ? id : null;
+  return ios === android ? null : id;
+}
 
 export function adminAssertion(input: unknown, config: Configuration, now: number): Admin {
   if (!input || typeof input !== 'object') throw denied();
@@ -93,9 +106,12 @@ export function configuredOnesaStaff(key: Buffer | null, allowed: (origin: strin
       const resource = new URL(audience);
       if (legacy.protocol !== 'https:' || recordIssuer !== legacy.origin + '/api/v1/identity' ||
           resource.protocol !== 'https:' || resource.origin !== audience) return null;
+      const renewal = process.env.PASOFI_ONESA_SESSION_RENEWAL === 'true';
+      const days = process.env.PASOFI_ONESA_SESSION_DAYS;
+      if (days && (!renewal || !/^[1-9][0-9]?$/.test(days) || Number(days) > 30)) return null;
       config.managed = {
         audience, recordIssuer, keys: publicKeys(process.env.PASOFI_ONESA_PUBLIC_JWKS || ''),
-        renewal: process.env.PASOFI_ONESA_SESSION_RENEWAL === 'true',
+        renewal, ...(days ? { sessionDays: Number(days) } : {}),
       };
     }
     return new OnesaStaff(config, key);
@@ -141,9 +157,15 @@ export class OnesaStaff {
   }
 
   protected async startRenewal(db: Store, access: string, refresh: unknown, identity: Admin) {
-    if (!this.config.managed?.renewal || !identity.providerSubject || !identity.authorizedClient ||
-        typeof refresh !== 'string' || !refresh || refresh.length > 16384) return null;
-    const id = randomUUID(), expires = Math.floor(Date.now() / 1000) + 8 * 3600;
+    const managed = this.config.managed;
+    if (!managed?.renewal) return null;
+    if (!identity.providerSubject || !identity.authorizedClient ||
+        typeof refresh !== 'string' || !refresh || refresh.length > 16384) {
+      if (managed.sessionDays) throw new OnesaError(503, 'onesa_unavailable');
+      return null;
+    }
+    const lifetime = managed.sessionDays ? managed.sessionDays * 86400 : 8 * 3600;
+    const id = randomUUID(), expires = Math.floor(Date.now() / 1000) + lifetime;
     await db.query("DELETE FROM onesa_session_renewals WHERE expires_at<now()-interval '10 minutes'");
     await db.query(`INSERT INTO onesa_session_renewals
         (id,subject,provider_subject,client_id,access_ciphertext,refresh_ciphertext,access_expires_at,expires_at,staff_mfa_at)
@@ -174,7 +196,7 @@ export class OnesaStaff {
       const confidential = await this.protocolClient();
       let provider = confidential;
       if(row.client_id!==this.config.clientId){
-        if(staff || ![process.env.PASOFI_ONESA_IOS_CLIENT_ID,process.env.PASOFI_ONESA_ANDROID_CLIENT_ID].includes(row.client_id))throw denied();
+        if(staff || ![nativeCustomerClient('ios',this.config.clientId),nativeCustomerClient('android',this.config.clientId)].includes(row.client_id))throw denied();
         provider = new oidc.Configuration(confidential.serverMetadata(),row.client_id,undefined,oidc.None());
         provider.timeout=5;
         provider[oidc.customFetch]=(url, init)=>fetch(url,{...init,redirect:'error'} as RequestInit);
@@ -193,6 +215,10 @@ export class OnesaStaff {
       }
       if(tokens.token_type.toLowerCase()!=='bearer'||!tokens.access_token||tokens.access_token.length>16384||
           tokens.refresh_token!==undefined&&(!tokens.refresh_token||tokens.refresh_token.length>16384))throw denied();
+      if (this.config.managed?.sessionDays && (!tokens.refresh_token || tokens.refresh_token === saved)) {
+        await store.query("UPDATE onesa_session_renewals SET expires_at=now(),refresh_ciphertext='' WHERE id=$1",[id]);
+        return null;
+      }
       const checked = await check(row,tokens.access_token);
       await store.query(`UPDATE onesa_session_renewals SET access_ciphertext=$2,refresh_ciphertext=$3,access_expires_at=to_timestamp($4) WHERE id=$1`,
         [id,this.protectAccess(tokens.access_token,'onesa-access:' + id),
@@ -311,7 +337,10 @@ export class OnesaStaff {
     const claims = tokens.claims();
     if (claims?.sub !== (staff.providerSubject ?? staff.subject)) throw denied();
     if (this.config.managed && staff.authorizedClient && staff.authorizedClient !== this.config.clientId) throw denied();
-    if (this.config.managed && staff.siteOperator && process.env.PASOFI_ONESA_STAFF_ONBOARDING === 'true') {
+    // Onboarding files a seller application for a new agent or support person.
+    // An Onesa administrator is never turned into a pending seller: without a
+    // local record it continues to the central administrator entry below.
+    if (this.config.managed && staff.siteOperator && staff.localRole !== 'admin' && process.env.PASOFI_ONESA_STAFF_ONBOARDING === 'true') {
       const bound = await db.query(`SELECT u.status FROM staff_onesa_bindings b JOIN staff_users u ON u.id=b.staff_id
         WHERE b.issuer=$1 AND b.subject=$2::uuid`, [this.recordIssuer, staff.subject]);
       if (bound.rows[0]?.status === 'pending') throw new OnesaError(403, 'staff_assignment_pending');

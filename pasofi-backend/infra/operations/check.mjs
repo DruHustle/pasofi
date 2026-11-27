@@ -114,6 +114,11 @@ export const queueQueries={
   (SELECT count(*)::int FROM event_outbox WHERE status='pending' AND next_at<now()-interval '5 minutes') AS outbox_delayed,
   (SELECT count(*)::int FROM payment_reconciliation_jobs WHERE state='dead') AS payment_verification_dead,
   (SELECT count(*)::int FROM provider_payment_attempts WHERE state IN ('unknown','review')) AS payment_review,
+  (SELECT count(*)::int FROM verified_charges c
+    JOIN provider_payment_attempts a ON a.id=c.attempt_id
+    WHERE c.state='succeeded' AND a.provider NOT IN ('mock','stripe_test','ecocash_test')
+      AND NOT EXISTS (SELECT 1 FROM purchase_entitlements e WHERE e.id=c.fulfilled_entitlement_id
+        AND e.order_id=c.order_id AND e.order_id=a.order_id AND e.customer_id=a.customer_id)) AS paid_unfulfilled,
   (SELECT count(*)::int FROM network_account_holds) AS account_holds,
   (SELECT count(*)::int FROM access_grants WHERE state='uncertain' OR (state IN ('pending','active') AND COALESCE(last_accounting_at,issued_at)<now()-interval '3 minutes')) AS network_review`,
  notification:`SELECT
@@ -161,7 +166,10 @@ async function main(){
   try{const result=JSON.parse(docker(['exec','-T',service,'node','--input-type=module','-e',aggregateProgram(query)]));
    if(!result||Object.values(result).some(value=>!Number.isSafeInteger(value)||value<0))throw Error();
    report.queues[service]=result;
-   for(const [name,count]of Object.entries(result))if(count>0)report.problems.push(`${service}:${name}:${count}`);
+   for(const [name,count]of Object.entries(result))if(count>0){
+    const problem=name==='paid_unfulfilled'?'critical_paid_unfulfilled':name;
+    report.problems.push(`${service}:${problem}:${count}`);
+   }
   }catch{report.problems.push(`${service}:aggregate_unavailable`);}
  }
  if(backup){

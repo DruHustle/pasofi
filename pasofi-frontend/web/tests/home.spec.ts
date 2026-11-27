@@ -164,9 +164,10 @@ test('the Account icon leaves a saved checkout and cash reference pending until 
     sessionStorage.setItem(prefix + ':purchase-details', JSON.stringify({ payload: JSON.stringify({ bundleId: 'flex' }) }));
     sessionStorage.setItem(prefix + ':receipt-pairing', JSON.stringify({ payload: JSON.stringify({ bundleId: 'flex', siteId: 'fixture' }) }));
   }, id);
-  await page.route('**/api/session', route => json(route, { customerId: id, guest: false }));
+  await page.route(url => url.pathname === '/api/session', route => json(route, { customerId: id, guest: false }));
   await page.goto('/');
   await page.getByRole('banner').getByRole('button', { name: 'Your account', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Account & devices', exact: true }).click();
   await expect(page).toHaveURL(/#account$/);
   await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
@@ -195,6 +196,9 @@ for (const width of [390, 1280]) test(`Home scrolls beneath the stationary heade
     })).toBe(true);
   }
   await page.getByRole('button', { name: 'Your account', exact: true }).click();
-  await expect(page).toHaveURL(/#account$/);
+  const menu = page.getByRole('menu', { name: 'Your account' });
+  await expect(menu).toBeInViewport({ ratio: 1 });
+  await menu.getByRole('menuitem', { name: 'Check usage', exact: true }).click();
+  await expect(page).toHaveURL(/#usage$/);
   await expect(header).toBeInViewport({ ratio: 1 });
 });

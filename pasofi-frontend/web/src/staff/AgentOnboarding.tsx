@@ -1,16 +1,18 @@
 import { useState } from 'react';
 
-export default function AgentOnboarding() {
+export default function AgentOnboarding({ demo }: { demo: boolean }) {
   const [message, setMessage] = useState('');
-  const applicationUrl = new URL('/#staff?apply=1', window.location.origin).href;
+  const applicationUrl = new URL(demo ? '/#staff?apply=1' : '/admin', window.location.origin).href;
   async function copyLink() {
     try { await navigator.clipboard.writeText(applicationUrl); setMessage('Application link copied. Share it with your chosen agents.'); }
     catch { setMessage('Select and copy the application link below.'); }
   }
   return <section className="workspace-card" aria-labelledby="agent-onboarding-heading">
     <h3 id="agent-onboarding-heading">Onboard your agents</h3>
+    {!demo && <p><a href="https://account.onesa.eu/admin?product=pasofi">Review staff and administrator requests</a></p>}
     <ol>
-      <li>Share this application link with each agent. They choose their own password and set up an authenticator.</li>
+      <li>{demo ? 'Share this application link with each agent. They choose their own password and set up an authenticator.' :
+        'Send staff to PasoFi Admin to request access. After approval, ask them to sign in and verify their authenticator.'}</li>
       <li>Refresh staff records, review the person, choose the Agent role, assign their sites and save your approval.</li>
       <li>Allocate published bundle stock under Inventory. The agent signs in again to see their approved access.</li>
     </ol>

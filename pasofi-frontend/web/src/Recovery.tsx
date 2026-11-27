@@ -51,7 +51,7 @@ export function RecoverySetup() {
       try { await loadStatus(); } catch { /* Keep replacement disabled until the current version is known. */ }
     } finally { if (mounted.current) setBusy(false); }
   }
-  if (status?.authentication === 'onesa') return <div className="recovery-box"><h3>Your account</h3><p>Sign in on any device to reopen the same PasoFi account.</p></div>;
+  if (status?.authentication === 'onesa') return <div className="recovery-box"><h3>Your account</h3><p>Sign in on any device to reopen the same PasoFi account.</p><a href="https://account.onesa.eu/account/closure" target="_blank" rel="noopener noreferrer">Delete your Onesa account</a></div>;
   return <div className="recovery-box" aria-busy={busy}>
     <h3>Keep your access recoverable</h3><p>Save an account reference and recovery key somewhere private. You need both to restore this account in another browser. Never send the key to support or paste it into chat.</p>
     {status?.configured && !secret && <p>Account reference: <strong>{status.accountReference}</strong></p>}

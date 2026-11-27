@@ -1,5 +1,6 @@
 import { api, ApiError } from './api';
 import { clearNetworkRequest } from './network-request';
+import { onesaLogoutHeaders, type LogoutResponse } from './onesa-browser-logout';
 
 // A retry secret can recreate its session cookie. Never put it in a URL or localStorage.
 const storageKey = 'pamofi.sessionCreationRetry';
@@ -37,6 +38,14 @@ export function inspectBrowserSession(): Promise<Session> {
   browserSessionCheck = request;
   return request;
 }
+// A quiet check for optional UI such as the account menu: no session is an
+// empty answer rather than an error. Older services still answer 401.
+export async function peekCustomerSession(): Promise<Session | null> {
+  const session = await api<Session | undefined>('/api/session?restore=1');
+  if (session === undefined) return null;
+  validSession(session);
+  return session;
+}
 let creating: Promise<string> | null = null;
 export function ensureSession(): Promise<string> {
   if (creating) return creating;
@@ -64,6 +73,15 @@ export function clearSessionSecrets() {
   } catch { /* No stored secrets are available when storage is disabled. */ }
 }
 export function announceSessionChange(change: SessionChange) { channel?.postMessage(change); }
+// Revoke this browser's customer session, clear its private retry records and
+// tell other tabs. The caller follows the returned provider logout, if any.
+export async function signOutCustomer(): Promise<LogoutResponse> {
+  const result = await api<LogoutResponse>('/api/session', { method: 'DELETE', headers: onesaLogoutHeaders(), redirect: 'error' });
+  clearSessionSecrets();
+  try { for (const key of Object.keys(sessionStorage)) if (key.startsWith('pamofi.operation:customer:')) sessionStorage.removeItem(key); } catch { /* The server session was revoked; private view is still cleared. */ }
+  announceSessionChange('signed_out');
+  return result;
+}
 export function onSessionChange(listener: (change: SessionChange) => void): () => void {
   const receive = (event: MessageEvent) => {
     if (event.data === 'signed_out' || event.data === 'recovered') { clearSessionSecrets(); listener(event.data); }

@@ -3,8 +3,8 @@ import type { Pool, PoolClient } from 'pg';
 import { seal, unseal, type DeliveryKeys } from './delivery-crypto.js';
 import { createEcoCashVoucher } from './vouchers.js';
 
-// This is the normalized input to the disposable simulation, not an EcoCash
-// wire format or proof of payment. No HTTP route or provider adapter calls it.
+// Normalized credit and reversal data for the disposable simulation.
+// Provider authentication belongs at the merchant intake boundary.
 export type SimulatedEcoCashObservation = {
   kind: 'credit' | 'reversal';
   transactionId: string;
@@ -23,6 +23,20 @@ export type EcoCashOffer = {
   validUntil: string;
 };
 export type EcoCashCreditConfig = { merchantCode: string; currency: 'USD'; offers: EcoCashOffer[] };
+export type EcoCashMerchantEnvelope = {
+  rawBody: Buffer;
+  headers: Readonly<Record<string, string | readonly string[] | undefined>>;
+};
+type AuthenticatedMerchantCredit = {
+  signedAtMs: number;
+  observation: SimulatedEcoCashObservation;
+};
+export type EcoCashMerchantVerifier = {
+  replayWindowMs: number;
+  // Verify integrity of the raw envelope, including the signed delivery time,
+  // before normalizing its credit or reversal. Return null for an invalid proof.
+  verify(envelope: EcoCashMerchantEnvelope): Promise<AuthenticatedMerchantCredit | null>;
+};
 type StoredState = 'issued' | 'review' | 'reversed';
 type Outcome = { creditId: string | null; state: StoredState | 'ignored'; reason: string | null };
 type CreditRow = {
@@ -134,6 +148,28 @@ async function applyToExisting(client: PoolClient, row: CreditRow, keys: Deliver
   const state = consumed ? 'review' : 'reversed';
   await client.query('UPDATE ecocash_credits SET state=$2,reason=$3,reversed_at=now() WHERE id=$1', [row.id, state, reason]);
   return {creditId: row.id, state, reason};
+}
+
+export async function ingestEcoCashMerchantCredit(pool: Pool, keys: DeliveryKeys, config: EcoCashCreditConfig,
+  envelope: EcoCashMerchantEnvelope, verifier: EcoCashMerchantVerifier | null): Promise<Outcome> {
+  if (process.env.PAMOFI_ECOCASH_MERCHANT_CREDITS_ENABLED !== 'true') throw Error('ecocash_merchant_credits_disabled');
+  // The provider feed and production voucher delivery still require qualification.
+  // This boundary exercises the existing simulation ledger with synthetic envelopes.
+  if (process.env.APP_ENV !== 'demo' || process.env.NODE_ENV !== 'development') throw Error('isolated_demo_required');
+  if (!verifier || !Number.isSafeInteger(verifier.replayWindowMs) || verifier.replayWindowMs <= 0) {
+    throw Error('ecocash_merchant_verifier_unavailable');
+  }
+  let verified: AuthenticatedMerchantCredit | null;
+  try {
+    verified = await verifier.verify(envelope);
+  } catch {
+    throw Error('ecocash_merchant_signature_rejected');
+  }
+  if (!verified) throw Error('ecocash_merchant_signature_rejected');
+  if (!Number.isSafeInteger(verified.signedAtMs) || Math.abs(Date.now() - verified.signedAtMs) > verifier.replayWindowMs) {
+    throw Error('ecocash_merchant_timestamp_rejected');
+  }
+  return applySimulatedEcoCashCredit(pool, keys, config, verified.observation);
 }
 
 export async function applySimulatedEcoCashCredit(pool: Pool, keys: DeliveryKeys, config: EcoCashCreditConfig,

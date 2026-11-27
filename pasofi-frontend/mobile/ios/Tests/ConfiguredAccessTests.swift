@@ -18,7 +18,7 @@ final class ConfiguredAccessTests: XCTestCase {
         // explicit unavailable state. Neither is allowed to remain on a spinner.
         let expectedGate = app.descendants(matching: .any).matching(NSPredicate(
             format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@",
-            "Sign in with Onesa", "Sign in with Onesa",
+            "Sign in", "Sign in",
             "Continue to PasoFi account on the web", "Continue to PasoFi account on the web",
             "Mobile account access is not enabled", "Mobile account access is not enabled",
             "did not respond in time", "did not respond in time",

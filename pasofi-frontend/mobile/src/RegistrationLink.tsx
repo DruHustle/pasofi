@@ -32,10 +32,10 @@ export async function watchRegistrationReturn(onReturn:(tab:CustomerTab)=>void) 
   return ()=>{active=false;void listener.remove();};
 }
 
-function RegistrationChoice({tab,audience}:{tab:CustomerTab;audience:'user'|'admin'}) {
+export default function RegistrationLink({tab}:{tab:CustomerTab}) {
   const platform=nativePlatform();
   const [failed,setFailed]=useState(false);
-  const href='https://account.onesa.eu/register?audience='+audience+'&product=pasofi&platform='+(platform??'web');
+  const href='https://account.onesa.eu/register?audience=user&product=pasofi&platform='+(platform??'web');
   return <><a href={href} onClick={event=>{
     if(!platform)return;
     event.preventDefault();
@@ -44,9 +44,19 @@ function RegistrationChoice({tab,audience}:{tab:CustomerTab;audience:'user'|'adm
       setFailed(false);
       void Browser.open({url:href}).catch(()=>setFailed(true));
     } catch {setFailed(true);}
-  }}>{audience==='admin'?'Request administrator access':'Register an Onesa account'}</a>{failed&&<span role="status">Registration could not open. Please try again.</span>}</>;
+  }}>Sign up</a>{failed&&<span role="status">Registration could not open. Please try again.</span>}</>;
 }
 
-export default function RegistrationLink({tab}:{tab:CustomerTab}) {
-  return <><RegistrationChoice tab={tab} audience="user"/> · <RegistrationChoice tab={tab} audience="admin"/></>;
+export function AccountClosureLink() {
+  const [failed, setFailed] = useState(false);
+  const href = 'https://account.onesa.eu/account/closure';
+  return <>
+    <a href={href} target="_blank" rel="noopener noreferrer" onClick={event => {
+      if (!nativePlatform()) return;
+      event.preventDefault();
+      setFailed(false);
+      void Browser.open({url: href}).catch(() => setFailed(true));
+    }}>Delete your Onesa account</a>
+    {failed && <span role="status">The account closure page could not open. Please try again.</span>}
+  </>;
 }

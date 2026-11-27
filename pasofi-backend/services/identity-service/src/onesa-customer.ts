@@ -2,11 +2,14 @@ import * as oidc from 'openid-client';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type pg from 'pg';
 import type { FastifyInstance } from 'fastify';
-import { OnesaStaff, OnesaError, customerAssertion, configuredOnesaStaff, type Admin } from './onesa-staff.js';
+import { OnesaStaff, OnesaError, customerAssertion, configuredOnesaStaff, nativeCustomerClient, type Admin } from './onesa-staff.js';
 import { freshOpaque, isOpaque, mfaKey, opaqueHash } from './staff-crypto.js';
 
 const denied = () => new OnesaError(401, 'onesa_sign_in_rejected');
 const managedIssuer = 'https://auth.onesa.eu/';
+// Long enough to create an account and confirm its email on the provider's
+// pages within one sign-in. The flow stays single-use and browser-bound.
+export const customerFlowLifetime = 15 * 60;
 export { customerAssertion };
 export function customerReturnTo(value: unknown, hotspot = false): string {
   if (typeof value !== 'string') return '/#account';
@@ -17,6 +20,18 @@ export class OnesaCustomer extends OnesaStaff {
   constructor(config: OnesaStaff['config'], key: Buffer, readonly hotspotCallback?: URL) { super(config, key); }
   protected get staffFlow() { return false; }
   protected assertion(input: unknown): Admin { return customerAssertion(input, this.config, Math.floor(Date.now() / 1000)); }
+  get signupEnabled() {
+    return Boolean(this.config.managed && process.env.PASOFI_ONESA_DIRECT_SIGNUP === 'true');
+  }
+  get verifiedNativeCallback() {
+    return this.config.callback.origin === 'https://pasofi.mobile.onesa.eu' &&
+      process.env.PASOFI_ONESA_VERIFIED_NATIVE_CALLBACK === 'true'
+      ? 'https://pasofi.mobile.onesa.eu/native/onesa-callback.html' : undefined;
+  }
+  nativeClient(platform: 'ios' | 'android') {
+    if (process.env.PASOFI_ONESA_NATIVE_CLIENT_ID && !this.verifiedNativeCallback) return null;
+    return nativeCustomerClient(platform, this.config.clientId);
+  }
   // Keep the opaque member locator after provider authorization expires. Its
   // database privileges still end at expires_at and it cannot create a guest.
   private cookieAge(expires: number) {
@@ -31,17 +46,23 @@ export class OnesaCustomer extends OnesaStaff {
     // is bound to its exact callback even if a client replays it on another host.
     return opaqueHash(callback.href === this.config.callback.href ? browser : callback.href + '\0' + browser);
   }
-  async start(db: pg.Pool | pg.PoolClient, returnTo: unknown = '/#account', callback = this.config.callback, guestToken?: string) {
+  async start(db: pg.Pool | pg.PoolClient, returnTo: unknown = '/#account', callback = this.config.callback, guestToken?: string, signup = false) {
+    if (signup && (!this.signupEnabled || guestToken)) throw new OnesaError(403, 'onesa_signup_unavailable');
     const state = freshOpaque(), browser = freshOpaque(), verifier = oidc.randomPKCECodeVerifier(), nonce = freshOpaque();
     const authorization = oidc.buildAuthorizationUrl(await this.protocolClient(), {
       redirect_uri: callback.href, response_type: 'code', ...this.authorizationParameters,
       state, nonce, code_challenge_method: 'S256', code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
+      // A customer entry asks Onesa for the customer role only. Onesa's Actions
+      // then skip the staff authenticator detour for administrators and issue
+      // a customer token; earlier Actions ignore the value.
+      ...(this.config.managed ? {acr_values:'urn:onesa:authentication:pasofi-customer'} : {}),
+      ...(signup ? { screen_hint: 'signup', prompt: 'login' } : {}),
       ...(guestToken ? {prompt:'login',max_age:'0'} : {}),
     });
     await db.query('DELETE FROM customer_onesa_flows WHERE expires_at<=now()');
-    await db.query('INSERT INTO customer_onesa_flows(state_hash,browser_hash,verifier,nonce,return_to,guest_session_hash) VALUES($1,$2,$3,$4,$5,$6)',
+    await db.query("INSERT INTO customer_onesa_flows(state_hash,browser_hash,verifier,nonce,return_to,guest_session_hash,expires_at) VALUES($1,$2,$3,$4,$5,$6,now()+($7 * interval '1 second'))",
       [opaqueHash(state), this.browserHash(browser, callback), verifier, nonce, customerReturnTo(returnTo, callback.href === this.hotspotCallback?.href),
-        guestToken ? opaqueHash(guestToken) : null]);
+        guestToken ? opaqueHash(guestToken) : null, customerFlowLifetime]);
     return { browser, authorizationUrl: authorization.href };
   }
   async finish(db: pg.Pool, browser: unknown, params: { state: string; code: string; iss?: string }, callback = this.config.callback, guestToken?: string) {
@@ -66,7 +87,7 @@ export class OnesaCustomer extends OnesaStaff {
     };
   }
   async nativeSession(db: pg.Pool, access: string, platform: 'ios' | 'android', existingToken?: string, refresh?: string) {
-    const id = nativeClient(platform);
+    const id = this.nativeClient(platform);
     if (!this.config.managed || !id) throw new OnesaError(503,'onesa_unavailable');
     const identity = await this.inspect(access);
     if (identity.authorizedClient !== id) throw denied();
@@ -196,11 +217,6 @@ export function configureOnesaCustomer(demo: boolean, allowed: (value: string | 
   }
   return new OnesaCustomer(config.config, key, hotspotCallback);
 }
-function nativeClient(platform: 'ios' | 'android') {
-  const id = platform === 'ios' ? process.env.PASOFI_ONESA_IOS_CLIENT_ID : process.env.PASOFI_ONESA_ANDROID_CLIENT_ID;
-  const other = platform === 'ios' ? process.env.PASOFI_ONESA_ANDROID_CLIENT_ID : process.env.PASOFI_ONESA_IOS_CLIENT_ID;
-  return id && /^[A-Za-z0-9_-]{16,128}$/.test(id) && id !== other && id !== process.env.PASOFI_ONESA_CLIENT_ID ? id : null;
-}
 export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null, demo: boolean, onesa: OnesaCustomer | null) {
   const flowCookie = demo ? 'pasofi_demo_onesa_customer_flow' : '__Host-pasofi_onesa_customer_flow';
   const sessionCookie = demo ? 'pamofi_demo_session' : '__Host-pamofi_session';
@@ -217,11 +233,13 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
     const origin = pool && onesa ? onesa.config.callback.origin : null;
     const managed = onesa?.config.managed;
     const hotspotOrigin = pool && onesa?.hotspotCallback?.origin;
-    return { origin, handoff: Boolean(origin), ...(hotspotOrigin ? { hotspotOrigin } : {}), ...(origin && managed ? { native: {
-      issuer: onesa.config.issuer, audience: managed.audience, ios: nativeClient('ios'), android: nativeClient('android'),
+    return { origin, handoff: Boolean(origin), ...(origin && onesa?.signupEnabled ? { signup: true } : {}),
+      ...(hotspotOrigin ? { hotspotOrigin } : {}), ...(origin && managed ? { native: {
+      issuer: onesa.config.issuer, audience: managed.audience, ios: onesa.nativeClient('ios'), android: onesa.nativeClient('android'),
       ...(managed.renewal ? { renewal: true } : {}),
-      ...(origin==='https://pasofi.mobile.onesa.eu' && process.env.PASOFI_ONESA_VERIFIED_NATIVE_CALLBACK==='true' ? {
-        verifiedCallback: 'https://pasofi.mobile.onesa.eu/native/onesa-callback.html',
+      ...(onesa.verifiedNativeCallback ? {
+        verifiedCallback: onesa.verifiedNativeCallback,
+        ...(onesa.signupEnabled ? { signup: true } : {}),
       } : {}),
     } } : {}) };
   });
@@ -244,7 +262,7 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
   for (const action of ['start', 'complete'] as const) app.post<{Body:Record<string,unknown>}>(`/v1/onesa/${action}`, {
     config: { rateLimit: { max: 240, timeWindow: '1 minute' } },
     schema: { body: { type: 'object', additionalProperties: false, required: action === 'complete' ? ['code','state'] : [], properties: action === 'start' ? {
-      returnTo: { type:'string',maxLength:100 }, claimGuest: { type:'boolean' },
+      returnTo: { type:'string',maxLength:100 }, claimGuest: { type:'boolean' }, signup: { type:'boolean' },
     } : {
       state: { type:'string',minLength:43,maxLength:43 }, code:{ type:'string',minLength:1,maxLength:2048 }, iss:{ type:'string',maxLength:1024 }
     } } }
@@ -265,15 +283,17 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
     try {
       if (action === 'start') {
         const guest = request.cookies[sessionCookie];
+        const signup = request.body.signup === true;
+        if (signup && request.body.claimGuest === true) return reply.code(403).send({error:'onesa_signup_unavailable'});
         if (request.body.claimGuest === true && (!isOpaque(guest) || !(await pool.query(`SELECT 1 FROM customer_sessions s
           WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now()
           AND NOT EXISTS (SELECT 1 FROM customer_onesa_identities i WHERE i.customer_id=s.customer_id)`, [opaqueHash(guest)])).rowCount))
           return reply.code(409).send({error:'guest_session_changed'});
-        const flow = await onesa.start(pool, request.body.returnTo, callback, request.body.claimGuest === true ? guest : undefined);
+        const flow = await onesa.start(pool, request.body.returnTo, callback, request.body.claimGuest === true ? guest : undefined, signup);
         const id = validBrowser ? browserId : freshOpaque();
         const cookie = signingKey ? flow.browser + '.' + id + '.' + signature(id).toString('base64url') : flow.browser;
-        reply.setCookie(flowCookie, cookie, {...attributes,maxAge:300});
-        return {authorizationUrl:flow.authorizationUrl};
+        reply.setCookie(flowCookie, cookie, {...attributes,maxAge:customerFlowLifetime});
+        return {authorizationUrl:flow.authorizationUrl,expiresIn:customerFlowLifetime};
       }
       const result = await onesa.finish(pool, validBrowser ? proof : presented, request.body as {state:string;code:string;iss?:string}, callback,request.cookies[sessionCookie]);
       reply.clearCookie(flowCookie,attributes);

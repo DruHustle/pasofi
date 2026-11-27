@@ -1,6 +1,6 @@
 ## Managed Onesa sign-in
 
-Register separate native public clients for iOS and Android. Set
+For the separate-client configuration, set
 `PASOFI_ONESA_IOS_CLIENT_ID` and `PASOFI_ONESA_ANDROID_CLIENT_ID` on the
 PasoFi identity service and register the exact callback
 `com.onesa.pasofi.identity://login/callback` on both. Register the WebView
@@ -208,9 +208,18 @@ separated list if more than one distribution signing certificate is approved.
 
 Build the canonical web app with those settings. Verify both association files
 at their HTTPS `/.well-known/` URLs, with no redirects. Register the exact
-return URL on both native Auth0 clients. Verify the signed iOS build has both
+return URL on each native Auth0 client in use. Verify the signed iOS build has both
 `applinks` and `webcredentials` for the canonical host, and verify the Android
 App Link after installing the signed app. Set
 `PASOFI_ONESA_VERIFIED_NATIVE_CALLBACK=true` after both associations and
 Auth0 callbacks are qualified. The application binds each in-flight
 transaction to its original callback and still uses a one-time S256 verifier.
+
+To use the shared public client on both platforms, set
+`PASOFI_ONESA_NATIVE_CLIENT_ID` after the verified return is qualified. The
+native client must differ from the confidential web client. The identity
+service exposes direct customer registration with
+`PASOFI_ONESA_DIRECT_SIGNUP=true` after Identity enrollment is commissioned
+for the exact callback. Set `PASOFI_ONESA_SESSION_DAYS` only with managed
+session renewal and provider rotation enabled. The value is the absolute
+PasoFi session lifetime in whole days, at most 30.

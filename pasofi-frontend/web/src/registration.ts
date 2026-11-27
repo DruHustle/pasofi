@@ -6,19 +6,33 @@ const hotspotScreens = ['/connect', '/connect#bundles', '/connect#voucher'];
 export const registrationUrl = (audience:'user'|'admin') =>
   'https://account.onesa.eu/register?audience='+audience+'&product=pasofi&platform=web'+
   (hotspotPortal && audience === 'user' ? '&entry=pasofi-hotspot' : '');
+export const requestAccessUrl = (role: 'agent' | 'administrator') =>
+  'https://account.onesa.eu/access?product=pasofi&role=' + role;
 
-type Availability = { origin: string | null; hotspotOrigin?: string };
+type Availability = { origin: string | null; hotspotOrigin?: string; signup?: boolean };
 
-export async function signInAvailable(staff = false, signal?: AbortSignal) {
+export async function accountEntryAvailability(staff = false, signal?: AbortSignal) {
   const value = await api<Availability>(staff ? '/api/staff/onesa/availability' : '/api/onesa/availability', {signal});
   const expectedOrigin = hotspotPortal && !staff ? value.hotspotOrigin : value.origin;
-  return expectedOrigin === location.origin;
+  const signIn = expectedOrigin === location.origin;
+  return { signIn, signup: signIn && !staff && value.signup === true };
+}
+
+export async function signInAvailable(staff = false, signal?: AbortSignal) {
+  return (await accountEntryAvailability(staff, signal)).signIn;
+}
+
+export async function customerSignInAvailability(signal?: AbortSignal) {
+  const value = await api<Availability>('/api/onesa/availability', {signal});
+  const available = (hotspotPortal ? value.hotspotOrigin : value.origin) === location.origin;
+  return { available, signup: available && value.signup === true };
 }
 
 export function currentCustomerScreen() {
   const path = location.pathname + location.hash;
   if (hotspotPortal && hotspotScreens.includes(path)) return path;
-  return path === '/connect' ? '/#connect' : '/' + location.hash;
+  // A bare address returns to Home rather than the account screen.
+  return path === '/connect' ? '/#connect' : '/' + (location.hash || '#home');
 }
 
 function destination(value:string) {
@@ -29,11 +43,13 @@ export function rememberRegistration(staff=false) {
   const path=staff?staffEntry:currentCustomerScreen();
   try { sessionStorage.setItem(storageKey,JSON.stringify({path:destination(path),expires:Date.now()+30*60*1000})); } catch {}
 }
-export async function startProductSignIn(staff:boolean,returnTo:string,reauthenticate=false,claimGuest=false) {
+export async function startProductSignIn(staff:boolean,returnTo:string,reauthenticate=false,claimGuest=false, signup=false) {
   if(staff)sessionStorage.removeItem('pasofi-onesa-customer');
   const flow=await api<{authorizationUrl:string;expiresIn?:number}>(staff?'/api/staff/onesa/start':'/api/onesa/start',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(staff?(reauthenticate?{reauthenticate:true}:{}):claimGuest?{returnTo,claimGuest:true}:{returnTo}),
+    body:JSON.stringify(staff ? (reauthenticate ? {reauthenticate:true} : {}) : {
+      returnTo, ...(claimGuest ? {claimGuest:true} : {}), ...(signup ? {signup:true} : {}),
+    }),
   });
   const target=new URL(flow.authorizationUrl);
   if(target.protocol!=='https:' || target.username || target.password)throw Error('Invalid sign-in destination');
@@ -44,7 +60,8 @@ export async function startProductSignIn(staff:boolean,returnTo:string,reauthent
   if (hotspotPortal && !staff && reauthenticate) target.searchParams.set('prompt', 'login');
   const state = target.searchParams.get('state');
   if (!hotspotPortal && state && /^[A-Za-z0-9_-]{43}$/.test(state)) {
-    const expiresIn = staff && flow.expiresIn === 900 ? flow.expiresIn : 300;
+    // Staff and customer sign-ins allow 15 minutes; an older service still answers with 5.
+    const expiresIn = flow.expiresIn === 900 ? flow.expiresIn : 300;
     sessionStorage.setItem('pasofi-onesa-flow:' + state, JSON.stringify({
       staff, returnTo: staff ? staffEntry : destination(returnTo), expires: Date.now() + expiresIn * 1000,
     }));

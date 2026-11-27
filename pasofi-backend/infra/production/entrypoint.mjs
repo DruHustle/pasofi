@@ -4,7 +4,8 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const suffixes = { identity: 'identity', 'prepaid-access': 'prepaid_access', network: 'network', notification: 'notification', assistant: 'assistant' };
-const secrets = ['INTERNAL_IDENTITY_SECRET', 'SESSION_CREATION_SECRET', 'STAFF_MFA_ENCRYPTION_KEY', 'STAFF_RESET_SMTP_PASSWORD', 'PASOFI_ONESA_CLIENT_SECRET', 'INTERNAL_EVENTS_SECRET', 'INTERNAL_NETWORK_SECRET', 'INTERNAL_DELIVERY_SECRET', 'VOUCHER_DELIVERY_KEYS_JSON', 'RADIUS_CREDENTIAL_KEYS', 'SENDAI_API_KEY', 'RESEND_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'ECOCASH_API_PASSWORD', 'ECOCASH_MERCHANT_PIN'];
+const ecoCashSecrets = ['ECOCASH_API_PASSWORD', 'ECOCASH_MERCHANT_PIN'];
+const secrets = ['INTERNAL_IDENTITY_SECRET', 'SESSION_CREATION_SECRET', 'STAFF_MFA_ENCRYPTION_KEY', 'STAFF_RESET_SMTP_PASSWORD', 'PASOFI_ONESA_CLIENT_SECRET', 'INTERNAL_EVENTS_SECRET', 'INTERNAL_NETWORK_SECRET', 'INTERNAL_DELIVERY_SECRET', 'VOUCHER_DELIVERY_KEYS_JSON', 'RADIUS_CREDENTIAL_KEYS', 'SENDAI_API_KEY', 'RESEND_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', ...ecoCashSecrets];
 async function secretFile(name) {
   const path = process.env[`${name}_FILE`];
   if (!path || process.env[name]) throw Error('Each credential requires only its explicit secret file.');
@@ -20,6 +21,16 @@ async function main() {
   const action = process.argv[2] || 'serve';
   if (!['serve', 'migrate', 'bootstrap-staff'].includes(action) || (action === 'bootstrap-staff' && service !== 'identity')) throw Error('Invalid service action.');
   const migration = action !== 'serve', owner = `${prefix}_${suffix}_owner`, runtime = `${prefix}_${suffix}_runtime`;
+  if (service === 'prepaid-access' && !migration) {
+    const checkoutRequested = process.env.PAMOFI_ECOCASH_CHECKOUT_ENABLED === 'true';
+    const invalidSecret = ecoCashSecrets.find(name => Object.hasOwn(process.env, name) ||
+      (checkoutRequested && !process.env[`${name}_FILE`]));
+    if (invalidSecret) {
+      console.error(`Production EcoCash requires a protected ${invalidSecret}_FILE.`);
+      process.exitCode = 1;
+      return;
+    }
+  }
   const url = new URL(await secretFile(migration ? 'MIGRATION_DATABASE_URL' : 'DATABASE_URL'));
   if (!['postgres:', 'postgresql:'].includes(url.protocol) || url.username !== (migration ? `${prefix}_${suffix}_migrate` : runtime) || url.pathname !== `/${prefix}_${suffix}` || url.search || url.hash || !url.password) throw Error('Database secret does not match the required service role and database.');
   process.env.DATABASE_URL = url.toString();

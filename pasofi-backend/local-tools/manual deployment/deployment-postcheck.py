@@ -41,6 +41,11 @@ QUEUE_QUERIES = {
       (SELECT count(*)::int FROM event_outbox WHERE status='pending' AND next_at<now()-interval '5 minutes') AS outbox_delayed,
       (SELECT count(*)::int FROM payment_reconciliation_jobs WHERE state='dead') AS payment_verification_dead,
       (SELECT count(*)::int FROM provider_payment_attempts WHERE state IN ('unknown','review')) AS payment_review,
+      (SELECT count(*)::int FROM verified_charges c
+        JOIN provider_payment_attempts a ON a.id=c.attempt_id
+        WHERE c.state='succeeded' AND a.provider NOT IN ('mock','stripe_test','ecocash_test')
+          AND NOT EXISTS (SELECT 1 FROM purchase_entitlements e WHERE e.id=c.fulfilled_entitlement_id
+            AND e.order_id=c.order_id AND e.order_id=a.order_id AND e.customer_id=a.customer_id)) AS paid_unfulfilled,
       (SELECT count(*)::int FROM network_account_holds) AS account_holds,
       (SELECT count(*)::int FROM access_grants WHERE state='uncertain' OR (state IN ('pending','active') AND COALESCE(last_accounting_at,issued_at)<now()-interval '3 minutes')) AS network_review""",
     "notification": """SELECT
@@ -55,7 +60,8 @@ QUEUE_QUERIES = {
       (SELECT count(*)::int FROM router_reconciliation_status WHERE result='present') AS router_absence_unconfirmed""",
 }
 QUEUE_FIELDS = {
-    "prepaid-access": ("outbox_dead", "outbox_delayed", "payment_verification_dead", "payment_review", "account_holds", "network_review"),
+    "prepaid-access": ("outbox_dead", "outbox_delayed", "payment_verification_dead", "payment_review",
+                       "paid_unfulfilled", "account_holds", "network_review"),
     "notification": ("sms_ambiguous", "sms_failed", "sms_delayed", "invoice_ambiguous", "invoice_failed", "invoice_delayed"),
     "network": ("router_unavailable", "router_absence_unconfirmed"),
 }
@@ -69,7 +75,7 @@ ERRORS = {"invalid_arguments", "command_unavailable", "command_failed", "command
           "inventory_unavailable", "invalid_report", "postcheck_unavailable"}
 PROBLEMS = {"inventory_unavailable", "required_service_not_healthy", "runtime_revision_not_verified",
             "database_identity_not_verified", "application_http_not_verified", "internal_gateway_not_verified",
-            "queues_not_verified", "queue_attention_required", "migrations_not_verified", "baseline_flags_changed",
+            "queues_not_verified", "queue_attention_required", "critical_paid_unfulfilled", "migrations_not_verified", "baseline_flags_changed",
             "baseline_flags_not_fully_verified", "timer_observation_incomplete"}
 
 
@@ -397,6 +403,8 @@ def problem_codes(report):
         problems.add("queues_not_verified")
     if any(any(item.get("counts", {}).values()) for item in report["queues"].values()):
         problems.add("queue_attention_required")
+    if report["queues"]["prepaid-access"].get("counts", {}).get("paid_unfulfilled", 0) > 0:
+        problems.add("critical_paid_unfulfilled")
     if any(item["status"] != "match" for item in report["migrations"].values()):
         problems.add("migrations_not_verified")
     if report["baseline_flags"]["status"] == "changed":

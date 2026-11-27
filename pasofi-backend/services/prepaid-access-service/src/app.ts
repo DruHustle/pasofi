@@ -4,6 +4,7 @@ import rateLimit from '@fastify/rate-limit';
 import { randomUUID } from 'node:crypto';
 import { SignJWT } from 'jose';
 import pg from 'pg';
+import type Stripe from 'stripe';
 import { registerRadiusInternal } from './radius-internal.js';
 import {registerCommerce} from './commerce.js';
 import {registerCheckout,paymentConfiguration} from './checkout.js';
@@ -13,7 +14,7 @@ import {registerUsage} from './usage.js';
 import {InvoiceError,invoiceDeliverySchema,normalizeInvoiceDelivery,saveOrderInvoiceIntent,assertOrderInvoiceIntent} from './invoices.js';
 const { Pool } = pg;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-export function buildApp() {
+export function buildApp(demoStripeClient?: Stripe) {
   const app = Fastify({ logger: false, bodyLimit: 16384, trustProxy:trustedProxyCidrs() });
   const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 2000 }) : null;
   // pg emits an error when an idle pooled connection is dropped. Keep the
@@ -31,7 +32,7 @@ export function buildApp() {
     return payload;
   });
   const checkout=paymentConfiguration(demo);
-  const stopCheckout=registerCheckout(app,pool,demo,customer,originAllowed);
+  const stopCheckout=registerCheckout(app,pool,demo,customer,originAllowed,demoStripeClient);
   registerCommerce(app,pool,demo,customer,originAllowed);
   registerCustomerNetwork(app,pool,demo,customer,originAllowed);
   registerUsage(app,pool,customer);

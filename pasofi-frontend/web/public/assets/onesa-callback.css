@@ -1,0 +1,14 @@
+/* Sign-in return page. Served as a file because the site CSP forbids inline styles. */
+:root { color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #103c35; background: #f8f9f5; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100dvh; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 10px; padding: 14px 20px; background: #001a33; border-bottom: 3px solid #0070f2; color: #fff; font-size: 20px; letter-spacing: -.5px; }
+header .mark { width: 32px; height: 32px; border-radius: 10px; }
+main { width: min(440px, calc(100% - 32px)); margin: 48px auto; padding: 24px; background: #fff; border: 1px solid #dae3da; border-radius: 16px; box-shadow: 0 8px 28px #103c3510; }
+h1 { margin: 0 0 8px; font-size: 22px; line-height: 1.25; letter-spacing: -.4px; }
+p { margin: 0 0 20px; color: #43614d; font-size: 15px; line-height: 1.55; }
+a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 18px; border-radius: 12px; background: #0070f2; color: #fff; font-weight: 650; font-size: 15px; text-decoration: none; }
+a:hover { background: #003a99; }
+a:focus-visible { outline: 3px solid #c7f5b5; outline-offset: 3px; }
+body:not([data-state="failed"]) a { background: transparent; color: #003a99; padding: 10px 0; }
+@media (max-width: 420px) { main { margin-top: 24px; padding: 20px; } a { width: 100%; } body:not([data-state="failed"]) a { width: auto; } }

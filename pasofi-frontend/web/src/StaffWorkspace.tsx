@@ -1,4 +1,4 @@
-import { staffEntry, startProductSignIn } from './registration';
+import { requestAccessUrl, staffEntry, startProductSignIn } from './registration';
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, ApiError } from './api';
@@ -165,11 +165,13 @@ export default function StaffWorkspace({ close, capabilities }: { close: () => v
     {step === 'unavailable' && <button className="secondary" onClick={load} disabled={busy}>Retry staff connection</button>}
     {(step === 'login' || step === 'unavailable') && onesaOrigin && <button className="secondary" disabled={busy} onClick={() => startOnesa()}>Sign in</button>}
     {!capabilities?.demo && (step === 'login' || step === 'register' || step === 'unavailable') && <div className="workspace-auth">
-      <p>Staff access requires approval and verification.</p>
+      <p>Request access to work with PasoFi sales or manage PasoFi.</p>
       {onesaOrigin === undefined && <p role="status">Checking staff sign-in…</p>}
       {onesaOrigin === null && <p>Staff sign-in is temporarily unavailable.</p>}
-      <p><a href="https://account.onesa.eu/access?product=pasofi&amp;role=agent">Request staff access</a></p>
-      <p><a href="https://account.onesa.eu/access?product=pasofi&amp;role=administrator">Request administrator access</a></p>
+      <div className="purchase-actions">
+        <a href={requestAccessUrl('agent')}>Request staff access</a>
+        <a href={requestAccessUrl('administrator')}>Request administrator access</a>
+      </div>
     </div>}
     {capabilities?.demo && (step === 'login' || step === 'register') && <div className="workspace-auth"><div><h3>{step === 'register' ? 'Apply for staff access' : 'Welcome back'}</h3><p>{step === 'register' ? 'Every staff account needs an authenticator and administrator approval before it can sell vouchers or manage a site.' : 'Sign in with your email, password, and authenticator code.'}</p></div><form className="form-grid" onSubmit={authenticate}>
       {step === 'register' && <label>Your name<input required maxLength={80} autoComplete="name" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>}

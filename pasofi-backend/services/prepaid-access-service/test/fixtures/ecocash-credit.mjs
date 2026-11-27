@@ -1,8 +1,9 @@
 // Exercise the incoming-credit boundary with synthetic data in a disposable local database.
 // Read the fixture from stdin to keep voucher, phone and account details off the command line.
 import pg from 'pg';
-import { applySimulatedEcoCashCredit } from '../../dist/ecocash-credits.js';
+import { ingestEcoCashMerchantCredit } from '../../dist/ecocash-credits.js';
 import { loadDeliveryKeys } from '../../dist/delivery-crypto.js';
+import { syntheticMerchantEnvelopes } from './ecocash-merchant-envelope.mjs';
 
 async function main() {
   if (process.env.APP_ENV !== 'demo' || process.env.NODE_ENV !== 'development' ||
@@ -27,7 +28,9 @@ async function main() {
   const { config, observation } = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   const pool = new pg.Pool({ connectionString: url.href, max: 1, connectionTimeoutMillis: 3000 });
   try {
-    const { creditId, state, reason } = await applySimulatedEcoCashCredit(pool, keys, config, observation);
+    const { sign, verifier } = syntheticMerchantEnvelopes();
+    process.env.PAMOFI_ECOCASH_MERCHANT_CREDITS_ENABLED = 'true';
+    const { creditId, state, reason } = await ingestEcoCashMerchantCredit(pool, keys, config, sign(observation), verifier);
     console.log(JSON.stringify({ simulation: true, creditId, state, reason }));
   } finally {
     await pool.end();
