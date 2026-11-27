@@ -7,6 +7,9 @@ import { freshOpaque, isOpaque, mfaKey, opaqueHash } from './staff-crypto.js';
 
 const denied = () => new OnesaError(401, 'onesa_sign_in_rejected');
 const managedIssuer = 'https://auth.onesa.eu/';
+// Long enough to create an account and confirm its email on the provider's
+// pages within one sign-in. The flow stays single-use and browser-bound.
+export const customerFlowLifetime = 15 * 60;
 export { customerAssertion };
 export function customerReturnTo(value: unknown, hotspot = false): string {
   if (typeof value !== 'string') return '/#account';
@@ -59,7 +62,7 @@ export class OnesaCustomer extends OnesaStaff {
     await db.query('DELETE FROM customer_onesa_flows WHERE expires_at<=now()');
     await db.query("INSERT INTO customer_onesa_flows(state_hash,browser_hash,verifier,nonce,return_to,guest_session_hash,expires_at) VALUES($1,$2,$3,$4,$5,$6,now()+($7 * interval '1 second'))",
       [opaqueHash(state), this.browserHash(browser, callback), verifier, nonce, customerReturnTo(returnTo, callback.href === this.hotspotCallback?.href),
-        guestToken ? opaqueHash(guestToken) : null, signup ? 900 : 300]);
+        guestToken ? opaqueHash(guestToken) : null, customerFlowLifetime]);
     return { browser, authorizationUrl: authorization.href };
   }
   async finish(db: pg.Pool, browser: unknown, params: { state: string; code: string; iss?: string }, callback = this.config.callback, guestToken?: string) {
@@ -289,8 +292,8 @@ export function registerCustomerOnesa(app: FastifyInstance, pool: pg.Pool | null
         const flow = await onesa.start(pool, request.body.returnTo, callback, request.body.claimGuest === true ? guest : undefined, signup);
         const id = validBrowser ? browserId : freshOpaque();
         const cookie = signingKey ? flow.browser + '.' + id + '.' + signature(id).toString('base64url') : flow.browser;
-        reply.setCookie(flowCookie, cookie, {...attributes,maxAge:signup ? 900 : 300});
-        return {authorizationUrl:flow.authorizationUrl};
+        reply.setCookie(flowCookie, cookie, {...attributes,maxAge:customerFlowLifetime});
+        return {authorizationUrl:flow.authorizationUrl,expiresIn:customerFlowLifetime};
       }
       const result = await onesa.finish(pool, validBrowser ? proof : presented, request.body as {state:string;code:string;iss?:string}, callback,request.cookies[sessionCookie]);
       reply.clearCookie(flowCookie,attributes);

@@ -60,7 +60,8 @@ export async function startProductSignIn(staff:boolean,returnTo:string,reauthent
   if (hotspotPortal && !staff && reauthenticate) target.searchParams.set('prompt', 'login');
   const state = target.searchParams.get('state');
   if (!hotspotPortal && state && /^[A-Za-z0-9_-]{43}$/.test(state)) {
-    const expiresIn = staff && flow.expiresIn === 900 ? flow.expiresIn : 300;
+    // Staff and customer sign-ins allow 15 minutes; an older service still answers with 5.
+    const expiresIn = flow.expiresIn === 900 ? flow.expiresIn : 300;
     sessionStorage.setItem('pasofi-onesa-flow:' + state, JSON.stringify({
       staff, returnTo: staff ? staffEntry : destination(returnTo), expires: Date.now() + expiresIn * 1000,
     }));

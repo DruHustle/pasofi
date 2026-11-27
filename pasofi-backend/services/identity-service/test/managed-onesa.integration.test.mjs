@@ -114,6 +114,12 @@ test('managed PasoFi preserves customer and operator bindings, audience, MFA and
       assert.equal(start.cookies.find(c=>c.name.endsWith('onesa_flow')).maxAge,900);
       const window = await db.query('SELECT extract(epoch FROM max(expires_at)-now())::int AS remaining FROM staff_onesa_flows');
       assert.ok(window.rows[0].remaining > 840, 'the server still accepts a callback after five minutes');
+    } else {
+      // One sign-in also covers creating an account and confirming its email.
+      assert.equal(start.json().expiresIn,900);
+      assert.equal(start.cookies.find(c=>c.name.endsWith('onesa_customer_flow')).maxAge,900);
+      const window = await db.query('SELECT extract(epoch FROM max(expires_at)-now())::int AS remaining FROM customer_onesa_flows');
+      assert.ok(window.rows[0].remaining > 840, 'a customer callback is still accepted after five minutes');
     }
     return request('POST',prefix+'complete',{code:'synthetic',state:query.get('state')},cookie(start,staff?'onesa_flow':'onesa_customer_flow'));
   }

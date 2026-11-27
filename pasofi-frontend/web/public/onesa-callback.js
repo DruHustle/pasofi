@@ -127,7 +127,7 @@
         link('/', 'Back to PasoFi');
         failure('Your staff record needs a check', 'This email is already used by another PasoFi staff record. Ask a PasoFi administrator to review it before you sign in again.');
       } else if (customer && expired && (result.status === 401 || result.status === 403)) {
-        failure('Sign-in took too long', 'Return to PasoFi and sign in again. Finish within five minutes in the same tab.');
+        failure('Sign-in took too long', 'Return to PasoFi and sign in again, then finish in the same tab without a long pause.');
       } else if (result.status === 401 || result.status === 403) {
         failure(customer ? 'PasoFi sign-in could not finish' : 'Staff sign-in needs attention',
           customer ? 'Return to PasoFi and sign in again.'
