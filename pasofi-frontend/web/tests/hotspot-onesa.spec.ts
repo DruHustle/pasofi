@@ -137,4 +137,6 @@ test('dedicated Connect signs in directly from every entry and returns to the sa
   await expect(page).toHaveURL(captive + '/connect');
   expect(completed).toBe(true);
   expect(accountVisits).toBe(0);
+  // Static assets may still be in flight through the fixture route.
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
