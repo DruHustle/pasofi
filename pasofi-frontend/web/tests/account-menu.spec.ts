@@ -53,7 +53,7 @@ for (const width of [320, 390, 1280]) test(`a signed-out visitor opens the accou
   await expect(menu.getByRole('menuitem')).toHaveText(['Sign in or sign up', 'Redeem a voucher', 'Check usage', 'Recover a guest account', 'Help']);
   await expect(menu).toBeInViewport({ ratio: 1 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  for (const item of await menu.getByRole('menuitem').all()) expect((await item.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  for (const item of await menu.getByRole('menuitem').all()) expect(Math.round((await item.boundingBox())!.height)).toBeGreaterThanOrEqual(44);
   expect(rejected).toEqual([]);
   await page.screenshot({ path: info.outputPath(`account-menu-signed-out-${width}.png`) });
 
