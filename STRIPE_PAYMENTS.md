@@ -60,7 +60,7 @@ country, not a sample test fixture's country or the hotspot's location.
 | `STRIPE_ACCOUNT_ID` | Exact `acct_…` merchant ID |
 | `STRIPE_MERCHANT_COUNTRY` | Actual two-letter uppercase merchant country |
 | `STRIPE_PUBLISHABLE_KEY` | Matching `pk_test_…` or `pk_live_…`; returned to the owning checkout |
-| `STRIPE_SECRET_KEY` | Matching server-only secret key; production loads it through `STRIPE_SECRET_KEY_FILE` |
+| `STRIPE_SECRET_KEY` | Matching server-only key. Demo accepts restricted and temporary claimable Stripe test keys. Production loads its live key through `STRIPE_SECRET_KEY_FILE`. |
 | `STRIPE_WEBHOOK_SECRET` | Endpoint-specific signing secret; production loads it through `STRIPE_WEBHOOK_SECRET_FILE` |
 | `STRIPE_QUALIFIED_SITE_IDS_JSON` | Nonempty JSON array of explicitly accepted site UUIDs |
 | `PAMOFI_CUSTOMER_NETWORK_ENABLED=true` | Required for live checkout; supplied by the qualified RADIUS overlay |
