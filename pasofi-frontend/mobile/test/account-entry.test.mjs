@@ -66,6 +66,6 @@ test('native account rendering failures preserve an explicit unavailable gate an
   assert.match(homeComponent, /class AccountRenderBoundary extends Component/);
   assert.match(homeComponent, /static getDerivedStateFromError\(\)/);
   assert.match(homeComponent, /Mobile account access is not enabled by this deployment yet/);
-  assert.match(homeComponent, /← Offline preview/);
+  assert.match(homeComponent, /← Back to PasoFi/);
   assert.match(homeComponent, /<AccountRenderBoundary close=/);
 });

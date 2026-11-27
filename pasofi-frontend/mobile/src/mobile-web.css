@@ -1,0 +1,116 @@
+/* The app mirrors the website (pasofi-frontend/web/src/clean-layout.css):
+   same font, navy header, photo hero, bundle cards, filters and switches.
+   Loaded after mobile.css; `.mobile-app` keeps these rules ahead of it. */
+:root{--pf-font:'Plus Jakarta Sans Variable',Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;--pf-navy:#001a33;--pf-blue:#0070f2}
+:root,body,.mobile-app,.mobile-app button,.mobile-app input,.mobile-app select{font-family:var(--pf-font)}
+.mobile-app h1,.mobile-app h2{letter-spacing:-.03em;font-weight:800}
+
+/* Header: navy bar like the website, help and account as round icon buttons. */
+.mobile-app .mobile-header{max-width:none;background:var(--pf-navy);border-bottom:3px solid var(--pf-blue);min-height:calc(72px + env(safe-area-inset-top));padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
+.mobile-app .mobile-brand{color:#fff;font-size:24px}
+.mobile-app .mobile-brandmark{background:#16704f;color:#fff;transform:none;border-radius:12px;width:42px;height:42px}
+.mobile-app .mobile-brandmark .mobile-icon{transform:none}
+.mobile-app .mobile-brand small{color:#c7f5b5}
+.mobile-app .mobile-icon-button{border:0;background:transparent;color:#fff;width:44px;height:44px}
+.mobile-avatar-button{display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:50%;background:#fff;color:var(--pf-navy)}
+.mobile-avatar-button .mobile-icon{width:22px;height:22px}
+.mobile-app .mobile-content{padding:12px 16px 12px}
+.mobile-app .mobile-nav button[aria-current='page']{color:var(--pf-navy)}
+.mobile-app .mobile-nav button[aria-current='page'] .mobile-nav-icon{background:var(--pf-blue);color:#fff}
+.mobile-app .mobile-page-heading{margin:8px 0 16px}
+.mobile-app .mobile-page-heading h1{font-size:30px;margin:4px 0}
+
+/* Photo hero as on the website. */
+.mobile-hero{overflow:hidden;border-radius:20px;background:#003399;color:#fff;margin:4px 0 12px}
+.mobile-hero-copy{padding:20px 18px 18px}
+.mobile-hero-copy h1{margin:6px 0 16px;font-size:31px;line-height:1.05;color:#fff}
+.mobile-hero .mobile-eyebrow{color:#fff;opacity:.85}
+.mobile-hero-button{display:inline-flex;align-items:center;gap:8px;min-height:46px;padding:10px 16px;border:0;border-radius:10px;background:#c7f5b5;color:#0b3d24;font-weight:700;font-size:14px}
+.mobile-hero-button .mobile-icon{width:18px;height:18px}
+.mobile-app .mobile-hero-art{margin:0;border-radius:0;aspect-ratio:3/2;max-height:220px}
+.mobile-app .mobile-hero-art img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* Quick actions: four bordered tiles, the first highlighted. */
+.mobile-app .mobile-quick-actions{gap:7px;margin:0 0 18px}
+.mobile-app .mobile-quick-actions button{min-height:72px;justify-content:center;gap:6px;padding:8px 2px;border:1px solid #dfe6ee;border-radius:12px;background:#fff;color:#1f3347;font-size:11px;font-weight:700;text-align:center}
+.mobile-app .mobile-quick-actions button.is-primary{background:#c7f5b5;border-color:#7fd18c}
+.mobile-app .mobile-quick-actions button > span,.mobile-app .mobile-quick-actions button:nth-child(n) > span{width:24px;height:24px;border:0;background:none;box-shadow:none;color:var(--pf-blue);border-radius:0}
+
+/* Catalogue: same structure and classes as the website. */
+.pf-catalogue{margin:8px 0 18px}
+.pf-section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:10px 0 10px}
+.pf-section-heading h1,.pf-section-heading h2{margin:0;font-size:26px;color:#0f3a2e}
+.pf-text-link{display:inline-flex;align-items:center;gap:6px;min-height:44px;border:0;background:none;padding:0;color:#003a99;font-weight:700;font-size:14px;white-space:nowrap}
+.pf-text-link .mobile-icon{width:16px;height:16px}
+.pf-example-note{display:flex;gap:8px;align-items:flex-start;margin:0 0 10px;padding:10px 12px;border-radius:12px;background:#fff8e6;color:#6b4a00;font-size:12px;line-height:1.5}
+.pf-example-note .mobile-icon{width:16px;height:16px;flex:none;margin-top:1px}
+.pf-filter-row{display:flex;flex-wrap:nowrap;gap:4px;margin:6px 0 10px;overflow-x:auto;scrollbar-width:none}
+.pf-filter-row::-webkit-scrollbar{display:none}
+.pf-filter-row button{flex:0 0 auto;min-width:44px;min-height:44px;padding:8px 10px;border:1px solid #d9e2ea;border-radius:999px;background:#fff;color:#3c4f63;font-size:12px;font-weight:600;white-space:nowrap}
+.pf-filter-row button[aria-pressed=true]{background:#c7f5b5;border-color:#0f6b4b;color:#0b3d24}
+.pf-filter-full{display:none}
+@media (min-width:600px){.pf-filter-full{display:inline}.pf-filter-short{display:none}}
+@media (max-width:359px){.pf-filter-row{gap:3px}.pf-filter-row button{padding:8px 6px}}
+.pf-catalogue-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.pf-catalogue-caption{display:grid;gap:2px;font-size:12px;color:#55697a}
+.pf-catalogue-caption span:last-child{color:#1f3347;font-weight:700}
+.pf-sort{display:grid;gap:3px;flex:0 1 190px;font-size:12px;color:#55697a}
+.pf-sort select{min-height:44px;padding:8px 10px;border:1px solid #cfdbe5;border-radius:10px;background:#fff;color:#1f3347;font-size:13px}
+.pf-purchase-availability{display:grid;gap:2px;margin:0 0 12px;padding:12px 14px;border-radius:12px;background:#fff6e5;border:1px solid #f3d9a4;font-size:13px;color:#6b4a00}
+.pf-empty{padding:20px;border-radius:16px;background:#fff;border:1px solid #dfe6ee;text-align:center}
+.pf-empty h3{margin:0 0 6px}.pf-empty p{margin:0 0 12px;color:#55697a}
+.mobile-secondary{min-height:44px;padding:8px 16px;border:1px solid #cfdbe5;border-radius:10px;background:#fff;font-weight:700}
+.pf-bundle-grid{display:grid;gap:8px}
+.pf-bundle-skeleton{min-height:94px;border-radius:16px;background:linear-gradient(90deg,#eef2f6,#f7f9fb,#eef2f6);background-size:200% 100%}
+
+.pf-bundle-card{--pf-accent:#0070f2;--pf-accent-ink:#0058c0;--pf-accent-soft:#eef5ff;--pf-accent-line:#cfe2fd;display:grid;grid-template-columns:minmax(0,1fr) auto 76px;grid-template-areas:"name price action" "data price action" "validity price action" "detail detail detail";column-gap:12px;row-gap:2px;padding:10px 12px 10px 14px;background:var(--pf-accent-soft);border:1px solid var(--pf-accent-line);border-radius:14px;box-shadow:inset 4px 0 0 var(--pf-accent)}
+.pf-bundle-card[data-best-value]{--pf-accent-line:#9fe38a}
+.pf-bundle-top{grid-area:name;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pf-plan-name{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--pf-accent-ink)}
+.pf-bundle-badge{display:inline-flex;align-items:center;min-height:20px;padding:1px 8px;border-radius:999px;background:#c7f5b5;color:#0b3d24;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.pf-bundle-card h3{grid-area:data;display:flex;align-items:baseline;gap:4px;margin:2px 0 0;font-size:32px;font-weight:800;letter-spacing:-.05em;line-height:1;color:var(--pf-navy);font-variant-numeric:tabular-nums}
+.pf-bundle-card h3 span{font-size:15px;font-weight:800;letter-spacing:0;color:var(--pf-accent-ink)}
+.pf-validity{grid-area:validity;display:inline-flex;align-items:center;justify-self:start;width:max-content;gap:5px;margin:4px 0 0;padding:2px 8px 2px 6px;border-radius:999px;background:#ffffffc7;color:#3c4f63;font-size:12px;font-weight:600}
+.pf-validity .mobile-icon{width:13px;height:13px}
+.pf-bundle-price{grid-area:price;align-self:center;display:grid;gap:2px;text-align:right}
+.pf-bundle-price strong{display:inline-flex;align-items:flex-start;justify-content:flex-end;font-size:26px;font-weight:800;letter-spacing:-.04em;line-height:1;color:var(--pf-navy);font-variant-numeric:tabular-nums}
+.pf-price-symbol,.pf-price-cents{font-size:15px;font-weight:700;letter-spacing:0;margin-top:3px}
+.pf-bundle-price>span{color:#5b6b7a;font-size:12px;font-weight:600}
+.pf-bundle-price abbr{text-decoration:none;font-weight:700;color:#3c4f63}
+.pf-per-gb{white-space:nowrap}
+.pf-card-button{grid-area:action;align-self:center;min-height:44px;padding:9px 6px;border:0;border-radius:10px;background:var(--pf-blue);color:#fff;font-weight:700;font-size:13px}
+.pf-card-button:disabled{background:#9dc3f5;color:#fff}
+.pf-card-button--quiet{background:#fff;color:#0058c0;border:1px solid #cfe2fd}
+.pf-card-detail{grid-area:detail;margin-top:10px;padding-top:10px;border-top:1px solid #ffffffb0;font-size:13px;color:#3c4f63}
+.pf-card-detail p{margin:0 0 6px}
+@media (max-width:359px){.pf-bundle-card{column-gap:8px;padding:10px;grid-template-columns:minmax(0,1fr) auto 66px}.pf-bundle-card h3{font-size:30px}.pf-bundle-price strong{font-size:23px}.pf-per-gb{display:none}}
+.pf-bundle-terms{display:flex;gap:10px;margin:14px 0;padding:12px;border-radius:12px;background:#fff;border:1px solid #dfe6ee;font-size:12px;line-height:1.6;color:#3c4f63}
+.pf-bundle-terms .mobile-icon{width:18px;height:18px;flex:none;color:#0f6b4b}
+.pf-bundle-terms p{margin:0}
+
+/* Home preview: swipe through bundles. */
+.pf-catalogue--preview .pf-bundle-grid{grid-auto-flow:column;grid-auto-columns:minmax(188px,62%);gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding:2px 2px 12px;margin:0 -2px;scrollbar-width:none}
+.pf-catalogue--preview .pf-bundle-grid::-webkit-scrollbar{display:none}
+.pf-catalogue--preview .pf-bundle-card{scroll-snap-align:start;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name name" "data data" "validity validity" "price action" "detail detail";row-gap:4px;padding:16px 14px 14px;box-shadow:inset 0 4px 0 var(--pf-accent)}
+.pf-catalogue--preview .pf-bundle-price{align-self:end;text-align:left;margin-top:10px}
+.pf-catalogue--preview .pf-bundle-price strong{justify-content:flex-start}
+.pf-catalogue--preview .pf-card-button{align-self:end;min-width:76px;padding:9px 10px}
+
+/* New to PasoFi guide. */
+.mobile-guide{margin:6px 0 18px;border:1px solid #dfe6ee;border-radius:16px;background:#fff}
+.mobile-guide summary{display:flex;align-items:center;gap:12px;min-height:64px;padding:12px 14px;list-style:none;cursor:pointer}
+.mobile-guide summary::-webkit-details-marker{display:none}
+.mobile-guide summary>span:nth-child(2){display:grid;gap:2px;flex:1}
+.mobile-guide summary small{color:#55697a}
+.mobile-guide-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#eef5ff;color:var(--pf-blue)}
+.mobile-guide ol{margin:0;padding:0 14px 14px;list-style:none;display:grid;gap:12px}
+.mobile-guide li{display:flex;gap:12px}
+.mobile-guide li>span{font-weight:800;color:var(--pf-blue)}
+.mobile-guide h3{margin:0 0 2px;font-size:14px}.mobile-guide p{margin:0;font-size:13px;color:#55697a}
+
+/* Account screens: the same switch and back link as the website. */
+.mobile-app .pf-segmented{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;width:100%;margin:0 0 16px;padding:4px;background:#eaf0f6;border-radius:14px}
+.mobile-app .pf-segmented button{min-width:0;min-height:42px;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:#4a5d70;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mobile-app .pf-segmented button[aria-current=page]{background:#fff;color:var(--pf-navy);box-shadow:0 1px 3px #001a3329}
+.mobile-app .pf-back{display:inline-flex;align-items:center;gap:6px;min-height:40px;margin:0 0 2px -8px;padding:6px 12px 6px 8px;border:0;border-radius:10px;background:transparent;color:#0058c0;font-size:14px;font-weight:600}
+.mobile-app .customer-shortcuts{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}

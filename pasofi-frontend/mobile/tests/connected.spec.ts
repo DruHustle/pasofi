@@ -41,6 +41,16 @@ async function mock(page: Page, handle?: (route: Route, path: string, method: st
   });
 }
 async function open(page: Page, origin: string) { await page.goto(origin); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click(); }
+// Reach online checkout the way a customer does: Bundles, Choose, then Online payment when both ways to pay are offered.
+async function openCheckout(page: Page, origin: string) {
+  await page.goto(origin);
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Bundles', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose flex bundle', exact: true }).click();
+  const options = page.getByRole('navigation', { name: 'Payment options' });
+  await expect(page.getByRole('heading', { name: /^(Checkout|Buy with an agent)$/ })).toBeVisible();
+  if (await options.count()) await options.getByRole('button', { name: 'Online payment', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Checkout', exact: true })).toBeVisible();
+}
 
 test('hotspot preparation respects exhausted data and explains server-side eligibility changes', async ({ page, configuredBaseURL }) => {
   let used = '5000000000', attempts = 0;
@@ -88,8 +98,7 @@ test('an expired customer session clears the mobile EcoCash checkout form', asyn
     if (path === '/api/session' && customerSessionExpired) { await reply({ error: 'session_required' }, 401); return true; }
     return false;
   });
-  await open(page, configuredBaseURL);
-  await page.getByRole('button', { name: 'Online payment', exact: true }).click();
+  await openCheckout(page, configuredBaseURL);
   const walletNumber = page.getByLabel('EcoCash number');
   await walletNumber.fill('077 304 7653');
   await page.getByRole('checkbox', { name: /reviewed the price/ }).check();
@@ -141,7 +150,7 @@ for(const platform of ['ios','android'])for(const outcome of ['completed','cance
       if(path===`/api/orders/${orderId}/status`){await reply({order,attempts:[{id:orderId,state:'pending'}],entitlementId:null,entitlementRevokedAt:null,fulfillmentState:'unconfirmed',simulation:true});return true;}
       return false;
     });
-    await open(page,configuredBaseURL);await page.getByRole('button',{name:'Online payment',exact:true}).click();
+    await openCheckout(page,configuredBaseURL);
     await page.getByRole('checkbox',{name:/reviewed the price/}).check();await page.getByRole('button',{name:'Prepare checkout'}).click();
     await expect(page.getByRole('heading',{name:`Pay securely with ${platform==='ios'?'Apple Pay':'Google Pay'} or card`})).toBeVisible();
     await page.getByRole('button',{name:'Pay $1.00',exact:true}).click();
@@ -177,7 +186,6 @@ test('connected mobile account keeps paused vouchers inactive and preserves acco
   await expect(page.getByText('No account is active in this browser.', { exact: false })).toBeVisible();
   const redeem = page.getByRole('button', { name: 'Redeem a voucher', exact: true });
   await expect(redeem).toHaveCount(0, { timeout: 3000 });
-  await expect(page.getByRole('button', { name: 'Vouchers paused', exact: true }).first()).toBeDisabled();
   await expect(page.getByText('You can buy or redeem as a guest.', { exact: false })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Recover an existing account' })).toBeVisible();
   await expect(page.getByLabel('Voucher code', { exact: true })).toHaveCount(0);
@@ -187,7 +195,8 @@ test('connected mobile account keeps paused vouchers inactive and preserves acco
 test('a configured HTTPS gateway still fails closed until native cookie access is qualified', async ({ page, configuredBaseURL }) => {
   const requested: string[] = [];
   await mock(page, async (_route, path, _method, reply) => { requested.push(path); if (path === '/api/capabilities') { await reply({ ...capabilities, mobileCookies: false }); return true; } return false; });
-  await open(page, configuredBaseURL); await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible(); await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0); expect(requested.length).toBeGreaterThan(0); expect(new Set(requested)).toEqual(new Set(['/api/capabilities'])); await page.getByRole('button', { name: '← Offline preview' }).click(); await expect(page.getByRole('button', { name: /Explore bundles/ })).toBeVisible();
+  await open(page, configuredBaseURL); await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible(); await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0); expect(requested.length).toBeGreaterThan(0); // Only the public catalogue and capability reads; no session or account endpoint before qualification.
+  expect([...new Set(requested)].every(path => ['/api/capabilities', '/api/bundles'].includes(path))).toBe(true); expect(requested).toContain('/api/capabilities'); await page.getByRole('button', { name: '← Back to PasoFi' }).click(); await expect(page.getByRole('button', { name: 'Browse bundles' })).toBeVisible(); await expect(page.getByRole('button', { name: /^Choose / })).toHaveCount(0);
 });
 
 test('qualified mobile API session and voucher redemption use credentialed HTTPS and remain disconnected', async ({ page, configuredBaseURL }, testInfo) => {
@@ -202,7 +211,7 @@ test('qualified mobile API session and voucher redemption use credentialed HTTPS
     if (path === '/api/access') { await reply({ entitlements: redeemed ? [{ id: entitlementId, bundle_id: 'flex', byte_limit: '5000000000', consumed_bytes: '0', validity_seconds: 604800, activated_at: null, revoked_at: null, start_by: new Date(Date.now() + 86400000).toISOString() }] : [], hasMore: false, nextOffset: null }); return true; }
     return false;
   });
-  await page.setViewportSize({ width: 360, height: 850 }); await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Use a voucher', exact: true }).click(); await page.getByLabel('Voucher code', { exact: true }).fill('DEMO-VOUCHER-234567'); await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click(); await expect(page.getByText('Queued · not connected', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 360, height: 850 }); await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Redeem a voucher', exact: true }).click(); await page.getByLabel('Voucher code', { exact: true }).fill('DEMO-VOUCHER-234567'); await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click(); await expect(page.getByText('Queued · not connected', { exact: true })).toBeVisible();
   await expect(page.getByText('New hotspot connections are paused.', { exact: false })).toContainText('Ask your PasoFi agent when service is available.');
   await expect(page.getByText('No active hotspot session', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check connection', exact: true })).toBeEnabled();
@@ -222,12 +231,13 @@ test('mobile private receipts lead to history when cash purchases are paused', a
     return true;
   });
   await open(page, configuredBaseURL);
-  await page.getByRole('button', { name: 'Private receipt', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Private receipts', exact: true })).toBeVisible();
-  await expect(page.getByText('Cash purchases are currently paused.', { exact: true })).toBeVisible();
-  await expect(page.getByText(/pay the exact cash amount|ask the agent for this published bundle/i)).toHaveCount(0);
+  // With cash paused there is no route into a cash pairing, from the account or from Bundles.
+  await expect(page.getByRole('navigation', { name: 'Payment options' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Create private pairing code' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'View purchase history' }).click();
+  await expect(page.getByText(/pay the exact cash amount|ask the agent for this published bundle/i)).toHaveCount(0);
+  await page.getByRole('navigation', { name: 'Account navigation' }).getByRole('button', { name: 'Bundles', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Choose / })).toHaveCount(0);
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'History', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your activity' })).toBeVisible();
   expect(writes).toEqual([]);
 });
@@ -248,7 +258,7 @@ test('mobile keeps a replayed redemption confirmed while bundle history recovers
     return false;
   });
   await open(page, configuredBaseURL);
-  await page.getByRole('button', { name: 'Use a voucher', exact: true }).click();
+  await page.getByRole('button', { name: 'Redeem a voucher', exact: true }).click();
   await page.getByLabel('Voucher code', { exact: true }).fill('DEMOVOUCHER234567');
   await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click();
   await expect(page.getByText('Your bundle list could not be refreshed.', { exact: false })).toBeVisible();
@@ -267,7 +277,7 @@ test('a gateway that cannot retain the mobile cookie never redeems a voucher', a
     if (path === '/api/vouchers/redeem') { redemptions++; await reply({ entitlementId, replayed: false }); return true; }
     return false;
   });
-  await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Use a voucher', exact: true }).click(); await page.getByLabel('Voucher code', { exact: true }).fill('DEMOVOUCHER234567'); await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click(); await expect(page.getByRole('button', { name: 'Redeem voucher', exact: true })).toBeEnabled(); await expect(page.getByText('This browser did not keep the account cookie.', { exact: false })).toBeVisible(); expect(redemptions).toBe(0); await expect(page.getByText('Queued · not connected', { exact: true })).toHaveCount(0);
+  await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Redeem a voucher', exact: true }).click(); await page.getByLabel('Voucher code', { exact: true }).fill('DEMOVOUCHER234567'); await page.getByRole('button', { name: 'Redeem voucher', exact: true }).click(); await expect(page.getByRole('button', { name: 'Redeem voucher', exact: true })).toBeEnabled(); await expect(page.getByText('This browser did not keep the account cookie.', { exact: false })).toBeVisible(); expect(redemptions).toBe(0); await expect(page.getByText('Queued · not connected', { exact: true })).toHaveCount(0);
 });
 
 for (const initial of ['hidden details', 'lost response'] as const) {
@@ -308,7 +318,9 @@ for (const initial of ['hidden details', 'lost response'] as const) {
 }
 
 test('gateway failure preserves the useful offline preview and offers retry', async ({ page, configuredBaseURL }) => {
-  await page.route(`${apiOrigin}/api/**`, route => route.abort('failed')); await open(page, configuredBaseURL); await expect(page.getByRole('button', { name: 'Retry service connection' })).toBeVisible(); await page.getByRole('button', { name: '← Offline preview' }).click(); await page.getByRole('button', { name: /Explore bundles/ }).click(); await expect(page.getByRole('button', { name: 'View Flex example bundle' })).toBeVisible();
+  await page.route(`${apiOrigin}/api/**`, route => route.abort('failed')); await open(page, configuredBaseURL); await expect(page.getByRole('button', { name: 'Retry service connection' })).toBeVisible(); await page.getByRole('button', { name: '← Back to PasoFi' }).click(); await page.getByRole('button', { name: 'Browse bundles' }).click();
+  // A configured build never substitutes example prices for an unreachable live catalogue.
+  await expect(page.getByRole('button', { name: 'Retry bundles' })).toBeVisible(); await expect(page.getByRole('button', { name: 'View Flex example bundle' })).toHaveCount(0);
 });
 
 test('mobile refuses to discard a saved quote when a provider payment attempt exists', async ({ page, configuredBaseURL }) => {
@@ -323,7 +335,7 @@ test('mobile refuses to discard a saved quote when a provider payment attempt ex
     if (path === `/api/orders/${orderId}/expire-unused`) { closures++; expect(method).toBe('POST'); expect(route.request().postDataJSON()).toEqual({}); await reply({ error: 'payment_attempt_exists' }, 409); return true; }
     return false;
   });
-  await open(page, configuredBaseURL); await page.getByRole('button', { name: 'Online payment', exact: true }).click(); await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Prepare checkout' }).click(); await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible(); await page.getByRole('button', { name: 'Close an expired unused quote' }).click(); await expect(page.getByText('A payment attempt already exists for this order.', { exact: false })).toBeVisible(); expect(closures).toBe(1); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':purchase-details')).length)).toBe(1); await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toBeDisabled(); await expect(page.getByRole('button', { name: 'Review a fresh quote' })).toHaveCount(0);
+  await openCheckout(page, configuredBaseURL); await page.getByRole('checkbox', { name: /reviewed the price/ }).check(); await page.getByRole('button', { name: 'Prepare checkout' }).click(); await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible(); await page.getByRole('button', { name: 'Close an expired unused quote' }).click(); await expect(page.getByText('A payment attempt already exists for this order.', { exact: false })).toBeVisible(); expect(closures).toBe(1); expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':purchase-details')).length)).toBe(1); await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toBeDisabled(); await expect(page.getByRole('button', { name: 'Review a fresh quote' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Retry this checkout safely' }).click(); await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible(); expect(orderKeys).toHaveLength(2); expect(new Set(orderKeys).size).toBe(1);
 });
 
@@ -340,24 +352,32 @@ test('native bottom navigation preserves an unresolved checkout and its safe ret
     return false;
   });
   await page.setViewportSize({ width: 360, height: 780 });
-  await open(page, configuredBaseURL);
-  const nav = page.getByRole('navigation', { name: 'Account navigation' });
-  await nav.getByRole('button', { name: 'Bundles', exact: true }).click();
+  await page.goto(configuredBaseURL);
+  const main = page.getByRole('navigation', { name: 'Main navigation' });
+  // Like the website: choose a live bundle, then pay in My PasoFi.
+  await main.getByRole('button', { name: 'Bundles', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose flex bundle', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Checkout', exact: true })).toBeVisible();
   await page.getByRole('checkbox', { name: /reviewed the price/ }).check();
   await page.getByRole('button', { name: 'Prepare checkout' }).click();
   await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible();
+  const nav = page.getByRole('navigation', { name: 'Account navigation' });
+  await expect(nav.getByRole('button', { name: 'Bundles', exact: true })).toHaveAttribute('aria-current', 'page');
   await nav.getByRole('button', { name: 'History', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your activity', exact: true })).toBeVisible();
   await nav.getByRole('button', { name: 'Account', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
   await nav.getByRole('button', { name: 'Home', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible();
-  await nav.getByRole('button', { name: 'Bundles', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your internet. Your everyday.', exact: true })).toBeVisible();
+  await main.getByRole('button', { name: 'Bundles', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose flex bundle', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Checkout', exact: true })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toHaveValue(siteId);
   await expect(page.getByRole('combobox', { name: 'Purchase site', exact: true })).toBeDisabled();
   expect(orderKeys).toHaveLength(1);
   expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.endsWith(':purchase-details')).length)).toBe(1);
+  // Returning from the app's screens remounts checkout, so the price is confirmed again.
+  await page.getByRole('checkbox', { name: /reviewed the price/ }).check();
   await page.getByRole('button', { name: 'Retry this checkout safely' }).click();
   await expect(page.getByText('Simulation checkout prepared.', { exact: false })).toBeVisible();
   expect(orderKeys).toHaveLength(2);
@@ -463,6 +483,9 @@ test('native invoice export uses a cache file and system share only on click, th
   const link = page.getByRole('region', { name: 'Private invoice link' }); await expect(link).toBeVisible();
   await expect(page).not.toHaveURL(/invoice=/);
   expect(await page.evaluate(() => (window as any).invoiceNativeCalls.filter((call: any) => call.method === 'writeFile' || call.method === 'share'))).toEqual([]);
+  // Home reads the public catalogue and sales status at launch, like the website; only the export is examined here.
+  await expect.poll(() => page.evaluate(() => ['/api/bundles', '/api/capabilities'].every(path => (window as any).invoiceApiCalls.some((call: any) => call.path === path)))).toBe(true);
+  await page.evaluate(() => { (window as any).invoiceApiCalls = []; });
   await link.getByRole('button', { name: 'Save or share PDF', exact: true }).click();
   await expect(link).toContainText('PDF opened in your device’s share controls.');
   expect(await page.evaluate(() => (window as any).invoiceApiCalls)).toEqual([{ method: 'POST', path: '/api/invoice-downloads', responseType: 'pdf' }]);
@@ -573,7 +596,7 @@ for (const transition of ['page reload', 'workspace remount'] as const) {
     state.pending = true; await page.getByRole('button', { name: 'Check connection', exact: true }).click();
     await expect(page.getByText('Sign-in pending · not confirmed connected', { exact: true })).toBeVisible();
     if (transition === 'page reload') await page.reload();
-    else await page.getByRole('button', { name: 'Close customer workspace' }).click();
+    else await page.getByRole('navigation', { name: 'Account navigation' }).getByRole('button', { name: 'Home', exact: true }).click();
     await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
     await expect(page.getByRole('combobox', { name: 'Choose your PasoFi hotspot' })).toHaveValue(recoveryNasId);
     const retry = page.getByRole('button', { name: 'Retry connection', exact: true }); await expect(retry).toBeEnabled(); await retry.click();

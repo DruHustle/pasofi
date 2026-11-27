@@ -47,6 +47,14 @@ const test = base.extend<{}, { configuredBaseURL: string }>({
 // This fixture mocks only the Capacitor boundary. The production API/session
 // modules and React capability gate execute unchanged. Platform cookie/Keychain
 // behavior is covered separately by the Android and Swift policy tests.
+// Home reads the public catalogue and sales status at launch, like the website.
+// Tests that examine the bridge clear those two reads and inspect what follows.
+async function afterLaunchReads<T>(records: T[], path: (record: T) => string | undefined) {
+  await expect.poll(() => ['/api/bundles', '/api/capabilities'].every(expected => records.some(record => path(record) === expected))).toBe(true);
+  records.splice(0, records.length);
+}
+const requestPath = (request: NativeRequest) => request.path;
+const callPath = (call: { method: string; options: Record<string, unknown> }) => call.method === 'request' ? String(call.options.path) : undefined;
 async function nativeBridge(page: Page, handler: (request: NativeRequest) => NativeReply | NativeFailure | Promise<NativeReply | NativeFailure>,
   options: { platform?: 'ios' | 'android'; availability?: Record<string, unknown>; absent?: boolean; handoffPending?: boolean; launchUrlFailure?: boolean; authenticate?: (url: string) => Promise<string>; cancel?: (requestId: string) => void } = {}) {
   const calls: { method: string; options: Record<string, unknown> }[] = [];
@@ -297,11 +305,11 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
   test(`native account UI requires qualified cookie protocol version1 ${JSON.stringify(patch)}`, async ({ page, configuredBaseURL }) => {
     const requests: NativeRequest[] = [];
     await nativeBridge(page, request => { requests.push(request); return reply({ ...capabilities, ...patch }); });
-    await page.goto(configuredBaseURL); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
+    await page.goto(configuredBaseURL); await afterLaunchReads(requests, requestPath); await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
     await expect(page.getByText('Mobile account access is not enabled', { exact: false })).toBeVisible();
     await expect(page.getByRole('link',{name:'Continue to PasoFi account on the web',exact:true})).toHaveAttribute('href','https://pasofi.mobile.onesa.eu/#account');
     await expect(page.getByRole('link',{name:'Sign up',exact:true})).toHaveAttribute('href','https://account.onesa.eu/register?audience=user&product=pasofi&platform=ios');
-    await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Redeem a voucher' })).toHaveCount(0);
     expect(requests.length).toBeGreaterThan(0); expect(new Set(requests.map(request => request.path))).toEqual(new Set(['/api/capabilities']));
     expect(await page.evaluate(() => (window as any).browserApiFetches)).toBe(0);
   });
@@ -312,14 +320,14 @@ test('unresponsive native capabilities request returns to offline preview withou
   const calls = await nativeBridge(page, request => request.path === '/api/capabilities'
     ? new Promise<NativeReply>(() => {})
     : reply({ error: 'not_authenticated' }, 401));
-  await page.goto(configuredBaseURL);
+  await page.goto(configuredBaseURL); await afterLaunchReads(calls, callPath);
   await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
   await expect(page.getByText('Checking the configured PasoFi service', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry service connection' })).toBeVisible({ timeout: 16000 });
-  await expect(page.getByRole('button', { name: '← Offline preview' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Use a voucher' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '← Back to PasoFi' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Redeem a voucher' })).toHaveCount(0);
   expect(calls.filter(call => call.method === 'request').map(call => call.options.path)).toEqual(['/api/capabilities']);
-  await page.getByRole('button', { name: '← Offline preview' }).click();
+  await page.getByRole('button', { name: '← Back to PasoFi' }).click();
   await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
 });
 for (const platform of ['ios', 'android'] as const) {
@@ -379,7 +387,7 @@ for (const code of ['session_changed', 'logout_pending']) {
   test(`native ${code} session read cannot create a replacement account`, async ({ page, configuredBaseURL }) => {
     const requests: NativeRequest[] = [];
     await nativeBridge(page, request => { requests.push(request); return { nativeFailure: { code } }; });
-    await page.goto(configuredBaseURL);
+    await page.goto(configuredBaseURL); await afterLaunchReads(requests, requestPath);
     const result = await page.evaluate(async () => {
       const path = '/src/session.ts', { ensureSession } = await import(path);
       try { await ensureSession(); return { accepted: true }; } catch (error) { return { accepted: false, code: (error as { code?: string }).code }; }
@@ -393,7 +401,7 @@ for (const code of ['session_changed', 'logout_pending']) {
 test('native OS failures expose only fixed error codes and reject JS attempts to supply authority headers', async ({ page, configuredBaseURL }) => {
   const requests: NativeRequest[] = [];
   await nativeBridge(page, request => { requests.push(request); return { nativeFailure: { code: 'untrusted_os_code', message: 'https://private.invalid/?cookie=SYNTHETIC_PRIVATE_MATERIAL' } }; });
-  await page.goto(configuredBaseURL);
+  await page.goto(configuredBaseURL); await afterLaunchReads(requests, requestPath);
   const result = await page.evaluate(async () => {
     const path = '/src/api.ts', { api } = await import(path), failures = [];
     for (const headers of [{ Cookie: '__Host-pamofi_session=synthetic' }, { Origin: 'https://evil.test' }, { Authorization: 'Bearer synthetic' },
@@ -460,7 +468,7 @@ test('native invoice decoding rejects disguised or excessive PDF data', async ({
 test('aborting an active native request cancels its exact request ID and cannot return a late private response', async ({ page, configuredBaseURL }) => {
   let pending: { requestId: string; resolve: (value: NativeReply) => void } | undefined;
   const calls = await nativeBridge(page, request => new Promise<NativeReply>(resolve => { pending = { requestId: request.requestId, resolve }; }));
-  await page.goto(configuredBaseURL);
+  await page.goto(configuredBaseURL); await afterLaunchReads(calls, callPath); pending = undefined;
   await page.evaluate(async () => {
     const path = '/src/api.ts', { api } = await import(path), runtime = window as any;
     runtime.nativeAbort = new AbortController();
@@ -481,7 +489,7 @@ test('Android cold-start return survives a missed notification and is acknowledg
   await page.goto(configuredBaseURL);
   await expect(page.getByRole('heading', { name: 'Enter a sign-in code' })).toBeVisible({ timeout: 5000 });
   await expect.poll(() => page.evaluate(() => (window as any).__pendingHandoffReturn())).toBeNull();
-  await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
+  await page.getByRole('button', { name: 'Back to PasoFi', exact: false }).click();
   await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
   await page.evaluate(() => (window as any).__returnToHandoff());
   await expect(page.getByRole('heading', { name: 'Enter a sign-in code' })).toBeVisible();
@@ -491,12 +499,12 @@ test('Android cold-start return survives a missed notification and is acknowledg
 
 test('unavailable native capabilities keep the read-only fallback and do not imply a completed mutation', async ({ page, configuredBaseURL }) => {
   const calls = await nativeBridge(page, () => reply({ error: 'unavailable' }, 503));
-  await page.goto(configuredBaseURL);
+  await page.goto(configuredBaseURL); await afterLaunchReads(calls, callPath);
   await page.getByRole('button', { name: 'My PasoFi', exact: true }).click();
   await expect(page.getByText('The configured PasoFi service could not be reached.', { exact: false })).toBeVisible();
   await expect(page.getByText('A request may still have completed', { exact: false })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Start a new customer account' })).toHaveCount(0);
   expect(calls.filter(call => call.method === 'request').every(call => call.options.method === 'GET' && call.options.path === '/api/capabilities')).toBe(true);
-  await page.getByRole('button', { name: 'Offline preview', exact: false }).click();
+  await page.getByRole('button', { name: 'Back to PasoFi', exact: false }).click();
   await expect(page.getByRole('button', { name: 'My PasoFi', exact: true })).toBeVisible();
 });
