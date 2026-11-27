@@ -38,6 +38,8 @@
 	<string>$(PASOFI_APPLE_PAY_ENTITLEMENTS)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>PasoFi uses the camera to fill in your payment card details when you choose Scan Card at checkout.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
