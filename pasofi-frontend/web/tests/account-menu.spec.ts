@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { usageSnapshot } from './usage-fixture';
 
 const caps = { demo: false, paymentMode: 'disabled', paymentCheckout: false, vouchers: true, receiptPairing: false, staffSales: false, deliverySms: false, networkAccess: false, mobileCookies: false };
 const customerId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -23,7 +24,9 @@ async function fixture(page: Page, initial: 'signed-out' | 'member' | 'guest') {
         if (state.session === 'signed-out') return url.searchParams.get('restore') === '1' ? route.fulfill({ status: 204 }) : json(route, { error: 'not_authenticated' }, 401);
         return json(route, { customerId, guest: state.session === 'guest' });
       case '/api/access': return json(route, { customerId, entitlements: [], hasMore: false, nextOffset: null });
-      case '/api/usage': return json(route, { error: 'not_authenticated' }, 401);
+      // Usage agrees with the session; a 401 here would sign out a valid session.
+      case '/api/usage': return state.session === 'signed-out' ? json(route, { error: 'not_authenticated' }, 401)
+        : json(route, { ...usageSnapshot('0', { customerId, allowanceBytes: '0' }), entitlementUpdates: [] });
       case '/api/vouchers/redeem':
         state.redemptions.push(route.request().postDataJSON().code);
         return json(route, { entitlementId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', replayed: false });
