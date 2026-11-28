@@ -100,6 +100,7 @@ test('each screen highlights exactly one main destination', async ({ page }) => 
     await page.goto(`/#${route}`);
     await expect(main.getByRole('button', { name: destination, exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(main.locator('[aria-current="page"]')).toHaveCount(1);
+    await expect(page.locator('html')).toHaveCSS('scrollbar-width', 'none');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   expect(mutations).toEqual([]);
