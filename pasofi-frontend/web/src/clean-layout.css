@@ -2,6 +2,10 @@
    and a short swipeable bundle preview on Home. Loaded last; `.pf-app` keeps
    these rules ahead of the account stylesheets that load with that screen. */
 
+/* Hide the page scrollbar while keeping the document scrollable. */
+html { scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
+
 /* Vibrant, sharp palette (as on vodacom.co.za): cool white canvas, white
    cards with crisp shadows, one saturated brand blue, near-black navy text. */
 :root{--pf-canvas:#f3f5f8;--pf-ink:#0a1628}

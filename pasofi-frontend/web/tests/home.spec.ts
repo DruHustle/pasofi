@@ -184,10 +184,16 @@ for (const width of [390, 1280]) test(`Home scrolls beneath the stationary heade
   await page.setViewportSize({ width, height: 580 });
   await page.goto('/');
   await expect(page.getByRole('article')).toHaveCount(6);
+  expect(await page.evaluate(() => document.documentElement.clientWidth)).toBe(width);
 
   const header = page.getByRole('banner');
   const initialHeader = await header.boundingBox();
   expect(initialHeader?.y).toBe(0);
+  await page.mouse.move(width / 2, 240);
+  await page.mouse.wheel(0, 240);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await page.keyboard.press('Home');
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   for (const scrollTop of [360, 150]) {
     await page.evaluate(top => window.scrollTo(0, top), scrollTop);
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollTop);
