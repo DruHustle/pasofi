@@ -70,3 +70,12 @@ The private endpoints `/internal/v1/invoice-delivery/capabilities` and `/interna
 The operations diagnostic reports `invoice_ambiguous`, `invoice_failed` and invoice jobs unresolved after 15 minutes as `invoice_delayed`. It exposes aggregate counts only. The normal test runner removes all invoice and Resend configuration from inherited environments, so local or hosted tests cannot use an operator's real provider configuration.
 
 Implementation and provider setup: [Paid invoices](../../docs/PAID_INVOICES.md).
+
+### Render email transport
+
+The optional [Render email relay](../../infra/render-email/README.md) hosts the
+Resend HTTPS send/retrieve boundary while this service retains its existing queue,
+private invoice lookup and delivery status. `INVOICE_EMAIL_TRANSPORT=render`
+requires its separately qualified origin and protected service secret; it never
+falls back to a direct provider request. The candidate Blueprint starts with
+delivery disabled. SMS, staff recovery and all payment gates remain separate.

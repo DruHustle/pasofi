@@ -69,4 +69,11 @@ The deployment package defaults to inspection/preflight. It uses the existing Co
 
 Run the existing operations diagnostic with `--queues` after rollout. Investigate `invoice_ambiguous`, `invoice_failed` and `invoice_delayed`. A missing provider report times out after 24 hours. An authorized resend creates a new audited job for the same invoice and recipient. There is no automatic resend after submission. The authenticated PDF remains available if a delivery cannot be confirmed.
 
+For the requested Render-hosted email boundary, use the disabled candidate and
+qualification path in [Render email](../infra/render-email/README.md). The optional
+`invoice-render-email.compose.yaml` overlay replaces direct provider transport,
+not the durable Oracle notification queue. It keeps Resend, the selected
+`notifications-pasofi@onesa.eu` sender and existing provider idempotency/receipt
+semantics. No live delivery is enabled by checking in the Blueprint.
+
 Automated qualification covers payment-only issuance, immutable retries, ownership/site access, bearer expiry/origin, private lookup scope, outbox/inbox deduplication, exact attachment bytes, mock delivery, ambiguity/crash recovery, narrow gateway PDF forwarding, compact UI and native builds. Actual provider receipts, a real server rollout and physical hotspot acceptance must be evidenced separately.

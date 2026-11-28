@@ -2,7 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
-import { ResendInvoiceAdapter, invoiceEmailAddress, invoiceSender, type InvoiceSendResult } from './invoice-email.js';
+import { invoiceEmailAddress, invoiceSender, type InvoiceSendResult } from './invoice-email.js';
+import { invoiceEmailAdapter } from './invoice-email-relay.js';
 import { SendaiAdapter } from './sendai.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,7 +29,7 @@ export function invoiceDeliveryConfiguration(demo: boolean): Config {
   const live = !demo && process.env.APP_ENV === 'production' && process.env.NODE_ENV === 'production';
   if (demo && process.env.INVOICE_EMAIL_MODE === 'mock') config.email = 'mock';
   else if (live && process.env.INVOICE_EMAIL_MODE === 'resend' && process.env.INVOICE_EMAIL_QUALIFIED === 'true' && invoiceSender(from)) {
-    try { new ResendInvoiceAdapter(process.env.RESEND_API_KEY ?? ''); config.email = 'resend'; } catch { /* Unqualified credentials never advertise delivery. */ }
+    try { invoiceEmailAdapter(); config.email = 'resend'; } catch { /* Unqualified credentials never advertise delivery. */ }
   }
   if (demo && process.env.INVOICE_SMS_MODE === 'mock') config.sms = 'mock';
   else if (live && process.env.INVOICE_SMS_MODE === 'sendai' && process.env.INVOICE_SMS_QUALIFIED === 'true' && /^[A-Za-z0-9]{1,11}$/.test(smsFrom) && process.env.SENDAI_LIVE_ENABLED === 'true' && process.env.SENDAI_QUALIFIED === 'true' && process.env.SENDAI_API_KEY) config.sms = 'sendai';
@@ -82,7 +83,7 @@ export async function processInvoiceDelivery(pool: Pool, demo: boolean, config =
       }
       let result: InvoiceSendResult;
       if (!job.provider_id) result = { state: 'failed', providerId: null, error: 'delivery_report_timeout' };
-      else if (job.provider === 'resend' && config.email === 'resend') result = await new ResendInvoiceAdapter(process.env.RESEND_API_KEY!).retrieve(job.provider_id);
+      else if (job.provider === 'resend' && config.email === 'resend') result = await invoiceEmailAdapter().retrieve(job.provider_id);
       else if (job.provider === 'sendai' && config.sms === 'sendai') { const sms = await new SendaiAdapter(process.env.SENDAI_API_KEY!).retrieve(job.provider_id); result = { state: sms.state, providerId: sms.providerId, error: sms.state === 'unknown' ? 'delivery_unconfirmed' : sms.state === 'failed' ? 'provider_delivery_failed' : null }; }
       else if (job.report_overdue) result = { state: 'failed', providerId: job.provider_id, error: 'delivery_report_timeout' };
       else { await release('provider_configuration_changed', 3600); return true; }
@@ -98,13 +99,18 @@ export async function processInvoiceDelivery(pool: Pool, demo: boolean, config =
     if (provider === 'disabled') { await release(`${details.channel}_delivery_disabled`, 300); return true; }
     const pdf = details.channel === 'email' ? await source(job.invoice_id, '/pdf', demo) as Buffer : null;
     const message = details.channel === 'sms' ? `PasoFi paid invoice ${details.invoiceNumber}: ${details.link} Valid until ${details.expiresAt!.slice(0, 16).replace('T', ' ')} UTC. Keep private.` : null;
+    const email = provider === 'resend' ? invoiceEmailAdapter() : null;
+    // Wake/check a remote relay before recording a possible provider submission.
+    // A failed preflight keeps the durable job queued. Once POST starts, any
+    // ambiguous outcome retains the existing no-automatic-resend boundary.
+    await email?.prepare?.();
     const ready = await pool.query("UPDATE invoice_jobs SET state='submitting',channel=$3,provider=$4,attempted_at=now(),last_error=NULL,lookup_attempts=0,updated_at=now() WHERE id=$1 AND lease_token=$2 AND lease_until>now() AND state='queued' RETURNING id", [job.id, lease, details.channel, provider]);
     if (!ready.rowCount) return true;
     let result: InvoiceSendResult;
     if (provider === 'mock') {
       await pool.query('INSERT INTO mock_invoice_sink(job_id,channel,content_hash,recipient_hash) VALUES($1,$2,$3,$4) ON CONFLICT(job_id) DO NOTHING', [job.id, details.channel, createHash('sha256').update(pdf ?? message!).digest(), createHash('sha256').update(details.to!).digest()]);
       result = { state: 'delivered', providerId: job.id, error: null };
-    } else if (provider === 'resend') result = await new ResendInvoiceAdapter(process.env.RESEND_API_KEY!).send({ id: job.id, to: details.to!, from: config.from, number: details.invoiceNumber, filename: details.filename, pdf: pdf! });
+    } else if (provider === 'resend') result = await email!.send({ id: job.id, to: details.to!, from: config.from, number: details.invoiceNumber, filename: details.filename, pdf: pdf! });
     else { const sms = await new SendaiAdapter(process.env.SENDAI_API_KEY!).send({ to: details.to!, from: config.smsFrom, message: message! }); result = { state: sms.state, providerId: sms.providerId, error: sms.state === 'unknown' ? 'delivery_unconfirmed' : sms.state === 'failed' ? 'provider_rejected' : null }; }
     await pool.query("UPDATE invoice_jobs SET state=$3,provider_id=$4,last_error=$5,delivered_at=CASE WHEN $3='delivered' THEN now() ELSE NULL END,lease_token=NULL,lease_until=NULL,next_at=now()+make_interval(secs=>$6),updated_at=now() WHERE id=$1 AND lease_token=$2 AND state='submitting'", [job.id, lease, result.state === 'retry' ? 'queued' : result.state, result.providerId, result.error, result.retryAfter ?? 60]);
     return true;

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "repository": "DruHustle/pasofi",
+  "mobilePath": "pasofi-frontend/mobile",
+  "framework": "capacitor",
+  "appId": "com.onesa.pasofi",
+  "scheme": "App",
+  "xcodeKind": "project",
+  "xcodeContainer": "ios/App/App.xcodeproj",
+  "generatedNative": false,
+  "requiredChecks": [
+    "verify",
+    "Verify Mac deployment launcher",
+    "Android debug APK (API unconfigured)",
+    "iOS unsigned Release simulator app (API unconfigured)",
+    "preview"
+  ]
+}
