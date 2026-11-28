@@ -17,7 +17,7 @@ function decrypt(row:{id:string;sale_id:string|null;ecocash_credit_id:string|nul
 }
 /** Customer SMS text: the PasoFi brand and the published bundle name, never the versioned internal id. */
 export function voucherSmsMessage(bundleId:string,code:string,demo=false){
- const name=bundleId.replace(/-v[0-9]+$/,'').replaceAll('-',' ').toUpperCase();
+ const name=bundleId.replace(/(?:-[0-9]+(?:gb|mb))?-v[0-9]+$/i, '').replaceAll('-',' ').toUpperCase();
  return `PasoFi ${demo?'demo ':''}${name} voucher: ${code}. Redeem on PasoFi Wi-Fi. Keep this code private.`;
 }
 function newCode(){return Array.from({length:16},()=>alphabet[randomInt(alphabet.length)]).join('');}

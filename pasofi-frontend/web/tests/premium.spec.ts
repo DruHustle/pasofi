@@ -134,6 +134,21 @@ test('signed-out Usage says "New to PasoFi" once and still offers bundles', asyn
   await expect(page).toHaveURL(/#bundles$/);
 });
 
+test('revised bundle cards name the bundle, keep GB with its figure and align the validity pill with Buy', async ({ page }) => {
+  await fixture(page, { products: [...products, { id: 'month-100gb-v2', price_minor: 1000, currency: 'USD', byte_limit: '100000000000', validity_seconds: 2592000 }] });
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(width > 700 ? '/#bundles' : '/#home');
+    const card = page.locator('.pf-bundle-card', { has: page.getByRole('button', { name: 'Buy month from an agent', exact: true }) }).last();
+    await expect(card.locator('.pf-plan-name')).toHaveText('month');
+    const [pill, buy] = [await card.locator('.pf-validity').boundingBox(), await card.locator('.pf-button').boundingBox()];
+    expect(Math.abs(pill!.x - buy!.x)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(pill!.x + pill!.width - (buy!.x + buy!.width))).toBeLessThanOrEqual(0.5);
+    const colours = await card.locator('h3').evaluate(figure => [getComputedStyle(figure).color, getComputedStyle(figure.querySelector('span')!).color]);
+    expect(colours[1]).toBe(colours[0]);
+  }
+});
+
 test('a one-day bundle reads as one day in the cash purchase summary', async ({ page }) => {
   await fixture(page, { guest: true }); await page.goto('/#bundles');
   await page.getByRole('button', { name: 'Buy day from an agent', exact: true }).click();

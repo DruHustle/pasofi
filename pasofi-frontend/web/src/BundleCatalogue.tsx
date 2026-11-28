@@ -39,7 +39,7 @@ function compareBundles(left: Product, right: Product, sort: Sort) {
   return 0;
 }
 /** Customer-facing bundle name: the published identifier without its version suffix. */
-export const bundleName = (bundle: Pick<Product, 'id'>) => bundle.id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ');
+export const bundleName = (bundle: Pick<Product, 'id'>) => bundle.id.replace(/(?:-[0-9]+(?:gb|mb))?-v[0-9]+$/i, '').replaceAll('-', ' ');
 export function bundleData(bytes: string) {
   const amount = BigInt(bytes), unit = amount >= 1_000_000_000n ? 1_000_000_000n : 1_000_000n;
   const decimals = (amount % unit * 100n / unit).toString().padStart(2, '0').replace(/0+$/, '');

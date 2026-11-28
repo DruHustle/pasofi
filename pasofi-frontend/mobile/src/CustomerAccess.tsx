@@ -23,7 +23,7 @@ const ecocashNumber = (value: string) => /^(?:\+?263|0)?7[0-9]{8}$/.test(value.r
 type PaymentMethod = { code: string; name: string; currency: string; minMinor: number; maxMinor: number };
 type PaymentStatus = { order: Order; attempts: { id: string; state: string }[]; entitlementId: string | null; simulation: boolean; fulfillmentState: 'unconfirmed' | 'fulfilled' | 'reversed' | 'pending_review'; entitlementRevokedAt: string | null; safeToRequote?: boolean };
 // Plan names read like the bundle cards: "three-week-v1" shows as THREE WEEK.
-const planName = (id: string) => id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ').toUpperCase();
+const planName = (id: string) => id.replace(/(?:-[0-9]+(?:gb|mb))?-v[0-9]+$/i, '').replaceAll('-', ' ').toUpperCase();
 export type CustomerTab = 'access' | 'wifi' | 'history' | 'voucher' | 'receipt' | 'purchase' | 'recovery';
 type CustomerIcon = 'data' | 'voucher' | 'wifi' | 'history' | 'shield' | 'receipt' | 'user' | 'arrow';
 function CustomerGlyph({ name }: { name: CustomerIcon }) {
