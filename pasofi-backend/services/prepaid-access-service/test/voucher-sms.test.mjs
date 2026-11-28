@@ -6,6 +6,7 @@ test('customer voucher SMS uses the PasoFi brand and the published bundle name',
   const code = 'ABCD-EFGH-JKLM-NPQR';
   assert.equal(voucherSmsMessage('three-week-v1', code), `PasoFi THREE WEEK voucher: ${code}. Redeem on PasoFi Wi-Fi. Keep this code private.`);
   assert.equal(voucherSmsMessage('mini', code), `PasoFi MINI voucher: ${code}. Redeem on PasoFi Wi-Fi. Keep this code private.`);
+  assert.equal(voucherSmsMessage('month-100gb-v2', code), `PasoFi MONTH voucher: ${code}. Redeem on PasoFi Wi-Fi. Keep this code private.`);
   assert.equal(voucherSmsMessage('flex', code, true), `PasoFi demo FLEX voucher: ${code}. Redeem on PasoFi Wi-Fi. Keep this code private.`);
   for (const bundle of ['mini', 'three-week-v1', 'month']) {
     const message = voucherSmsMessage(bundle, code);

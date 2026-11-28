@@ -32,7 +32,7 @@ export function bundleData(bytes: string) {
   const decimals = (amount % unit * 100n / unit).toString().padStart(2, '0').replace(/0+$/, '');
   return { amount: `${amount / unit}${decimals ? `.${decimals}` : ''}`, unit: unit === 1_000_000_000n ? 'GB' : 'MB' };
 }
-export const bundleName = (bundle: Product) => bundle.id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ');
+export const bundleName = (bundle: Product) => bundle.id.replace(/(?:-[0-9]+(?:gb|mb))?-v[0-9]+$/i, '').replaceAll('-', ' ');
 function PriceParts({ minor, currency }: { minor: number; currency: string }) {
   const parts = new Intl.NumberFormat('en-US', { style: 'currency', currency }).formatToParts(minor / 100);
   return <strong>{parts.map((part, index) => <span key={index} className={part.type === 'currency' || part.type === 'literal' ? 'pf-price-symbol'
