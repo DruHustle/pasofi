@@ -39,10 +39,19 @@ test('Stripe configuration fails closed across environment, key mode, merchant a
   Object.assign(process.env,env,{PAMOFI_PAYMENTS_ENABLED:'false'});
   assert.deepEqual(paymentConfiguration(true),{enabled:false,mode:'disabled'});
   assert.ok(stripeConfiguration(true),'pausing new payments retains verification of existing attempts');
-  Object.assign(process.env,env,{PAMOFI_PAYMENT_MODE:'production',APP_ENV:'production',NODE_ENV:'production',STRIPE_SECRET_KEY:synthetic('sk','live'),STRIPE_PUBLISHABLE_KEY:synthetic('pk','live')});
-  assert.equal(stripeConfiguration(false),null,'credentials alone cannot qualify live checkout');
-  process.env.STRIPE_PRODUCTION_QUALIFIED='true';
-  assert.ok(stripeConfiguration(false),'verified merchant configuration remains available for existing-money reconciliation');
+  Object.assign(process.env,env,{PAMOFI_PAYMENT_MODE:'production',APP_ENV:'production',NODE_ENV:'production',STRIPE_PUBLISHABLE_KEY:synthetic('pk','live')});
+  for(const kind of ['sk','rk']){
+   process.env.STRIPE_SECRET_KEY=synthetic(kind,'live');
+   process.env.STRIPE_PRODUCTION_QUALIFIED='false';
+   assert.equal(stripeConfiguration(false),null,'credentials alone cannot qualify live checkout');
+   process.env.STRIPE_PRODUCTION_QUALIFIED='true';
+   assert.equal(stripeConfiguration(false)?.secretKey,process.env.STRIPE_SECRET_KEY);
+  }
+  for(const invalid of [synthetic('sk'),synthetic('rk'),synthetic('rkcs','live'),synthetic('pk','live')]){
+   process.env.STRIPE_SECRET_KEY=invalid;
+   assert.equal(stripeConfiguration(false),null,'live checkout requires a live server key');
+  }
+  process.env.STRIPE_SECRET_KEY=synthetic('rk','live');
   for(const gate of ['PAMOFI_CUSTOMER_NETWORK_ENABLED','PAMOFI_RADIUS_QUALIFIED','PAMOFI_ROUTER_CONTROL_QUALIFIED']){
    for(const value of ['false',undefined]){
     if(value===undefined)delete process.env[gate];else process.env[gate]=value;

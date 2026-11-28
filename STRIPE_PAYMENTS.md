@@ -60,7 +60,7 @@ country, not a sample test fixture's country or the hotspot's location.
 | `STRIPE_ACCOUNT_ID` | Exact `acct_…` merchant ID |
 | `STRIPE_MERCHANT_COUNTRY` | Actual two-letter uppercase merchant country |
 | `STRIPE_PUBLISHABLE_KEY` | Matching `pk_test_…` or `pk_live_…`; returned to the owning checkout |
-| `STRIPE_SECRET_KEY` | Matching server-only key. Demo accepts restricted and temporary claimable Stripe test keys. Production loads its live key through `STRIPE_SECRET_KEY_FILE`. |
+| `STRIPE_SECRET_KEY` | Matching server-only key. Production loads a restricted or standard live key through `STRIPE_SECRET_KEY_FILE`. Demo also accepts temporary claimable Stripe test keys. |
 | `STRIPE_WEBHOOK_SECRET` | Endpoint-specific signing secret; production loads it through `STRIPE_WEBHOOK_SECRET_FILE` |
 | `STRIPE_QUALIFIED_SITE_IDS_JSON` | Nonempty JSON array of explicitly accepted site UUIDs |
 | `PAMOFI_CUSTOMER_NETWORK_ENABLED=true` | Required for live checkout; supplied by the qualified RADIUS overlay |
@@ -70,6 +70,10 @@ country, not a sample test fixture's country or the hotspot's location.
 | `STRIPE_APPLE_PAY_MERCHANT_ID` | Provisioned Apple merchant identifier; must match the signed app's entitlement |
 | `STRIPE_GOOGLE_PAY_ENABLED` | Permit the Google Pay option; SDK still checks device availability |
 | `PAMOFI_STRIPE_EGRESS_SUBNET` | Required explicit, reviewed private IPv4 CIDR for the opt-in provider bridge; no automatic allocation |
+
+For a restricted key, grant Accounts, Charges and Refunds, and Payment Disputes
+read access and Payment Intents write access. The service uses these permissions
+to check the merchant, create and retrieve the bound intent, and verify reversals.
 
 Sandbox Stripe attempts use the distinct `stripe_test` ledger identity and their
 invoices are marked simulated. Sandbox mode is rejected for a production ledger,
