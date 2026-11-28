@@ -2,9 +2,9 @@
    and a short swipeable bundle preview on Home. Loaded last; `.pf-app` keeps
    these rules ahead of the account stylesheets that load with that screen. */
 
-/* Hide the page scrollbar while keeping the document scrollable. */
-html { scrollbar-width: none; }
-html::-webkit-scrollbar { display: none; }
+/* Hide the main website's page scrollbar while keeping the document scrollable. */
+html:not(.pasofi-hotspot) { scrollbar-width: none; }
+html:not(.pasofi-hotspot)::-webkit-scrollbar { display: none; }
 
 /* Vibrant, sharp palette (as on vodacom.co.za): cool white canvas, white
    cards with crisp shadows, one saturated brand blue, near-black navy text. */
@@ -15,7 +15,6 @@ body,.pf-app{background:var(--pf-canvas);color:var(--pf-ink)}
 .pf-app .pasofi-home-hero h1 em{color:#e9f7ef}
 .pf-app .pf-filter-row button{border-color:#d5dde8;color:#1f2d3d;background:#fff}
 .pf-app .pf-filter-row button[aria-pressed=true]{background:#0070f2;border-color:#0070f2;color:#fff}
-.pf-app .pf-bundle-price>span{color:#4a5868}
 .pf-app .pf-bundle-terms{background:#fff;border-color:#e1e7ef}
 
 /* Typography: one self-hosted face (Plus Jakarta Sans, OFL) with tighter display
@@ -37,10 +36,6 @@ body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-f
 .pf-app .pf-bundle-price strong{display:inline-flex;align-items:flex-start;justify-content:flex-end;font-size:26px;font-weight:800;letter-spacing:-.04em;line-height:1;color:#001a33;font-variant-numeric:tabular-nums}
 .pf-app .pf-price-symbol{font-size:15px;font-weight:700;letter-spacing:0;margin:3px 1px 0 0}
 .pf-app .pf-price-cents{font-size:15px;font-weight:700;letter-spacing:0;margin-top:3px}
-.pf-app .pf-bundle-price>span{max-width:none;color:#5b6b7a;font-size:12px;font-weight:600}
-.pf-app .pf-per-gb{white-space:nowrap}
-.pf-app .pf-catalogue--hotspot .pf-per-gb{display:none}
-.pf-app .pf-bundle-price abbr{text-decoration:none;font-weight:700;color:#3c4f63}
 .pf-app .pf-bundle-card>.pf-button{font-weight:700;letter-spacing:.01em}
 .pf-app .pf-bundle-card[data-best-value]{--pf-accent-line:#9fe38a;--pf-lift:0 8px 24px #00875f1f}
 @media (hover:hover){.pf-app .pf-bundle-card:hover{--pf-lift:0 2px 4px #0a16280f,0 14px 32px #0a16281f;transform:translateY(-2px)}}
@@ -118,10 +113,9 @@ body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-f
 /* Smallest phones: keep the brand line on one line. */
 @media (max-width:359px){.pf-app .pf-brand small{font-size:9px;white-space:nowrap}}
 
-/* Smallest phones: the price column sizes to its amount and the per-GB note steps aside. */
+/* Smallest phones: the price column sizes to its amount. */
 @media (max-width:359px){
   .pf-app .pf-catalogue:not(.pf-catalogue--preview) .pf-bundle-card{grid-template-columns:minmax(0,1fr) auto 62px}
-  .pf-app .pf-catalogue:not(.pf-catalogue--preview) .pf-per-gb{display:none}
 }
 
 /* Bundle filters: one row on phones. Short visible labels keep their full
@@ -141,8 +135,6 @@ body,.pf-app,.pf-app button,.pf-app input,.pf-app select,.pf-app textarea{font-f
 .pf-app .customer-workspace,.pf-app .customer-workspace :is(button,input,select,textarea){font-family:var(--pf-font)}
 /* Forms never show the browser's default fieldset frame. */
 .pf-app .customer-workspace fieldset{border:0;padding:0;margin:0;min-width:0}
-/* Home row: the per-GB note would sit under the button, so it shows price and currency only. */
-.pf-app .pf-catalogue--preview .pf-per-gb{display:none}
 /* Readable hero and shortcut text on phones (nothing under 12px). */
 @media (max-width:599px){
   .pf-app .pasofi-home-kicker{font-size:11px;letter-spacing:.08em}

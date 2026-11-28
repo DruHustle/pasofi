@@ -66,7 +66,7 @@ test('customers can compare exact published prices, byte allowances and validity
   await expect(names(page)).toHaveText(['week']);
   await expect(count(page)).toHaveText('Showing 1 of 5 bundles');
   await expect(page.getByRole('button', { name: 'Buy week from an agent', exact: true })).toBeEnabled();
-  await expect(page.locator('.pf-bundle-card .pf-bundle-price strong')).toHaveText('$1.00');
+  await expect(page.locator('.pf-bundle-card .pf-bundle-price')).toHaveText('$1.00');
   expect(state.mutations).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
