@@ -82,6 +82,8 @@ export default defineConfig(({ mode }) => {
         });
       },
     }],
+    // The CSP has no data: font source, so never inline a small font subset.
+    build: { assetsInlineLimit: (file: string) => (/\.(?:woff2?|ttf|otf)$/i.test(file) ? false : undefined) },
     server: { proxy: routes },
   };
 });

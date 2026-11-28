@@ -16,5 +16,7 @@ export default defineConfig(({ mode }) => {
     })) formOrigins.push(...values as string[]);
   } catch { /* Invalid lists do not permit cross-origin form submission. */ }
   const policy = `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}; object-src 'none'; base-uri 'none'; form-action 'self'${formOrigins.length ? ` ${formOrigins.join(' ')}` : ''}`;
-  return { plugins: [react(), { name: 'pasofi-mobile-build-policy', apply: 'build', transformIndexHtml() { return [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: policy }, injectTo: 'head-prepend' }]; } }] };
+  // The CSP has no data: font source, so never inline a small font subset.
+  const build = { assetsInlineLimit: (file: string) => (/\.(?:woff2?|ttf|otf)$/i.test(file) ? false : undefined) };
+  return { build, plugins: [react(), { name: 'pasofi-mobile-build-policy', apply: 'build', transformIndexHtml() { return [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: policy }, injectTo: 'head-prepend' }]; } }] };
 });

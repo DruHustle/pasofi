@@ -58,7 +58,7 @@ async function orderDelivery(client:PoolClient,orderId:string):Promise<InvoiceDe
 // The approved seller information lives in runtime configuration. Missing
 // or invalid production details leave a truthful payment receipt in place.
 export function invoiceIssuer(value:string|undefined,simulation:boolean):InvoiceSnapshot['operator']{
- if(simulation)return {name:'Example PasoFi Merchant',brand:'Pasofi',address:'1 Example Street',supportPhone:'',issuerConfirmed:true};
+ if(simulation)return {name:'Example PasoFi Merchant',brand:'PasoFi',address:'1 Example Street',supportPhone:'',issuerConfirmed:true};
  const receipt={name:'PasoFi',brand:'PasoFi',address:'',supportPhone:'',issuerConfirmed:false};
  if(!value)return {...receipt,issuerConfirmed:true};
  if(Buffer.byteLength(value)>3072)return receipt;

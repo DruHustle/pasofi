@@ -22,7 +22,7 @@ test('method minimum and merchant/site qualification are enforced',()=>{
 });
 test('initiation sends server terms, rejects unqualified methods and treats ambiguity as unknown',async()=>{
  let calls=0;const id=randomUUID();
- const adapter=new PesepayAdapter(config,async(url,init)=>{calls++;assert.match(String(url),/api\.test\.sandbox\.pesepay\.com/);const body=JSON.parse(init.body);const decoded=decryptPesepay(body.payload,key);assert.equal(decoded.amountDetails.amount,1);assert.equal(decoded.merchantReference,id);return encrypted({referenceNumber:'PP-abc123',redirectUrl:'https://checkout.pesepay.com/pay/123',pollUrl:'https://example.invalid'});});
+ const adapter=new PesepayAdapter(config,async(url,init)=>{calls++;assert.match(String(url),/api\.test\.sandbox\.pesepay\.com/);const body=JSON.parse(init.body);const decoded=decryptPesepay(body.payload,key);assert.equal(decoded.amountDetails.amount,1);assert.equal(decoded.merchantReference,id);assert.equal(decoded.reasonForPayment,`PasoFi order ${id}`);return encrypted({referenceNumber:'PP-abc123',redirectUrl:'https://checkout.pesepay.com/pay/123',pollUrl:'https://example.invalid'});});
  await assert.rejects(adapter.initiate({orderId:id,amountMinor:50,currency:'USD',methodCode:'PZW211',eligibility}),/method_not_qualified/);
  assert.equal(calls,0);
  assert.deepEqual(await adapter.initiate({orderId:id,amountMinor:100,currency:'USD',methodCode:'PZW211',eligibility}),{state:'initiated',referenceNumber:'PP-abc123',redirectUrl:'https://checkout.pesepay.com/pay/123'});

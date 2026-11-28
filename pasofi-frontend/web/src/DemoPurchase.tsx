@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { RecoverySetup } from './Recovery';
 import { api, ApiError } from './api';
+import { bundleDuration } from './business';
 import { announceSessionChange, clearOrderIntent, clearSessionSecrets, currentSession, ensureSession, orderIntent, saveOrderIntent } from './session';
 
 type Bundle = { id: string; price_minor: number; currency: string; byte_limit: string; validity_seconds: number };
@@ -169,7 +170,7 @@ export default function DemoPurchase({ bundle, close, signedOut }: { bundle: Bun
     {phase === 'loading' && <p role="status">Loading your demo session…</p>}
     {phase === 'error' && <><p role="alert">{message}</p>{!sessionChanged && <button className="secondary" onClick={() => setReload(value => value + 1)}>Try again</button>}</>}
     {phase === 'review' && bundle && <>
-      <div className="purchase-summary"><div><span>{bundle.id.toUpperCase()}</span><strong>{Number(bundle.byte_limit) / 1e9} GB</strong><small>{bundle.validity_seconds / 86400} days</small></div><strong>{money(bundle.price_minor, bundle.currency)}</strong></div>
+      <div className="purchase-summary"><div><span>{bundle.id.toUpperCase()}</span><strong>{Number(bundle.byte_limit) / 1e9} GB</strong><small>{bundleDuration(bundle.validity_seconds)}</small></div><strong>{money(bundle.price_minor, bundle.currency)}</strong></div>
       <p>Includes uploads and downloads. One device at a time. Time begins with the first successful connection and ends when time or data runs out. Start within 30 days; quotes expire in 15 minutes.</p>
       <RecoverySetup />
       {orders.some(item => item.status === 'awaiting_payment' && Date.parse(item.quote_expires_at) > now) && <p className="notice">You already have a pending demo order. Check My demo access before creating another one.</p>}
