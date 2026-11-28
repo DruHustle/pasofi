@@ -21,7 +21,9 @@ export function stripeConfiguration(demo:boolean):StripeConfiguration|null {
  const secretKey=env.STRIPE_SECRET_KEY??'',publishableKey=env.STRIPE_PUBLISHABLE_KEY??'',webhookSecret=env.STRIPE_WEBHOOK_SECRET??'';
  const prefix=live?'live':'test';
  // Stripe's isolated sandboxes can issue restricted or claimable test keys.
- const validSecretKey=live ? /^sk_live_[A-Za-z0-9]{16,256}$/ : /^(?:sk|rk|rkcs)_test_[A-Za-z0-9]{16,256}$/;
+ // Live accepts a restricted key (Stripe's recommended least-privilege key);
+ // claimable keys exist only in sandboxes.
+ const validSecretKey=live ? /^(?:sk|rk)_live_[A-Za-z0-9]{16,256}$/ : /^(?:sk|rk|rkcs)_test_[A-Za-z0-9]{16,256}$/;
  if(!validSecretKey.test(secretKey)
   ||!new RegExp(`^pk_${prefix}_[A-Za-z0-9]{16,256}$`).test(publishableKey)
   ||!/^whsec_[A-Za-z0-9]{16,256}$/.test(webhookSecret))return null;

@@ -60,7 +60,7 @@ country, not a sample test fixture's country or the hotspot's location.
 | `STRIPE_ACCOUNT_ID` | Exact `acct_…` merchant ID |
 | `STRIPE_MERCHANT_COUNTRY` | Actual two-letter uppercase merchant country |
 | `STRIPE_PUBLISHABLE_KEY` | Matching `pk_test_…` or `pk_live_…`; returned to the owning checkout |
-| `STRIPE_SECRET_KEY` | Matching server-only key. Demo accepts restricted and temporary claimable Stripe test keys. Production loads its live key through `STRIPE_SECRET_KEY_FILE`. |
+| `STRIPE_SECRET_KEY` | Matching server-only key. Demo accepts restricted and temporary claimable Stripe test keys. Production accepts `sk_live_` or a restricted `rk_live_` key (preferred; see below) and loads it through `STRIPE_SECRET_KEY_FILE`. |
 | `STRIPE_WEBHOOK_SECRET` | Endpoint-specific signing secret; production loads it through `STRIPE_WEBHOOK_SECRET_FILE` |
 | `STRIPE_QUALIFIED_SITE_IDS_JSON` | Nonempty JSON array of explicitly accepted site UUIDs |
 | `PAMOFI_CUSTOMER_NETWORK_ENABLED=true` | Required for live checkout; supplied by the qualified RADIUS overlay |
@@ -106,6 +106,21 @@ new merchant charges. Every new live intent creation separately checks the curre
 charge-acceptance capability. If a long provider/database outage exhausts a worker
 job, a freshly verified resend of its original Stripe event revives that dead job;
 ordinary duplicate delivery preserves active leases and completed jobs.
+
+## Restricted live key permissions
+
+Stripe recommends a restricted key (`rk_live_…`). PasoFi makes only these calls,
+so grant exactly these permissions and leave everything else at **None**:
+
+| Resource | Permission | Used for |
+| --- | --- | --- |
+| PaymentIntents | Write | Create the bound card intent and read it back for fulfillment |
+| Charges | Read | `latest_charge` expansion when verifying a payment |
+| Disputes | Read | Dispute review of fulfilled access |
+| Account (own) | Read | Confirm the configured account ID and country before using any intent |
+
+A missing permission fails closed: Stripe returns a permission error and no
+bundle is issued.
 
 ## Stripe webhook endpoint
 
