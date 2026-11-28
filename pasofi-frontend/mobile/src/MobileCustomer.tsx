@@ -79,7 +79,7 @@ export default function MobileCustomer({ close, initialTab = 'access', handoffRe
         <a className="primary" href={`https://pasofi.mobile.onesa.eu/${webShortcut.path}`} target="_blank" rel="noopener noreferrer">{webShortcut.action}</a>
         {!accountDisabled && <button className="secondary" onClick={() => setAttempt(value => value + 1)}>Retry service connection</button>}
       </div>
-    </section> : accountDisabled ? <div className="mobile-notice"><p role="status">Mobile account access is not enabled in the app. You can continue to your PasoFi account on the web.</p></div>
+    </section> : accountDisabled ? <div className="mobile-notice"><p role="status">Mobile account access is not enabled by this deployment yet. You can continue to your PasoFi account on the web.</p></div>
       : message && <div className="mobile-notice"><div><p role="status">{message}</p><button className="mobile-primary" onClick={() => setAttempt(value => value + 1)}>Retry service connection</button></div></div>}
     {capabilities && (screen === 'onesa' ? nativeReturnReady
       ? <OnesaSignIn resumeRegistration={Boolean(registrationTab)} usedRegistration={usedRegistration} destination={activeTab} close={() => setScreen('account')} managedReturnReady={!nativeReturnFailed} />
