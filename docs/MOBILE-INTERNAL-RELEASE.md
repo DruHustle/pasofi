@@ -6,6 +6,22 @@ source and release-contract checks. Publication is an explicit `workflow_dispatc
 on **current main**, with the exact reviewed `source_sha`, a deliberately chosen
 unused positive `build_number`, and `android`, `ios`, or `both`.
 
+For `android` or `both`, an authorized operator must inspect this app's Google
+Play Console Publishing overview immediately before dispatch. Confirm there are
+no unrelated changes ready to send for review and no concurrent Console/API writer.
+Set `play_console_reviewed=true` only after that fresh observation. The input
+defaults to false on every dispatch; an unset or false value stops Android/both
+before build or signing work. This is an operational check that an already
+authorized operator or assistant can perform, not a request for new permission.
+If the Console state cannot be checked, leave the input false and do not dispatch
+Android. An iOS-only release does not require this Google Play observation.
+
+Android/both releases also require `GITHUB_RUN_ATTEMPT=1`. GitHub's **Re-run jobs**
+reuses old inputs, so it cannot supply a fresh Console observation. The early
+workflow gate and uploader both reject missing, malformed or later attempts.
+Inspect any previous provider outcome first, then make a new dispatch after
+checking the Console again. Do not use a rerun to replay an uncertain upload.
+
 The workflow runs source checks first, then builds, signs, verifies and uploads the
 same artifact. Its protected environment is **mobile-internal**, restricted to main.
 The committed marketing version and existing app identifiers remain authoritative.
@@ -101,13 +117,64 @@ responses are never added to artifacts.
 
 ## Provider behavior and recovery
 
+### Optional PasoFi Apple Pay signing selection
+
+The iOS job reads the nonsecret protected environment variable
+`PASOFI_APPLE_PAY_MERCHANT_ID`. Leave it unset or empty for the existing card-only
+build with `App/PasoFiAssociatedDomains.entitlements`. To prepare an Apple Pay
+build, the only reviewed value is `merchant.com.onesa.pasofi`, under Apple team
+`YSD6XK5CLU`. The helper then selects the already committed
+`App/PasoFiStripe.entitlements` for the app target. Do not supply an external
+`PASOFI_APPLE_PAY_ENTITLEMENTS` path. Both source files retain the existing
+`applinks:pasofi.mobile.onesa.eu` and `webcredentials:pasofi.mobile.onesa.eu` domains.
+
+The selected merchant and entitlement path are frozen into the build context and
+sanitized signed receipt. Changing them after preparation blocks signing/upload.
+Before importing a signing identity, the helper requires an unexpired App Store
+profile for the exact app, team and pinned certificate that explicitly authorizes
+the selected merchant. After export, the actual signed app must have exactly that
+merchant, the preserved associated domains, and matching resolved Info.plist
+settings. A card-only export must have no Apple Pay merchant entitlement. Package
+and dependency targets do not inherit these app-specific signing settings.
+
+The environment selection does not update Apple capabilities, regenerate profiles,
+create a payment processing certificate, change server wallet flags or enable a
+Stripe payment method. Registering the merchant alone is insufficient. Before
+selecting it for a release, supply the matching profile and complete the Apple/Stripe
+merchant configuration through the existing owner process. A signed entitlement
+is not evidence of device wallet acceptance: qualify PaymentSheet on an eligible
+signed iPhone, including cancellation, return and server-confirmed order recovery.
+The checked-in native defaults and the existing qualified application package
+remain unchanged by this optional release configuration.
+
+Apple references: [merchant entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.in-app-payments),
+[App ID capability and profile updates](https://developer.apple.com/help/account/identifiers/enable-app-capabilities),
+and [merchant/payment certificate setup](https://developer.apple.com/help/account/capabilities/configure-apple-pay).
+
+### Store operations
+
 Google Play requires its existing app record, initial console setup, Play App
 Signing/upload certificate and internal track. The helper creates one edit, checks
 existing tracks, uploads the hash-bound bundle, changes **only internal**, validates,
 and commits with `changesInReviewBehavior=ERROR_IF_IN_REVIEW`. It does not replace
-production/closed tracks, cancel another review, retry a failed commit, or fall back
-to a public track. A known precommit failure attempts to delete only its owned edit.
-A commit with an unknown response stays explicitly unknown for console inspection.
+production/closed tracks, cancel an active review, retry a failed commit, or fall
+back to a public track. However, Google's commit operation can also submit
+unrelated Console changes that are already ready for review. The active-review
+error flag does not prevent that behavior, so the fresh Console observation above
+is required for every Android dispatch. Keep other Console/API writers paused
+until this operation finishes; if the observation is no longer current, stop and
+check again before another dispatch.
+
+The early workflow check uses this input directly. For provider operations, the
+workflow passes the nonsecret observation as `PLAY_CONSOLE_REVIEWED=true` only
+to its Android upload step. The uploader independently requires that exact
+value and the first run attempt before any OAuth or provider request; neither a
+repository/environment variable nor a previous receipt can supply the observation
+for a new dispatch.
+The acknowledgement is not saved in release state. The pipeline does not add a
+`changesNotSentForReview` fallback. A known precommit failure attempts to delete
+only its owned edit. A commit with an unknown response stays explicitly unknown
+for console inspection.
 
 Apple requires approved API access, the existing app and an existing **internal**
 TestFlight group. The helper checks the app's bundle ID and group ownership before
@@ -147,4 +214,5 @@ capabilities under their existing commissioning gates.
 References: [Apple upload guidance](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/),
 [Google edits](https://developers.google.com/android-publisher/edits),
 [Google bundle upload](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.bundles/upload),
-[Google commit review behavior](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit).
+[Google commit review behavior](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit),
+and [Google Console/API concurrency](https://developers.google.com/android-publisher/concurrency-considerations).
