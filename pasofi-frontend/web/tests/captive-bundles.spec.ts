@@ -170,5 +170,10 @@ test('wide hotspot screens retain the full comparison controls and existing avai
   const photo = page.getByRole('img', { name: 'Three friends sharing a happy moment around a smartphone' });
   await expect(photo).toBeVisible();
   await expect.poll(() => photo.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  const story = page.locator('.pasofi-home-guide + .pasofi-home-story');
+  await expect(story.getByRole('heading', { name: 'A little data. So many possibilities.' })).toBeVisible();
+  const laptopPhoto = story.getByRole('img', { name: 'Two adults working together on a laptop at a shared table' });
+  await laptopPhoto.scrollIntoViewIfNeeded();
+  await expect.poll(() => laptopPhoto.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   expect(mutations).toEqual([]);
 });

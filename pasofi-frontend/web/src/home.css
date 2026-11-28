@@ -36,6 +36,17 @@
 .pasofi-home-guide p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--home-muted); }
 .pasofi-home-guide .pf-text-link { font-size: 12px; min-height: 44px; gap: 7px; color: #084ac0; }
 
+.pasofi-home-story { display: grid; grid-template-columns: minmax(0, 1fr); margin-top: 12px; background: #e7efff; border: 1px solid #d0def8; border-radius: 15px; overflow: hidden; }
+.pasofi-home-story > img { display: block; width: 100%; height: auto; align-self: center; }
+.pasofi-home-story > div { min-width: 0; padding: 20px; align-self: center; }
+.pasofi-home-content .pasofi-home-story h2 { font-size: clamp(22px, 3vw, 30px); line-height: 1.15; margin: 0 0 10px; color: var(--home-navy); }
+.pasofi-home-story p { margin: 0 0 8px; color: var(--home-muted); font-size: 14px; line-height: 1.6; }
+.pasofi-home-story .pf-text-link { min-height: 44px; gap: 6px; color: #084ac0; }
+@media (min-width: 600px) {
+  .pasofi-home-story { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pasofi-home-story > div { padding: 24px; }
+}
+
 .pasofi-map-dialog {
   width: min(760px, calc(100% - 24px));
   max-width: none;
