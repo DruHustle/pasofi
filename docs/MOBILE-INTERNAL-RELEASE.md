@@ -6,6 +6,22 @@ source and release-contract checks. Publication is an explicit `workflow_dispatc
 on **current main**, with the exact reviewed `source_sha`, a deliberately chosen
 unused positive `build_number`, and `android`, `ios`, or `both`.
 
+For `android` or `both`, an authorized operator must inspect this app's Google
+Play Console Publishing overview immediately before dispatch. Confirm there are
+no unrelated changes ready to send for review and no concurrent Console/API writer.
+Set `play_console_reviewed=true` only after that fresh observation. The input
+defaults to false on every dispatch; an unset or false value stops Android/both
+before build or signing work. This is an operational check that an already
+authorized operator or assistant can perform, not a request for new permission.
+If the Console state cannot be checked, leave the input false and do not dispatch
+Android. An iOS-only release does not require this Google Play observation.
+
+Android/both releases also require `GITHUB_RUN_ATTEMPT=1`. GitHub's **Re-run jobs**
+reuses old inputs, so it cannot supply a fresh Console observation. The early
+workflow gate and uploader both reject missing, malformed or later attempts.
+Inspect any previous provider outcome first, then make a new dispatch after
+checking the Console again. Do not use a rerun to replay an uncertain upload.
+
 The workflow runs source checks first, then builds, signs, verifies and uploads the
 same artifact. Its protected environment is **mobile-internal**, restricted to main.
 The committed marketing version and existing app identifiers remain authoritative.
@@ -105,9 +121,24 @@ Google Play requires its existing app record, initial console setup, Play App
 Signing/upload certificate and internal track. The helper creates one edit, checks
 existing tracks, uploads the hash-bound bundle, changes **only internal**, validates,
 and commits with `changesInReviewBehavior=ERROR_IF_IN_REVIEW`. It does not replace
-production/closed tracks, cancel another review, retry a failed commit, or fall back
-to a public track. A known precommit failure attempts to delete only its owned edit.
-A commit with an unknown response stays explicitly unknown for console inspection.
+production/closed tracks, cancel an active review, retry a failed commit, or fall
+back to a public track. However, Google's commit operation can also submit
+unrelated Console changes that are already ready for review. The active-review
+error flag does not prevent that behavior, so the fresh Console observation above
+is required for every Android dispatch. Keep other Console/API writers paused
+until this operation finishes; if the observation is no longer current, stop and
+check again before another dispatch.
+
+The early workflow check uses this input directly. For provider operations, the
+workflow passes the nonsecret observation as `PLAY_CONSOLE_REVIEWED=true` only
+to its Android upload step. The uploader independently requires that exact
+value and the first run attempt before any OAuth or provider request; neither a
+repository/environment variable nor a previous receipt can supply the observation
+for a new dispatch.
+The acknowledgement is not saved in release state. The pipeline does not add a
+`changesNotSentForReview` fallback. A known precommit failure attempts to delete
+only its owned edit. A commit with an unknown response stays explicitly unknown
+for console inspection.
 
 Apple requires approved API access, the existing app and an existing **internal**
 TestFlight group. The helper checks the app's bundle ID and group ownership before
@@ -147,4 +178,5 @@ capabilities under their existing commissioning gates.
 References: [Apple upload guidance](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/),
 [Google edits](https://developers.google.com/android-publisher/edits),
 [Google bundle upload](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.bundles/upload),
-[Google commit review behavior](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit).
+[Google commit review behavior](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit),
+and [Google Console/API concurrency](https://developers.google.com/android-publisher/concurrency-considerations).
