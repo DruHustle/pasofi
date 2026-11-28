@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Product } from './business';
+import { bundleDuration, type Product } from './business';
 import Icon from './Icon';
 
 // Mirrors the web catalogue (pasofi-frontend/web/src/BundleCatalogue.tsx) so the
@@ -31,11 +31,6 @@ export function bundleData(bytes: string) {
   const amount = BigInt(bytes), unit = amount >= 1_000_000_000n ? 1_000_000_000n : 1_000_000n;
   const decimals = (amount % unit * 100n / unit).toString().padStart(2, '0').replace(/0+$/, '');
   return { amount: `${amount / unit}${decimals ? `.${decimals}` : ''}`, unit: unit === 1_000_000_000n ? 'GB' : 'MB' };
-}
-export function bundleDuration(seconds: number) {
-  const unit = seconds >= 86400 ? 'day' : seconds >= 3600 ? 'hour' : 'minute';
-  const amount = seconds / (unit === 'day' ? 86400 : unit === 'hour' ? 3600 : 60);
-  return `${Number(amount.toFixed(2))} ${unit}${amount === 1 ? '' : 's'}`;
 }
 export const bundleName = (bundle: Product) => bundle.id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ');
 function PriceParts({ minor, currency }: { minor: number; currency: string }) {
@@ -95,7 +90,7 @@ export default function MobileCatalogue({ bundles, example, error, checking, pur
         const data = bundleData(bundle.byte_limit), name = bundleName(bundle), perGb = perGbLabel(bundle), nameId = `bundle-name-${bundle.id}`;
         // The preview shows the same Buy button as the website, disabled: it never starts a purchase.
         const label = example ? `Buy ${name} (not available in this preview)`
-          : checking ? `Checking ${bundle.id} purchase availability` : purchasable ? `Buy ${bundle.id} bundle` : `${bundle.id} purchasing is not available`;
+          : checking ? `Checking ${name} purchase availability` : purchasable ? `Buy ${name} bundle` : `${name} purchasing is not available`;
         return <article className="pf-bundle-card" key={bundle.id} aria-labelledby={nameId} data-best-value={best.has(bundle.id) || undefined}>
           <div className="pf-bundle-top"><span className="pf-plan-name" id={nameId}>{name}</span>{best.has(bundle.id) && <span className="pf-bundle-badge">Best value</span>}</div>
           <h3>{data.amount}<span>{data.unit}</span></h3>

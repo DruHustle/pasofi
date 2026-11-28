@@ -103,3 +103,10 @@ export function onStaffSessionChange(listener: (kind: 'signed_in' | 'signed_out'
   staffChannel?.addEventListener('message', receive);
   return () => staffChannel?.removeEventListener('message', receive);
 }
+
+/** Bundle validity in words: "1 day", "3 days", "12 hours" — never fractional raw days. */
+export function bundleDuration(seconds: number) {
+  const unit = seconds >= 86400 ? 'day' : seconds >= 3600 ? 'hour' : 'minute';
+  const amount = seconds / (unit === 'day' ? 86400 : unit === 'hour' ? 3600 : 60);
+  return `${Number(amount.toFixed(2))} ${unit}${amount === 1 ? '' : 's'}`;
+}

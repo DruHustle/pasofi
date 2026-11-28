@@ -122,6 +122,14 @@ test('bundle filters use published validity and never invent unlimited offers', 
   await expect(filters.getByRole('button', { name: 'Monthly', exact: true })).toHaveCount(0);
 });
 
+test('a one-day bundle reads as one day in the cash purchase summary', async ({ page }) => {
+  await fixture(page, { guest: true }); await page.goto('/#bundles');
+  await page.getByRole('button', { name: 'Buy day from an agent', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Receive a private agent receipt' })).toBeVisible();
+  await expect(page.getByText('1 day after connection', { exact: true })).toBeVisible();
+  await expect(page.getByText(/\b1 days\b/)).toHaveCount(0);
+});
+
 test('guest cash purchase creates an account only after explicit receipt pairing', async ({ page }, testInfo) => {
   const state = await fixture(page, { guest: true });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/#bundles');

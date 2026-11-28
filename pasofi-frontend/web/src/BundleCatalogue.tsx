@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Capabilities, Product } from './business';
+import { bundleDuration, type Capabilities, type Product } from './business';
 import Icon from './Icon';
 
 const hotspotBuild = import.meta.env.VITE_PASOFI_HOTSPOT_PORTAL === '1';
@@ -38,15 +38,12 @@ function compareBundles(left: Product, right: Product, sort: Sort) {
   if (sort === 'validity-desc') return right.validity_seconds - left.validity_seconds;
   return 0;
 }
+/** Customer-facing bundle name: the published identifier without its version suffix. */
+export const bundleName = (bundle: Pick<Product, 'id'>) => bundle.id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ');
 export function bundleData(bytes: string) {
   const amount = BigInt(bytes), unit = amount >= 1_000_000_000n ? 1_000_000_000n : 1_000_000n;
   const decimals = (amount % unit * 100n / unit).toString().padStart(2, '0').replace(/0+$/, '');
   return { amount: `${amount / unit}${decimals ? `.${decimals}` : ''}`, unit: unit === 1_000_000_000n ? 'GB' : 'MB' };
-}
-export function bundleDuration(seconds: number) {
-  const unit = seconds >= 86400 ? 'day' : seconds >= 3600 ? 'hour' : 'minute';
-  const amount = seconds / (unit === 'day' ? 86400 : unit === 'hour' ? 3600 : 60);
-  return `${Number(amount.toFixed(2))} ${unit}${amount === 1 ? '' : 's'}`;
 }
 /** Price split into symbol, whole amount and cents; the text reads exactly like Intl's output. */
 function PriceParts({ minor, currency }: { minor: number; currency: string }) {
@@ -135,11 +132,13 @@ export default function BundleCatalogue({ bundles, demo, capabilities, checkingA
       : bundles.length === 0 ? <div className="pf-empty"><span className="pf-empty-icon"><Icon name="grid"/></span><h3>More connection is on the way.</h3><p role="status">No bundles are published yet. Check back when PasoFi launches.</p><div className="purchase-actions"><button className="pf-button pf-button-secondary" onClick={refreshAvailability}>Refresh availability</button><button className="pf-button pf-button-secondary" onClick={help}>Explore help <Icon name="arrow"/></button></div></div>
       : <div className="pf-bundle-grid" data-purchasable={availableToBuy}>{visible.map(bundle => {
         const data = bundleData(bundle.byte_limit);
-        const label = checkingAvailability ? `Checking ${bundle.id} purchase availability` : demo ? `Try ${bundle.id} demo bundle` : capabilities?.staffSales ? `Buy ${bundle.id} from an agent` : capabilities?.paymentCheckout ? `Buy ${bundle.id} online` : `${bundle.id} purchasing is not available`;
+        const name = bundleName(bundle);
+        // Read the customer-facing name, never the internal versioned identifier.
+        const label = checkingAvailability ? `Checking ${name} purchase availability` : demo ? `Try ${name} demo bundle` : capabilities?.staffSales ? `Buy ${name} from an agent` : capabilities?.paymentCheckout ? `Buy ${name} online` : `${name} purchasing is not available`;
         const nameId = `bundle-name-${bundle.id}`;
         const best = bestValue.has(bundle.id);
         return <article className="pf-bundle-card" key={bundle.id} aria-labelledby={nameId} data-best-value={best || undefined}>
-          <div className="pf-bundle-top"><span className="pf-plan-name" id={nameId}>{bundle.id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ')}</span>{best && <span className="pf-bundle-badge">Best value</span>}<Icon name="wifi"/></div>
+          <div className="pf-bundle-top"><span className="pf-plan-name" id={nameId}>{name}</span>{best && <span className="pf-bundle-badge">Best value</span>}<Icon name="wifi"/></div>
           <h3>{data.amount}<span>{data.unit}</span></h3>
           <p className="pf-validity"><Icon name="clock"/>{bundleDuration(bundle.validity_seconds)}</p>
           <div className="pf-bundle-price"><PriceParts minor={bundle.price_minor} currency={bundle.currency}/></div>
