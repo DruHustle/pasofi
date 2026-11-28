@@ -44,6 +44,13 @@ for (const [path, type, signature] of [
   assert.deepEqual(icon.bytes.subarray(0, signature.length), signature); checks++;
   check(icon.headers['set-cookie'], undefined, 'static icon never creates a customer account');
 }
+// The shared footer loads these at runtime, so the page's asset list does not reveal them.
+for (const path of ['/platforms/apple.svg', '/platforms/android.svg']) {
+  const icon = await request(path); check(icon.status, 200, `footer platform icon ${path}`);
+  assert.match(icon.headers['content-type'], /^image\/svg\+xml/); checks++;
+  check(icon.headers['set-cookie'], undefined, 'static icon never creates a customer account');
+}
+check((await request('/platforms/missing.svg')).status, 404, 'platform icons are files, never the page');
 for (const path of ['/favicon.svg/private', '/favicon.ico/private', '/apple-touch-icon.png/private', '/favicon-secret.svg']) check((await request(path)).status, 404, 'icon allowlist is exact');
 const callback = await request('/onesa-callback.html');
 check(callback.status, 200, 'dedicated callback HTML');
