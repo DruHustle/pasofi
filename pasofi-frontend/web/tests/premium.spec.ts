@@ -122,6 +122,18 @@ test('bundle filters use published validity and never invent unlimited offers', 
   await expect(filters.getByRole('button', { name: 'Monthly', exact: true })).toHaveCount(0);
 });
 
+test('signed-out Usage says "New to PasoFi" once and still offers bundles', async ({ page }) => {
+  await fixture(page, { guest: true });
+  // Sign-in is available, so its "New to PasoFi" hint is shown.
+  await page.route('**/api/onesa/availability', route => json(route, { origin: new URL(route.request().url()).origin }));
+  await page.goto('/#usage');
+  await expect(page.getByRole('heading', { name: 'Your internet', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+  await expect(page.getByText(/New to PasoFi/)).toHaveCount(1);
+  await page.getByRole('button', { name: 'Browse bundles', exact: true }).click();
+  await expect(page).toHaveURL(/#bundles$/);
+});
+
 test('a one-day bundle reads as one day in the cash purchase summary', async ({ page }) => {
   await fixture(page, { guest: true }); await page.goto('/#bundles');
   await page.getByRole('button', { name: 'Buy day from an agent', exact: true }).click();

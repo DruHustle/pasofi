@@ -505,7 +505,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
         <button className="secondary" onClick={() => selectTab('voucher')}><CustomerGlyph name="voucher" />Redeem a voucher</button>
       </div>}
       {(owner || access.length > 0) && <div className="customer-overview-grid">{bundleList()}{connectionPanel}</div>}
-      {signedOutHere && <button className="text-button customer-browse-link" onClick={buyData}>New to PasoFi? Browse bundles<CustomerGlyph name="arrow" /></button>}
+      {signedOutHere && <button className="text-button customer-browse-link" onClick={buyData}>Browse bundles<CustomerGlyph name="arrow" /></button>}
     </>}
 
     {tab === 'wifi' && <>
