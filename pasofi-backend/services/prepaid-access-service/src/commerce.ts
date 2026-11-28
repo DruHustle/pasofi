@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {SignJWT,jwtVerify} from 'jose';
 import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import type {Pool} from 'pg';
-import {sellVoucher,redeemVoucher,readVoucher,readEcoCashDelivery,VoucherError} from './vouchers.js';
+import {sellVoucher,redeemVoucher,readVoucher,readEcoCashDelivery,voucherSmsMessage,VoucherError} from './vouchers.js';
 import {loadDeliveryKeys,unseal} from './delivery-crypto.js';
 import {ecocashCheckoutAvailable,paymentConfiguration} from './checkout.js';
 import {customerNetworkEnabled} from './network-lifecycle.js';
@@ -220,7 +220,7 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
    const voucher=await readVoucher(pool!,data.sale_id,keys!);
    if(!voucher.code)return reply.code(410).send({error:'voucher_refunded'});
    return {deliveryReference:data.sale_id,saleId:data.sale_id,channel:'sms',to:details.phone,from:process.env.SMS_SENDER??'PasoFi',
-     message:`Pasofi ${data.bundle_id} voucher: ${voucher.code}. Redeem on Pasofi Wi-Fi. Keep this code private.`,simulation:data.simulation};
+     message:voucherSmsMessage(data.bundle_id,voucher.code),simulation:data.simulation};
   }catch(error){
    if(error instanceof VoucherError && error.code==='ecocash_delivery_closed')return reply.code(410).send({error:error.code});
    return errors(reply,error);

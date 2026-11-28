@@ -14,6 +14,8 @@ test('reviewed help is available without a database or model and does not claim 
     assert.match(body.articles.find(a => a.id === 'two-sites').answer, /Check the available sites/);
     assert.doesNotMatch(JSON.stringify(body.articles), /demo account|demo access|either Pasofi site|not available in this preview/i);
     assert.match(body.articles.find(a => a.id === 'help-scope').answer, /cannot take payments/);
+    // The live service uses the PasoFi brand and present-tense guidance.
+    assert.doesNotMatch(JSON.stringify(body.articles), /Pasofi|intended service|planned bundles|How will buying/);
     assert.equal(response.headers['cache-control'], 'no-store');
   } finally { await app.close(); }
 });
