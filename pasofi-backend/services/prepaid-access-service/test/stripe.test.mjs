@@ -101,7 +101,9 @@ test('only fully captured exact bound terms count as verified money; declines re
  const cases=[
   ['captured',{},'verified_success'],['still authenticating',{status:'requires_action',amount_received:0,latest_charge:null},'pending'],
   ['declined but reusable',{status:'requires_payment_method',amount_received:0,latest_charge:null},'pending'],
-  ['cancelled',{status:'canceled',latest_charge:null,amount_received:0},'failed'],['wrong currency',{currency:'eur'},'unknown'],
+  ['cancelled',{status:'canceled',latest_charge:null,amount_received:0},'failed'],
+  ['cancelled with received funds',{status:'canceled',latest_charge:null},'unknown'],
+  ['cancelled with captured charge',{status:'canceled',amount_received:0},'unknown'],['wrong currency',{currency:'eur'},'unknown'],
   ['wrong amount',{amount:499},'unknown'],['short receipt',{amount_received:499},'unknown'],['wrong mode',{livemode:true},'unknown'],
   ['wrong customer',{metadata:{...intent(termsValue).metadata,pasofi_customer_id:randomUUID()}},'unknown'],
   ['wrong order',{metadata:{...intent(termsValue).metadata,pasofi_order_id:randomUUID()}},'unknown'],

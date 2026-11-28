@@ -1,5 +1,9 @@
 import {registerCashRefunds} from './cash-refunds.js';
 import {registerCashShifts} from './cash-shifts.js';
+import {registerAgentCheckouts} from './agent-checkout-routes.js';
+import {agentCheckoutConfiguration} from './agent-checkouts.js';
+import {identityStaff} from './staff-identity.js';
+export {identityStaff} from './staff-identity.js';
 import {createCashReference,cancelCashReference,lookupCashReference,referenceQuote,referenceStatus} from './cash-references.js';
 import {randomUUID} from 'node:crypto';
 import {SignJWT,jwtVerify} from 'jose';
@@ -45,14 +49,6 @@ export function approvedCashSiteIds(raw:string|undefined):Set<string> {
 }
 function saleDto(row:Record<string,any>){const cash=row.payment_method==='cash';return {id:row.id,shiftId:row.shift_id,agentId:row.agent_id,siteId:row.site_id,siteName:row.site_name,bundleId:row.bundle_id,priceMinor:row.price_minor,commissionMinor:row.commission_minor,commissionBps:row.commission_bps,currency:row.currency,byteLimit:String(row.byte_limit),validitySeconds:row.validity_seconds,soldAt:row.sold_at,startBy:row.start_by,delivery:row.delivery,simulation:row.simulation,payment:{method:cash?'cash':'unrecorded',evidence:cash?'agent_attestation':'unrecorded',receivedMinor:cash?row.cash_received_minor:null,currency:cash?row.currency:null,confirmedAt:cash?row.cash_confirmed_at:null,confirmedBy:cash?row.agent_id:null}};}
 async function boundedJson(response:Response){if(!response.body)throw Error('unavailable');const chunks:Buffer[]=[];let size=0;for await(const part of response.body as unknown as AsyncIterable<Uint8Array>){size+=part.length;if(size>16384)throw Error('unavailable');chunks.push(Buffer.from(part));}return record(JSON.parse(Buffer.concat(chunks).toString('utf8')));}
-export async function identityStaff(request:FastifyRequest,demo:boolean,path='/internal/v1/staff/session',scope='staff:resolve') {
- const secret=process.env.INTERNAL_IDENTITY_SECRET,base=process.env.IDENTITY_URL;
- if(!secret||Buffer.byteLength(secret)<32||(!demo&&secret.startsWith('DEMO_ONLY_'))||!base)throw Error('identity_unavailable');
- const target=new URL(base);if(target.username||target.password||target.search||target.hash||target.pathname!=='/'||(!demo&&target.protocol!=='https:')||(demo&&!['http:','https:'].includes(target.protocol)))throw Error('identity_unavailable');
- const token=await new SignJWT({scope}).setProtectedHeader({alg:'HS256'}).setIssuer('prepaid-access').setSubject('prepaid-access').setAudience('identity').setIssuedAt().setExpirationTime('15s').sign(new TextEncoder().encode(secret));
- const response=await fetch(new URL(path,target),{headers:{authorization:`Bearer ${token}`,cookie:request.headers.cookie??''},signal:AbortSignal.timeout(2000),redirect:'error'});
- if(response.status===401||response.status===403)return {status:response.status,data:null};if(!response.ok)throw Error('identity_unavailable');return {status:200,data:await boundedJson(response)};
-}
 export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean,customer:Customer,originAllowed:(request:FastifyRequest)=>boolean){
  const keys=loadDeliveryKeys(),commission=Number(process.env.PAMOFI_AGENT_COMMISSION_BPS??0),cashCurrencies=configuredCashCurrencies(process.env.PAMOFI_CASH_CURRENCIES);
  const enabled=process.env.PAMOFI_COMMERCE_ENABLED==='true'&&!!keys&&Number.isInteger(commission)&&commission>=0&&commission<=10000;
@@ -93,8 +89,9 @@ export function registerCommerce(app:FastifyInstance,pool:Pool|null,demo:boolean
  registerNetworkAdmin(app,pool,(request,reply,roles)=>staff(request,reply,roles,false,request.method!=='GET'));
  registerRouterFleet(app,demo,(request,reply,roles)=>staff(request,reply,roles,false,request.method!=='GET'));
  registerInvoices(app,pool,demo,customer,(request,reply)=>staff(request,reply,['admin','agent'],false),originAllowed);
+ registerAgentCheckouts(app,pool,demo,(request,reply,roles)=>staff(request,reply,roles,false),originAllowed);
  const errors=(reply:FastifyReply,error:unknown)=>reply.code(error instanceof VoucherError?409:error instanceof InvoiceError?(error.code==='invalid_invoice_delivery'?400:error.code==='idempotency_conflict'?409:503):503).send({error:error instanceof VoucherError||error instanceof InvoiceError?error.code:'unavailable'});
- app.get('/v1/capabilities',async request=>{const p=paymentConfiguration(demo);const invoiceCaps=pool?invoiceDeliveryCapabilities(demo):Promise.resolve({invoiceEmail:false,invoiceSms:false});let smsAvailable=false;if(deliverySms){try{const capability=await notification(request,'/internal/v1/delivery/capabilities');smsAvailable=capability.status===200&&capability.data.enabled===true&&capability.data.simulation===demo;}catch{/* unavailable delivery never advertises an actionable SMS option */}}return {demo,paymentMode:p.mode,paymentCheckout:p.enabled,ecocashCheckout:ecocashCheckoutAvailable(demo),vouchers:redemptionEnabled,receiptPairing:newCashSalesEnabled,staffSales:newCashSalesEnabled,cashReceiptRecovery:!!pool&&!!keys,inventoryAllocation:!!pool,salesLocationStatus:!!pool,cashShifts:true,deliverySms:smsAvailable,networkAccess:customerNetworkEnabled(demo),mobileCookies:false,invoices:!!pool,...routerFleetCapabilities(demo,!!pool),...await invoiceCaps};});
+ app.get('/v1/capabilities',async request=>{const p=paymentConfiguration(demo);const invoiceCaps=pool?invoiceDeliveryCapabilities(demo):Promise.resolve({invoiceEmail:false,invoiceSms:false});let smsAvailable=false;if(deliverySms){try{const capability=await notification(request,'/internal/v1/delivery/capabilities');smsAvailable=capability.status===200&&capability.data.enabled===true&&capability.data.simulation===demo;}catch{/* unavailable delivery never advertises an actionable SMS option */}}return {demo,paymentMode:p.mode,paymentCheckout:p.enabled,ecocashCheckout:ecocashCheckoutAvailable(demo),vouchers:redemptionEnabled,receiptPairing:newCashSalesEnabled,staffSales:newCashSalesEnabled,cashReceiptRecovery:!!pool&&!!keys,agentDigitalSales:!!pool&&!!agentCheckoutConfiguration(demo,p.enabled),agentCheckoutRecovery:!!pool,inventoryAllocation:!!pool,salesLocationStatus:!!pool,cashShifts:true,deliverySms:smsAvailable,networkAccess:customerNetworkEnabled(demo),mobileCookies:false,invoices:!!pool,...routerFleetCapabilities(demo,!!pool),...await invoiceCaps};});
  app.get('/v1/sites',async(_request,reply)=>{if(!pool)return reply.code(503).send({error:'unavailable'});try{return {sites:(await pool.query('SELECT id,name FROM sales_locations WHERE enabled ORDER BY name,id')).rows};}catch{return reply.code(503).send({error:'unavailable'});}});
  // Administrators must be able to prepare the service while customer commerce
  // is paused. This bypasses only the selling switch, never staff/MFA/origin checks.

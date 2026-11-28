@@ -9,13 +9,13 @@ async function main() {
   const url = new URL(process.env.PAMOFI_TEST_DATABASE_URL || ''), key = mfaKey(true);
   if (!['postgres:', 'postgresql:'].includes(url.protocol) || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || !url.port || !url.username || url.search || url.hash || !key) throw Error('Explicit loopback test database and demo MFA key required.');
   const [action, id, registeredEmail] = process.argv.slice(2);
-  if (!['create', 'code', 'remove', 'remove-registered'].includes(action) || (action !== 'create' && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id || ''))) throw Error('Use create, code UUID, remove UUID or remove-registered UUID EMAIL.');
+  if (!['create', 'create-agent', 'code', 'remove', 'remove-registered'].includes(action) || (action !== 'create' && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id || ''))) throw Error('Use create, create-agent SITE, code UUID, remove UUID or remove-registered UUID EMAIL.');
   if (action === 'remove-registered' && !/^pamofi-browser-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}@staff\.pamofi\.test$/.test(registeredEmail || '')) throw Error('Exact browser-registration fixture email required.');
   const pool = new pg.Pool({ connectionString: url.toString(), max: 1, connectionTimeoutMillis: 3000 });
   try {
-    if (action === 'create') {
+    if (action === 'create' || action === 'create-agent') {
       const staffId = randomUUID(), email = `pamofi-fixture-${staffId}@staff.pamofi.test`, password = randomBytes(24).toString('base64url'), secret = newTotpSecret();
-      await pool.query("INSERT INTO staff_users(id,email,display_name,password_hash,status,role,mfa_secret_ciphertext,mfa_enrolled_at) VALUES($1,$2,'Browser test administrator',$3,'approved','admin',$4,now())", [staffId, email, await hashPassword(password), encryptMfa(secret, key, staffId)]);
+      await pool.query("INSERT INTO staff_users(id,email,display_name,password_hash,status,role,site_ids,mfa_secret_ciphertext,mfa_enrolled_at) VALUES($1,$2,$3,$4,'approved',$5,$6,$7,now())", [staffId, email, action === 'create-agent' ? 'Browser test agent' : 'Browser test administrator', await hashPassword(password), action === 'create-agent' ? 'agent' : 'admin', action === 'create-agent' ? [id] : [], encryptMfa(secret, key, staffId)]);
       console.log(JSON.stringify({ staffId, email, password }));
       return;
     }

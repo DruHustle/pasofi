@@ -3,6 +3,9 @@ import { readFile } from 'node:fs/promises';
 const policies = JSON.parse(await readFile(new URL('./role-policies.json', import.meta.url), 'utf8'));
 // Invoice numbers may advance and be read; runtime cannot rewind them with setval.
 const sequencePolicies = { 'prepaid-access': { paid_invoice_number_seq: ['USAGE', 'SELECT'] } };
+// Agent attribution freezes its quote/token; runtime only advances the bound
+// order, stock and settlement state. Keep this multi-column grant table-scoped.
+const agentCheckoutUpdate = 'UPDATE (order_id, claimed_at, stock_state, reserved_at, consumed_at, released_at, fulfilled_charge_id, commission_review, closed_at)';
 const identifier = value => { if (!/^[a-z][a-z0-9_]{0,62}$/.test(value)) throw Error('Invalid database identifier.'); return `"${value}"`; };
 
 export async function applyRuntimeGrants(client, { service, owner, runtime }) {
@@ -29,7 +32,8 @@ export async function applyRuntimeGrants(client, { service, owner, runtime }) {
     await client.query(`REVOKE ALL ON ALL ROUTINES IN SCHEMA public FROM PUBLIC, ${identifier(runtime)}`);
     for (const [table, privileges] of Object.entries(policy)) {
       if (!privileges.length) continue;
-      if (privileges.some(value => !/^(SELECT|INSERT|UPDATE|DELETE|UPDATE \((id|request_hash|token_hash|ecocash_reference)\))$/.test(value))) throw Error('Invalid runtime grant policy.');
+      if (privileges.some(value => !/^(SELECT|INSERT|UPDATE|DELETE|UPDATE \((id|request_hash|token_hash|ecocash_reference)\))$/.test(value)
+        && !(service === 'prepaid-access' && table === 'agent_checkouts' && value === agentCheckoutUpdate))) throw Error('Invalid runtime grant policy.');
       await client.query(`GRANT ${privileges.join(',')} ON TABLE public.${identifier(table)} TO ${identifier(runtime)}`);
     }
     for (const [sequence, privileges] of Object.entries(sequencePolicy)) {

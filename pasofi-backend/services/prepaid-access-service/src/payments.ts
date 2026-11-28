@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import {eligibleMethod,SETTLEMENT_PROVIDERS,type PaymentAdapter as Adapter,type MethodEligibility as Eligibility} from './payment-provider.js';
 import {issueDigitalInvoice} from './invoices.js';
+import {AgentCheckoutError,lockAgentCheckoutForOrder,reserveAgentCheckout,assertAgentAttemptReplay,fulfillAgentCheckout,releaseCanceledAgentCheckout,type AgentCheckoutRow} from './agent-checkouts.js';
 export class PaymentError extends Error {constructor(public readonly code:string){super(code);}}
 async function tx<T>(pool:Pool,fn:(client:PoolClient)=>Promise<T>):Promise<T>{const client=await pool.connect();try{await client.query('BEGIN');const r=await fn(client);await client.query('COMMIT');return r;}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}
 // The checkout boundary authenticates ownership and supplies the server's
@@ -9,28 +10,34 @@ async function tx<T>(pool:Pool,fn:(client:PoolClient)=>Promise<T>):Promise<T>{co
 // persistContext runs in the attempt-creation transaction, so provider-specific
 // context (e.g. a sealed payer number) is durable before any provider call.
 export async function beginProviderPayment(pool:Pool,customerId:string,orderId:string,requestKey:string,siteId:string,methodCode:string,eligibility:Eligibility,adapter:Adapter,
- persistContext?:(client:PoolClient,attemptId:string)=>Promise<void>){
+ persistContext?:(client:PoolClient,attemptId:string)=>Promise<void>,authorizeAgent?:(row:AgentCheckoutRow)=>Promise<void>){
  if(!SETTLEMENT_PROVIDERS.includes(adapter.provider))throw new PaymentError('provider_unavailable');
  customerId=customerId.toLowerCase();orderId=orderId.toLowerCase();requestKey=requestKey.toLowerCase();siteId=siteId.toLowerCase();
  const attempt=await tx(pool,async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`${customerId}:${requestKey}`]);
   const order=await client.query('SELECT * FROM purchase_orders WHERE id=$1 AND customer_id=$2 FOR UPDATE',[orderId,customerId]);
   if(!order.rowCount)throw new PaymentError('order_not_found');
+  const attribution=await lockAgentCheckoutForOrder(client,orderId);
   // PostgreSQL can evaluate a SELECT projection before waiting for its row lock.
   // Check the deadline on a fresh statement after acquiring the order.
   const payable=(await client.query(`SELECT status='awaiting_payment' AND expired_unused_at IS NULL
     AND quote_expires_at>clock_timestamp() AS payable FROM purchase_orders WHERE id=$1`,[orderId])).rows[0].payable;
   const previous=await client.query('SELECT * FROM provider_payment_attempts WHERE customer_id=$1 AND request_key=$2',[customerId,requestKey]);
-  if(previous.rowCount){if(previous.rows[0].order_id!==orderId || previous.rows[0].site_id!==siteId || previous.rows[0].method_code!==methodCode || previous.rows[0].provider!==adapter.provider)throw new PaymentError('idempotency_conflict');return {created:false,payable,row:previous.rows[0],order:order.rows[0]};}
+  if(previous.rowCount){if(previous.rows[0].order_id!==orderId || previous.rows[0].site_id!==siteId || previous.rows[0].method_code!==methodCode || previous.rows[0].provider!==adapter.provider)throw new PaymentError('idempotency_conflict');const agentReplayAllowed=attribution?assertAgentAttemptReplay(attribution,order.rows[0],siteId,methodCode,adapter.provider):true;return {created:false,payable:payable&&agentReplayAllowed,row:previous.rows[0],order:order.rows[0],attribution};}
   if(!payable)throw new PaymentError('order_not_payable');
   const method=eligibility?.method as {code?:unknown}|undefined;
   if(method?.code!==methodCode || !eligibleMethod(method,order.rows[0].currency,order.rows[0].price_minor,eligibility.merchantEnabledCodes,eligibility.siteQualifiedCodes))throw new PaymentError('method_not_qualified');
   const unresolved=await client.query("SELECT id FROM provider_payment_attempts WHERE order_id=$1 AND state IN ('initiating','unknown','pending','review')",[orderId]);
   if(unresolved.rowCount)throw new PaymentError('payment_pending');
+  if(attribution){
+   if(!authorizeAgent)throw new AgentCheckoutError('agent_checkout_unavailable');
+   await authorizeAgent(attribution);
+   await reserveAgentCheckout(client,attribution,order.rows[0],siteId,methodCode,adapter.provider);
+  }
   const id=randomUUID();
   const created=await client.query("INSERT INTO provider_payment_attempts(id,order_id,customer_id,request_key,site_id,method_code,provider,state) VALUES ($1,$2,$3,$4,$5,$6,$7,'initiating') RETURNING *",[id,orderId,customerId,requestKey,siteId,methodCode,adapter.provider]);
   if(persistContext)await persistContext(client,id);
-  return {created:true,payable,row:created.rows[0],order:order.rows[0]};
+  return {created:true,payable,row:created.rows[0],order:order.rows[0],attribution};
  });
  const age=(Date.now()-new Date(attempt.row.created_at).getTime())/1000;
  const replay=!attempt.created && attempt.payable && !attempt.row.provider_reference && ['initiating','unknown'].includes(attempt.row.state)
@@ -43,6 +50,7 @@ export async function beginProviderPayment(pool:Pool,customerId:string,orderId:s
   if(replay){
    const method=eligibility?.method as {code?:unknown}|undefined;
    if(method?.code!==methodCode||!eligibleMethod(method,attempt.order.currency,attempt.order.price_minor,eligibility.merchantEnabledCodes,eligibility.siteQualifiedCodes))throw new PaymentError('method_not_qualified');
+   if(attempt.attribution){if(!authorizeAgent)throw new AgentCheckoutError('agent_checkout_unavailable');await authorizeAgent(attempt.attribution);}
   }
  let initiated:Awaited<ReturnType<Adapter['initiate']>>;
  try{initiated=await adapter.initiate({attemptId:attempt.row.id,orderId,customerId,siteId,amountMinor:attempt.order.price_minor,currency:attempt.order.currency,methodCode,eligibility});}
@@ -129,6 +137,7 @@ export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapte
   }
   if(status.state==='failed'){
    if(!previous.rowCount)await client.query("UPDATE provider_payment_attempts SET state='failed',updated_at=now() WHERE id=$1",[attemptId]);
+   if(!previous.rowCount&&(a.provider==='stripe'||a.provider==='stripe_test')&&status.providerStatus==='canceled')await releaseCanceledAgentCheckout(client,a.order_id);
    const prior=previous.rowCount?await previousOutcome():null;
    return {state:prior==='fulfilled'?'previously_verified':prior??'failed'};
   }
@@ -177,7 +186,10 @@ export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapte
    const charge=previous.rows[0];
    const reinstated=(a.provider==='stripe'||a.provider==='stripe_test')&&charge.state==='reversed'&&
     ['dispute_won','partially_refunded'].includes(status.providerStatus??'');
-   if(!reinstated)return {state:await previousOutcome()};
+   if(!reinstated){
+    if(charge.state==='succeeded'&&charge.fulfilled_entitlement_id)await fulfillAgentCheckout(client,a.order_id,charge.id,charge.fulfilled_entitlement_id,(status.refundedMinor??0)>0);
+    return {state:await previousOutcome()};
+   }
    if(initial.prior_charge_version!==charge.charge_version)return {state:'unable_to_verify'};
    chargeId=charge.id;
    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[a.customer_id]);
@@ -192,6 +204,7 @@ export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapte
    await client.query("UPDATE payment_reviews SET resolved_at=now() WHERE charge_id=$1 AND reason='consumed_reversal' AND resolved_at IS NULL",[chargeId]);
    await client.query("UPDATE verified_charges SET state='succeeded',updated_at=now() WHERE id=$1",[chargeId]);
    if(charge.fulfilled_entitlement_id){
+    await fulfillAgentCheckout(client,a.order_id,chargeId,charge.fulfilled_entitlement_id,(status.refundedMinor??0)>0);
     await client.query("UPDATE provider_payment_attempts SET state='succeeded',updated_at=now() WHERE id=$1",[attemptId]);
     return {state:'fulfilled'};
    }
@@ -208,6 +221,7 @@ export async function reconcileProviderPayment(pool:Pool,attemptId:string,adapte
   await client.query('UPDATE verified_charges SET fulfilled_entitlement_id=$2 WHERE id=$1',[chargeId,entitlementId]);
   await client.query("UPDATE purchase_orders SET status='payment_confirmed' WHERE id=$1",[a.order_id]);
   await client.query("UPDATE provider_payment_attempts SET state='succeeded',updated_at=now() WHERE id=$1",[attemptId]);
+  await fulfillAgentCheckout(client,a.order_id,chargeId,entitlementId,(status.refundedMinor??0)>0);
   await issueDigitalInvoice(client,chargeId);
   return {state:'fulfilled'};
  });

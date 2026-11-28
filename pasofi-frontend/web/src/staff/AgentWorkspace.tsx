@@ -1,5 +1,6 @@
 import CashRefunds from './CashRefunds';
 import CashShifts from './CashShifts';
+import AgentDigitalSales from './AgentDigitalSales';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api';
 import DeliveryStatus from './DeliveryStatus';
@@ -34,6 +35,14 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
     if (loaded && !busy && !pending && !invoiceChoiceExplicit.current) setInvoiceDelivery(defaultInvoiceDelivery(capabilities));
   }, [loaded, busy, pending, capabilities?.invoices, capabilities?.invoiceEmail, capabilities?.invoiceSms]);
   const live = useRef(false), savedPayload = useRef<SalePayload | null>(null), printCleanup = useRef<(() => void) | null>(null), owner = `staff:${staff.staffId}`;
+  const digitalOwner = useRef('');
+  digitalOwner.current = staff.staffId + ':' + staff.version;
+  function refreshDigitalInventory() {
+    const expected = digitalOwner.current;
+    void api<{ inventory: Stock[] }>('/api/staff/inventory').then(result => {
+      if (live.current && digitalOwner.current === expected) setStock(result.inventory);
+    }).catch(() => { /* The existing refresh action can retry an unavailable inventory read. */ });
+  }
   async function verify() { try { const current = await api<Staff>('/api/staff/session'); if (current.staffId !== staff.staffId || current.version !== staff.version || current.status !== 'approved' || current.role !== 'agent') throw new ApiError(401, 'staff_changed'); } catch (error) { if (error instanceof ApiError && [401, 403].includes(error.status)) { setLoaded(false); setSales([]); setStock([]); setReceipt(null); setDeliverySale(null); setPairingCode(''); setCashReference(null); setPhone(''); invoiceChoiceExplicit.current = false; setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); } throw error; } }
   async function load() {
     setBusy(true); setMessage('');
@@ -150,7 +159,7 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
     } catch (error) { if (live.current) setMessage(messageFor(error)); }
     finally { if (live.current) setBusy(false); }
   }
-  return <div className="agent-workspace"><div className="workspace-section-head"><div><h3>Your sites and sales</h3><p>Open a cash shift for the sale location and currency before receiving payment. Sell only from assigned inventory; prices and commission come from the confirmed server receipt.</p></div><button className="secondary" disabled={busy} onClick={load}>Refresh inventory and sales</button></div>
+  return <div className="agent-workspace"><div className="workspace-section-head"><div><h3>Your sites and sales</h3><p>Sell from your assigned inventory. Open a cash shift before receiving cash; use a customer payment link for card and wallet sales below.</p></div><button className="secondary" disabled={busy} onClick={load}>Refresh inventory and sales</button></div>
     {message && <p className="feedback" role="status">{message}</p>}{!loaded && !message && <p role="status">Loading your assigned sites…</p>}
     {loaded && <div className="workspace-columns"><section className="workspace-card"><h3>{capabilities?.demo ? 'Try a demo sale' : 'Issue a voucher'}</h3>
       {!capabilities?.staffSales && <p className="notice">Voucher sales are not enabled in this environment.</p>}
@@ -167,6 +176,7 @@ export default function AgentWorkspace({ staff, capabilities }: { staff: Staff; 
         <button className="primary" disabled={busy || !confirmed || !saleAvailable || (!pending && (!product || available < 1 || (delivery !== 'sms' && !cashReference)))}>{pending ? 'Retry saved sale safely' : capabilities?.demo ? 'Confirm demo sale' : 'Confirm cash and issue voucher'}</button>
       </form>
     </section><section className="workspace-card"><h3>Available inventory</h3>{stock.length === 0 ? <p>No stock is assigned. Ask an administrator to allocate bundles for your site.</p> : <ul className="inventory-list">{stock.map(item => <li key={`${item.siteId}:${item.bundleId}`}><div><strong>{item.siteName}</strong><span>{item.bundleId.toUpperCase()}</span></div><strong>{item.quantity}</strong></li>)}</ul>}</section></div>}
+    {loaded && <AgentDigitalSales staff={staff} capabilities={capabilities} sites={sites} products={products} stock={stock} onInventoryChanged={refreshDigitalInventory} />}
     <CashShifts staff={staff} selling={!!capabilities?.staffSales} />
     <CashRefunds staff={staff} />
     {receipt && <section className="private-receipt"><div className="workspace-section-head"><h3>Private customer receipt</h3><button className="secondary" onClick={() => setReceipt(null)}>Hide receipt</button></div><p>{receipt.sale.siteName} · {localDate(receipt.sale.soldAt)}</p><strong>{receipt.sale.bundleId.toUpperCase()} · {money(receipt.sale.priceMinor, receipt.sale.currency)}</strong><p>{Number(receipt.sale.byteLimit) / 1e9} GB · {bundleDuration(receipt.sale.validitySeconds)} · Start by {localDate(receipt.sale.startBy)}</p><p className="cash-evidence">{cashDescription(receipt.sale.payment, receipt.sale.simulation)}</p><label>Voucher code<input readOnly value={receipt.voucher.code} autoComplete="off" onFocus={event => event.target.select()} /></label><div className="purchase-actions"><button className="secondary" onClick={copyVoucher}>Copy voucher</button><button className="secondary" onClick={printReceipt}>Print receipt</button>{capabilities?.invoices && <InvoiceDownload scope="staff" ownerKey={`${owner}:${staff.version}`} verify={verify} saleId={receipt.sale.id} disabled={busy} />}</div><p>State: {receipt.voucher.state}. Give this only to the customer for this sale.</p><small>Sale reference: {receipt.sale.id}</small></section>}

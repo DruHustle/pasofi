@@ -35,6 +35,14 @@ struct CustomerApiPolicyTests {
         _ = try request("/api/onesa/native-session","POST"); checks += 1
         rejects("Native session requires POST") { _ = try request("/api/onesa/native-session") }
         rejects("Native session never accepts credentials in the query") { _ = try request("/api/onesa/native-session?token=invalid","POST") }
+        let preview = try request("/api/agent-checkouts/preview", "POST", data: "{\"id\":\"" + id + "\",\"code\":\"" + token + "\"}")
+        check(preview.isPublicRead && !preview.changesIdentity, "Agent preview is a public quote read without customer or staff authority")
+        rejects("Agent preview cannot use GET") { _ = try request("/api/agent-checkouts/preview") }
+        rejects("Agent preview cannot use DELETE") { _ = try request("/api/agent-checkouts/preview", "DELETE") }
+        rejects("Agent code cannot enter a request URL") { _ = try request("/api/agent-checkouts/preview?code=" + token, "POST") }
+        rejects("Customer cannot create agent offers") { _ = try request("/api/staff/agent-checkouts", "POST", data: "{}") }
+        rejects("Customer cannot read staff offer status") { _ = try request("/api/staff/agent-checkouts/" + id) }
+        rejects("No wildcard customer agent route") { _ = try request("/api/agent-checkouts/" + id, "POST", data: "{}") }
         rejects("Native does not exchange browser OIDC credentials") { _ = try request("/api/onesa/complete", "POST") }
         for invalid in ["http://pasofi.example.test", "https://user@pasofi.example.test", "https://pasofi.example.test/", "https://pasofi.example.test/api", "https://pasofi.example.test:8443", "https://127.0.0.1", "https://pasofi.local", "https://sub.localhost", "https://pasofi.example.test?route=evil"] {
             check(CustomerApiPolicy.origin(invalid) == nil && CustomerApiPolicy.browserSignInURL(invalid) == nil, "Unexpected origin rejected")

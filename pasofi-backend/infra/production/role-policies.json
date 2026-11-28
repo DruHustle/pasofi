@@ -32,6 +32,7 @@
     "cash_refund_events": ["SELECT", "INSERT"],
     "cash_shifts": ["SELECT", "INSERT", "UPDATE"],
     "agent_sales": ["SELECT", "INSERT", "UPDATE (id)"],
+    "agent_checkouts": ["SELECT", "INSERT", "UPDATE (order_id, claimed_at, stock_state, reserved_at, consumed_at, released_at, fulfilled_charge_id, commission_review, closed_at)"],
     "paid_invoices": ["SELECT", "INSERT"],
     "invoice_delivery_intents": ["SELECT", "INSERT"],
     "invoice_deliveries": ["SELECT", "INSERT"],

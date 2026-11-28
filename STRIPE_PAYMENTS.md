@@ -7,7 +7,7 @@ production Compose still sets `PAMOFI_PAYMENTS_ENABLED=false` and
 
 ## Payment flow and trust boundaries
 
-1. The authenticated customer chooses a published bundle and an enabled,
+1. The customer, including a guest using the existing private session, chooses a published bundle and an enabled,
    explicitly qualified sales location. The server freezes the price, currency,
    allowance and validity in the existing order. The browser supplies no amount.
 2. Checkout commits one provider attempt before contacting Stripe. Its UUID is
@@ -18,7 +18,8 @@ production Compose still sets `PAMOFI_PAYMENTS_ENABLED=false` and
    Once any of those conditions lapses, the service retains the attempt for
    reconciliation. A known intent can still be retrieved and an already captured
    payment can still be credited after the quote expires.
-3. The web app mounts Stripe's Payment Element for cards. Native apps present
+3. The web app mounts Stripe's Payment Element for cards and eligible Apple Pay
+   or Google Pay wallets. Native apps present
    Stripe PaymentSheet for cards and the available, configured platform wallet.
    Stripe owns card collection and authentication. No raw card number, CVC or
    wallet token passes through Pasofi's API.
@@ -39,7 +40,7 @@ production Compose still sets `PAMOFI_PAYMENTS_ENABLED=false` and
    access can be withdrawn, while already consumed access requires review.
 
 Only card PaymentIntents are allowed; Apple Pay and Google Pay tokenize cards
-through the native SDKs. The current merchant/site eligibility is USD 0.50 through
+through Stripe's browser or native SDKs. The current merchant/site eligibility is USD 0.50 through
 USD 999,999.99. Stripe's account-specific limits still apply. Adding currencies or
 other payment methods requires their own reviewed amount and settlement rules.
 
@@ -138,6 +139,66 @@ the callback's authentication; browser cookies and bearer credentials are remove
 at the proxy boundary. Raw payloads are not stored. The application responds only
 after the event identifier and reconciliation request commit together. Transient
 Stripe or database errors return a retryable error to Stripe.
+
+## Web wallet provisioning
+
+Register each HTTPS origin that displays the web Payment Element as a Stripe
+payment method domain on the same account. Stripe can then show Apple Pay and
+Google Pay when the browser, device and wallet are eligible. Test each wallet
+and card fallback on a supported device for each checkout origin.
+
+## Agent card and wallet sales
+
+An approved agent with recent MFA selects an assigned site and bundle, then
+creates a private customer payment link or QR code. The customer opens it on
+their own device or pastes it into the native checkout. The agent never receives
+the customer's Stripe client secret, card details, wallet authorization or
+customer session. Guest purchase remains available without an Onesa login.
+
+The link freezes the agent/version, site, bundle terms and commission rate for
+15 minutes. It does not collect money or reserve stock by itself. One customer
+order can claim the link; exact request-key retries recover that original order.
+The server checks the link's source again when creating and recovering payment.
+The code is removed from the browser URL on entry and is not sent through Onesa
+sign-in URLs or saved in persistent browser storage.
+
+The first provider attempt reserves one item from the same inventory used by
+cash sales. The verified charge consumes that reservation and earns commission
+in the fulfillment transaction. The agent can recover a pending link after a
+reload and inspect existing payments while new sales are paused. Digital payments
+do not add cash to an agent's shift. The customer receives the existing private
+bundle entitlement and paid invoice.
+
+Closing a wallet or declining a card does not release stock: the original intent
+may still be payable. Only fresh, fully bound provider evidence of terminal
+cancellation can release the reservation and permanently close that sale.
+Uncertain replies retain the reservation for reconciliation. A refunded or
+disputed fulfilling charge reverses or reviews its original commission; a second
+charge cannot earn a second commission. Partial refunds require review.
+
+| Route | Purpose |
+|---|---|
+| `POST /v1/staff/agent-checkouts` | Create or replay a scoped agent link using `Idempotency-Key` and `{siteId,bundleId}` |
+| `GET /v1/staff/agent-checkouts` | Read the agent's scoped sale history and commission state |
+| `GET /v1/staff/agent-checkouts/:id` | Read payment status; recover the creator's still-unclaimed private link |
+| `POST /v1/agent-checkouts/preview` | Read bounded public quote terms using `{id,code}`; no customer order details |
+| `POST /v1/orders` | Existing customer order route, with optional `agentCheckout:{id,code}` |
+
+Apply migration `039_agent_checkouts.sql` through the existing dedicated
+migrator before deploying this service version. Its immutable attribution and
+payment-attempt fences protect mixed-version rollouts. Use the existing reviewed
+runtime grant updater; the application does not gain migration or deletion roles.
+The configured public origin for native-compatible full links is
+`https://pasofi.mobile.onesa.eu`.
+
+The full `verify.mjs --integration --browser` gate now includes a separate
+Stripe service phase with actual identity/MFA, customer and agent APIs,
+PostgreSQL, signed webhook processing, inventory and invoices. Its Stripe SDK
+transport and browser Payment Element are explicitly synthetic. It covers direct
+and agent card, Apple Pay and Google Pay transport cases, single fulfillment,
+commission, refund and duplicate-event behavior; it does not qualify an actual
+wallet or merchant. Real sandbox and signed-device results remain separate
+acceptance records.
 
 ## Native provisioning and acceptance
 

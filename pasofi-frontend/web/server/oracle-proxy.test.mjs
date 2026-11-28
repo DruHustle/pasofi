@@ -319,13 +319,14 @@ test('public web staff credentials stay closed when Oracle still serves legacy l
   });
 });
 
-test('cash workflow, recovery, staff and network routes are available through original and rewritten URL forms', async () => {
+test('cash and digital sale workflows, recovery, staff and network routes are available through original and rewritten URL forms', async () => {
   const paths = [
     ['GET','/api/onesa/availability'], ['POST','/api/onesa/start'], ['POST','/api/onesa/complete'],
     ['GET', '/api/capabilities'], ['GET', '/api/usage?entitlementIds=a%2Cb'], ['POST', '/api/session'], ['DELETE', '/api/session'],
     ['GET', '/api/staff/onesa/availability'], ['POST', '/api/staff/onesa/start'], ['POST', '/api/staff/onesa/complete'], ['POST', `/api/staff/users/${id}/decision`], ['POST', `/api/staff/users/${id}/recover-mfa`],
     ['GET', '/api/staff/administration'], ['POST', '/api/staff/administration'],
     ['POST', '/api/admin/inventory/allocations'], ['PATCH', `/api/admin/sites/${id}`], ['POST', '/api/staff/sales'], ['GET', `/api/staff/sales/${id}/receipt`],
+    ['POST', '/api/agent-checkouts/preview'], ['GET', '/api/staff/agent-checkouts'], ['POST', '/api/staff/agent-checkouts'], ['GET', `/api/staff/agent-checkouts/${id}`],
     ['GET', '/api/customer/invoices'], ['GET', '/api/staff/invoices'], ['GET', `/api/customer/invoices/${id}`], ['GET', `/api/staff/invoices/${id}`],
     ['GET','/api/staff/cash-refunds'], ['POST','/api/staff/cash-refunds'], ['POST',`/api/staff/cash-refunds/${id}/payout`], ['POST',`/api/staff/cash-refunds/${id}/prepare-payout`], ['POST',`/api/admin/cash-refunds/${id}/decision`], ['GET', '/api/staff/cash-shifts'], ['POST', '/api/staff/cash-shifts'], ['POST', `/api/staff/cash-shifts/${id}/close`], ['POST', '/api/staff/cash-references/lookup'], ['POST', `/api/receipt-pairings/${id}/cancel`], ['POST', '/api/receipt-pairings'], ['GET', `/api/receipt-pairings/${id}`], ['POST', '/api/vouchers/redeem'],
     ['POST', '/api/recovery/rotate'], ['POST', '/api/handoff/redeem'], ['POST', '/api/network/credentials'],

@@ -15,6 +15,7 @@ function fixture({reference=null,ageSeconds=60}={}){
  const query=async(sql,args=[])=>{
   if(sql==='BEGIN'||sql==='COMMIT'||sql==='ROLLBACK'||sql.startsWith('SELECT pg_advisory'))return {rows:[],rowCount:0};
   if(sql.startsWith('SELECT * FROM purchase_orders WHERE id=$1 AND customer_id=$2 FOR UPDATE'))return args[0]===orderId&&args[1]===customerId?{rows:[{...order}],rowCount:1}:{rows:[],rowCount:0};
+  if(sql.startsWith('SELECT * FROM agent_checkouts WHERE order_id=$1 FOR UPDATE'))return {rows:[],rowCount:0};
   if(sql.startsWith("SELECT status='awaiting_payment' AND expired_unused_at IS NULL")) {
    assert.equal(args[0],orderId);
    return {rows:[{payable:order.status==='awaiting_payment' && !order.expired_unused_at && order.quote_expires_at.getTime()>Date.now()}],rowCount:1};

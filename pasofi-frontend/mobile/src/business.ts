@@ -4,7 +4,7 @@ export type Capabilities = {
   demo: boolean; paymentMode: 'disabled' | 'mock' | 'sandbox' | 'production';
   paymentCheckout: boolean; ecocashCheckout?: boolean; vouchers: boolean; receiptPairing: boolean; cashReceiptRecovery?: boolean;
   invoices?: boolean; invoiceEmail?: boolean; invoiceSms?: boolean;
-  staffSales: boolean; deliverySms: boolean; networkAccess: boolean; mobileCookies: boolean; nativeCustomerApiVersion?: number;
+  staffSales: boolean; agentDigitalSales?: boolean; agentCheckoutRecovery?: boolean; deliverySms: boolean; networkAccess: boolean; mobileCookies: boolean; nativeCustomerApiVersion?: number;
 };
 export type Product = { id: string; price_minor: number; currency: string; byte_limit: string; validity_seconds: number };
 export type Site = { id: string; name: string };
@@ -29,6 +29,14 @@ export function messageFor(error: unknown, fallback = 'This request could not be
   if (error.status === 403) return 'This action is not available for your account or assigned site. Refresh your account permissions.';
   if (error.status === 429) return 'Too many attempts. Wait a minute before trying again.';
   const messages: Record<string, string> = {
+    invalid_agent_checkout: 'This agent checkout link is invalid. Ask your agent for the complete link.',
+    agent_checkout_not_found: 'This agent checkout could not be verified. Ask your agent for a new link.',
+    agent_checkout_expired: 'This agent checkout link has expired. Ask your agent for a new link.',
+    agent_checkout_claimed: 'This agent checkout is already in use. Resume the saved checkout in the account and browser that started it.',
+    agent_checkout_unavailable: 'This agent checkout is not available for a new payment. Ask your agent to check its status.',
+    agent_checkout_storage_unavailable: 'This device could not save the agent checkout safely. Enable session storage, then reopen the link.',
+    agent_checkout_owner_changed: 'The account for this agent checkout changed. Sign in to the intended account and reopen the link.',
+    agent_checkout_source_mismatch: 'The order does not match the saved agent checkout. Check the original purchase with support before paying again.',
     logout_pending: 'Sign-out is waiting for confirmation. Reconnect, then close My PasoFi and reopen it to finish signing out.',
     session_retry_expired: 'That unfinished account setup has expired. Recover your existing account if you saved recovery details, or choose Start a new customer account again.',
     native_session_storage_unavailable: 'PasoFi could not open private account storage on this device. Close and reopen the app, then retry.',

@@ -1,3 +1,4 @@
+import { agentCheckoutChanged, bindAgentCheckout, clearAgentCheckout, matchingAgentSource, parseAgentCheckout, readAgentCheckout, rememberAgentCheckout, sameAgentCheckout, sameAgentSource, validAgentCheckout, validAgentPreview, validAgentQuote, type AgentCheckoutEntry, type AgentCheckoutIntent, type AgentCheckoutPreview, type AgentCheckoutQuote, type AgentCheckoutSource } from './agent-checkout';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, hotspotPortal } from './api';
 import { inspectBrowserSession, readCustomerSession, ensureSession, clearSessionSecrets, signOutCustomer, type CustomerSessionStatus } from './session';
@@ -17,10 +18,10 @@ import './customer-voucher.css';
 type Entitlement = { id: string; bundle_id: string; byte_limit: string; consumed_bytes: string; validity_seconds: number; activated_at: string | null; revoked_at: string | null; start_by: string };
 type Pairing = { id: string; code: string; expiresAt: string; status?: string; quote?: { bundleId: string; siteId: string; siteName: string; priceMinor: number; currency: string; byteLimit: string; validitySeconds: number } };
 type Receipt = { sale: { id: string; siteName: string; bundleId: string; priceMinor: number; currency: string; byteLimit: string; validitySeconds: number; startBy: string; simulation: boolean; payment?: CashEvidence }; voucher: { id: string; code: string; state: string } };
-type Order = { id: string; bundle_id: string; price_minor: number; currency: string; status: string; quote_expires_at: string };
+type Order = { id: string; bundle_id: string; price_minor: number; currency: string; status: string; quote_expires_at: string; agentCheckout?: AgentCheckoutSource | null };
 // payerMsisdn is the customer's own EcoCash number, kept only in this tab's
 // retry record until the checkout settles. The PIN is never collected here.
-type PurchaseDetails = { bundleId: string; siteId: string; methodCode: string; payerMsisdn?: string; invoiceDelivery?: InvoiceDelivery };
+type PurchaseDetails = { bundleId: string; siteId: string; methodCode: string; payerMsisdn?: string; invoiceDelivery?: InvoiceDelivery; agentCheckout?: AgentCheckoutIntent; agentQuote?: AgentCheckoutQuote };
 type EcoCashPayment = { provider: 'ecocash'; payerHint: string; awaitingApproval: boolean };
 const ecocashNumber = (value: string) => /^(?:\+?263|0)?7[0-9]{8}$/.test(value.replace(/[\s-]/g, ''));
 type PaymentMethod = { code: string; name: string; currency: string; minMinor: number; maxMinor: number };
@@ -65,6 +66,15 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const [methods, setMethods] = useState<PaymentMethod[]>([]), [methodCode, setMethodCode] = useState(''), [methodsLoading, setMethodsLoading] = useState(false);
   const [order, setOrder] = useState<Order | null>(null), [payment, setPayment] = useState<PaymentStatus | null>(null), [redirectUrl, setRedirectUrl] = useState('');
   const [checkoutPending, setCheckoutPending] = useState(false);
+  const [agentEntry, setAgentEntry] = useState<AgentCheckoutEntry | null>(readAgentCheckout), [agentLink, setAgentLink] = useState('');
+  const [agentPreview, setAgentPreview] = useState<AgentCheckoutPreview | null>(null), [agentPreviewLoading, setAgentPreviewLoading] = useState(false), [agentPreviewError, setAgentPreviewError] = useState(''), [agentPreviewAttempt, setAgentPreviewAttempt] = useState(0);
+  const [savedPurchase, setSavedPurchase] = useState<PurchaseDetails | null>(null);
+  const purchaseDetails = useRef<PurchaseDetails | null>(null), orderRecord = useRef<Order | null>(null);
+  const agentIntent = agentEntry && 'intent' in agentEntry ? agentEntry.intent : null;
+  const agentMode = !!agentEntry || !!savedPurchase?.agentCheckout || !!order?.agentCheckout;
+  const agentQuote = savedPurchase?.agentQuote ?? (agentIntent?.id === agentPreview?.checkout.id ? agentPreview?.checkout.quote : null);
+  const agentReady = !!agentIntent && !!agentPreview?.available && agentPreview.checkout.status === 'unclaimed' && agentPreview.checkout.id === agentIntent.id && Date.parse(agentPreview.checkout.expiresAt) > now;
+
   const [stripePayment,setStripePayment]=useState<StripePayment|null>(null);
   const [payerMsisdn, setPayerMsisdn] = useState(''), [ecocashPayment, setEcocashPayment] = useState<EcoCashPayment | null>(null);
   const [invoiceDelivery, setInvoiceDelivery] = useState<InvoiceDelivery>(() => defaultInvoiceDelivery(capabilities));
@@ -80,6 +90,62 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   function selectTab(next: CustomerTab, selection = bundleId) { setTab(next); onNavigate?.(next, selection); }
   function buyData() { if (onBuyData) onBuyData(); else selectTab(capabilities.staffSales && capabilities.receiptPairing ? 'receipt' : 'purchase'); }
   useEffect(() => {
+    const incoming = () => {
+      const next = readAgentCheckout(), saved = purchaseDetails.current;
+      if (next && (saved || orderRecord.current || referencePending) && (!('intent' in next) || !sameAgentCheckout(next.intent, saved?.agentCheckout))) {
+        clearAgentCheckout();
+        setMessage('Your earlier purchase is still saved. Check its verified status before opening another agent checkout.');
+        return;
+      }
+      setAgentEntry(next);
+      if (next) { setTab('purchase'); onNavigate?.('purchase'); }
+    };
+    addEventListener(agentCheckoutChanged, incoming);
+    return () => removeEventListener(agentCheckoutChanged, incoming);
+  }, [referencePending, onNavigate]);
+  useEffect(() => {
+    if (loading || !owner || !agentEntry || !('intent' in agentEntry) || checkoutPending || order) return;
+    if (agentEntry.ownerId === owner) return;
+    try { bindAgentCheckout(agentEntry.intent, owner); }
+    catch { clearAgentCheckout(); setAgentEntry({ error: 'agent_checkout_owner_changed' }); }
+  }, [loading, owner, agentEntry, checkoutPending, order?.id]);
+  useEffect(() => {
+    if (!agentIntent || loading || checkoutPending || order || referencePending) { setAgentPreview(null); setAgentPreviewLoading(false); return; }
+    const controller = new AbortController(), revision = generation.current;
+    setAgentPreview(null); setAgentPreviewLoading(true); setAgentPreviewError(''); setAgreed(false);
+    api<AgentCheckoutPreview>('/api/agent-checkouts/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(agentIntent), signal: controller.signal }).then(result => {
+      if (!validAgentPreview(result, agentIntent)) throw Error('invalid_agent_preview');
+      if (!controller.signal.aborted && isCurrent(revision)) {
+        setAgentPreview(result); setBundleId(result.checkout.quote.bundleId); setSiteId(result.checkout.quote.siteId);
+        restoredMethod.current = 'STRIPE_CARD'; setMethodCode('STRIPE_CARD');
+      }
+    }).catch(error => { if (!controller.signal.aborted && isCurrent(revision)) setAgentPreviewError(messageFor(error, 'This agent checkout could not be verified. Retry the offer check before preparing payment.')); })
+      .finally(() => { if (!controller.signal.aborted && isCurrent(revision)) setAgentPreviewLoading(false); });
+    return () => controller.abort();
+  }, [agentIntent?.id, agentIntent?.code, loading, checkoutPending, order?.id, referencePending, agentPreviewAttempt, owner]);
+  function openAgentLink(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy || purchaseDetails.current || orderRecord.current || referencePending) { setMessage('Your earlier purchase is still saved. Check its verified status before opening another agent checkout.'); return; }
+    const intent = parseAgentCheckout(agentLink);
+    setAgentLink(''); setAgreed(false);
+    if (!intent) { setAgentEntry({ error: 'invalid_agent_checkout' }); return; }
+    setAgentEntry(rememberAgentCheckout(intent)); selectTab('purchase');
+  }
+  function adoptPurchase(details: PurchaseDetails) {
+    if (details.agentCheckout && (!validAgentCheckout(details.agentCheckout) || !validAgentQuote(details.agentQuote) || details.agentQuote.bundleId !== details.bundleId || details.agentQuote.siteId !== details.siteId || details.methodCode !== 'STRIPE_CARD')) throw new ApiError(409, 'agent_checkout_source_mismatch');
+    purchaseDetails.current = details; setSavedPurchase(details);
+    const incoming = readAgentCheckout();
+    if (incoming && (!('intent' in incoming) || !sameAgentCheckout(incoming.intent, details.agentCheckout))) clearAgentCheckout();
+  }
+  function verifyOrderSource(value: Order, details: PurchaseDetails) {
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value.id) || (orderRecord.current && value.id !== orderRecord.current.id) || !matchingAgentSource(value.agentCheckout, details.agentCheckout, details.siteId)
+      || (details.agentCheckout && (!details.agentQuote || value.bundle_id !== details.bundleId || value.price_minor !== details.agentQuote.priceMinor || value.currency !== details.agentQuote.currency))) throw new ApiError(409, 'agent_checkout_source_mismatch');
+  }
+  function clearAgentPurchase() {
+    purchaseDetails.current = null; setSavedPurchase(null); clearAgentCheckout(); setAgentEntry(null); setAgentPreview(null); setAgentLink('');
+  }
+
+  useEffect(() => {
     if (previousInitialTab.current !== initialTab) { previousInitialTab.current = initialTab; setTab(initialTab); heading.current?.focus(); }
   }, [initialTab]);
   useEffect(() => {
@@ -88,6 +154,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     previousBundle.current = nextBundleId;
     if (referencePending) { selectTab('receipt'); setMessage('Your cash reference is still saved. Cancel it or check its receipt before choosing another bundle.'); return; }
     if (order || checkoutPending) { selectTab('purchase'); setMessage('Your earlier checkout is still saved. Check its verified status before choosing a different bundle.'); return; }
+    if (agentEntry) { selectTab('purchase'); setMessage('The agent checkout fixes this bundle and location. Remove the agent link before choosing another offer.'); return; }
     // Explicit checkout/receipt routes own the screen; a changed ID only updates selection.
     setBundleId(nextBundleId);
   }, [selectedBundle?.id, requestedBundleId]);
@@ -102,6 +169,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   function invalidateAccount(expectedOwner?: string) {
     if (expectedOwner && ownerRef.current !== expectedOwner) return;
     onSessionStatus('signed-out');
+    orderRecord.current = null; clearAgentPurchase();
     ++generation.current; ownerRef.current = null; lastUsage.current = null; invoiceChoiceExplicit.current = false; clearSessionSecrets();
     if (live.current) { setOwner(null); setAccess([]); setBundleListUnavailable(false); setNextOffset(null); setReceipt(null); setVoucherCode(''); setPairing(null); setPairingState(''); setReferencePending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setPayerMsisdn(''); setEcocashPayment(null); setCheckoutPending(false); setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setRecoveryReminder(false); setAgreed(false); setBusy(false); setLoading(false); setMessage('Your customer session changed or expired. Sign in or recover your account to check its balance again.'); }
   }
@@ -157,7 +225,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
           } catch { /* Saved purchases remain available from their usual screens. */ }
           return;
         }
-        try { const saved = sessionStorage.getItem(`pamofi.operation:customer:${id}:purchase-details`); if (saved) { const draft = JSON.parse(JSON.parse(saved).payload) as PurchaseDetails; invoiceChoiceExplicit.current = true; setInvoiceDelivery(draft.invoiceDelivery ?? { channel: 'download' }); restoredMethod.current = draft.methodCode; setBundleId(draft.bundleId); setSiteId(draft.siteId); setMethodCode(draft.methodCode); setCheckoutPending(true); selectTab('purchase', draft.bundleId); setMessage('Your unfinished checkout details were restored. Safely retry or check its verified status before starting another purchase.'); void restoreSavedOrder(id, revision, draft.bundleId).catch(() => { if (isCurrent(revision)) setMessage('Your checkout is still saved. Its order could not be loaded. Retry the saved-order check before starting another payment.'); }); } } catch { /* Storage is required and checked before a new checkout request. */ }
+        try { const saved = sessionStorage.getItem(`pamofi.operation:customer:${id}:purchase-details`); if (saved) { setCheckoutPending(true); const draft = JSON.parse(JSON.parse(saved).payload) as PurchaseDetails; adoptPurchase(draft); invoiceChoiceExplicit.current = true; setInvoiceDelivery(draft.invoiceDelivery ?? { channel: 'download' }); restoredMethod.current = draft.methodCode; setBundleId(draft.bundleId); setSiteId(draft.siteId); setMethodCode(draft.methodCode); setCheckoutPending(true); selectTab('purchase', draft.bundleId); setMessage('Your unfinished checkout details were restored. Safely retry or check its verified status before starting another purchase.'); void restoreSavedOrder(id, revision, draft.bundleId).catch(() => { if (isCurrent(revision)) setMessage('Your checkout is still saved. Its order could not be loaded. Retry the saved-order check before starting another payment.'); }); } } catch { /* Storage is required and checked before a new checkout request. */ }
         const savedReference = sessionStorage.getItem(`pamofi.operation:customer:${id}:receipt-pairing`);
         if (savedReference && agentPurchaseAvailable) { const draft = JSON.parse(JSON.parse(savedReference).payload) as { bundleId: string; siteId: string }; if (draft.bundleId && draft.siteId) { setReferencePending(true); setBundleId(draft.bundleId); setSiteId(draft.siteId); await createReference(id, draft, revision); } else { finishMutation(`customer:${id}`, 'receipt-pairing'); } }
         let paidId: string | null = null;
@@ -209,9 +277,9 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   useEffect(() => {
     if (!capabilities.paymentCheckout || !siteId || !bundleId) { setMethods([]); return; }
     const controller = new AbortController(); setMethodsLoading(true); setMethods([]); setMethodCode('');
-    api<{ enabled: boolean; methods: PaymentMethod[] }>(`/api/payments/methods?siteId=${encodeURIComponent(siteId)}&bundleId=${encodeURIComponent(bundleId)}`, { signal: controller.signal }).then(result => { if (!controller.signal.aborted) { setMethods(result.enabled ? result.methods : []); setMethodCode(result.enabled ? restoredMethod.current || result.methods[0]?.code || '' : ''); } }).catch(error => { if (!controller.signal.aborted) setMessage(messageFor(error)); }).finally(() => { if (!controller.signal.aborted) setMethodsLoading(false); });
+    api<{ enabled: boolean; methods: PaymentMethod[] }>(`/api/payments/methods?siteId=${encodeURIComponent(siteId)}&bundleId=${encodeURIComponent(bundleId)}`, { signal: controller.signal }).then(result => { if (!controller.signal.aborted) { const offered = result.enabled ? result.methods.filter(item => !agentMode || item.code === 'STRIPE_CARD') : []; setMethods(offered); setMethodCode(result.enabled ? restoredMethod.current || offered[0]?.code || '' : ''); } }).catch(error => { if (!controller.signal.aborted) setMessage(messageFor(error)); }).finally(() => { if (!controller.signal.aborted) setMethodsLoading(false); });
     return () => controller.abort();
-  }, [siteId, bundleId, capabilities.paymentCheckout]);
+  }, [siteId, bundleId, capabilities.paymentCheckout, agentMode]);
   useEffect(() => {
     if (!pairing || pairingState !== 'pending' || polling.current || document.hidden) return;
     polling.current = true; const revision = generation.current, referenceVersion = pairingRevision.current;
@@ -331,7 +399,9 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     try {
       if (!raw || !details) throw Error('saved_order_reference_missing');
       const saved = JSON.parse(raw) as { key: string; payload: string };
-      const payload = JSON.parse(saved.payload) as { bundleId: string; mode: string };
+      const payload = JSON.parse(saved.payload) as { bundleId: string; mode: string; agentCheckout?: AgentCheckoutIntent };
+      const purchase = JSON.parse(JSON.parse(details).payload) as PurchaseDetails;
+      if (!sameAgentCheckout(payload.agentCheckout, purchase.agentCheckout)) throw new ApiError(409, 'agent_checkout_source_mismatch');
       if (!/^[A-Za-z0-9_-]{16,128}$/.test(saved.key) || payload.bundleId !== originalBundle || payload.mode !== 'checkout') throw Error('invalid_saved_order');
       const result = await api<{ customerId: string; lookupKey?: string; orders: (Order & { purchase_mode?: string })[] }>(`/api/orders?requestKey=${encodeURIComponent(saved.key)}`);
       // A slower lookup cannot replace a resolved or newer purchase, or overwrite
@@ -343,6 +413,7 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       const found = result.orders[0];
       if (!/^[0-9a-f-]{36}$/i.test(found.id) || found.bundle_id !== originalBundle || found.purchase_mode !== 'checkout'
         || !Number.isSafeInteger(found.price_minor) || found.price_minor < 1 || !/^[A-Z]{3}$/.test(found.currency) || !Number.isFinite(Date.parse(found.quote_expires_at))) throw Error('invalid_saved_order');
+      verifyOrderSource(found, purchase); adoptPurchase(purchase); orderRecord.current = found;
       setOrder(found); setMessage('Your saved order was found. Check its verified payment status before paying again.');
     } catch (error) { if (sameIntent()) throw error; }
   }
@@ -357,10 +428,13 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     if (!orderId) return; const revision = generation.current; await identity();
     const result = await api<PaymentStatus>(`/api/orders/${orderId}/status`);
     if (isCurrent(revision)) {
-      setOrder(result.order); setPayment(result);
+      const original = orderRecord.current;
+      if (!original || result.order.id !== original.id || result.order.id !== orderId || result.order.bundle_id !== original.bundle_id || result.order.price_minor !== original.price_minor || result.order.currency !== original.currency
+        || !sameAgentSource(result.order.agentCheckout, original.agentCheckout)) throw new ApiError(409, 'agent_checkout_source_mismatch');
+      orderRecord.current = result.order; setOrder(result.order); setPayment(result);
       if (result.fulfillmentState === 'fulfilled' && result.entitlementId) setRecoveryReminder(true);
       const settled = result.safeToRequote === true || ['fulfilled', 'reversed'].includes(result.fulfillmentState) || (result.fulfillmentState === 'unconfirmed' && result.attempts.length > 0 && result.attempts.every(attempt => ['failed', 'reversed'].includes(attempt.state)));
-      if (settled && ownerRef.current) { finishMutation(`customer:${ownerRef.current}`, `order:${result.order.bundle_id}`); finishMutation(`customer:${ownerRef.current}`, `checkout:${result.order.id}`); finishMutation(`customer:${ownerRef.current}`, 'purchase-details'); setCheckoutPending(false); setRedirectUrl(''); setStripePayment(null); setEcocashPayment(null); }
+      if (settled && ownerRef.current) { clearAgentPurchase(); finishMutation(`customer:${ownerRef.current}`, `order:${result.order.bundle_id}`); finishMutation(`customer:${ownerRef.current}`, `checkout:${result.order.id}`); finishMutation(`customer:${ownerRef.current}`, 'purchase-details'); setCheckoutPending(false); setRedirectUrl(''); setStripePayment(null); setEcocashPayment(null); }
       if (result.entitlementId || result.fulfillmentState === 'reversed' || result.fulfillmentState === 'pending_review') { setRedirectUrl(''); setStripePayment(null); setEcocashPayment(null); await refreshAccess(); await usage.refresh(); }
     }
   }
@@ -373,12 +447,12 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       if (result.orderId !== order.id || result.state !== 'expired_unused' || result.safeToRequote !== true) throw Error('unverified_quote_expiry');
       if (!isCurrent(revision) || ownerRef.current !== id) return;
       finishMutation(`customer:${id}`, `order:${order.bundle_id}`); finishMutation(`customer:${id}`, `checkout:${order.id}`); finishMutation(`customer:${id}`, 'purchase-details');
-      if (isCurrent(revision)) { setCheckoutPending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setAgreed(false); restoredMethod.current = ''; setMessage('The service closed the expired unused quote and verified that no payment attempt exists. Review the current terms before preparing a fresh quote.'); }
+      if (isCurrent(revision)) { orderRecord.current = null; clearAgentPurchase(); setCheckoutPending(false); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setAgreed(false); restoredMethod.current = ''; setMessage('The service closed the expired unused quote and verified that no payment attempt exists. Review the current terms before preparing a fresh quote.'); }
     } catch (error) { if (isCurrent(revision)) setMessage(messageFor(error, 'Quote closure could not be verified. The original purchase details are preserved; retry this same closure or check payment status.')); }
     finally { if (isCurrent(revision)) setBusy(false); }
   }
   async function checkout(event: React.FormEvent) {
-    event.preventDefault(); if (busy || (!order && !checkoutPending && (catalogueLoading || catalogueError)) || !capabilities.paymentCheckout || !agreed || !bundleId || !methodCode) return;
+    event.preventDefault(); if (busy || loading || (!order && !checkoutPending && (catalogueLoading || catalogueError || (agentMode && !agentReady))) || !capabilities.paymentCheckout || !agreed || !bundleId || !methodCode) return;
     if (!order && !checkoutPending && capabilities.invoices) {
       const error = invoiceDeliveryError(invoiceDelivery);
       if (error) { setMessage(error); return; }
@@ -391,14 +465,20 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
       // Restore the complete original request, including an omitted legacy invoice
       // choice. Current capabilities must never change an unresolved retry body.
       const savedDetails = sessionStorage.getItem(`pamofi.operation:${purchaseOwner}:purchase-details`);
-      const details: PurchaseDetails = savedDetails ? JSON.parse(JSON.parse(savedDetails).payload) : { bundleId, siteId, methodCode, ...(methodCode === 'ECOCASH' ? { payerMsisdn: payerMsisdn.replace(/[\s-]/g, '') } : {}), ...(capabilities.invoices ? { invoiceDelivery: invoiceDeliveryPayload(invoiceDelivery) } : {}) };
+      if (!savedDetails && agentMode) {
+        if (!agentIntent || !agentQuote || !agentReady || Date.parse(agentPreview!.checkout.expiresAt) <= Date.now() || methodCode !== 'STRIPE_CARD' || siteId !== agentQuote.siteId || bundleId !== agentQuote.bundleId) throw new ApiError(409, 'agent_checkout_unavailable');
+        try { bindAgentCheckout(agentIntent, id); } catch { throw new ApiError(409, 'agent_checkout_owner_changed'); }
+      }
+      const details: PurchaseDetails = savedDetails ? JSON.parse(JSON.parse(savedDetails).payload) : { bundleId, siteId, methodCode, ...(agentIntent && agentQuote ? { agentCheckout: agentIntent, agentQuote } : {}), ...(methodCode === 'ECOCASH' ? { payerMsisdn: payerMsisdn.replace(/[\s-]/g, '') } : {}), ...(capabilities.invoices ? { invoiceDelivery: invoiceDeliveryPayload(invoiceDelivery) } : {}) };
+      adoptPurchase(details);
       mutationIntent(purchaseOwner, 'purchase-details', details); setCheckoutPending(true); restoredMethod.current = details.methodCode;
       const savedOrder = sessionStorage.getItem(`pamofi.operation:${purchaseOwner}:order:${details.bundleId}`);
-      const payload = savedOrder ? JSON.parse(JSON.parse(savedOrder).payload) : { bundleId: details.bundleId, mode: 'checkout', ...(details.invoiceDelivery ? { invoiceDelivery: details.invoiceDelivery } : {}) };
+      const payload = savedOrder ? JSON.parse(JSON.parse(savedOrder).payload) : { bundleId: details.bundleId, mode: 'checkout', ...(details.agentCheckout ? { agentCheckout: details.agentCheckout } : {}), ...(details.invoiceDelivery ? { invoiceDelivery: details.invoiceDelivery } : {}) };
+      if (!sameAgentCheckout(payload.agentCheckout, details.agentCheckout)) throw new ApiError(409, 'agent_checkout_source_mismatch');
       const key = mutationIntent(purchaseOwner, `order:${details.bundleId}`, payload);
       const created = await api<{ order: Order }>('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(payload) });
       if (!isCurrent(revision)) return;
-      setOrder(created.order);
+      verifyOrderSource(created.order, details); orderRecord.current = created.order; setOrder(created.order);
       const checkoutPayload = { siteId: details.siteId, methodCode: details.methodCode, ...(details.payerMsisdn ? { payerMsisdn: details.payerMsisdn } : {}) }, checkoutKey = mutationIntent(purchaseOwner, `checkout:${created.order.id}`, checkoutPayload);
       const result = await api<{ attemptId: string; state: string; redirectUrl: string | null; simulation: boolean; stripe?: StripePayment | null; ecocash?: EcoCashPayment | null }>(`/api/orders/${created.order.id}/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': checkoutKey }, body: JSON.stringify(checkoutPayload) });
       if (result.redirectUrl) {
@@ -443,8 +523,8 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
   const paymentFailed = payment?.fulfillmentState === 'unconfirmed' && payment.attempts.length > 0 && payment.attempts.every(attempt => ['failed', 'reversed'].includes(attempt.state));
   const paymentLabel = payment?.safeToRequote === true ? 'Quote closed' : paymentVerified ? 'Bundle queued' : payment?.fulfillmentState === 'reversed' ? 'Payment reversed' : payment?.fulfillmentState === 'pending_review' ? 'Review in progress' : paymentFailed ? 'Payment failed' : 'Awaiting confirmation';
   const paymentSettled = !!payment && (payment.safeToRequote === true || ['fulfilled', 'reversed'].includes(payment.fulfillmentState) || (payment.fulfillmentState === 'unconfirmed' && payment.attempts.length > 0 && payment.attempts.every(attempt => ['failed', 'reversed'].includes(attempt.state))));
-  const product = products.find(item => item.id === bundleId), method = methods.find(item => item.code === methodCode);
-  const methodEligible = !!product && !!method && product.currency === method.currency && product.price_minor >= method.minMinor && product.price_minor <= method.maxMinor;
+  const product = agentQuote ? { id: agentQuote.bundleId, price_minor: agentQuote.priceMinor, currency: agentQuote.currency, byte_limit: agentQuote.byteLimit, validity_seconds: agentQuote.validitySeconds } : products.find(item => item.id === bundleId), method = methods.find(item => item.code === methodCode);
+  const methodEligible = (!agentMode || methodCode === 'STRIPE_CARD') && !!product && !!method && product.currency === method.currency && product.price_minor >= method.minMinor && product.price_minor <= method.maxMinor;
   function accessState(item: Entitlement) { if (item.revoked_at) return 'Reversed · unavailable'; if (BigInt(item.consumed_bytes) >= BigInt(item.byte_limit)) return 'Data used up'; if (!item.activated_at) return Date.parse(item.start_by) <= now ? 'Start deadline passed' : 'Queued · not connected'; return Date.parse(item.activated_at) + item.validity_seconds * 1000 <= now ? 'Validity ended' : 'Activated · check hotspot connection below'; }
   const titles: Record<CustomerTab, string> = { access: 'Your internet', wifi: 'My WiFi', history: 'Your activity', voucher: capabilities.vouchers ? 'Redeem a voucher' : 'Vouchers paused', receipt: agentPurchaseAvailable ? 'Buy with an agent' : 'Private receipts', purchase: 'Checkout', recovery: 'Your account' };
   const subtitles: Record<CustomerTab, string> = { access: 'More from every connection.', wifi: 'Your hotspot, your devices, your connection.', history: 'Keep track of your bundles and recent receipts.', voucher: capabilities.vouchers ? 'A code away from your next connection.' : 'Keep your code to redeem when service resumes.', receipt: agentPurchaseAvailable ? 'Pay in cash. Get your data privately.' : 'Review receipts from earlier purchases.', purchase: 'Your bundle. Your preferred way to pay.', recovery: '' };
@@ -543,21 +623,41 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
     </section>{agentPurchaseAvailable && <aside className="workspace-card customer-order-summary"><span className="customer-record-icon"><CustomerGlyph name="wifi" /></span><div className="eyebrow">YOUR NEXT BUNDLE</div>{product ? <><h3>{planName(product.id)}</h3><strong className="customer-summary-data">{Number(product.byte_limit) / 1e9}<small>GB</small></strong><p>{bundleDuration(product.validity_seconds)} after connection</p><div className="customer-summary-price"><span>Cash price</span><strong>{money(product.price_minor, product.currency)}</strong></div><small>Ask the agent for this published bundle. Check the issued receipt before redeeming.</small></> : <><h3>A little more online.</h3><p>Choose your bundle with the agent and check its price before you pay.</p>{onBuyData && <button className="secondary" onClick={onBuyData}>Explore bundles</button>}</>}<div className="customer-private-note"><CustomerGlyph name="shield" /><span>Your bundle time starts when you first connect.</span></div></aside>}</div>}
 
     {tab === 'purchase' && <section className="workspace-card customer-payment-card">
-      {capabilities.staffSales && !(agentPurchaseAvailable && capabilities.paymentCheckout) && <div className="cash-path"><span className="customer-record-icon"><CustomerGlyph name="receipt" /></span><h3>Buy from an authorized agent</h3><ol><li>Choose your bundle and confirm its cash price with the agent.</li><li>Show your private pairing code, then pay the agreed cash amount.</li><li>Redeem the voucher in your receipt to add the queued data.</li></ol>{capabilities.receiptPairing && <button className="primary" onClick={() => selectTab('receipt')}>Get a private agent receipt</button>}<p>Time starts after a successful hotspot connection. A cash receipt alone does not connect your device.</p></div>}
+      <details className="notice" open={!!agentEntry && 'error' in agentEntry} hidden={!!order || checkoutPending || (!!agentEntry && 'intent' in agentEntry)}>
+        <summary>Have an agent checkout link?</summary>
+        <form className="form-grid" onSubmit={openAgentLink}>
+          <label>Paste agent checkout link<input type="text" autoComplete="off" spellCheck={false} maxLength={256} value={agentLink} onChange={event => setAgentLink(event.target.value)} disabled={busy || !!order || checkoutPending || referencePending} /></label>
+          <button className="secondary" disabled={busy || !agentLink.trim() || !!order || checkoutPending || referencePending}>Review agent checkout</button>
+        </form>
+        <p>Your agent chooses the bundle and location. You pay privately using your own account.</p>
+      </details>
+      {agentEntry && !order && !checkoutPending && <div className="notice customer-agent-offer" role="status">
+        <h4>Agent checkout</h4>
+        {'error' in agentEntry ? <p>{messageFor(new ApiError(400, agentEntry.error))}</p> : agentPreviewLoading ? <p>Checking your agent’s offer…</p> : agentPreviewError ? <p>{agentPreviewError}</p> : agentPreview ? <>
+          <p><strong>{agentPreview.checkout.quote.siteName}</strong> · {planName(agentPreview.checkout.quote.bundleId)}</p>
+          <p>{money(agentPreview.checkout.quote.priceMinor, agentPreview.checkout.quote.currency)} · {Number(agentPreview.checkout.quote.byteLimit) / 1e9} GB · {bundleDuration(agentPreview.checkout.quote.validitySeconds)}</p>
+          <p>{agentPreview.checkout.simulation ? 'Simulation offer. No real payment is taken. ' : ''}Expires {localDate(agentPreview.checkout.expiresAt)}.</p>
+          {!agentReady && <p>{agentPreview.checkout.status === 'claimed' ? 'This agent checkout is already in use. Resume the saved checkout in the account and browser that started it.' : agentPreview.checkout.status === 'expired' || Date.parse(agentPreview.checkout.expiresAt) <= now ? 'This agent checkout has expired. Ask your agent for a new link.' : 'This offer is unavailable for a new payment. Ask your agent to check its status.'}</p>}
+        </> : null}
+        <div className="purchase-actions">{'intent' in agentEntry && <button type="button" className="secondary" disabled={busy || agentPreviewLoading} onClick={() => setAgentPreviewAttempt(value => value + 1)}>Retry offer check</button>}
+        <button type="button" className="text-button" disabled={busy} onClick={() => { clearAgentCheckout(); setAgentEntry(null); setAgentPreview(null); setAgreed(false); }}>Remove agent link</button></div>
+      </div>}
+
+      {!agentMode && capabilities.staffSales && !(agentPurchaseAvailable && capabilities.paymentCheckout) && <div className="cash-path"><span className="customer-record-icon"><CustomerGlyph name="receipt" /></span><h3>Buy from an authorized agent</h3><ol><li>Choose your bundle and confirm its cash price with the agent.</li><li>Show your private pairing code, then pay the agreed cash amount.</li><li>Redeem the voucher in your receipt to add the queued data.</li></ol>{capabilities.receiptPairing && <button className="primary" onClick={() => selectTab('receipt')}>Get a private agent receipt</button>}<p>Time starts after a successful hotspot connection. A cash receipt alone does not connect your device.</p></div>}
       <div className="eyebrow">MORE WAYS TO CONNECT</div><h3>{capabilities.paymentMode === 'mock' ? 'Optional online payment simulation' : 'Online payment options'}</h3>
       {!capabilities.paymentCheckout ? <><p className="notice">Online checkout is not enabled here. Use a voucher from an authorized agent when available.</p><div className="customer-provider-list" aria-label="Payment integrations awaiting activation"><span>EcoCash checkout<small>{capabilities.ecocashCheckout ? 'Unavailable here' : 'Pending'}</small></span><span>EcoCash Pay Merchant<small>Pending</small></span><span>InnBucks<small>Pending</small></span><span>Bank & card<small>Pending</small></span></div></> : <>
-        <form className="form-grid" onSubmit={checkout}><fieldset disabled={busy || !!order || checkoutPending || catalogueLoading || catalogueError}><label>Purchase site<select required value={siteId} onChange={event => setSiteId(event.target.value)}><option value="">Choose a site</option>{sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><label>Bundle<select required value={bundleId} onChange={event => { setBundleId(event.target.value); onNavigate?.('purchase', event.target.value); }}><option value="">Choose a bundle</option>{products.map(item => <option key={item.id} value={item.id}>{planName(item.id)} · {money(item.price_minor, item.currency)}</option>)}</select></label>
+        <form className="form-grid" onSubmit={checkout}><fieldset disabled={busy || !!order || checkoutPending || catalogueLoading || catalogueError}><label>Purchase site<select required disabled={agentMode} value={siteId} onChange={event => setSiteId(event.target.value)}><option value="">Choose a site</option>{agentQuote && !sites.some(site => site.id === agentQuote.siteId) && <option value={agentQuote.siteId}>{agentQuote.siteName}</option>}{sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><label>Bundle<select required disabled={agentMode} value={bundleId} onChange={event => { setBundleId(event.target.value); onNavigate?.('purchase', event.target.value); }}><option value="">Choose a bundle</option>{agentQuote && !products.some(item => item.id === agentQuote.bundleId) && <option value={agentQuote.bundleId}>{planName(agentQuote.bundleId)}</option>}{products.map(item => <option key={item.id} value={item.id}>{planName(item.id)} · {money(item.price_minor, item.currency)}</option>)}</select></label>
           {product && <div className="summary-tile"><strong>{money(product.price_minor, product.currency)}</strong><span>{Number(product.byte_limit) / 1e9} GB · {bundleDuration(product.validity_seconds)} · One active connection</span></div>}
           <label>Payment method<select required disabled={methodsLoading} value={methodCode} onChange={event => setMethodCode(event.target.value)}><option value="">{methodsLoading ? 'Checking payment methods…' : 'Choose an enabled method'}</option>{methods.map(item => <option key={item.code} value={item.code}>{item.code==='STRIPE_CARD'?'Credit or debit card':item.code==='ECOCASH'?'EcoCash':item.name}</option>)}</select></label>{method && <small>Provider limits: {money(method.minMinor, method.currency)} to {money(method.maxMinor, method.currency)}.</small>}
           {methodCode === 'ECOCASH' && <><label>EcoCash number<input type="tel" inputMode="tel" autoComplete="tel" required maxLength={16} value={payerMsisdn} onChange={event => setPayerMsisdn(event.target.value)} aria-describedby="ecocash-pin-note" placeholder="077 123 4567" /></label><small id="ecocash-pin-note">PasoFi never asks for your EcoCash PIN. You approve the charge on your own phone.</small></>}
           {capabilities.invoices && <InvoiceDeliveryFields value={invoiceDelivery} onChange={value => { invoiceChoiceExplicit.current = true; setInvoiceDelivery(value); setAgreed(false); }} disabled={busy || !!order || checkoutPending} emailEnabled={capabilities.invoiceEmail} smsEnabled={capabilities.invoiceSms} />}
-        </fieldset><label className="check-label"><input type="checkbox" required checked={agreed} onChange={event => setAgreed(event.target.checked)} disabled={busy} />I have reviewed the price, allowance, and validity. {capabilities.paymentMode === 'mock' ? 'This is a simulation.' : 'Payment confirmation does not mean I am connected.'}</label><button className="primary" disabled={busy || (!order && !checkoutPending && (catalogueLoading || catalogueError || !sites.some(site => site.id === siteId))) || !methodEligible || !agreed || (!!payment && (payment.fulfillmentState !== 'unconfirmed' || payment.safeToRequote === true))}>{order || checkoutPending ? 'Retry this checkout safely' : 'Prepare checkout'}</button></form>
+        </fieldset><label className="check-label"><input type="checkbox" required checked={agreed} onChange={event => setAgreed(event.target.checked)} disabled={busy} />I have reviewed the price, allowance, and validity. {capabilities.paymentMode === 'mock' ? 'This is a simulation.' : 'Payment confirmation does not mean I am connected.'}</label><button className="primary" disabled={busy || loading || (!order && !checkoutPending && (catalogueLoading || catalogueError || !sites.some(site => site.id === siteId) || (agentMode && !agentReady))) || !methodEligible || !agreed || (!!payment && (payment.fulfillmentState !== 'unconfirmed' || payment.safeToRequote === true))}>{order || checkoutPending ? 'Retry this checkout safely' : 'Prepare checkout'}</button></form>
         {!methodsLoading && methods.length === 0 && <p>No configured payment method is available for this bundle and site.</p>}
         {redirectUrl && <a className="primary button-link" href={redirectUrl} target="_blank" rel="noopener noreferrer">Continue to payment provider ↗</a>}
         {ecocashPayment?.awaitingApproval === true && order && <div className="notice customer-ecocash-approval" role="status"><h4>Approve on your phone</h4><p>EcoCash sent a payment prompt to the number ending {ecocashPayment.payerHint}. Approve it there, then check the verified status. Do not pay a second time while this is pending.</p></div>}
         {stripePayment && owner && order && <StripeCheckout key={order.id} payment={stripePayment} owner={owner} amount={money(order.price_minor,order.currency)} disabled={busy} verify={identity} onBusy={value=>{if(ownerRef.current===owner)setBusy(value);}} onSubmitted={async()=>{if(ownerRef.current!==owner)return;setStripePayment(null);setMessage('Payment submitted. Waiting for verified confirmation; please do not start another purchase.');await checkPayment();}}/> }
       </>}
-      <section className="customer-ecocash-journeys" aria-labelledby="ecocash-journeys-heading">
+      {!agentMode && <section className="customer-ecocash-journeys" aria-labelledby="ecocash-journeys-heading">
         <div className="eyebrow">YOUR ECOCASH CHOICE</div>
         <h3 id="ecocash-journeys-heading">Two ways to pay with EcoCash</h3>
         <div className="customer-provider-list" aria-label="EcoCash payment journeys awaiting merchant qualification">
@@ -565,14 +665,14 @@ export default function CustomerAccess({ close, capabilities, selectedBundle = n
           <span><strong>Pay Merchant via EcoCash</strong><small>Use EcoCash app or USSD to pay PasoFi's approved merchant code; a verified payment will trigger a voucher SMS to the payer. Pending merchant notification feed; no payment number is shown yet.</small></span>
         </div>
         <p className="notice" role="status">{capabilities.ecocashCheckout ? 'EcoCash Pay Merchant is not active yet. ' : 'EcoCash payments are not active. '}Do not send money until a verified PasoFi merchant code and live availability are displayed. Both journeys will use the same published bundle catalogue and a one-time voucher valid at participating PasoFi hotspots.</p>
-      </section>
+      </section>}
       {checkoutPending && !order && <div className="notice customer-saved-order"><h4>Check your saved purchase</h4><p>Its status can be checked even if the bundle or payment method is no longer offered. This check does not start a payment.</p><button className="secondary" disabled={busy} onClick={restoreOrder}>Check saved checkout status</button></div>}
-        {order && <div className={`payment-status customer-payment-status ${paymentVerified ? 'is-confirmed' : payment?.fulfillmentState === 'reversed' || paymentFailed ? 'is-reversed' : ''}`}><span className="customer-status-tag">{paymentLabel}</span><h4>Order {order.id.slice(0, 8)}</h4><p>{money(order.price_minor, order.currency)} · Quote expires {localDate(order.quote_expires_at)}</p><button className="secondary" disabled={busy} onClick={check}>Check verified payment status</button>
+        {order && <div className={`payment-status customer-payment-status ${paymentVerified ? 'is-confirmed' : payment?.fulfillmentState === 'reversed' || paymentFailed ? 'is-reversed' : ''}`}><span className="customer-status-tag">{paymentLabel}</span><h4>Order {order.id.slice(0, 8)}</h4>{order.agentCheckout && <p>Agent checkout · {order.agentCheckout.siteName}</p>}<p>{money(order.price_minor, order.currency)} · Quote expires {localDate(order.quote_expires_at)}</p><button className="secondary" disabled={busy} onClick={check}>Check verified payment status</button>
           {capabilities.paymentMode === 'mock' && <div className="purchase-actions"><button className="secondary" disabled={busy} onClick={() => mock('success')}>Simulate successful payment</button><button className="secondary" disabled={busy} onClick={() => mock('failed')}>Simulate failed payment</button></div>}
           {payment && <p role="status">{payment.safeToRequote === true ? 'Expired unused quote closed. No provider payment was initiated for this order.' : paymentVerified ? `${payment.simulation ? 'Simulated payment' : 'Payment'} verified. Your bundle is queued; internet connection is not yet confirmed.` : payment.fulfillmentState === 'reversed' ? 'Payment reversed. This purchase no longer provides usable access.' : payment.fulfillmentState === 'pending_review' ? 'Payment needs review. Do not pay again while the previous charge and accounted usage are being reconciled.' : `Payment not confirmed. ${payment.attempts.map(attempt => attempt.state.replace(/_/g, ' ')).join(', ') || 'Waiting for a verified provider result.'}`}</p>}
           {owner && capabilities.invoices && paymentVerified && <InvoiceDownload scope="customer" ownerKey={owner} verify={identity} orderId={order.id} disabled={busy} />}
           {(!payment || payment.fulfillmentState === 'unconfirmed') && payment?.safeToRequote !== true && <div className="quote-expiry"><p>If this quote expired before a payment was attempted, the service can close it safely. This does not cancel, reverse or restart an existing provider payment.</p><button className="secondary" disabled={busy} onClick={expireUnusedQuote}>Close an expired unused quote</button></div>}
-          {paymentSettled && <button className="secondary" disabled={busy} onClick={() => { setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setAgreed(false); restoredMethod.current = ''; invoiceChoiceExplicit.current = false; setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setMessage('Choose the terms for a new purchase.'); }}>{payment.safeToRequote === true ? 'Review a fresh quote' : 'Review another bundle'}</button>}
+          {paymentSettled && <button className="secondary" disabled={busy} onClick={() => { orderRecord.current = null; clearAgentPurchase(); setOrder(null); setPayment(null); setRedirectUrl(''); setStripePayment(null); setAgreed(false); restoredMethod.current = ''; invoiceChoiceExplicit.current = false; setInvoiceDelivery(defaultInvoiceDelivery(capabilities)); setMessage('Choose the terms for a new purchase.'); }}>{payment.safeToRequote === true ? 'Review a fresh quote' : 'Review another bundle'}</button>}
         </div>}
     </section>}
 
