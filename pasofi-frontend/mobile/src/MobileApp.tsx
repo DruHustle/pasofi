@@ -123,7 +123,7 @@ export default function MobileApp() {
 
       {tab === 'home' && <>
         <section className="mobile-hero" aria-labelledby="home-hero-heading">
-          <div className="mobile-hero-copy"><span className="mobile-eyebrow">A LITTLE MORE PASOFI</span><h1 id="home-hero-heading" tabIndex={-1}>Your internet.<br />Your everyday.</h1>
+          <div className="mobile-hero-copy"><span className="mobile-eyebrow">More connection. More possibilities.</span><h1 id="home-hero-heading" tabIndex={-1}>Your internet.<br />Your everyday.</h1>
             <button className="mobile-hero-button" onClick={() => choose('bundles')}>Browse bundles <Icon name="arrow" /></button></div>
           <div className="mobile-hero-art"><img src="/images/pasofi-community-hero.webp" alt="Three friends sharing a happy moment around a smartphone" width="1536" height="1024" /></div>
         </section>
