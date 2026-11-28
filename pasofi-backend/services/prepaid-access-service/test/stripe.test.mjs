@@ -52,6 +52,13 @@ test('Stripe configuration fails closed across environment, key mode, merchant a
    process.env[gate]='true';
   }
   assert.deepEqual(paymentConfiguration(false),{enabled:true,mode:'production'});
+  // A restricted live key is a drop-in replacement; test and claimable keys never enable live checkout.
+  process.env.STRIPE_SECRET_KEY=synthetic('rk','live');
+  assert.deepEqual(paymentConfiguration(false),{enabled:true,mode:'production'},'restricted live key enables qualified live checkout');
+  for(const key of [synthetic('rkcs','live'),synthetic('rk','test'),synthetic('sk','test'),synthetic('pk','live')]){
+   process.env.STRIPE_SECRET_KEY=key;
+   assert.equal(stripeConfiguration(false),null,`${key.split('_').slice(0,2).join('_')} cannot be a live secret key`);
+  }
  }finally{for(const [key,value]of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}}
 });
 
