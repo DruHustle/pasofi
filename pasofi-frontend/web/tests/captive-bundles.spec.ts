@@ -138,7 +138,7 @@ test.describe('narrow hotspot catalogue', () => {
       capabilities.paymentCheckout = !cash;
       capabilities.paymentMode = cash ? 'disabled' : 'sandbox';
       await pause.click();
-      const action = catalogue.getByRole('button', { name: cash ? 'Buy mini-v1 from an agent' : 'Buy mini-v1 online' });
+      const action = catalogue.getByRole('button', { name: cash ? 'Buy mini from an agent' : 'Buy mini online' });
       await expect(action).toBeEnabled();
       await expect(rows.getByRole('button')).toHaveCount(5);
       await expectAllRowsInView();
@@ -164,7 +164,7 @@ test('wide hotspot screens retain the full comparison controls and existing avai
   await page.getByRole('button', { name: 'View bundles', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Find your fit.', exact: true })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Sort bundles', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'mini-v1 purchasing is not available' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'mini purchasing is not available' })).toBeDisabled();
 
   await page.goto(`${origin}/#home`);
   const photo = page.getByRole('img', { name: 'Three friends sharing a happy moment around a smartphone' });

@@ -15,6 +15,11 @@ function decrypt(row:{id:string;sale_id:string|null;ecocash_credit_id:string|nul
  const source=row.sale_id ?? `ecocash:${row.ecocash_credit_id}`;
  return unseal({keyId:row.key_id,iv:row.code_iv,cipher:row.code_cipher,tag:row.code_tag},keys,`${source}:${row.id}`);
 }
+/** Customer SMS text: the PasoFi brand and the published bundle name, never the versioned internal id. */
+export function voucherSmsMessage(bundleId:string,code:string,demo=false){
+ const name=bundleId.replace(/-v[0-9]+$/,'').replaceAll('-',' ').toUpperCase();
+ return `PasoFi ${demo?'demo ':''}${name} voucher: ${code}. Redeem on PasoFi Wi-Fi. Keep this code private.`;
+}
 function newCode(){return Array.from({length:16},()=>alphabet[randomInt(alphabet.length)]).join('');}
 function format(code:string){return code.match(/.{4}/g)!.join('-');}
 async function makeVoucher(client:PoolClient,source:{saleId:string}|{creditId:string},parentId:string|null,key:DeliveryKeys){
@@ -171,5 +176,5 @@ export async function readEcoCashDelivery(pool:Pool,creditId:string,keys:Deliver
  const to=unseal({keyId:row.phone_key_id,iv:row.phone_iv,cipher:row.phone_cipher,tag:row.phone_tag},keys,`ecocash:phone:${row.ecocash_credit_id}`);
  const code=format(decrypt(row,keys));
  return {deliveryReference:creditId,creditId,channel:'sms',to,from:process.env.SMS_SENDER??'PasoFi',
-   message:`PasoFi demo ${row.bundle_id} voucher: ${code}. Redeem on PasoFi Wi-Fi. Keep this code private.`,simulation:true};
+   message:voucherSmsMessage(row.bundle_id,code,true),simulation:true};
 }

@@ -114,3 +114,10 @@ export function cashListUrl(path: string, active: boolean, before: string | null
   if (before) query.set('before', before);
   return query.size ? `${path}?${query}` : path;
 }
+
+/** Bundle validity in words: "1 day", "3 days", "12 hours" — never fractional raw days. */
+export function bundleDuration(seconds: number) {
+  const unit = seconds >= 86400 ? 'day' : seconds >= 3600 ? 'hour' : 'minute';
+  const amount = seconds / (unit === 'day' ? 86400 : unit === 'hour' ? 3600 : 60);
+  return `${Number(amount.toFixed(2))} ${unit}${amount === 1 ? '' : 's'}`;
+}

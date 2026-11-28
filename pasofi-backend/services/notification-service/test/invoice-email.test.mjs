@@ -20,6 +20,8 @@ test('invoice email attaches the exact PDF, uses stable idempotency and awaits p
   assert.equal(sent.options.headers['idempotency-key'], `pasofi-invoice/${id}`);
   const payload = JSON.parse(sent.options.body);
   assert.deepEqual(payload.to, [input.to]);
+  assert.equal(payload.subject, 'PasoFi paid invoice PFI-000001');
+  assert.match(payload.text, /Your PasoFi paid invoice PFI-000001 is attached/);
   assert.deepEqual(Buffer.from(payload.attachments[0].content, 'base64'), input.pdf);
   assert.equal(payload.attachments[0].filename, input.filename);
   assert.equal(payload.attachments[0].path, undefined);

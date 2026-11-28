@@ -45,3 +45,13 @@ test('router forms allow both qualified PasoFi origins and exclude retired names
     assert.equal(source.match(/\bform-action ([^";]+)/)?.[1], "'self' " + loginOrigins.join(' '));
   }
 });
+
+test('fonts are emitted as files because no PasoFi CSP allows data: fonts', () => {
+  const policy = config.headers?.flatMap(h => h.headers || []).find(h => h.key === 'Content-Security-Policy')?.value ?? '';
+  assert.doesNotMatch(policy, /font-src[^;]*data:/, 'web CSP keeps fonts same-origin');
+  for (const path of ['../vite.config.ts', '../../mobile/vite.config.ts']) {
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+    // Vite inlines assets under 4 kB as data: URIs; a small font subset would be blocked.
+    assert.match(source, /assetsInlineLimit: \(file: string\) => \(\/\\\.\(\?:woff2\?\|ttf\|otf\)\$\/i\.test\(file\) \? false : undefined\)/, path);
+  }
+});
