@@ -84,7 +84,7 @@ test('dedicated Connect signs in directly from every entry and returns to the sa
   await page.getByRole('button', { name: 'Retry sign-in' }).click();
   await expect(page.getByRole('heading', { name: 'Connect to PasoFi' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Sign up' })).toHaveCount(0);
-  await expect(page.getByText('New to PasoFi? Choose Sign up on the next screen.', { exact: false })).toBeVisible();
+  await expect(page.getByText('New to PasoFi. Sign up.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'View bundles' })).toBeVisible();
   await expect(page.getByText('You appear to be offline.', { exact: false })).toHaveCount(0);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
