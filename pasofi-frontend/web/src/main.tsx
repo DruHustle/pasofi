@@ -242,5 +242,6 @@ function App() {
     </main>
   </div>;
 }
+document.documentElement.classList.toggle('pasofi-hotspot', hotspotPortal);
 resumeRegistration();
 createRoot(document.getElementById('root')!).render(<React.StrictMode><InvoiceLink/><App/></React.StrictMode>);

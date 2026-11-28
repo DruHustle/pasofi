@@ -97,7 +97,7 @@ test.describe('narrow hotspot catalogue', () => {
         await expect(row).toHaveAccessibleName(new RegExp(`^${plan.name}$`, 'i'));
         await expect(row.getByRole('heading')).toHaveText(`${plan.data}GB`);
         await expect(row.getByText(`${plan.days} days`, { exact: true })).toBeVisible();
-        await expect(row.getByText('USD', { exact: true })).toBeVisible();
+        await expect(row.locator('.pf-bundle-price')).toHaveText(plan.price);
       }
 
       const expectAllRowsInView = async () => {
@@ -156,6 +156,8 @@ test('wide hotspot screens retain the full comparison controls and existing avai
   const { mutations } = await fixture(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${origin}/connect`);
+  await expect(page.locator('html')).toHaveCSS('scrollbar-width', 'auto');
+  await expect(page.getByRole('article', { name: 'mini', exact: true }).locator('.pf-bundle-price')).toHaveText('$0.50');
   const voucher = page.getByRole('region', { name: 'Have a voucher?' });
   await expect(voucher.getByText('Voucher redemption is currently paused.')).toBeVisible();
   await expect(voucher.getByRole('button', { name: 'Redeem voucher' })).toHaveCount(0);
@@ -163,5 +165,15 @@ test('wide hotspot screens retain the full comparison controls and existing avai
   await expect(page.getByRole('heading', { name: 'Find your fit.', exact: true })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Sort bundles', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'mini-v1 purchasing is not available' })).toBeDisabled();
+
+  await page.goto(`${origin}/#home`);
+  const photo = page.getByRole('img', { name: 'Three friends sharing a happy moment around a smartphone' });
+  await expect(photo).toBeVisible();
+  await expect.poll(() => photo.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  const story = page.locator('.pasofi-home-guide + .pasofi-home-story');
+  await expect(story.getByRole('heading', { name: 'More from every connection.' })).toBeVisible();
+  const laptopPhoto = story.getByRole('img', { name: 'Two adults working together on a laptop at a shared table' });
+  await laptopPhoto.scrollIntoViewIfNeeded();
+  await expect.poll(() => laptopPhoto.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   expect(mutations).toEqual([]);
 });

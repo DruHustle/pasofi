@@ -36,8 +36,12 @@ for (const width of [320, 390, 768, 1280]) test(`photo-led Home stays compact, r
   await expect(page.getByRole('button', { name: 'See all bundles', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Help', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Sign up', exact: true })).toHaveCount(0);
-  await expect(page.locator('#home-study-heading, #home-account-heading')).toHaveCount(0);
-  await expect(page.getByAltText('Two adults working together on a laptop at a shared table')).toHaveCount(0);
+  const story = page.locator('.pasofi-home-guide + .pasofi-home-story');
+  await expect(story.getByRole('heading', { name: 'More from every connection.' })).toBeVisible();
+  const studyPhoto = story.getByAltText('Two adults working together on a laptop at a shared table');
+  await studyPhoto.scrollIntoViewIfNeeded();
+  await expect.poll(() => studyPhoto.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1536);
+  await expect(page.locator('#home-account-heading')).toHaveCount(0);
   if (width < 600) {
     const imageBox = await hero.boundingBox();
     expect(imageBox!.width).toBeGreaterThan(width - 60);
@@ -113,7 +117,7 @@ test('Home account shortcuts and connection guidance preserve guest privacy and 
   await expect(page.getByRole('heading', { name: 'Find your hotspot', exact: true })).toBeVisible();
   await page.locator('.pasofi-home-guide').getByRole('button', { name: 'View bundles', exact: true }).click(); await expect(page).toHaveURL(/#bundles$/);
   await page.goto('/connect'); await expect(page.getByRole('heading', { name: 'Connect to PasoFi', exact: true })).toBeVisible();
-  await expect(page.locator('.pasofi-home-hero, .pasofi-home-more')).toHaveCount(0);
+  await expect(page.locator('.pasofi-home-hero, .pasofi-home-story')).toHaveCount(0);
   const voucher = page.getByRole('region', { name: 'Have a voucher?' });
   await expect(voucher.getByText('Voucher redemption is currently paused.', { exact: true })).toBeVisible();
   await expect(voucher.getByRole('button', { name: 'Redeem voucher' })).toHaveCount(0);

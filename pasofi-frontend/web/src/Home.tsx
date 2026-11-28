@@ -48,6 +48,15 @@ export default function Home({ capabilities, children, browse, account, help }: 
       <li><span>03</span><div><h3>Make it your connection</h3><p>{capabilities?.vouchers ? 'Redeem your voucher and open My WiFi for the connection steps. Your account keeps track of usage.' : 'Open My WiFi to check connection options and account usage.'}</p><button className="pf-text-link" disabled={!capabilities} onClick={event => account('wifi', event.currentTarget)}>Open My WiFi <Icon name="arrow"/></button></div></li>
     </ol></details>
 
+    <section className="pasofi-home-story" aria-labelledby="home-study-heading">
+      <img src="/images/pasofi-study-together.webp" alt="Two adults working together on a laptop at a shared table" width={1536} height={1024} loading="lazy" decoding="async"/>
+      <div>
+        <h2 id="home-study-heading">More from every connection.</h2>
+        <p>Study together, keep work moving, or catch up with someone you love. Choose the bundle that fits your day.</p>
+        <button className="pf-text-link" onClick={event => browse(event.currentTarget)}>Compare bundles <Icon name="arrow"/></button>
+      </div>
+    </section>
+
     <dialog className="pasofi-map-dialog" ref={locationsDialog} aria-labelledby="pasofi-map-heading" onClose={closeLocations}>
       <header>
         <h2 id="pasofi-map-heading">Hotspot locations</h2>

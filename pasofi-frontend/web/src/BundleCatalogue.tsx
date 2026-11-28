@@ -59,12 +59,6 @@ function perGbMinor(bundle: Product) {
   const megabytes = Number(BigInt(bundle.byte_limit) / 1_000_000n);
   return megabytes > 0 ? bundle.price_minor * 1000 / megabytes : null;
 }
-function perGbLabel(bundle: Product) {
-  const minor = perGbMinor(bundle);
-  if (minor === null) return null;
-  const format = new Intl.NumberFormat('en-US', { style: 'currency', currency: bundle.currency });
-  return minor < 1 ? `under ${format.format(0.01)}/GB` : `${format.format(Math.round(minor) / 100)}/GB`;
-}
 /** The one bundle with the clearly lowest price per GB in its currency (needs 3+ to compare). */
 function bestValueIds(bundles: Product[]) {
   const ids = new Set<string>();
@@ -143,12 +137,12 @@ export default function BundleCatalogue({ bundles, demo, capabilities, checkingA
         const data = bundleData(bundle.byte_limit);
         const label = checkingAvailability ? `Checking ${bundle.id} purchase availability` : demo ? `Try ${bundle.id} demo bundle` : capabilities?.staffSales ? `Buy ${bundle.id} from an agent` : capabilities?.paymentCheckout ? `Buy ${bundle.id} online` : `${bundle.id} purchasing is not available`;
         const nameId = `bundle-name-${bundle.id}`;
-        const best = bestValue.has(bundle.id), perGb = perGbLabel(bundle);
+        const best = bestValue.has(bundle.id);
         return <article className="pf-bundle-card" key={bundle.id} aria-labelledby={nameId} data-best-value={best || undefined}>
           <div className="pf-bundle-top"><span className="pf-plan-name" id={nameId}>{bundle.id.replace(/-v[0-9]+$/, '').replaceAll('-', ' ')}</span>{best && <span className="pf-bundle-badge">Best value</span>}<Icon name="wifi"/></div>
           <h3>{data.amount}<span>{data.unit}</span></h3>
           <p className="pf-validity"><Icon name="clock"/>{bundleDuration(bundle.validity_seconds)}</p>
-          <div className="pf-bundle-price"><PriceParts minor={bundle.price_minor} currency={bundle.currency}/><span><abbr title={bundle.currency === 'USD' ? 'US dollars' : bundle.currency}>{bundle.currency}</abbr>{perGb && <span className="pf-per-gb"> · {perGb}</span>}</span></div>
+          <div className="pf-bundle-price"><PriceParts minor={bundle.price_minor} currency={bundle.currency}/></div>
           {(!narrowHotspotCatalogue || availableToBuy) && <button className="pf-button pf-button-primary" disabled={!availableToBuy} aria-label={label} onClick={event => choose(bundle, event.currentTarget)}>{checkingAvailability ? 'Checking…' : demo ? 'Try demo' : availableToBuy ? 'Buy' : capabilities === null ? 'Unavailable' : 'Paused'}<Icon name="arrow"/></button>}
         </article>;
       })}</div>}

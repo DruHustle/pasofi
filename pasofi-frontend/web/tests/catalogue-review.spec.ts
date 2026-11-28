@@ -66,7 +66,7 @@ test('customers can compare exact published prices, byte allowances and validity
   await expect(names(page)).toHaveText(['week']);
   await expect(count(page)).toHaveText('Showing 1 of 5 bundles');
   await expect(page.getByRole('button', { name: 'Buy week from an agent', exact: true })).toBeEnabled();
-  await expect(page.locator('.pf-bundle-card .pf-bundle-price strong')).toHaveText('$1.00');
+  await expect(page.locator('.pf-bundle-card .pf-bundle-price')).toHaveText('$1.00');
   expect(state.mutations).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -149,7 +149,7 @@ for (const width of [320, 390, 1280]) {
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     expect(await filters(page).evaluate(row => row.scrollWidth <= row.clientWidth && new Set([...row.children].map(chip => Math.round(chip.getBoundingClientRect().top))).size === 1), 'bundle filters stay on one line').toBe(true);
-    for (const selector of ['.pf-validity', '.pf-bundle-price > span', '.pf-bundle-terms p', '.pf-catalogue-caption']) {
+    for (const selector of ['.pf-validity', '.pf-bundle-price strong', '.pf-bundle-terms p', '.pf-catalogue-caption']) {
       expect(await page.locator(selector).first().evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(12);
     }
     await page.screenshot({ path: testInfo.outputPath(`catalogue-${width}.png`), fullPage: true });
