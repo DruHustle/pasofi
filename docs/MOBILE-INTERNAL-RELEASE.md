@@ -117,6 +117,42 @@ responses are never added to artifacts.
 
 ## Provider behavior and recovery
 
+### Optional PasoFi Apple Pay signing selection
+
+The iOS job reads the nonsecret protected environment variable
+`PASOFI_APPLE_PAY_MERCHANT_ID`. Leave it unset or empty for the existing card-only
+build with `App/PasoFiAssociatedDomains.entitlements`. To prepare an Apple Pay
+build, the only reviewed value is `merchant.com.onesa.pasofi`, under Apple team
+`YSD6XK5CLU`. The helper then selects the already committed
+`App/PasoFiStripe.entitlements` for the app target. Do not supply an external
+`PASOFI_APPLE_PAY_ENTITLEMENTS` path. Both source files retain the existing
+`applinks:pasofi.mobile.onesa.eu` and `webcredentials:pasofi.mobile.onesa.eu` domains.
+
+The selected merchant and entitlement path are frozen into the build context and
+sanitized signed receipt. Changing them after preparation blocks signing/upload.
+Before importing a signing identity, the helper requires an unexpired App Store
+profile for the exact app, team and pinned certificate that explicitly authorizes
+the selected merchant. After export, the actual signed app must have exactly that
+merchant, the preserved associated domains, and matching resolved Info.plist
+settings. A card-only export must have no Apple Pay merchant entitlement. Package
+and dependency targets do not inherit these app-specific signing settings.
+
+The environment selection does not update Apple capabilities, regenerate profiles,
+create a payment processing certificate, change server wallet flags or enable a
+Stripe payment method. Registering the merchant alone is insufficient. Before
+selecting it for a release, supply the matching profile and complete the Apple/Stripe
+merchant configuration through the existing owner process. A signed entitlement
+is not evidence of device wallet acceptance: qualify PaymentSheet on an eligible
+signed iPhone, including cancellation, return and server-confirmed order recovery.
+The checked-in native defaults and the existing qualified application package
+remain unchanged by this optional release configuration.
+
+Apple references: [merchant entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.in-app-payments),
+[App ID capability and profile updates](https://developer.apple.com/help/account/identifiers/enable-app-capabilities),
+and [merchant/payment certificate setup](https://developer.apple.com/help/account/capabilities/configure-apple-pay).
+
+### Store operations
+
 Google Play requires its existing app record, initial console setup, Play App
 Signing/upload certificate and internal track. The helper creates one edit, checks
 existing tracks, uploads the hash-bound bundle, changes **only internal**, validates,

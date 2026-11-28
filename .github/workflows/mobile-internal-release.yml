@@ -159,6 +159,9 @@ jobs:
       RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
       RELEASE_SOURCE_SHA: ${{ inputs.source_sha }}
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      # Blank keeps Apple Pay disabled. The helper derives and verifies the
+      # existing entitlement file; this does not enable backend/provider wallets.
+      PASOFI_APPLE_PAY_MERCHANT_ID: ${{ vars.PASOFI_APPLE_PAY_MERCHANT_ID }}
       APPLE_DISTRIBUTION_CERT_SHA256: ${{ vars.APPLE_DISTRIBUTION_CERT_SHA256 }}
       APP_STORE_CONNECT_KEY_ID: ${{ vars.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ vars.APP_STORE_CONNECT_ISSUER_ID }}

@@ -44,6 +44,9 @@ VARIABLE_NAMES = {
             "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_APP_ID",
             "APP_STORE_CONNECT_INTERNAL_GROUP_ID"),
 }
+PASOFI_APPLE_PAY_MERCHANT = "merchant.com.onesa.pasofi"
+PASOFI_APPLE_PAY_TEAM = "YSD6XK5CLU"
+PASOFI_ASSOCIATED_DOMAINS = ["applinks:pasofi.mobile.onesa.eu", "webcredentials:pasofi.mobile.onesa.eu"]
 
 
 def require(condition, message):
@@ -62,7 +65,49 @@ def command(*args, cwd=None, data=None, env=None, quiet=True, timeout=180):
 
 def public_environment():
     names = set(sum((list(v) for v in SECRET_NAMES.values()), []))
-    return {k: v for k, v in os.environ.items() if k not in names and k != "GITHUB_TOKEN"}
+    # PasoFi's optional wallet settings are applied only to its validated app
+    # target, never inherited by package/CocoaPods targets as environment input.
+    names.update({"GITHUB_TOKEN", "PASOFI_APPLE_PAY_MERCHANT_ID", "PASOFI_APPLE_PAY_ENTITLEMENTS"})
+    return {k: v for k, v in os.environ.items() if k not in names}
+
+
+def pasofi_apple_pay_selection(config, env=os.environ):
+    merchant = env.get("PASOFI_APPLE_PAY_MERCHANT_ID", "")
+    require(not env.get("PASOFI_APPLE_PAY_ENTITLEMENTS"),
+            "PASOFI_APPLE_PAY_ENTITLEMENTS is derived from the reviewed merchant, not an external path")
+    if config.get("repository") != "DruHustle/pasofi":
+        require(not merchant, "PasoFi Apple Pay selection cannot apply to another product")
+        return None
+    require(config.get("appId") == "com.onesa.pasofi" and config.get("framework") == "capacitor"
+            and config.get("mobilePath") == "pasofi-frontend/mobile" and config.get("scheme") == "App",
+            "PasoFi Apple Pay selection requires the existing native app identity")
+    require(merchant in ("", PASOFI_APPLE_PAY_MERCHANT), "Unreviewed PasoFi Apple Pay merchant")
+    if merchant:
+        require(env.get("APPLE_TEAM_ID") == PASOFI_APPLE_PAY_TEAM,
+                "PasoFi Apple Pay merchant must use its registered Apple team")
+    return {"merchantId": merchant,
+            "entitlements": "App/PasoFiStripe.entitlements" if merchant else "App/PasoFiAssociatedDomains.entitlements"}
+
+
+def validate_pasofi_entitlement_sources(config, root=ROOT):
+    mobile = root / config["mobilePath"] / "ios/App/App"
+    domains = {"com.apple.developer.associated-domains": PASOFI_ASSOCIATED_DOMAINS}
+    require(plistlib.loads((mobile / "PasoFiAssociatedDomains.entitlements").read_bytes()) == domains,
+            "PasoFi default entitlement source changed")
+    require(plistlib.loads((mobile / "PasoFiStripe.entitlements").read_bytes())
+            == {**domains, "com.apple.developer.in-app-payments": ["$(PASOFI_APPLE_PAY_MERCHANT_ID)"]},
+            "PasoFi Apple Pay entitlement source changed")
+
+
+def validate_pasofi_signed_entitlements(entitlements, selection):
+    domains = entitlements.get("com.apple.developer.associated-domains")
+    require(isinstance(domains, list) and len(domains) == len(PASOFI_ASSOCIATED_DOMAINS)
+            and all(isinstance(value, str) for value in domains)
+            and set(domains) == set(PASOFI_ASSOCIATED_DOMAINS),
+            "Exported PasoFi associated domains differ")
+    expected = [selection["merchantId"]] if selection["merchantId"] else []
+    require(entitlements.get("com.apple.developer.in-app-payments", []) == expected,
+            "Exported PasoFi Apple Pay entitlement differs from the frozen merchant selection")
 
 
 def load_config(root=ROOT):
@@ -111,13 +156,15 @@ def fingerprint(value):
     return normalized
 
 
-def preflight(platform, env=os.environ):
+def preflight(platform, env=os.environ, *, config=None):
     missing = [key for key in SECRET_NAMES[platform] + VARIABLE_NAMES[platform] if not env.get(key, "").strip()]
     require(not missing, "Missing protected mobile-internal inputs: " + ", ".join(missing))
     if platform == "android":
         fingerprint(env["ANDROID_PLAY_UPLOAD_CERT_SHA256"])
         require(re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", env["ANDROID_PLAY_UPLOAD_ALIAS"]), "Invalid upload-key alias")
     else:
+        if config is not None:
+            pasofi_apple_pay_selection(config, env)
         fingerprint(env["APPLE_DISTRIBUTION_CERT_SHA256"])
         require(re.fullmatch(r"[A-Z0-9]{10}", env["APPLE_TEAM_ID"]), "Invalid Apple team ID")
         require(re.fullmatch(r"[A-Z0-9]{10}", env["APP_STORE_CONNECT_KEY_ID"]), "Invalid App Store Connect key ID")
@@ -146,6 +193,9 @@ def write_context(config, work, number):
     record = {"schema": 1, "repository": config["repository"], "appId": config["appId"],
               "sourceSha": command("git", "rev-parse", "HEAD", cwd=ROOT).decode().strip(),
               "version": source_version(config), "buildNumber": build_number(number)}
+    selection = pasofi_apple_pay_selection(config)
+    if selection is not None:
+        record["pasofiApplePay"] = selection
     source_guard.initialize(config, work, ROOT)
     (work / "context.json").write_text(json.dumps(record, indent=2) + "\n")
     return record
@@ -157,6 +207,8 @@ def read_context(config, work):
             and record["sourceSha"] == os.environ.get("GITHUB_SHA"), "Build context differs from the workflow")
     build_number(record["buildNumber"])
     require(record["version"] == source_version(config), "Marketing version changed during packaging")
+    require(record.get("pasofiApplePay") == pasofi_apple_pay_selection(config),
+            "PasoFi Apple Pay selection changed during packaging")
     return record
 
 
@@ -335,7 +387,7 @@ def sign_android(config, record, work):
     (destination.parent / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
 
 
-def validate_profile(profile, config, team, expected_cert, now=None):
+def validate_profile(profile, config, team, expected_cert, now=None, *, apple_pay=None):
     now = now or dt.datetime.now(dt.timezone.utc)
     expiration = profile.get("ExpirationDate")
     require(isinstance(expiration, dt.datetime), "Profile expiration missing")
@@ -353,6 +405,12 @@ def validate_profile(profile, config, team, expected_cert, now=None):
     require(expected_cert in {hashlib.sha256(cert).hexdigest() for cert in profile.get("DeveloperCertificates", [])},
             "Profile does not contain the pinned distribution certificate")
     require(re.fullmatch(r"[0-9a-fA-F-]{36}", profile.get("UUID", "")), "Invalid profile UUID")
+    if apple_pay and apple_pay["merchantId"]:
+        merchants = entitlements.get("com.apple.developer.in-app-payments")
+        require(team == PASOFI_APPLE_PAY_TEAM and apple_pay["merchantId"] == PASOFI_APPLE_PAY_MERCHANT
+                and isinstance(merchants, list) and all(isinstance(value, str) and "*" not in value for value in merchants)
+                and apple_pay["merchantId"] in merchants,
+                "Profile does not authorize the selected PasoFi Apple Pay merchant")
     return app_id
 
 
@@ -361,10 +419,19 @@ def validate_ios_info(info, config, record):
             and info.get("CFBundleShortVersionString") == record["version"], "Packaged iOS identity/version differs")
     require(info.get("CFBundleSupportedPlatforms") == ["iPhoneOS"] and info.get("DTPlatformName") == "iphoneos"
             and int(str(info.get("DTXcode", "0"))) >= 2600, "Expected an iPhoneOS build made with Xcode 26 or later")
+    if "pasofiApplePay" in record:
+        selection = record["pasofiApplePay"]
+        require(info.get("PasoFiApplePayMerchantIdentifier") == selection["merchantId"]
+                and info.get("PasoFiApplePayEntitlements") == selection["entitlements"],
+                "Exported PasoFi Apple Pay Info.plist differs from the frozen selection")
 
 
 def sign_ios(config, record, work):
     source_guard.verify(config, work, ROOT)
+    selection = pasofi_apple_pay_selection(config)
+    require(record.get("pasofiApplePay") == selection, "PasoFi Apple Pay signing selection changed")
+    if selection is not None:
+        validate_pasofi_entitlement_sources(config)
     team = os.environ["APPLE_TEAM_ID"]
     expected = fingerprint(os.environ["APPLE_DISTRIBUTION_CERT_SHA256"])
     mobile = ROOT / config["mobilePath"]
@@ -382,7 +449,7 @@ def sign_ios(config, record, work):
             decode_secret("APPLE_DISTRIBUTION_P12_BASE64", p12)
             decode_secret("APPLE_PROVISIONING_PROFILE_BASE64", profile_file)
             profile = plistlib.loads(command("security", "cms", "-D", "-i", profile_file))
-            application_id = validate_profile(profile, config, team, expected)
+            application_id = validate_profile(profile, config, team, expected, apple_pay=selection)
             password = secrets.token_urlsafe(32)
             command("security", "create-keychain", "-p", password, keychain)
             created_keychain = True
@@ -422,13 +489,19 @@ p.targets.each do |t|
   c.build_settings['DEVELOPMENT_TEAM']=ARGV[1]
   c.build_settings['CODE_SIGN_IDENTITY']=ARGV[2]
   c.build_settings['PROVISIONING_PROFILE_SPECIFIER']=ARGV[3]
+  unless ARGV[4].nil?
+   abort 'PasoFi entitlement selector changed' unless c.build_settings['CODE_SIGN_ENTITLEMENTS'] == '$(PASOFI_APPLE_PAY_ENTITLEMENTS)'
+   c.build_settings['PASOFI_APPLE_PAY_MERCHANT_ID']=ARGV[4]
+   c.build_settings['PASOFI_APPLE_PAY_ENTITLEMENTS']=ARGV[5]
+  end
  end
 end
 abort 'Expected one app target' unless found == 1
 p.save
 '''
             source_guard.verify(config, work, ROOT)
-            command("ruby", "-e", ruby, project, team, leaf_sha1, profile["UUID"])
+            wallet_args = (selection["merchantId"], selection["entitlements"]) if selection is not None else ()
+            command("ruby", "-e", ruby, project, team, leaf_sha1, profile["UUID"], *wallet_args)
             source_guard.verify(config, work, ROOT, stage="app-target-signing", allowed=[source_guard.project_path(config)])
             command("xcodebuild", "-" + config["xcodeKind"], config["xcodeContainer"], "-scheme", config["scheme"],
                     "-configuration", "Release", "-sdk", "iphoneos", "-destination", "generic/platform=iOS",
@@ -455,6 +528,8 @@ p.save
             require(entitlements.get("application-identifier") == application_id
                     and entitlements.get("com.apple.developer.team-identifier") == team
                     and entitlements.get("get-task-allow") is False, "Exported distribution entitlements differ")
+            if selection is not None:
+                validate_pasofi_signed_entitlements(entitlements, selection)
             command("codesign", "-d", "--extract-certificates", str(private / "signer"), app)
             require(sha256(private / "signer0") == expected, "Exported IPA signer differs from pinned certificate")
             binary = app / info["CFBundleExecutable"]
@@ -493,7 +568,7 @@ def main():
         check_source(config, args.source_sha)
         build_number(args.build_number)
     elif args.command == "preflight":
-        preflight(args.platform)
+        preflight(args.platform, config=config)
         print("Protected signing/upload input names are present; provider acceptance remains separate.")
     elif args.command == "context":
         write_context(config, args.work, args.build_number)
