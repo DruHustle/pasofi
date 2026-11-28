@@ -37,7 +37,7 @@ for (const width of [320, 390, 768, 1280]) test(`photo-led Home stays compact, r
   await expect(page.getByRole('button', { name: 'Help', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Sign up', exact: true })).toHaveCount(0);
   const story = page.locator('.pasofi-home-guide + .pasofi-home-story');
-  await expect(story.getByRole('heading', { name: 'A little data. So many possibilities.' })).toBeVisible();
+  await expect(story.getByRole('heading', { name: 'More from every connection.' })).toBeVisible();
   const studyPhoto = story.getByAltText('Two adults working together on a laptop at a shared table');
   await studyPhoto.scrollIntoViewIfNeeded();
   await expect.poll(() => studyPhoto.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1536);

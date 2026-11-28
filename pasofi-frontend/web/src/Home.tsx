@@ -51,7 +51,7 @@ export default function Home({ capabilities, children, browse, account, help }: 
     <section className="pasofi-home-story" aria-labelledby="home-study-heading">
       <img src="/images/pasofi-study-together.webp" alt="Two adults working together on a laptop at a shared table" width={1536} height={1024} loading="lazy" decoding="async"/>
       <div>
-        <h2 id="home-study-heading">A little data. So many possibilities.</h2>
+        <h2 id="home-study-heading">More from every connection.</h2>
         <p>Study together, keep work moving, or catch up with someone you love. Choose the bundle that fits your day.</p>
         <button className="pf-text-link" onClick={event => browse(event.currentTarget)}>Compare bundles <Icon name="arrow"/></button>
       </div>
