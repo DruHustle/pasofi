@@ -55,7 +55,7 @@ test('real services settle direct and agent card, Apple Pay and Google Pay trans
   const allocation=await adminPage.request.post(new URL('/api/admin/inventory/allocations',baseURL).href,{headers:{origin:baseURL!,'Idempotency-Key':randomUUID()},data:{agentId:agent.staffId,siteId:site,bundleId:'flex',quantity:3,reason:'Owned isolated digital payment browser fixture'}});
   expect(allocation.status()).toBe(201);
   await login(agentPage,agent,baseURL!);await expect(agentPage.getByRole('heading',{name:'Your sites and sales'})).toBeVisible();
-  await expect(agentPage.getByRole('heading',{name:'Card and wallet sales'})).toBeVisible();
+  await expect(agentPage.getByRole('heading',{name:'Card and wallet sales',exact:true})).toBeVisible();
   let remaining=3;
   for(const seller of ['customer','agent'])for(const choice of ['card','apple_pay','google_pay']){
    const context=await browser.newContext(),page=await context.newPage();
@@ -120,7 +120,7 @@ test('real services settle direct and agent card, Apple Pay and Google Pay trans
     if(seller==='agent'&&choice==='card'){
      await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
      await page.screenshot({path:testInfo.outputPath('agent-customer-payment-390.png'),fullPage:true});
-     await agentPage.setViewportSize({width:1280,height:1000});await agentPage.getByRole('heading',{name:'Card and wallet sales'}).scrollIntoViewIfNeeded();
+     await agentPage.setViewportSize({width:1280,height:1000});await agentPage.getByRole('heading',{name:'Card and wallet sales',exact:true}).scrollIntoViewIfNeeded();
      await agentPage.locator('.agent-digital-sales').screenshot({path:testInfo.outputPath('agent-sales-1280.png')});
     }
    }finally{await context.close();}
