@@ -62,7 +62,8 @@ origin is a public build setting, not a credential. Ordinary previews remain
 unconfigured. Connected qualification uses a separate staging frontend/backend,
 database and secrets; it must not borrow production authority.
 
-Marked `GET /api/capabilities` remains readable while the native gates are off.
+Marked `GET /api/capabilities` and `GET /api/bundles` remain readable while the
+native gates are off. The proxy forwards native catalogue reads without cookies.
 Only this proxy response adds `nativeCustomerApiVersion: 1` and sets
 `mobileCookies` from the two native flags. Every payment, sales, invoice and
 network capability still comes from its owning backend. Ordinary browser and

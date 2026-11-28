@@ -366,7 +366,8 @@ export function createProxyHandler({ env = process.env, request = httpsRequest, 
         return;
       }
       if (nativeCustomer) validateNativeQuery(route, method);
-      if (nativeCustomer && !config.nativeCustomerEnabled && route.path !== '/api/capabilities') throw new ProxyError(503, 'native_customer_disabled');
+      const nativeCatalogue = nativeCustomer && method === 'GET' && route.path === '/api/bundles';
+      if (nativeCustomer && !config.nativeCustomerEnabled && !nativeCatalogue && route.path !== '/api/capabilities') throw new ProxyError(503, 'native_customer_disabled');
       const clientIp = canonicalClientIp(header(req, 'x-vercel-forwarded-for', 45));
       const body = await readBody(req, controller.signal, method);
       const allowPdf = route.path === '/api/invoice-downloads' || new RegExp(`^/api/(customer|staff)/invoices/${UUID}/pdf$`).test(route.path);
@@ -379,7 +380,7 @@ export function createProxyHandler({ env = process.env, request = httpsRequest, 
       if (!nativeCustomer && method === 'DELETE' && sourceOrigin === config.frontends[0].origin &&
           ['/api/session', '/api/staff/session'].includes(route.path) &&
           header(req, 'x-pasofi-end-session', 16) === 'onesa') headers['x-pasofi-end-session'] = 'onesa';
-      const cookies = publicCookies(header(req, 'cookie'), nativeCustomer ? nativeCookieNames : cookieNames);
+      const cookies = nativeCatalogue ? undefined : publicCookies(header(req, 'cookie'), nativeCustomer ? nativeCookieNames : cookieNames);
       if (cookies !== undefined) headers.cookie = cookies;
       if (sourceOrigin !== undefined) headers.origin = sourceOrigin;
       if (body.length || ['POST', 'PATCH', 'DELETE'].includes(method)) headers['content-length'] = String(body.length);
