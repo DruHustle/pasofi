@@ -316,6 +316,34 @@ for (const patch of [{ nativeCustomerApiVersion: undefined }, { nativeCustomerAp
 }
 
 
+for (const platform of ['ios', 'android'] as const) {
+  test(`${platform} disabled shortcuts link to their matching web screens`, async ({ page, configuredBaseURL }) => {
+    const calls = await nativeBridge(page, request => request.path === '/api/bundles'
+      ? reply({ products: [], candidate: false })
+      : reply({ ...capabilities, mobileCookies: false }), { platform });
+    await page.goto(configuredBaseURL);
+    await afterLaunchReads(calls, callPath);
+
+    for (const [title, action, path] of [
+      ['Redeem voucher', 'Redeem voucher on the web', '#voucher'],
+      ['Check usage', 'Check usage on the web', '#usage'],
+      ['My WiFi', 'Open My WiFi on the web', '#wifi'],
+    ]) {
+      await page.getByRole('button', { name: title, exact: true }).click();
+      await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+      await expect(page.getByRole('status').filter({ hasText: 'This feature is currently unavailable in the app.' })).toBeVisible();
+      await expect(page.getByRole('link', { name: action, exact: true })).toHaveAttribute('href', `https://pasofi.mobile.onesa.eu/${path}`);
+      await expect(page.getByRole('button', { name: 'Retry service connection' })).toHaveCount(0);
+      await page.getByRole('button', { name: '← Back to PasoFi' }).click();
+    }
+
+    expect(calls.filter(call => call.method === 'request').map(call => call.options.path)).toEqual([
+      '/api/capabilities', '/api/capabilities', '/api/capabilities',
+    ]);
+    expect(await page.evaluate(() => (window as any).browserApiFetches)).toBe(0);
+  });
+}
+
 test('unresponsive native capabilities request returns to offline preview without exposing account mutations', async ({ page, configuredBaseURL }) => {
   const calls = await nativeBridge(page, request => request.path === '/api/capabilities'
     ? new Promise<NativeReply>(() => {})
