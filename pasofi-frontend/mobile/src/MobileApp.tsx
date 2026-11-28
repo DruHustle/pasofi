@@ -7,7 +7,7 @@ import MobileCatalogue from './MobileCatalogue';
 import Icon, { type IconName } from './Icon';
 import type { CustomerTab } from './CustomerAccess';
 import RegistrationLink, {AccountClosureLink, watchRegistrationReturn} from './RegistrationLink';
-import MobileCustomer from './MobileCustomer';
+import MobileCustomer, { type CustomerShortcut } from './MobileCustomer';
 import { PolicyNotice } from './Policies';
 import { policyHelpArticles } from './PolicyHelp';
 import { onAccountHandoffReturn } from './native-api';
@@ -59,7 +59,7 @@ export default function MobileApp() {
   const [tab, setTab] = useState<Tab>('home');
   const [pending] = useState(() => Capacitor.isNativePlatform() ? pendingNativeDestination(sessionStorage) : null);
   const [accountOpen, setAccountOpen] = useState(Boolean(pending)), [accountTab, setAccountTab] = useState<CustomerTab>(pending ?? 'access');
-  const [requestedBundle, setRequestedBundle] = useState<string | null>(null);
+  const [accountEntry, setAccountEntry] = useState<{ bundleId?: string; shortcut?: CustomerShortcut }>({});
   const [bundles, setBundles] = useState<Product[] | null>(mobileApiConfigured ? null : examples), [catalogueError, setCatalogueError] = useState(false);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null), [checking, setChecking] = useState(mobileApiConfigured), [catalogueAttempt, setCatalogueAttempt] = useState(0);
   useEffect(() => {
@@ -102,15 +102,15 @@ export default function MobileApp() {
     previousTab.current = tab; previousAccountOpen.current = accountOpen;
   }, [tab, accountOpen]);
   const choose = (next: Tab) => { setTab(next); window.scrollTo({ top: 0, behavior: 'auto' }); };
-  const openAccount = (next: CustomerTab = 'access', bundleId: string | null = null) => { setAccountTab(next); setRequestedBundle(bundleId); setAccountOpen(true); window.scrollTo({ top: 0, behavior: 'auto' }); };
-  const accountFeature = (next: CustomerTab) => mobileApiConfigured ? openAccount(next) : choose('account');
+  const openAccount = (next: CustomerTab = 'access', entry: typeof accountEntry = {}) => { setAccountTab(next); setAccountEntry(entry); setAccountOpen(true); window.scrollTo({ top: 0, behavior: 'auto' }); };
+  const accountFeature = (shortcut: CustomerShortcut) => openAccount(shortcut, { shortcut });
   // Like the website, History and Account open the live account when one is configured.
   const go = (next: Exclude<Tab, 'help'>) => next === 'history' && mobileApiConfigured ? openAccount('history') : next === 'account' && mobileApiConfigured ? openAccount('recovery') : choose(next);
-  const chooseBundle = (bundle: Product) => { if (purchasable) openAccount(capabilities!.staffSales && capabilities!.receiptPairing ? 'receipt' : 'purchase', bundle.id); };
-  const leaveAccount = (next: Tab) => { setHandoffReturn(0); setRegistrationTab(null); setRequestedBundle(null); setAccountOpen(false); setTab(next); };
+  const chooseBundle = (bundle: Product) => { if (purchasable) openAccount(capabilities!.staffSales && capabilities!.receiptPairing ? 'receipt' : 'purchase', { bundleId: bundle.id }); };
+  const leaveAccount = (next: Tab) => { setHandoffReturn(0); setRegistrationTab(null); setAccountEntry({}); setAccountOpen(false); setTab(next); };
   const shownQuestions = questions.filter(item => helpQuery.trim().toLowerCase().split(/\s+/).every(word => `${item.q} ${item.a}`.toLowerCase().includes(word)));
 
-  if (accountOpen) return <div className="mobile-app mobile-live-shell"><AccountRenderBoundary close={() => leaveAccount(tab)}><MobileCustomer initialTab={accountTab} requestedBundleId={requestedBundle} registrationTab={registrationTab} usedRegistration={()=>setRegistrationTab(null)} handoffReturn={handoffReturn} close={() => leaveAccount(tab)} goHome={() => leaveAccount('home')} goBundles={() => leaveAccount('bundles')} /></AccountRenderBoundary></div>;
+  if (accountOpen) return <div className="mobile-app mobile-live-shell"><AccountRenderBoundary close={() => leaveAccount(tab)}><MobileCustomer initialTab={accountTab} requestedBundleId={accountEntry.bundleId} shortcut={accountEntry.shortcut} registrationTab={registrationTab} usedRegistration={()=>setRegistrationTab(null)} handoffReturn={handoffReturn} close={() => leaveAccount(tab)} goHome={() => leaveAccount('home')} goBundles={() => leaveAccount('bundles')} /></AccountRenderBoundary></div>;
 
   return <div className="mobile-app">
     <a className="mobile-skip" href="#mobile-content">Skip to content</a>
