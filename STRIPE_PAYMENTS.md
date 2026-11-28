@@ -139,6 +139,13 @@ at the proxy boundary. Raw payloads are not stored. The application responds onl
 after the event identifier and reconciliation request commit together. Transient
 Stripe or database errors return a retryable error to Stripe.
 
+## Web wallet provisioning
+
+Register each HTTPS origin that displays the web Payment Element as a Stripe
+payment method domain on the same account. Stripe can then show Apple Pay and
+Google Pay when the browser, device and wallet are eligible. Test each wallet
+and card fallback on a supported device for each checkout origin.
+
 ## Native provisioning and acceptance
 
 The app identifier remains `com.onesa.pasofi`. See
