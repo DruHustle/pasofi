@@ -116,6 +116,25 @@ test('native qualification changes only cookie protocol fields and leaves browse
   });
 });
 
+test('native clients can read the public catalogue without an enabled session transport', async () => {
+  await withProxy({ env: baseEnv }, async call => {
+    const catalogue = { products: [{ id: 'mini', price_minor: 50, currency: 'USD', byte_limit: '2000000000', validity_seconds: 259200 }], candidate: false };
+    behavior = (_req, res) => json(res, catalogue);
+    const result = await call('/api/gateway?__pamofi_path=bundles', { headers: { cookie: `__Host-pamofi_session=${sessionValue}` } });
+    assert.equal(result.status, 200);
+    assert.deepEqual(JSON.parse(result.body), catalogue);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].path, '/api/bundles');
+    assert.equal(events[0].headers.cookie, undefined);
+    privateResponse(result);
+
+    const privateRead = await call('/api/access');
+    assert.equal(privateRead.status, 503);
+    assert.equal(JSON.parse(privateRead.body).error, 'native_customer_disabled');
+    assert.equal(events.length, 1);
+  });
+});
+
 test('every native request including capability reads requires exact origin, host and one marker', async () => {
   await withProxy({}, async call => {
     for (const headers of [{ origin: undefined }, { origin: 'https://wrong.pasofi.test' }, { origin: `${baseEnv.PAMOFI_PUBLIC_ORIGIN}/` },
