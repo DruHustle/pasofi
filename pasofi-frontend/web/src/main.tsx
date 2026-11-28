@@ -1,3 +1,4 @@
+import { captureAgentCheckoutLocation, clearAgentCheckout } from './agent-checkout';
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { resumeRegistration, staffEntry } from './registration';
 import { createRoot } from 'react-dom/client';
@@ -116,6 +117,7 @@ function App() {
   }, []);
   useEffect(() => {
     const sync = () => {
+      captureAgentCheckoutLocation();
       const next = locationView(); setView(next); setPurchase(null); setCheckoutBundle(null);
       setWorkspace(workspaceFor(next)); setRequestedBundleId(locationBundleId());
       setCustomerTab(customerViews[next] ?? 'access');
@@ -147,6 +149,7 @@ function App() {
     refreshCatalogue(); refreshCapabilities();
   }
   function navigate(next: View, button?: HTMLButtonElement, { resetCatalogue = false } = {}) {
+    if (next !== 'checkout') clearAgentCheckout();
     if (button) opener.current = button; setPurchase(null); setNotice(''); setCheckoutBundle(null); setLocation(next);
     setCustomerTab(customerViews[next] ?? 'access'); setWorkspace(workspaceFor(next));
     if (resetCatalogue) { setBundles(null); setDemoEnabled(false); }
@@ -154,6 +157,7 @@ function App() {
     focusScreen();
   }
   function openCustomer(tab: CustomerTab = 'access', button?: HTMLButtonElement, bundle: Product | null = null) {
+    if (bundle) clearAgentCheckout();
     if (button) opener.current = button; setNotice(''); setPurchase(null); setCheckoutBundle(bundle); setCustomerTab(tab); setWorkspace('customer');
     setLocation(customerView[tab], bundle?.id); focusScreen();
   }
@@ -161,6 +165,7 @@ function App() {
     opener.current = button; setNotice(''); setPurchase(null); setCheckoutBundle(null); setWorkspace(next); setLocation(next); focusScreen();
   }
   function closeWorkspace() {
+    clearAgentCheckout();
     setPurchase(null); setWorkspace(null); setCheckoutBundle(null);
     if (customerViews[view] || view === 'staff' || view === 'handoff') setLocation(hotspotPortal && view === 'voucher' ? 'connect' : 'home');
     requestAnimationFrame(() => { if (opener.current?.isConnected) opener.current.focus(); else focusScreen(); });
@@ -243,5 +248,6 @@ function App() {
   </div>;
 }
 document.documentElement.classList.toggle('pasofi-hotspot', hotspotPortal);
+captureAgentCheckoutLocation();
 resumeRegistration();
 createRoot(document.getElementById('root')!).render(<React.StrictMode><InvoiceLink/><App/></React.StrictMode>);

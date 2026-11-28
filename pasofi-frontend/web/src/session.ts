@@ -1,3 +1,4 @@
+import { clearAgentCheckout } from './agent-checkout';
 import { api, ApiError } from './api';
 import { clearNetworkRequest } from './network-request';
 import { onesaLogoutHeaders, type LogoutResponse } from './onesa-browser-logout';
@@ -64,6 +65,7 @@ export function ensureSession(): Promise<string> {
 type SessionChange = 'signed_out' | 'recovered';
 const channel = (() => { try { return typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pamofi.session') : null; } catch { return null; } })();
 export function clearSessionSecrets() {
+  clearAgentCheckout();
   browserSessionCheck = null;
   clearNetworkRequest();
   try {

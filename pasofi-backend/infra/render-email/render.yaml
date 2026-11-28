@@ -1,0 +1,27 @@
+# Disabled qualification candidate. This file creates no datastore or worker.
+# Existing application services and their environment are outside this Blueprint.
+services:
+  - type: web
+    name: pasofi-email-relay
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: pasofi-backend/services/notification-service
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: node dist/email-relay-server.js
+    healthCheckPath: /health/ready
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: INVOICE_EMAIL_RELAY_ENABLED
+        value: 'false'
+      - key: INVOICE_EMAIL_RELAY_QUALIFIED
+        value: 'false'
+    # INVOICE_EMAIL_RELAY_SECRET and RESEND_API_KEY are intentionally omitted.
+    # The disabled candidate starts without secrets. Supply approved values only
+    # through protected Render environment settings during later qualification.

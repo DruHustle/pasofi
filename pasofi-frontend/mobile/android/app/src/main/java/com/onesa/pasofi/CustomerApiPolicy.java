@@ -37,7 +37,7 @@ final class CustomerApiPolicy {
         boolean sessionRead() { return method.equals("GET") && basePath.equals("/api/session"); }
         boolean recovery() { return method.equals("POST") && (basePath.equals("/api/recovery") || basePath.equals("/api/handoff/redeem") || basePath.equals("/api/onesa/native-session")); }
         boolean changesIdentity() { return creation() || logout() || recovery(); }
-        boolean publicRead() { return method.equals("GET") && basePath.matches("^/api/(capabilities|bundles|sites|help|payments/methods)$"); }
+        boolean publicRead() { return (method.equals("GET") && basePath.matches("^/api/(capabilities|bundles|sites|help|payments/methods)$")) || (method.equals("POST") && basePath.equals("/api/agent-checkouts/preview")); }
     }
 
     static boolean isAccountHandoffReturn(String action, String dataString) {
@@ -92,7 +92,7 @@ final class CustomerApiPolicy {
             path.matches("^/api/orders/" + UUID + "/status$") || path.matches("^/api/customer/invoices(?:/" + UUID + "(?:/pdf)?)?$") ||
             path.matches("^/api/receipt-pairings/" + UUID + "$" );
         if (!method.equals("POST")) return false;
-        return path.matches("^/api/(orders|onesa/native-session|recovery(?:/(setup|rotate))?|handoff(?:/redeem)?|invoice-downloads|receipt-pairings|vouchers/redeem|network/credentials|network/disconnect)$") ||
+        return path.matches("^/api/(agent-checkouts/preview|orders|onesa/native-session|recovery(?:/(setup|rotate))?|handoff(?:/redeem)?|invoice-downloads|receipt-pairings|vouchers/redeem|network/credentials|network/disconnect)$") ||
             path.matches("^/api/orders/" + UUID + "/(checkout|mock-payment|expire-unused)$") ||
             path.matches("^/api/customer/invoices/" + UUID + "/resend$") ||
             path.matches("^/api/receipt-pairings/" + UUID + "/cancel$");

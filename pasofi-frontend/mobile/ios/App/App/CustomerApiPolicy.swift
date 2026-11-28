@@ -23,7 +23,8 @@ struct CustomerApiRequest {
             (method == "POST" && ["/api/recovery", "/api/handoff/redeem", "/api/onesa/native-session"].contains(path))
     }
     var isPublicRead: Bool {
-        method == "GET" && ["/api/capabilities", "/api/bundles", "/api/sites", "/api/help"].contains(pathname)
+        (method == "GET" && ["/api/capabilities", "/api/bundles", "/api/sites", "/api/help"].contains(pathname)) ||
+            (method == "POST" && pathname == "/api/agent-checkouts/preview")
     }
     func resumingLogout() -> CustomerApiRequest {
         CustomerApiRequest(id: id, path: "/api/session", method: "DELETE", responseType: "json", body: nil, idempotencyKey: nil)
@@ -59,7 +60,7 @@ enum CustomerApiPolicy {
         let pieces = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
         let route = String(pieces[0])
         let getPatterns = ["/api/onesa/availability", "/api/(bundles|capabilities|sites|access|usage|help|payments/methods)", "/api/orders", "/api/orders/" + uuid + "/status", "/api/session", "/api/recovery/status", "/api/customer/invoices(?:/" + uuid + "(?:/pdf)?)?", "/api/receipt-pairings/" + uuid, "/api/network/(sites|session)"]
-        let postPatterns = ["/api/onesa/native-session", "/api/orders", "/api/orders/" + uuid + "/(checkout|mock-payment|expire-unused)", "/api/session", "/api/(recovery(?:/(setup|rotate))?|handoff(?:/redeem)?)", "/api/invoice-downloads", "/api/customer/invoices/" + uuid + "/resend", "/api/receipt-pairings", "/api/receipt-pairings/" + uuid + "/cancel", "/api/vouchers/redeem", "/api/network/(credentials|disconnect)"]
+        let postPatterns = ["/api/agent-checkouts/preview", "/api/onesa/native-session", "/api/orders", "/api/orders/" + uuid + "/(checkout|mock-payment|expire-unused)", "/api/session", "/api/(recovery(?:/(setup|rotate))?|handoff(?:/redeem)?)", "/api/invoice-downloads", "/api/customer/invoices/" + uuid + "/resend", "/api/receipt-pairings", "/api/receipt-pairings/" + uuid + "/cancel", "/api/vouchers/redeem", "/api/network/(credentials|disconnect)"]
         let allowed = method == "GET" ? getPatterns.contains(where: { matches(route, $0) }) : method == "POST" ? postPatterns.contains(where: { matches(route, $0) }) : route == "/api/session"
         guard allowed else { throw CustomerApiFailure.request }
         let pdf = (method == "GET" && matches(route, "/api/customer/invoices/" + uuid + "/pdf")) || (method == "POST" && route == "/api/invoice-downloads")

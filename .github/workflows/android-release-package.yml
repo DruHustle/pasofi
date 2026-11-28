@@ -47,7 +47,11 @@ jobs:
           npm run build
           npx --no-install cap sync android
       - name: Compile the unsigned Release APK and Android App Bundle
-        run: bash android/gradlew -p android --no-daemon :app:assembleRelease :app:bundleRelease
+        run: |
+          # CI-only headroom for D8 release merging; keep concurrent work bounded.
+          bash android/gradlew -p android --no-daemon --max-workers=2 --no-parallel \
+            -Dorg.gradle.jvmargs=-Xmx4g \
+            :app:assembleRelease :app:bundleRelease
       - name: Install Google bundletool and validate the unsigned Play input
         run: |
           export BUNDLETOOL_JAR="$RUNNER_TEMP/bundletool.jar"

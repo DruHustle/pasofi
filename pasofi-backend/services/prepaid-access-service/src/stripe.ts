@@ -9,6 +9,7 @@ export type StripeConfiguration={secretKey:string;publishableKey:string;webhookS
  country:string;live:boolean;siteIds:Set<string>;applePayMerchantId:string|null;googlePay:boolean};
 export type StripePresentation={provider:'stripe';clientSecret:string;publishableKey:string;testMode:boolean;
  merchantCountryCode:string;merchantDisplayName:'PasoFi';applePayMerchantId:string|null;googlePay:boolean};
+export const STRIPE_METHOD={active:true,code:'STRIPE_CARD',name:'Card or mobile wallet',currencies:['USD'],minimumAmount:'0.50',maximumAmount:'999999.99'};
 
 export function stripeConfiguration(demo:boolean):StripeConfiguration|null {
  const env=process.env,mode=env.PAMOFI_PAYMENT_MODE;
@@ -94,7 +95,12 @@ export class StripeAdapter implements PaymentAdapter {
   const intent=await this.retrieve(terms.referenceNumber);
   if(intent.id!==terms.referenceNumber||!this.matches(intent,terms))return {state:'unknown',providerStatus:null};
   const charge=intent.latest_charge;
-  if(intent.status==='canceled')return {state:'failed',providerStatus:'canceled'};
+  if(intent.status==='canceled'){
+   // A canceled intent may release agent stock. Contradictory captured money
+   // must remain unresolved even when its outer status says canceled.
+   if(intent.amount_received!==0||(charge&&(typeof charge==='string'||charge.paid||charge.captured)))return {state:'unknown',providerStatus:null};
+   return {state:'failed',providerStatus:'canceled'};
+  }
   if(intent.status!=='succeeded')return {state:'pending',providerStatus:intent.status};
   if(intent.amount_received!==terms.amountMinor||!charge||typeof charge==='string'||charge.payment_intent!==intent.id
    ||charge.livemode!==this.config.live||!charge.paid||!charge.captured||charge.amount!==terms.amountMinor
@@ -108,9 +114,9 @@ export class StripeAdapter implements PaymentAdapter {
     return {state:'unknown',providerStatus:null};
    }
    if(disputes.data.some(dispute=>!['won','warning_closed','prevented'].includes(dispute.status)))return {state:'reversed',providerStatus:'disputed'};
-   if(disputes.data.some(dispute=>dispute.status==='won'))return {state:'verified_success',providerStatus:'dispute_won'};
+   if(disputes.data.some(dispute=>dispute.status==='won'))return {state:'verified_success',providerStatus:'dispute_won',...(charge.amount_refunded>0?{refundedMinor:charge.amount_refunded}:{})};
   }
-  return {state:'verified_success',providerStatus:charge.amount_refunded>0?'partially_refunded':'succeeded'};
+  return {state:'verified_success',providerStatus:charge.amount_refunded>0?'partially_refunded':'succeeded',...(charge.amount_refunded>0?{refundedMinor:charge.amount_refunded}:{})};
  }
  async presentation(terms:PaymentTerms):Promise<StripePresentation|null> {
   const intent=await this.retrieve(terms.referenceNumber);

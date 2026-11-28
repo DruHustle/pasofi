@@ -108,6 +108,12 @@ async function main() {
         query(runtimeEnv, `DELETE FROM staff_audit_events WHERE id='${auditId}'`, true);
       }
       if (service === 'prepaid-access') {
+        query(runtimeEnv, 'SELECT id FROM agent_checkouts WHERE false FOR UPDATE');
+        query(runtimeEnv, 'UPDATE agent_checkouts SET commission_review=true WHERE false');
+        for (const column of ['agent_id', 'price_minor', 'commission_minor', 'token_cipher', 'expires_at']) {
+          query(runtimeEnv, `UPDATE agent_checkouts SET ${column}=${column} WHERE false`, true);
+        }
+        query(runtimeEnv, 'DELETE FROM agent_checkouts WHERE false', true);
         query(runtimeEnv, "UPDATE cash_refund_events SET payload='{}'", true);
         query(runtimeEnv, 'DELETE FROM cash_refund_events', true);
         query(runtimeEnv, 'DELETE FROM cash_refunds', true);

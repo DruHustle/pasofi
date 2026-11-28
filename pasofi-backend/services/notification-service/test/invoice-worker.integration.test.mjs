@@ -5,6 +5,8 @@ import { SignJWT, jwtVerify } from 'jose';
 import pg from 'pg';
 import { buildApp } from '../dist/app.js';
 import { processInvoiceDelivery } from '../dist/invoice-worker.js';
+import { buildEmailRelayApp } from '../dist/email-relay-app.js';
+import { invoiceRelayPath, invoiceRelaySender } from '../dist/email-relay-protocol.js';
 
 const database = process.env.PAMOFI_TEST_DATABASE_URL;
 const secret = 'synthetic_invoice_delivery_secret_at_least_32_bytes';
@@ -124,6 +126,64 @@ test('live email uses one provider send, reconciles by ID, and never resends an 
       assert.equal(result.statusCode, 200); assert.equal(result.json().simulation, true); assert.equal(result.json().provider, undefined);
     } finally { await app.close(); }
   } finally { globalThis.fetch = originalFetch; for (const f of fixtures) await cleanup(pool, f.invoice); await pool.end(); restore(); }
+});
+
+test('Render relay preflight preserves the queue and ambiguous sends and retained provider IDs recover without replacement email', { skip: !database }, async () => {
+  const relaySecret = 'synthetic_invoice_render_relay_secret_at_least_32_bytes', relayOrigin = 'https://pasofi-email-relay.onrender.com';
+  const restore = environment({ APP_ENV: 'production', NODE_ENV: 'production', PREPAID_URL: 'https://prepaid.example.test', INVOICE_EMAIL_MODE: 'resend',
+    INVOICE_EMAIL_QUALIFIED: 'true', INVOICE_EMAIL_FROM: invoiceRelaySender, INVOICE_EMAIL_TRANSPORT: 'render', INVOICE_EMAIL_RELAY_QUALIFIED: 'true',
+    INVOICE_EMAIL_RELAY_URL: relayOrigin, INVOICE_EMAIL_RELAY_SECRET: relaySecret, RESEND_API_KEY: '', INVOICE_SMS_MODE: 'disabled' });
+  const pool = new pg.Pool({ connectionString: database, max: 4 }), originalFetch = globalThis.fetch, fixtures = [];
+  let selected, unavailable = true, lostReply = false, sends = 0, polls = 0;
+  const relay = buildEmailRelayApp({ APP_ENV: 'production', NODE_ENV: 'production', INVOICE_EMAIL_RELAY_ENABLED: 'true', INVOICE_EMAIL_RELAY_QUALIFIED: 'true',
+    INVOICE_EMAIL_RELAY_SECRET: relaySecret, RESEND_API_KEY: 'synthetic_provider_credential_only_at_relay' }, async (url, options) => {
+    assert.equal(new URL(url).origin, 'https://api.resend.com');
+    if (options.method === 'POST') {
+      sends++;
+      assert.equal(options.headers['idempotency-key'], `pasofi-invoice/${selected.job}`);
+      assert.equal(JSON.parse(options.body).from, invoiceRelaySender);
+      assert.deepEqual(Buffer.from(JSON.parse(options.body).attachments[0].content, 'base64'), pdf);
+      return json({ id: selected.job });
+    }
+    polls++; return json({ id: selected.job, last_event: 'delivered' });
+  });
+  try {
+    globalThis.fetch = async (url, options) => {
+      const parsed = new URL(url);
+      if (parsed.origin === 'https://prepaid.example.test') return parsed.pathname.endsWith('/pdf') ? new Response(pdf, { headers: { 'content-type': 'application/pdf' } }) : json(details(selected.invoice, 'email', false));
+      assert.equal(parsed.origin, relayOrigin, 'Oracle must contact only the configured relay for email');
+      if (unavailable && parsed.pathname === `${invoiceRelayPath}/capabilities`) throw Error('synthetic sleeping relay');
+      const response = await relay.inject({ method: options.method, url: parsed.pathname, headers: options.headers, ...(options.body === undefined ? {} : { payload: options.body }) });
+      if (lostReply && options.method === 'POST') throw Error('synthetic lost response after provider acceptance');
+      return new Response(response.body, { status: response.statusCode, headers: response.headers });
+    };
+    selected = await fixture(pool); fixtures.push(selected);
+    assert.equal(await processInvoiceDelivery(pool, false), true);
+    assert.deepEqual((await pool.query('SELECT state,attempted_at,provider_id FROM invoice_jobs WHERE id=$1', [selected.job])).rows[0], { state: 'queued', attempted_at: null, provider_id: null });
+    assert.equal(sends, 0); assert.equal(polls, 0);
+    unavailable = false;
+    await pool.query('UPDATE invoice_jobs SET next_at=now() WHERE id=$1', [selected.job]);
+    await processInvoiceDelivery(pool, false);
+    assert.deepEqual((await pool.query('SELECT state,provider,provider_id FROM invoice_jobs WHERE id=$1', [selected.job])).rows[0], { state: 'submitted', provider: 'resend', provider_id: selected.job });
+    await pool.query('UPDATE invoice_jobs SET next_at=now() WHERE id=$1', [selected.job]);
+    await processInvoiceDelivery(pool, false);
+    assert.equal((await pool.query('SELECT state FROM invoice_jobs WHERE id=$1', [selected.job])).rows[0].state, 'delivered');
+    assert.equal(sends, 1); assert.equal(polls, 1);
+
+    selected = await fixture(pool); fixtures.push(selected); lostReply = true;
+    await processInvoiceDelivery(pool, false);
+    await pool.query('UPDATE invoice_jobs SET next_at=now() WHERE id=$1', [selected.job]);
+    await processInvoiceDelivery(pool, false);
+    assert.deepEqual((await pool.query('SELECT state,provider_id,last_error FROM invoice_jobs WHERE id=$1', [selected.job])).rows[0], { state: 'unknown', provider_id: null, last_error: 'manual_review_required' });
+    assert.equal(sends, 2); assert.equal(polls, 1);
+
+    // A known pre-cutover Resend submission keeps the same provider identity.
+    selected = await fixture(pool); fixtures.push(selected); lostReply = false;
+    await pool.query("UPDATE invoice_jobs SET state='submitted',channel='email',provider='resend',provider_id=$1,attempted_at=now() WHERE id=$1", [selected.job]);
+    await processInvoiceDelivery(pool, false);
+    assert.equal((await pool.query('SELECT state FROM invoice_jobs WHERE id=$1', [selected.job])).rows[0].state, 'delivered');
+    assert.equal(sends, 2); assert.equal(polls, 2);
+  } finally { globalThis.fetch = originalFetch; await relay.close(); for (const f of fixtures) await cleanup(pool, f.invoice); await pool.end(); restore(); }
 });
 
 test('foreign or expired SMS links and simulation mismatch cannot reach a delivery sink', { skip: !database }, async () => {

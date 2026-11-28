@@ -54,6 +54,20 @@ public class CustomerApiPolicyTest {
         assertNull(request("POST", "/api/onesa/native-session?token=invalid"));
     }
 
+    @Test public void agentOfferPreviewIsAnExactPublicPostWithoutStaffAuthority() {
+        CustomerApiPolicy.Options preview = CustomerApiPolicy.parse(ID, "/api/agent-checkouts/preview", "POST",
+            "{\"id\":\"" + ID + "\",\"code\":\"" + TOKEN + "\"}", null, "json");
+        assertNotNull(preview);
+        assertTrue(preview.publicRead());
+        assertFalse(preview.changesIdentity());
+        assertNull(request("GET", "/api/agent-checkouts/preview"));
+        assertNull(request("DELETE", "/api/agent-checkouts/preview"));
+        assertNull(request("POST", "/api/agent-checkouts/preview?code=" + TOKEN));
+        assertNull(request("POST", "/api/staff/agent-checkouts"));
+        assertNull(request("GET", "/api/staff/agent-checkouts/" + ID));
+        assertNull(request("POST", "/api/agent-checkouts/" + ID));
+    }
+
     @Test public void acceptsOnlyTheCustomerWorkflowMethodsIncludingInvoices() {
         String[][] routes = {{"GET", "/api/capabilities"}, {"GET", "/api/bundles"}, {"GET", "/api/sites"}, {"GET", "/api/session"},
             {"POST", "/api/session"}, {"DELETE", "/api/session"}, {"GET", "/api/recovery/status"}, {"POST", "/api/recovery"},

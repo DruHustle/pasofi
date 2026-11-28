@@ -1,3 +1,4 @@
+import { clearAgentCheckout } from './agent-checkout';
 import { api, ApiError, usesNativeCustomerApi } from './api';
 import { clearNetworkRequest } from './network-request';
 
@@ -45,6 +46,7 @@ export function ensureSession(): Promise<string> {
 type SessionChange = 'signed_out' | 'recovered';
 const channel = (() => { try { return typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pamofi.session') : null; } catch { return null; } })();
 export function clearSessionSecrets() {
+  clearAgentCheckout();
   clearNetworkRequest();
   try {
     for (const key of Object.keys(sessionStorage)) {

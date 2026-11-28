@@ -5,6 +5,7 @@ import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 // Orchestration only: every project builds/tests in its own directory and owns
 // its migrations. This script does not import service or frontend application code.
@@ -309,6 +310,30 @@ async function main() {
       counts.push({ project: `${name} browser`, tests: stats.expected, passed: stats.expected, skipped: 0, todo: 0 });
       checkChildren(servers);
     }
+    // Run the new agent/customer payment contract through actual services and
+    // PostgreSQL. Only the external Stripe transport is synthetic, with signed
+    // callbacks and fresh SDK retrieval. No real credential is inherited.
+    stopChild(servers[prepaidIndex].child,'SIGTERM');
+    if(!await completesWithin(servers[prepaidIndex].done,12000))throw Error('Mock checkout did not stop before Stripe service acceptance');
+    const control=await reservePort();
+    const stripeFixtureEnv={
+      ...demoEnv,DATABASE_URL:databases['prepaid-access'],PORT:String(ports['prepaid-access'].port),
+      PAMOFI_TEST_CONFIRM_ISOLATED:'1',PAMOFI_TEST_AGENT_STRIPE_SITE_ID:randomUUID(),
+      PAMOFI_TEST_AGENT_STRIPE_CONTROL_PORT:String(control.port),
+      PAMOFI_TEST_AGENT_STRIPE_CONTROL_URL:`http://127.0.0.1:${control.port}`,
+      PAMOFI_TEST_AGENT_STRIPE_CONTROL_SECRET:randomBytes(32).toString('hex'),PAMOFI_AGENT_COMMISSION_BPS:'1000',
+    };
+    await control.release();
+    servers[prepaidIndex]=launch('prepaid-access: isolated Stripe browser fixture',process.execPath,['test/fixtures/agent-payment-browser.mjs'],serviceDirectory('prepaid-access'),stripeFixtureEnv);
+    await ready(servers[prepaidIndex],`${address('prepaid-access')}/health/ready`,'prepaid-access');
+    const paymentReport=join(frontendDirectory('web'),'test-results','payment-verification-summary.json');
+    await run('web: real-service Stripe payment journeys',process.execPath,['node_modules/@playwright/test/cli.js','test','--config=playwright.payment.config.ts','--reporter=line,json'],frontendDirectory('web'),{
+      ...stripeFixtureEnv,PAMOFI_BASE_URL:address('web'),PAMOFI_TEST_IDENTITY_DATABASE_URL:databases.identity,
+      PAMOFI_CHROME_PATH:process.env.PAMOFI_CHROME_PATH,PLAYWRIGHT_JSON_OUTPUT_FILE:paymentReport,
+    });
+    const paymentStats=JSON.parse(await readFile(paymentReport,'utf8')).stats;
+    if(!paymentStats||!['expected','unexpected','skipped','flaky'].every(field=>Number.isInteger(paymentStats[field]))||paymentStats.expected<1||paymentStats.unexpected||paymentStats.skipped||paymentStats.flaky)throw Error('Stripe service browser gate requires passing tests with no skipped or flaky cases');
+    counts.push({project:'Stripe service browser',tests:paymentStats.expected,passed:paymentStats.expected,skipped:0,todo:0});
   }
   checkChildren(servers);
   say(`Integration verification passed: ${counts.reduce((sum, item) => sum + item.passed, 0)} tests; zero skipped or pending tests. Browser acceptance ${browser ? 'passed for web and mobile' : 'was not requested'}.`);

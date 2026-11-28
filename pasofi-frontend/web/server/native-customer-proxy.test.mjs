@@ -153,7 +153,7 @@ test('every native request including capability reads requires exact origin, hos
 
 test('native marker cannot authorize staff, admin, internal, callback, demo-confirm or HEAD operations', async () => {
   await withProxy({}, async call => {
-    const denied = [['GET', '/api/staff/session'], ['POST', '/api/staff/login'], ['GET', '/api/staff/invoices'],
+    const denied = [['GET', '/api/staff/agent-checkouts'], ['POST', '/api/staff/agent-checkouts'], ['GET', `/api/staff/agent-checkouts/${id}`], ['GET', '/api/staff/session'], ['POST', '/api/staff/login'], ['GET', '/api/staff/invoices'],
       ['GET', `/api/staff/invoices/${id}/pdf`], ['GET', '/api/admin/routers'], ['POST', `/api/admin/routers/${id}/changes`],
       ['GET', '/api/internal/v1/session'], ['POST', '/api/callbacks/stripe'], ['POST', `/api/orders/${id}/demo-confirm`], ['HEAD', '/api/capabilities']];
     for (const [method, path] of denied) {
@@ -169,7 +169,7 @@ test('native marker cannot authorize staff, admin, internal, callback, demo-conf
 
 test('customer session, recovery, purchases, vouchers, network and invoices retain their allowed methods', async () => {
   await withProxy({}, async call => {
-    const allowed = [['GET', '/api/session'], ['POST', '/api/session'], ['DELETE', '/api/session'], ['GET', '/api/recovery/status'],
+    const allowed = [['POST', '/api/agent-checkouts/preview'], ['GET', '/api/session'], ['POST', '/api/session'], ['DELETE', '/api/session'], ['GET', '/api/recovery/status'],
       ['POST', '/api/recovery'], ['POST', '/api/recovery/setup'], ['POST', '/api/recovery/rotate'], ['POST', '/api/handoff'], ['POST', '/api/handoff/redeem'], ['POST', '/api/onesa/native-session'],
       ['GET', '/api/orders'], ['POST', '/api/orders'], ['GET', `/api/orders/${id}/status`], ['POST', `/api/orders/${id}/checkout`],
       ['POST', `/api/orders/${id}/expire-unused`], ['POST', '/api/vouchers/redeem'], ['POST', '/api/receipt-pairings'],
@@ -181,7 +181,7 @@ test('customer session, recovery, purchases, vouchers, network and invoices reta
       assert.equal(result.status, 200, `${method} ${path}`); assert.equal(events.at(-1).path, path); assert.equal(events.at(-1).method, method);
     }
     const beforeCount = events.length;
-    for (const [method, path] of [['PUT', '/api/session'], ['POST', '/api/bundles'], ['DELETE', '/api/orders'], ['GET', '/api/recovery']]) {
+    for (const [method, path] of [['GET', '/api/agent-checkouts/preview'], ['PUT', '/api/session'], ['POST', '/api/bundles'], ['DELETE', '/api/orders'], ['GET', '/api/recovery']]) {
       assert.equal((await call(path, { method })).status, 405);
     }
     assert.equal(events.length, beforeCount);

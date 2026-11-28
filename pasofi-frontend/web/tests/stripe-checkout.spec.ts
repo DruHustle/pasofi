@@ -38,16 +38,16 @@ async function fixture(page:Page){
  });
  await page.goto('/#checkout?bundle=flex');
  await page.getByRole('checkbox',{name:/reviewed the price/}).check();await page.getByRole('button',{name:'Prepare checkout'}).click();
- await expect(page.getByRole('form',{name:'Secure card payment'})).toBeVisible();
+ await expect(page.getByRole('form',{name:'Secure payment'})).toBeVisible();
  return {checkoutKeys,verify:()=>{verified=true;},changeOwner:()=>{owner='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';}};
 }
 
 test('Stripe completion cannot grant access until the server verifies the saved order',async({page})=>{
  const f=await fixture(page);
- expect(await page.evaluate(()=>(window as any).stripeWallets)).toEqual({applePay:'never',googlePay:'never',link:'never'});
+ expect(await page.evaluate(()=>(window as any).stripeWallets)).toEqual({applePay:'auto',googlePay:'auto',link:'never'});
  await page.getByRole('button',{name:'Pay $5.00',exact:true}).click();
  await expect(page.getByText('Payment not confirmed.',{exact:false})).toBeVisible();
- await expect(page.getByRole('form',{name:'Secure card payment'})).toHaveCount(0);
+ await expect(page.getByRole('form',{name:'Secure payment'})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Check verified payment status'})).toBeEnabled();
  await expect(page.getByText('Bundle queued',{exact:true})).toHaveCount(0);
  expect(await page.evaluate(()=>JSON.stringify(sessionStorage)+JSON.stringify(localStorage))).not.toContain(secret);
@@ -61,11 +61,11 @@ test('card decline and reload preserve the original checkout key without persist
  await page.getByRole('button',{name:'Pay $5.00',exact:true}).click();await expect(page.getByText('Your card was declined.',{exact:true})).toBeVisible();
  expect(await page.evaluate(()=>JSON.stringify(sessionStorage)+JSON.stringify(localStorage))).not.toContain(secret);
  await page.reload();await page.getByRole('checkbox',{name:/reviewed the price/}).check();await page.getByRole('button',{name:'Retry this checkout safely'}).click();
- await expect(page.getByRole('form',{name:'Secure card payment'})).toBeVisible();expect(f.checkoutKeys).toHaveLength(2);expect(new Set(f.checkoutKeys).size).toBe(1);
+ await expect(page.getByRole('form',{name:'Secure payment'})).toBeVisible();expect(f.checkoutKeys).toHaveLength(2);expect(new Set(f.checkoutKeys).size).toBe(1);
 });
 
 test('a changed customer session cannot confirm a previously prepared Stripe payment',async({page})=>{
  const f=await fixture(page);f.changeOwner();await page.getByRole('button',{name:'Pay $5.00',exact:true}).click();
- await expect(page.getByRole('form',{name:'Secure card payment'})).toHaveCount(0);
+ await expect(page.getByRole('form',{name:'Secure payment'})).toHaveCount(0);
  expect(await page.evaluate(()=>(window as any).stripeConfirmCount)).toBe(0);
 });

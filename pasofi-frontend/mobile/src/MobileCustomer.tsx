@@ -19,11 +19,12 @@ const webShortcuts = {
 };
 export type CustomerShortcut = keyof typeof webShortcuts;
 
-export default function MobileCustomer({ close, initialTab = 'access', handoffReturn, registrationTab, usedRegistration, requestedBundleId = null, shortcut, goHome = close, goBundles = close }: { close: () => void; initialTab?: CustomerTab; handoffReturn: number; registrationTab:CustomerTab|null; usedRegistration:()=>void; requestedBundleId?: string | null; shortcut?: CustomerShortcut; goHome?: () => void; goBundles?: () => void }) {
+export default function MobileCustomer({ close, initialTab = 'access', checkoutEntryVersion = 0, handoffReturn, registrationTab, usedRegistration, requestedBundleId = null, shortcut, goHome = close, goBundles = close }: { close: () => void; initialTab?: CustomerTab; checkoutEntryVersion?: number; handoffReturn: number; registrationTab:CustomerTab|null; usedRegistration:()=>void; requestedBundleId?: string | null; shortcut?: CustomerShortcut; goHome?: () => void; goBundles?: () => void }) {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null), [message, setMessage] = useState(''), [loading, setLoading] = useState(true);
   const [accountDisabled, setAccountDisabled] = useState(false);
   const [screen, setScreen] = useState<'account' | 'recover' | 'handoff' | 'onesa'>('account'), [attempt, setAttempt] = useState(0);
   const [activeTab, setActiveTab] = useState<CustomerTab>(initialTab);
+  useEffect(() => { if (checkoutEntryVersion) { setActiveTab('purchase'); setScreen('account'); } }, [checkoutEntryVersion]);
   const [nativeReturnReady,setNativeReturnReady]=useState(!usesNativeCustomerApi),[nativeReturnFailed,setNativeReturnFailed]=useState(false);
   const live = useRef(false);
   useEffect(()=>{

@@ -5,7 +5,8 @@ import type Stripe from 'stripe';
 import {eligibleMethod,type PaymentAdapter,type PaymentInput,type PaymentTerms} from './payment-provider.js';
 import {beginProviderPayment,reconcileProviderPayment,expireUnusedOrder,PaymentError} from './payments.js';
 import {processPaymentReconciliation} from './payment-reconciliation.js';
-import {StripeAdapter,stripeConfiguration,stripePresentation,registerStripeWebhook} from './stripe.js';
+import {StripeAdapter,STRIPE_METHOD,stripeConfiguration,stripePresentation,registerStripeWebhook} from './stripe.js';
+import {AgentCheckoutError,assertCurrentCheckoutAgent,withAgentCheckoutSources} from './agent-checkouts.js';
 import {ECOCASH_METHOD,EcoCashCheckoutAdapter,EcoCashCheckoutError,ecocashCheckoutConfiguration,ecocashPresentation,payerNumber,persistEcoCashContext} from './ecocash-checkout.js';
 import {SIMULATED_PROVIDERS} from './payment-provider.js';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -47,7 +48,7 @@ type Offered={adapter:PaymentAdapter;item:MethodItem;siteQualified:(siteId:strin
 function offered(adapters:PaymentAdapter[],ecocashOpen:boolean):Offered[]{
  const list:Offered[]=[];
  for(const adapter of adapters){
-  if(adapter instanceof StripeAdapter)list.push({adapter,item:{active:true,code:'STRIPE_CARD',name:'Card or mobile wallet',currencies:['USD'],minimumAmount:'0.50',maximumAmount:'999999.99'},siteQualified:siteId=>adapter.config.siteIds.has(siteId)});
+  if(adapter instanceof StripeAdapter)list.push({adapter,item:STRIPE_METHOD,siteQualified:siteId=>adapter.config.siteIds.has(siteId)});
   else if(adapter instanceof EcoCashCheckoutAdapter){if(ecocashOpen)list.push({adapter,item:ECOCASH_METHOD,siteQualified:siteId=>adapter.config.siteIds.has(siteId.toLowerCase())});}
   else if(adapter.provider==='mock')list.push({adapter,item:{active:true,code:'MOCKPAY',name:'Simulated payment',currencies:['USD'],minimumAmount:'0.01',maximumAmount:'10000000.00'},siteQualified:()=>true});
  }
@@ -75,15 +76,45 @@ export function registerCheckout(app:FastifyInstance,pool:Pool|null,demo:boolean
  if(stripeAdapter)registerStripeWebhook(app,pool,stripeAdapter);
  async function account(request:FastifyRequest,reply:FastifyReply){if(request.method!=='GET'&&!originAllowed(request)){reply.code(403).send({error:'origin_rejected'});return null;}try{const id=await customer(request);if(!id)reply.code(401).send({error:'not_authenticated'});return id;}catch{reply.code(503).send({error:'identity_unavailable'});return null;}}
  app.get('/v1/payments/methods',async(request,reply)=>{if(!config.enabled||!adapter)return reply.code(404).send({error:'payments_disabled'});const q=object(request.query);if(typeof q.siteId!=='string'||!uuid.test(q.siteId)||typeof q.bundleId!=='string')return reply.code(400).send({error:'site_and_bundle_required'});try{const product=(await pool.query('SELECT b.* FROM bundle_versions b,sales_locations s WHERE b.id=$1 AND b.published AND s.id=$2 AND s.enabled',[q.bundleId,q.siteId])).rows[0];if(!product)return reply.code(404).send({error:'site_or_bundle_unavailable'});const list=methods(offers,q.siteId);return {enabled:true,mode:config.mode,simulation:config.mode!=='production',methods:list.items.filter(m=>eligibleMethod(m,product.currency,product.price_minor,list.merchant,list.site)).map(m=>({code:m.code,name:m.name,currency:product.currency,minMinor:Math.round(Number(m.minimumAmount)*100),maxMinor:Math.round(Number(m.maximumAmount)*100)}))};}catch{return reply.code(503).send({error:'payment_methods_unavailable'});}});
- app.post<{Params:{id:string}}>('/v1/orders/:id/checkout',{config:{rateLimit:{max:10,timeWindow:'1 minute'}},preValidation:async(_request,reply)=>{if(!config.enabled||!adapter)return reply.code(404).send({error:'payments_disabled'});},schema:{body:{type:'object',required:['siteId','methodCode'],additionalProperties:false,properties:{siteId:{type:'string'},methodCode:{type:'string',maxLength:40},payerMsisdn:{type:'string',maxLength:16}}}}},async(request,reply)=>{if(!config.enabled||!adapter)return reply.code(404).send({error:'payments_disabled'});const id=await account(request,reply);if(!id)return;const b=object(request.body),key=request.headers['idempotency-key'];if(!uuid.test(request.params.id)||typeof key!=='string'||!uuid.test(key)||typeof b.siteId!=='string'||!uuid.test(b.siteId)||typeof b.methodCode!=='string')return reply.code(400).send({error:'invalid_checkout'});try{const order=(await pool.query('SELECT purchase_mode FROM purchase_orders WHERE id=$1 AND customer_id=$2',[request.params.id,id])).rows[0];if(!order)return reply.code(404).send({error:'order_not_found'});if(order.purchase_mode!=='checkout')return reply.code(409).send({error:'wrong_order_mode'});const location=await pool.query('SELECT 1 FROM sales_locations WHERE id=$1 AND enabled',[b.siteId]);if(!location.rowCount)return reply.code(409).send({error:'site_unavailable'});const list=methods(offers,b.siteId),offer=offers.find(o=>o.item.code===b.methodCode),method=offer?.item;
-  // A retried attempt is recovered under its original provider even if that
-  // method is no longer offered; beginProviderPayment never re-initiates it.
-  const previous=(await pool.query('SELECT provider FROM provider_payment_attempts WHERE customer_id=$1 AND request_key=$2',[id,key.toLowerCase()])).rows[0];
-  const chosen=offer?.adapter??(previous?adapters.find(a=>a.provider===previous.provider):undefined)??adapter;
-  let persist:((client:import('pg').PoolClient,attemptId:string)=>Promise<void>)|undefined;
-  if(chosen instanceof EcoCashCheckoutAdapter&&!previous){const msisdn=payerNumber(b.payerMsisdn);persist=(client,attemptId)=>persistEcoCashContext(client,chosen.config,attemptId,msisdn);}
-  const result=await beginProviderPayment(pool,id,request.params.id,key,b.siteId,b.methodCode,{method,merchantEnabledCodes:list.merchant,siteQualifiedCodes:list.site},chosen,persist);
-  return {...result,redirectUrl:null,simulation:config.mode!=='production',...(chosen instanceof StripeAdapter?{stripe:await stripePresentation(pool,id,result.attemptId,chosen)}:{}),...(chosen instanceof EcoCashCheckoutAdapter?{ecocash:await ecocashPresentation(pool,id,result.attemptId)}:{})};}catch(error){if(error instanceof EcoCashCheckoutError)return reply.code(400).send({error:error.code});return reply.code(error instanceof PaymentError?409:503).send({error:error instanceof PaymentError?error.code:'payment_unavailable'});}});
+ app.post<{Params:{id:string}}>('/v1/orders/:id/checkout',{
+  config:{rateLimit:{max:10,timeWindow:'1 minute'}},
+  preValidation:async(_request,reply)=>{if(!adapter||(!config.enabled&&!stripeAdapter))return reply.code(404).send({error:'payments_disabled'});},
+  schema:{body:{type:'object',required:['siteId','methodCode'],additionalProperties:false,properties:{siteId:{type:'string'},methodCode:{type:'string',maxLength:40},payerMsisdn:{type:'string',maxLength:16}}}},
+ },async(request,reply)=>{
+  if(!adapter)return reply.code(404).send({error:'payments_disabled'});
+  const id=await account(request,reply);if(!id)return;
+  const b=object(request.body),key=request.headers['idempotency-key'];
+  if(!uuid.test(request.params.id)||typeof key!=='string'||!uuid.test(key)||typeof b.siteId!=='string'||!uuid.test(b.siteId)||typeof b.methodCode!=='string')return reply.code(400).send({error:'invalid_checkout'});
+  try{
+   const order=(await pool.query('SELECT purchase_mode FROM purchase_orders WHERE id=$1 AND customer_id=$2',[request.params.id,id])).rows[0];
+   if(!order)return reply.code(404).send({error:'order_not_found'});
+   if(order.purchase_mode!=='checkout')return reply.code(409).send({error:'wrong_order_mode'});
+   const previous=(await pool.query('SELECT * FROM provider_payment_attempts WHERE customer_id=$1 AND request_key=$2',[id,key.toLowerCase()])).rows[0];
+   if(previous&&(previous.order_id!==request.params.id.toLowerCase()||previous.site_id!==b.siteId.toLowerCase()||previous.method_code!==b.methodCode))throw new PaymentError('idempotency_conflict');
+   const location=await pool.query('SELECT 1 FROM sales_locations WHERE id=$1 AND enabled',[b.siteId]);
+   const list=methods(offers,b.siteId),offer=offers.find(o=>o.item.code===b.methodCode),method=offer?.item;
+   const chosen=(previous?adapters.find(a=>a.provider===previous.provider):undefined)??offer?.adapter??adapter;
+   if(previous&&chosen.provider!==previous.provider)throw new PaymentError('provider_unavailable');
+   let result:{attemptId:string;state:string;redirectUrl:string|null};
+   if(!config.enabled||!location.rowCount){
+    if(!previous)return reply.code(!config.enabled?404:409).send({error:!config.enabled?'payments_disabled':'site_unavailable'});
+    // Exact read-only recovery precedes new-sale gates. In particular an
+    // unknown attempt cannot re-initiate while checkout or its site is paused.
+    result={attemptId:previous.id,state:previous.state,redirectUrl:previous.redirect_url};
+   }else{
+    let persist:((client:import('pg').PoolClient,attemptId:string)=>Promise<void>)|undefined;
+    if(chosen instanceof EcoCashCheckoutAdapter&&!previous){const msisdn=payerNumber(b.payerMsisdn);persist=(client,attemptId)=>persistEcoCashContext(client,chosen.config,attemptId,msisdn);}
+    result=await beginProviderPayment(pool,id,request.params.id,key,b.siteId,b.methodCode,{method,merchantEnabledCodes:list.merchant,siteQualifiedCodes:list.site},chosen,persist,row=>assertCurrentCheckoutAgent(request,demo,row));
+   }
+   return {...result,redirectUrl:null,simulation:SIMULATED_PROVIDERS.includes(chosen.provider),
+    ...(chosen instanceof StripeAdapter?{stripe:await stripePresentation(pool,id,result.attemptId,chosen)}:{}),
+    ...(chosen instanceof EcoCashCheckoutAdapter?{ecocash:await ecocashPresentation(pool,id,result.attemptId)}:{}),
+   };
+  }catch(error){
+   if(error instanceof EcoCashCheckoutError)return reply.code(400).send({error:error.code});
+   return reply.code(error instanceof AgentCheckoutError?error.status:error instanceof PaymentError?409:503).send({error:error instanceof PaymentError||error instanceof AgentCheckoutError?error.code:'payment_unavailable'});
+  }
+ });
  app.get<{Params:{id:string}}>('/v1/orders/:id/status',async(request,reply)=>{
   const id=await account(request,reply);if(!id)return;
   if(!uuid.test(request.params.id))return reply.code(404).send({error:'order_not_found'});
@@ -96,7 +127,7 @@ export function registerCheckout(app:FastifyInstance,pool:Pool|null,demo:boolean
    const review=(await pool.query('SELECT 1 FROM payment_reviews WHERE order_id=$1 AND resolved_at IS NULL LIMIT 1',[order.id])).rowCount;
    const charges=(await pool.query('SELECT state,fulfilled_entitlement_id FROM verified_charges WHERE order_id=$1',[order.id])).rows;
    const fulfillmentState=review?'pending_review':e?.revoked_at?'reversed':charges.some(c=>c.state==='succeeded'&&c.fulfilled_entitlement_id===e?.id)?'fulfilled':charges.some(c=>c.state==='reversed')?'reversed':'unconfirmed';
-   return {order,attempts,entitlementId:e&&!e.revoked_at?e.id:null,entitlementRevokedAt:e?.revoked_at??null,fulfillmentState,safeToRequote:!!order.expired_unused_at,simulation:order.purchase_mode==='demo'||provenance.simulated};
+   return {order:(await withAgentCheckoutSources(pool,[order]))[0],attempts,entitlementId:e&&!e.revoked_at?e.id:null,entitlementRevokedAt:e?.revoked_at??null,fulfillmentState,safeToRequote:!!order.expired_unused_at,simulation:order.purchase_mode==='demo'||provenance.simulated};
   }catch{return reply.code(503).send({error:'payment_unavailable'});}
  });
  app.post<{Params:{id:string}}>('/v1/orders/:id/expire-unused',{config:{rateLimit:{max:10,timeWindow:'1 minute'}},schema:{body:{type:'object',additionalProperties:false}}},async(request,reply)=>{
