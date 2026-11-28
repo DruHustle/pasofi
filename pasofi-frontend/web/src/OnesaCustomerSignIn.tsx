@@ -56,7 +56,7 @@ export default function OnesaCustomerSignIn({ prominent = false, compact = false
     <button type="button" className={primary ? 'pf-button pf-button-primary' : 'text-button'} disabled={busy} onClick={() => signIn()}>
       {busy ? 'Opening sign-in…' : retryAccount ? 'Sign in with a different account' : 'Sign in'}
     </button>
-    {primary && <p className="pf-onesa-sign-in-hint">New to PasoFi? Choose <strong>Sign up</strong> on the next screen. You’ll come straight back here.</p>}
+    {primary && <p className="pf-onesa-sign-in-hint">New to PasoFi. <strong>Sign up</strong>.</p>}
     {account === 'guest' && <div className="pf-onesa-sign-in-intro">
       <p>Have guest purchases in this browser? Keep them when you sign in.</p>
       <button className="text-button" type="button" disabled={busy} onClick={() => signIn(true)}>Keep guest purchases</button>

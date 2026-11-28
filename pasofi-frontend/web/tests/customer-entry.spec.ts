@@ -49,7 +49,7 @@ test('one Sign in entry goes straight to the provider and back without Onesa Acc
   releaseAvailability();
   const signIn = page.getByRole('button', {name:'Sign in',exact:true});
   await expect(signIn).toBeVisible();
-  await expect(page.getByText('New to PasoFi? Choose Sign up on the next screen.', { exact: false })).toBeVisible();
+  await expect(page.getByText('New to PasoFi. Sign up.', { exact: true })).toBeVisible();
   await expect(page.locator('a[href*="account.onesa.eu"]')).toHaveCount(0);
   await expect(page.getByRole('link', {name:'Sign up'})).toHaveCount(0);
   await signIn.click();
